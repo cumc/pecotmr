@@ -1,10 +1,9 @@
 #ifndef QTL_ENRICHMENT_HPP
 #define QTL_ENRICHMENT_HPP
+#include <RcppArmadillo.h> // need to include this before RcppGSL otherwise it complains about conflicts
 #include <RcppGSL.h>
-#include <RcppArmadillo.h>
 #include <vector>
 #include <string>
-#include <iostream>
 #include <map>
 #include <gsl/gsl_rng.h>
 #include <gsl/gsl_randist.h>
@@ -14,10 +13,10 @@
 
 // Enable C++11
 // [[Rcpp::plugins(cpp11)]]
-// Import GSL
-// [[Rcpp::depends(RcppGSL)]]
 // Import Armadillo
 // [[Rcpp::depends(RcppArmadillo)]]
+// Import GSL
+// [[Rcpp::depends(RcppGSL)]]
 
 class SuSiEFit {
 public:
@@ -38,6 +37,29 @@ public:
         if (alpha.n_rows != prior_variance.size()) {
             Rcpp::stop("The number of rows in alpha must match the length of prior_variance.");
         }
+
+	// Check if all elements in prior_variance are not greater than 0
+    	if (std::all_of(prior_variance.begin(), prior_variance.end(), [](double x) { return x <= 0; })) {
+     	   Rcpp::stop("At least one element in prior_variance must be greater than 0.");
+    	}
+
+	// Filter out rows with prior_variance = 0
+    	std::vector<arma::uword> valid_rows;
+    	for (size_t i = 0; i < prior_variance.size(); ++i) {
+          if (prior_variance[i] > 0) {
+            valid_rows.push_back(i);
+          }
+        }
+        alpha = alpha.rows(arma::uvec(valid_rows));
+        prior_variance.erase(std::remove(prior_variance.begin(), prior_variance.end(), 0), prior_variance.end());
+
+	// Add a check to make sure each row of alpha sums to 1
+    	for (arma::uword i = 0; i < alpha.n_rows; ++i) {
+     	   double row_sum = arma::sum(alpha.row(i));
+      	  if (std::abs(row_sum - 1.0) > 1e-6) {
+       	     Rcpp::stop("Row " + std::to_string(i + 1) + " of single effect PIP matrix (alpha) does not sum to 1. It is: " + std::to_string(row_sum));
+          }
+    	}
     }
 
     std::vector<std::string> impute_qtn(const gsl_rng *r) const {
@@ -46,7 +68,6 @@ public:
         for (arma::uword i = 0; i < alpha.n_rows; ++i) {
             std::vector<double> alpha_row(alpha.colptr(i), alpha.colptr(i) + alpha.n_cols);
             std::unique_ptr<unsigned int[]> sample(new unsigned int[alpha_row.size()]);
-
             gsl_ran_multinomial(r, alpha_row.size(), 1, alpha_row.data(), sample.get());
 
             for (size_t j = 0; j < alpha_row.size(); ++j) {
@@ -122,8 +143,11 @@ std::vector<double> run_EM(
             break;
         }
 	if (iter % 100 == 0) {
-            std::cout << "EM Iteration " << iter << ": a0 = " << a0 << ", a1 = " << a1 << std::endl;
+            Rcpp::Rcout << "EM Iteration " << iter << ": a0 = " << a0 << ", a1 = " << a1 << std::endl;
         }
+    }
+    if (iter == max_iter) {
+	Rcpp::Rcout << "WARNING: EM algorithm did not converge after " << iter << "iterations!" << std::endl;
     }
 
     std::vector<double> av;
@@ -156,6 +180,8 @@ std::map<std::string, double> qtl_enrichment_workhorse(
     for (size_t i = 0; i < gwas_variable_names.size(); ++i) {
         gwas_variant_index[gwas_variable_names[i]] = i;
     }
+        
+    Rcpp::Rcout << "Data loaded successfully!" << std::endl;
 
     #pragma omp parallel for num_threads(num_threads)
     for (int k = 0; k < ImpN; k++) {
@@ -189,6 +215,8 @@ std::map<std::string, double> qtl_enrichment_workhorse(
         }
     }
 
+    Rcpp::Rcout << "EM algorithm completed!" << std::endl;
+    
     double a0_est = 0;
     double a1_est = 0;
     double var0 = 0;

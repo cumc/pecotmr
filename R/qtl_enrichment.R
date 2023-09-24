@@ -11,10 +11,13 @@ names(gwas_pip) <- paste0("snp", 1:n_gwas_pip)
 simulate_susiefit <- function(n, p) {
   pip = runif(n)
   names(pip) = paste0("snp", 1:n)
+  alpha = t(matrix(runif(n * p), nrow = n))
+  alpha <- t(apply(alpha, 1, function(row) row / sum(row)))
+
   list(
     pip = pip,
-    alpha = matrix(runif(n * p), nrow = n),
-    prior_variance = runif(n)
+    alpha = alpha,
+    prior_variance = runif(p)
   )
 }
 
@@ -49,6 +52,5 @@ output <- qtl_enrichment(r_gwas_pip = gwas_pip,
                          ImpN = ImpN,
                          prior_variance = prior_variance,
                          num_threads = num_threads)
-
 # Inspect the output
 print(output)
