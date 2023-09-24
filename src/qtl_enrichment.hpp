@@ -1,7 +1,7 @@
 #ifndef QTL_ENRICHMENT_HPP
 #define QTL_ENRICHMENT_HPP
-
 #include <RcppArmadillo.h>
+#include <RcppGSL.h>
 #include <vector>
 #include <string>
 #include <map>
@@ -16,19 +16,22 @@
 
 // Import Armadillo
 // [[Rcpp::depends(RcppArmadillo)]]
+// Import GSL
+// [[Rcpp::depends(RcppGSL)]]
 
 class SuSiEFit {
 public:
     std::vector<double> pip;
-    std::vector<std::string> pip_names;
+    std::vector<std::string> variable_names;
     arma::mat alpha;
     std::vector<double> prior_variance;
 
     SuSiEFit(SEXP r_susie_fit) {
         Rcpp::List susie_fit(r_susie_fit);
 
-        pip = Rcpp::as<std::vector<double>>(susie_fit["pip"]);
-        pip_names = Rcpp::as<std::vector<std::string>>(Rcpp::rownames(susie_fit["pip"]));
+   	Rcpp::NumericVector pip_vec = Rcpp::as<Rcpp::NumericVector>(susie_fit["pip"]);
+    	pip = Rcpp::as<std::vector<double>>(pip_vec);
+    	variable_names = Rcpp::as<std::vector<std::string>>(pip_vec.names());
         alpha = Rcpp::as<arma::mat>(susie_fit["alpha"]);
         prior_variance = Rcpp::as<std::vector<double>>(susie_fit["prior_variance"]);
 
@@ -37,22 +40,21 @@ public:
         }
     }
 
-    std::vector<std::string> impute_qtn(const gsl_rng *r) {
+    std::vector<std::string> impute_qtn(const gsl_rng *r) const {
         std::vector<std::string> qtn_names;
 
         for (arma::uword i = 0; i < alpha.n_rows; ++i) {
             std::vector<double> alpha_row(alpha.colptr(i), alpha.colptr(i) + alpha.n_cols);
-            unsigned int *sample = new unsigned int[alpha_row.size()];
+            std::unique_ptr<unsigned int[]> sample(new unsigned int[alpha_row.size()]);
 
-            gsl_ran_multinomial(r, alpha_row.size(), 1, alpha_row.data(), sample);
+            gsl_ran_multinomial(r, alpha_row.size(), 1, alpha_row.data(), sample.get());
 
             for (size_t j = 0; j < alpha_row.size(); ++j) {
                 if (sample[j] == 1) {
-                    qtn_names.push_back(pip_names[j]);
+                    qtn_names.push_back(variable_names[j]);
                     break;
                 }
             }
-            delete[] sample;
         }
 
         return qtn_names;
@@ -132,7 +134,7 @@ std::vector<double> run_EM(
 std::map<std::string, double> qtl_enrichment_workhorse(
     const std::vector<SuSiEFit> &qtl_susie_fits,
     const std::vector<double> &gwas_pip,
-    const std::vector<std::string> &gwas_pip_names,
+    const std::vector<std::string> &gwas_variable_names,
     double pi_gwas,
     double pi_qtl,
     int ImpN,
@@ -147,8 +149,8 @@ std::map<std::string, double> qtl_enrichment_workhorse(
 
     std::map<std::string, int> gwas_variant_index;
 
-    for (size_t i = 0; i < gwas_pip_names.size(); ++i) {
-        gwas_variant_index[gwas_pip_names[i]] = i;
+    for (size_t i = 0; i < gwas_variable_names.size(); ++i) {
+        gwas_variant_index[gwas_variable_names[i]] = i;
     }
 
     #pragma omp parallel for num_threads(num_threads)

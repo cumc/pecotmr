@@ -2,25 +2,27 @@
 
 // [[Rcpp::export]]
 Rcpp::List qtl_enrichment(
-    SEXP r_gwas_pip, SEXP r_susie_fit_list,
-    double pi_gwas = 0, double pi_eqtl = 0,
+    SEXP r_gwas_pip, SEXP r_qtl_susie_fit,
+    double pi_gwas = 0, double pi_qtl = 0,
     int ImpN = 10, double prior_variance = 1, 
     int num_threads = 4)
 {
     // Convert r_gwas_pip to C++ type
-    std::vector<double> gwas_pip = Rcpp::as<std::vector<double>>(r_gwas_pip);
-    std::vector<std::string> gwas_pip_names = Rcpp::as<std::vector<std::string>>(Rcpp::rownames(r_gwas_pip));
+    // Convert r_gwas_pip to C++ type
+    Rcpp::NumericVector gwas_pip_vec = Rcpp::as<Rcpp::NumericVector>(r_gwas_pip);
+    std::vector<double> gwas_pip = Rcpp::as<std::vector<double>>(gwas_pip_vec);
+    std::vector<std::string> gwas_pip_names = Rcpp::as<std::vector<std::string>>(gwas_pip_vec.names());
 
-    // Convert r_susie_fit_list to C++ type
-    Rcpp::List susie_fit_list(r_susie_fit_list);
+    // Convert r_qtl_susie_fit to C++ type
+    Rcpp::List susie_fit_list(r_qtl_susie_fit);
     std::vector<SuSiEFit> susie_fits;
 
     for (int i = 0; i < susie_fit_list.size(); ++i) {
-        SuSiEFit susie_fit(susie_fit_list[i]);
+        SuSiEFit susie_fit(Rcpp::wrap(susie_fit_list[i]));
         susie_fits.push_back(susie_fit);
     }
 
-    std::map<std::string, double> output = qtl_enrichment_workhorse(susie_fits, gwas_pip, gwas_pip_names, pi_gwas, pi_eqtl, ImpN, prior_variance, num_threads);
+    std::map<std::string, double> output = qtl_enrichment_workhorse(susie_fits, gwas_pip, gwas_pip_names, pi_gwas, pi_qtl, ImpN, prior_variance, num_threads);
 
     // Convert std::map to Rcpp::List
     Rcpp::List output_list;
