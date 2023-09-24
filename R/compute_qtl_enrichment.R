@@ -45,10 +45,11 @@
 #'ImpN <- 10
 #'shrinkage_prior_variance <- 1
 #'num_threads <- 1
+#'library(intactR)
 #'en <- compute_qtl_enrichment(gwas_fit, susie_fits, pi_gwas, pi_qtl, ImpN, shrinkage_prior_variance)
 #' 
 #' @seealso \code{\link[susieR]{susie}}
-#' @useDynLib qtl_enrichment
+#' @useDynLib intactR
 #' 
 #' @export
 #' 

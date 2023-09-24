@@ -44,10 +44,10 @@ connected to Internet while running these commands):
 `inst/misc/uncrustify_default.cfg`. For example:
 
    ```bash
-   uncrustify -c uncrustify_default.cfg --replace --no-backup -l CPP qtl_enrichment.cpp
-   uncrustify -c uncrustify_default.cfg --replace --no-backup -l CPP qtl_enrichment.hpp
+   uncrustify -c inst/misc/uncrustify_default.cfg --replace --no-backup -l CPP src/qtl_enrichment.cpp
+   uncrustify -c inst/misc/uncrustify_default.cfg --replace --no-backup -l CPP src/qtl_enrichment.hpp
    ```
 
 + Prior to submitting the package to CRAN, the following modifications
 need to be made: (1) remove the `Remotes:` entry in `DESCRIPTION`; and
-(2) remove the `mash.Rmd` vignette.
+(2) remove the `fastenloc.Rmd` vignette.
