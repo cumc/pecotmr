@@ -39,7 +39,7 @@ num_threads <- 4
 # Load the Rcpp library
 library(Rcpp)
 # Compile the C++ code into an R-accessible shared object
-sourceCpp("qtl_enrichment.cpp")
+sourceCpp("src/qtl_enrichment.cpp")
 
 # Call the function
 output <- qtl_enrichment(r_gwas_pip = gwas_pip, 

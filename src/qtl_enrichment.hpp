@@ -65,7 +65,9 @@ std::vector<double> run_EM(
     const std::vector<double> &gwas_pip,
     const std::vector<int> &qtl_sample,
     double pi_qtl,
-    double pi_gwas)
+    double pi_gwas,
+    int max_iter = 1000,
+    double a1_tol = 0.01)
 {
     double a0 = log(pi_gwas / (1 - pi_gwas));
     double a1 = 0;
@@ -75,8 +77,10 @@ std::vector<double> run_EM(
     double r0 = exp(a0);
     double r_null = pi_gwas / (1 - pi_gwas);
     double total_snp = gwas_pip.size();
+    int iter = 0;
 
     while (true) {
+	iter++;
         double pseudo_count = 1.0;
         double e0g0 = pseudo_count * (1 - pi_gwas) * (1 - pi_qtl);
         double e0g1 = pseudo_count * (1 - pi_qtl) * pi_gwas;
@@ -107,19 +111,16 @@ std::vector<double> run_EM(
         e0g0 += total_snp - (e0g0 + e0g1 + e1g0 + e1g1);
 
         double a1_new = log(e1g1 * e0g0 / (e1g0 * e0g1));
-
-        if (fabs(a1_new - a1) < 0.01) {
-            a1 = a1_new;
-            var1 = (1.0 / e0g0 + 1.0 / e1g0 + 1.0 / e1g1 + 1.0 / e0g1);
-            var0 = (1.0 / e0g1 + 1.0 / e0g0);
-            break;
-        }
-
-        a1 = a1_new;
+	a1 = a1_new;
         a0 = log(e0g1 / e0g0);
-
         r0 = exp(a0);
         r1 = exp(a0 + a1);
+        var1 = (1.0 / e0g0 + 1.0 / e1g0 + 1.0 / e1g1 + 1.0 / e0g1);
+        var0 = (1.0 / e0g1 + 1.0 / e0g0);
+
+        if (fabs(a1_new - a1) < a1_tol || iter >= max_iter) {
+            break;
+        }
     }
 
     std::vector<double> av;
