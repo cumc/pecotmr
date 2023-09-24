@@ -166,7 +166,7 @@ std::map<std::string, double> qtl_enrichment_workhorse(
     double pi_gwas,
     double pi_qtl,
     int ImpN,
-    double prior_variance,
+    double shrinkage_prior,
     int num_threads = 4)
 {
 
@@ -248,9 +248,9 @@ std::map<std::string, double> qtl_enrichment_workhorse(
     double sd1_ns = sd1;
 
     // Apply shrinkage
-    if (prior_variance > 0) {
-        double post_var = 1.0 / (1.0 / prior_variance + 1 / (sd1 * sd1));
-        a1_est = (a1_est_ns * prior_variance) / (prior_variance + sd1_ns * sd1_ns);
+    if (shrinkage_prior > 0) {
+        double post_var = 1.0 / (1.0 / shrinkage_prior + 1 / (sd1 * sd1));
+        a1_est = (a1_est_ns * shrinkage_prior) / (shrinkage_prior + sd1_ns * sd1_ns);
         sd1 = sqrt(post_var);
     }
 

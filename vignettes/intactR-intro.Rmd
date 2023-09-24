@@ -1,0 +1,21 @@
+---
+title: "Introduction to intactR"
+author: "Gao Wang"
+date: "`r Sys.Date()`"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{intro-to-intactR}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+Here we demonstrate the use of the `intactR` package to perform
+a version of colocalization, TWAS and MR between a pair of molecular QTL and GWAS.
+
+## Set up your environment
+
+Load the `intactR` package.
+
+```{r load-pkgs}
+library(intactR)
+```

@@ -1,3 +1,3 @@
 library(testthat)
-library(fasterscale)
-test_check("fasterscale")
+library(intactR)
+test_check("intactR")

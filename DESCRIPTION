@@ -1,19 +1,17 @@
 Encoding: UTF-8
 Type: Package
-Package: fasterscale
-Version: 0.1-6
-Date: 2020-01-22
-Title: Methods for Efficiently Centering and Scaling Matrices
-Description: Provides a fast and memory-efficient method for
-    centering and scaling matrices.
-URL: https://github.com/stephenslab/fasterscale
-BugReports: https://github.com/stephenslab/fasterscale/issues
-Authors@R: person("Peter","Carbonetto",role = c("cre","aut"),
-                  email = "pcarbo@uchicago.edu")
+Package: intactR
+Version: 0.0.1
+Date: 2023-09-22
+Title: The INTACT methods for colocalization, TWAS and MR
+Description: An implementation of Okamoto J et al (2023) AJHG using SuSiE, Wang G et al (2020) JRSS-B
+URL: https://github.com/cumc/intactR
+BugReports: https://github.com/cumc/intactR/issues
+Authors@R: person("Gao Wang",role = c("cre","aut"),
+                  email = "wang.gaow@columbia.edu")
 License: MIT + file LICENSE
 Imports:
-    matrixStats,
-    Rcpp (>= 1.0.3)
+    Rcpp
 Suggests: 
     testthat,
     knitr,
