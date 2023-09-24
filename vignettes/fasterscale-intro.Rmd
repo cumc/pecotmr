@@ -1,0 +1,50 @@
+---
+title: "Introduction to fasterscale"
+author: "Peter Carbonetto"
+date: "`r Sys.Date()`"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{intro-to-fasterscale}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+Here we demonstrate the use of the `fasterscale` package to quickly
+center and scale a large matrix.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(collapse = TRUE,results = "hold",comment = "#")
+```
+					 
+## Set up your environment
+
+Load the `fasterscale` package.
+
+```{r load-pkgs}
+library(fasterscale)
+```
+
+## Create a large matrix
+
+Generate a 1,000 x 50,000 matrix.
+
+```{r set-seed, eval=TRUE}
+set.seed(1)
+X <- matrix(rnorm(5e7),1e3,5e4)
+```
+
+## Center and scale the matrix
+
+This is the method that is provided with R:
+
+```{r scale}
+system.time(Y1 <- scale(X))
+```
+
+Compare this to `scale_faster`, which should produce the same result,
+but faster:
+
+```{r scale-faster}
+system.time(Y2 <- scale_faster(X))
+print(range(Y1 - Y2))
+```

@@ -1,0 +1,24 @@
+Encoding: UTF-8
+Type: Package
+Package: fasterscale
+Version: 0.1-6
+Date: 2020-01-22
+Title: Methods for Efficiently Centering and Scaling Matrices
+Description: Provides a fast and memory-efficient method for
+    centering and scaling matrices.
+URL: https://github.com/stephenslab/fasterscale
+BugReports: https://github.com/stephenslab/fasterscale/issues
+Authors@R: person("Peter","Carbonetto",role = c("cre","aut"),
+                  email = "pcarbo@uchicago.edu")
+License: MIT + file LICENSE
+Imports:
+    matrixStats,
+    Rcpp (>= 1.0.3)
+Suggests: 
+    testthat,
+    knitr,
+    rmarkdown
+LinkingTo: Rcpp
+NeedsCompilation: yes
+VignetteBuilder: knitr
+RoxygenNote: 7.0.2
