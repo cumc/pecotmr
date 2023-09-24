@@ -31,7 +31,7 @@ pi_gwas <- 0.01
 pi_qtl <- 0.01
 ImpN <- 10
 prior_variance <- 1
-num_threads <- 4
+num_threads <- 1
 
 
 # Now susie_fits is ready to be passed to C++

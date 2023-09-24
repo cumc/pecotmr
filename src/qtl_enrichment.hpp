@@ -1,9 +1,10 @@
 #ifndef QTL_ENRICHMENT_HPP
 #define QTL_ENRICHMENT_HPP
-#include <RcppArmadillo.h>
 #include <RcppGSL.h>
+#include <RcppArmadillo.h>
 #include <vector>
 #include <string>
+#include <iostream>
 #include <map>
 #include <gsl/gsl_rng.h>
 #include <gsl/gsl_randist.h>
@@ -13,11 +14,10 @@
 
 // Enable C++11
 // [[Rcpp::plugins(cpp11)]]
-
-// Import Armadillo
-// [[Rcpp::depends(RcppArmadillo)]]
 // Import GSL
 // [[Rcpp::depends(RcppGSL)]]
+// Import Armadillo
+// [[Rcpp::depends(RcppArmadillo)]]
 
 class SuSiEFit {
 public:
@@ -120,6 +120,9 @@ std::vector<double> run_EM(
 
         if (fabs(a1_new - a1) < a1_tol || iter >= max_iter) {
             break;
+        }
+	if (iter % 100 == 0) {
+            std::cout << "EM Iteration " << iter << ": a0 = " << a0 << ", a1 = " << a1 << std::endl;
         }
     }
 
