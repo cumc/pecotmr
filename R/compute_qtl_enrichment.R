@@ -1,10 +1,10 @@
 #' @title Implementation of enrichment analysis described in https://doi.org/10.1371/journal.pgen.1006646
 #'
 #' @description Largely follows from fastenloc https://github.com/xqwen/fastenloc 
-#' but uses `susieR` objects as input and outputs parameters to use as prior with `coloc` package.
+#' but uses `susieR` fitted objects as input to estimate prior for use with `coloc` package (coloc v5, aka SuSiE-coloc).
 #' The main differences are 1) now enrichment is based on all QTL variants whether or not they are inside signal clusters;
-#' 2) Causal QTL are sampled from SuSiE single effects, not CS or signal clusters.
-#' 3) QTL prior is computed based on number of associations not variants, allowing for a variant to contribute to QTL in multiple regions.
+#' 2) Causal QTL are sampled from SuSiE single effects, not signal clusters;
+#' 3) Allow a variant to be QTL for not only multiple conditions (eg cell types) but also multiple regions (eg genes).
 #' Other minor improvements include 1) Make GSL RNG thread-safe; 2) Release memory from QTL binary annotation samples immediately after they are used. 
 #' @details Uses output of \code{\link[susieR]{susie}} from the
 #'   \code{susieR} package.
