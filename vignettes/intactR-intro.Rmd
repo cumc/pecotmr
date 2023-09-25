@@ -1,21 +1,21 @@
 ---
-title: "Introduction to intactR"
+title: "Introduction to pecotmr"
 author: "Gao Wang"
 date: "`r Sys.Date()`"
 output: rmarkdown::html_vignette
 vignette: >
-  %\VignetteIndexEntry{intro-to-intactR}
+  %\VignetteIndexEntry{intro-to-pecotmr}
   %\VignetteEngine{knitr::rmarkdown}
   %\VignetteEncoding{UTF-8}
 ---
 
-Here we demonstrate the use of the `intactR` package to perform
+Here we demonstrate the use of the `pecotmr` package to perform
 a version of colocalization, TWAS and MR between a pair of molecular QTL and GWAS.
 
 ## Set up your environment
 
-Load the `intactR` package.
+Load the `pecotmr` package.
 
 ```{r load-pkgs}
-library(intactR)
+library(pecotmr)
 ```

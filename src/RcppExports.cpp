@@ -14,7 +14,7 @@ Rcpp::Rostream<false>& Rcpp::Rcerr = Rcpp::Rcpp_cerr_get();
 
 // qtl_enrichment_rcpp
 Rcpp::List qtl_enrichment_rcpp(SEXP r_gwas_pip, SEXP r_qtl_susie_fit, double pi_gwas, double pi_qtl, int ImpN, double shrinkage_lambda, int num_threads);
-RcppExport SEXP _intactR_qtl_enrichment_rcpp(SEXP r_gwas_pipSEXP, SEXP r_qtl_susie_fitSEXP, SEXP pi_gwasSEXP, SEXP pi_qtlSEXP, SEXP ImpNSEXP, SEXP shrinkage_lambdaSEXP, SEXP num_threadsSEXP) {
+RcppExport SEXP _pecotmr_qtl_enrichment_rcpp(SEXP r_gwas_pipSEXP, SEXP r_qtl_susie_fitSEXP, SEXP pi_gwasSEXP, SEXP pi_qtlSEXP, SEXP ImpNSEXP, SEXP shrinkage_lambdaSEXP, SEXP num_threadsSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -31,11 +31,11 @@ END_RCPP
 }
 
 static const R_CallMethodDef CallEntries[] = {
-    {"_intactR_qtl_enrichment_rcpp", (DL_FUNC) &_intactR_qtl_enrichment_rcpp, 7},
+    {"_pecotmr_qtl_enrichment_rcpp", (DL_FUNC) &_pecotmr_qtl_enrichment_rcpp, 7},
     {NULL, NULL, 0}
 };
 
-RcppExport void R_init_intactR(DllInfo *dll) {
+RcppExport void R_init_pecotmr(DllInfo *dll) {
     R_registerRoutines(dll, NULL, CallEntries, NULL, NULL);
     R_useDynamicSymbols(dll, FALSE);
 }

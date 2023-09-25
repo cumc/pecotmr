@@ -1,12 +1,12 @@
 Encoding: UTF-8
 Type: Package
-Package: intactR
+Package: pecotmr
 Version: 0.0.1
 Date: 2023-09-22
 Title: The INTACT methods for colocalization, TWAS and MR
 Description: An implementation of Okamoto J et al (2023) AJHG using SuSiE, Wang G et al (2020) JRSS-B
-URL: https://github.com/cumc/intactR
-BugReports: https://github.com/cumc/intactR/issues
+URL: https://github.com/cumc/pecotmr
+BugReports: https://github.com/cumc/pecotmr/issues
 Authors@R: person("Gao Wang",role = c("cre","aut"),
                   email = "wang.gaow@columbia.edu")
 License: MIT + file LICENSE

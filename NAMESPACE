@@ -2,4 +2,4 @@
 
 export(compute_qtl_enrichment)
 importFrom(Rcpp,evalCpp)
-useDynLib(intactR)
+useDynLib(pecotmr)

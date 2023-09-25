@@ -1,3 +1,3 @@
 library(testthat)
-library(intactR)
-test_check("intactR")
+library(pecotmr)
+test_check("pecotmr")

@@ -48,11 +48,11 @@
 #'ImpN <- 10
 #'lambda <- 1
 #'num_threads <- 1
-#'library(intactR)
+#'library(pecotmr)
 #'en <- compute_qtl_enrichment(gwas_fit, susie_fits, lambda = lambda, ImpN = ImpN, num_threads = num_threads)
 #' 
 #' @seealso \code{\link[susieR]{susie}}
-#' @useDynLib intactR
+#' @useDynLib pecotmr
 #' @importFrom Rcpp evalCpp 
 #' @export
 #' 
