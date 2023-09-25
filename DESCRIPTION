@@ -22,4 +22,4 @@ LinkingTo:
     RcppGSL
 NeedsCompilation: yes
 VignetteBuilder: knitr
-RoxygenNote: 7.1.0
+RoxygenNote: 7.2.3

@@ -63,9 +63,10 @@ compute_qtl_enrichment <- function(gwas_pip, susie_qtl_regions,
 if (is.null(pi_gwas)) {
   warning("Using data to estimate pi_gwas. This will be problematic if your input gwas_pip does not contain genome-wide variants.")
   pi_gwas = sum(gwas_pip$pip) / length(gwas_pip$pip)
-  cat(paste("Estimated pi_gwas is", round(pi_gwas, 5), "\n"))
+  cat(paste("Estimated pi_gwas is:", round(pi_gwas, 5), "\n"))
 }
 if (is.null(pi_qtl)) {
+  warning("Using data to estimate pi_qtl. This will be problematic if either 1) your input susie_qtl_regions is not genome-wide, or 2) your single effects only includes variables inside of credible sets or signal clusters.")
   num_signal = 0
   num_test = 0
   for (d in susie_qtl_regions) {
@@ -73,7 +74,7 @@ if (is.null(pi_qtl)) {
     num_test = num_test + length(d$pip)
   }
   pi_qtl = num_signal/num_test
-  cat(paste("Estimated pi_qtl is", round(pi_qtl, 5), "\n"))
+  cat(paste("Estimated pi_qtl is:", round(pi_qtl, 5), "\n"))
 }
 if (pi_gwas == 0) stop("Cannot perform enrichment analysis because there is no association signal from GWAS")
 if (pi_qtl == 0) stop("Cannot perform enrichment analysis because there is no QTL associated with molecular phenotype")
