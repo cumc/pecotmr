@@ -1,4 +1,4 @@
-# intactR: R package implementing the INTACT methods for colocalization, TWAS and MR with SuSiE model
+# R package implementing QTL-GWAS enrichment, colocalization, TWAS and MR methods based on SuSiE model
 
 ## Quick Start
 
