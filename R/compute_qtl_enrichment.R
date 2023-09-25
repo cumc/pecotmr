@@ -2,7 +2,10 @@
 #'
 #' @description Largely follows from fastenloc https://github.com/xqwen/fastenloc 
 #' but uses `susieR` objects as input and outputs parameters to use as prior with `coloc` package.
-#'
+#' The main differences are 1) now enrichment is based on all QTL variants whether or not they are inside signal clusters;
+#' 2) Causal QTL are sampled from SuSiE single effects, not CS or signal clusters.
+#' 3) QTL prior is computed based on number of associations not variants, allowing for a variant to contribute to QTL in multiple regions.
+#' Other minor improvements include 1) Make GSL RNG thread-safe; 2) Release memory from QTL binary annotation samples immediately after they are used. 
 #' @details Uses output of \code{\link[susieR]{susie}} from the
 #'   \code{susieR} package.
 #'
@@ -42,28 +45,25 @@
 #'# Add these fits to a list, providing names to each element
 #'names(susie_fits) <- paste0("fit", 1:length(susie_fits))
 #'# Set other parameters
-#'pi_gwas <- 0.01
-#'pi_qtl <- 0.01
 #'ImpN <- 10
 #'lambda <- 1
 #'num_threads <- 1
 #'library(intactR)
-#'en <- compute_qtl_enrichment(gwas_fit, susie_fits, pi_gwas, pi_qtl, lambda, ImpN)
+#'en <- compute_qtl_enrichment(gwas_fit, susie_fits, lambda = lambda, ImpN = ImpN, num_threads = num_threads)
 #' 
 #' @seealso \code{\link[susieR]{susie}}
 #' @useDynLib intactR
-#' 
+#' @importFrom Rcpp evalCpp 
 #' @export
 #' 
 compute_qtl_enrichment <- function(gwas_pip, susie_qtl_regions, 
                            pi_gwas = NULL, pi_qtl = NULL, 
                            lambda = 1.0, ImpN = 25,
                            num_threads = 1) {
-# FIXME: revisit this setting
 if (is.null(pi_gwas)) {
   warning("Using data to estimate pi_gwas. This will be problematic if your input gwas_pip does not contain genome-wide variants.")
   pi_gwas = sum(gwas_pip$pip) / length(gwas_pip$pip)
-  cat(paste("Estimated pi_gwas is", pi_gwas))
+  cat(paste("Estimated pi_gwas is", round(pi_gwas, 5), "\n"))
 }
 if (is.null(pi_qtl)) {
   num_signal = 0
@@ -73,8 +73,12 @@ if (is.null(pi_qtl)) {
     num_test = num_test + length(d$pip)
   }
   pi_qtl = num_signal/num_test
-  cat(paste("Estimated pi_qtl is", pi_qtl))
+  cat(paste("Estimated pi_qtl is", round(pi_qtl, 5), "\n"))
 }
+if (pi_gwas == 0) stop("Cannot perform enrichment analysis because there is no association signal from GWAS")
+if (pi_qtl == 0) stop("Cannot perform enrichment analysis because there is no QTL associated with molecular phenotype")
+
+# FIXME: need to check SNP name overlapping here? Need enough SNP names to overlap
 
 en <- qtl_enrichment_rcpp(r_gwas_pip = gwas_pip$pip, 
                          r_qtl_susie_fit = susie_qtl_regions,

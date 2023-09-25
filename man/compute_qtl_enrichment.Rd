@@ -37,6 +37,10 @@ A list of enrichment parameter estimates
 \description{
 Largely follows from fastenloc https://github.com/xqwen/fastenloc 
 but uses `susieR` objects as input and outputs parameters to use as prior with `coloc` package.
+The main differences are 1) now enrichment is based on all QTL variants whether or not they are inside signal clusters;
+2) Causal QTL are sampled from SuSiE single effects, not CS or signal clusters.
+3) QTL prior is computed based on number of associations not variants, allowing for a variant to contribute to QTL in multiple regions.
+Other minor improvements include 1) Make GSL RNG thread-safe; 2) Release memory from QTL binary annotation samples immediately after they are used.
 }
 \details{
 Uses output of \code{\link[susieR]{susie}} from the
@@ -67,13 +71,11 @@ susie_fits <- replicate(n_susie_fits, simulate_susiefit(n_gwas_pip, 10), simplif
 # Add these fits to a list, providing names to each element
 names(susie_fits) <- paste0("fit", 1:length(susie_fits))
 # Set other parameters
-pi_gwas <- 0.01
-pi_qtl <- 0.01
 ImpN <- 10
 lambda <- 1
 num_threads <- 1
 library(intactR)
-en <- compute_qtl_enrichment(gwas_fit, susie_fits, pi_gwas, pi_qtl, lambda, ImpN)
+en <- compute_qtl_enrichment(gwas_fit, susie_fits, lambda = lambda, ImpN = ImpN, num_threads = num_threads)
 
 }
 \seealso{

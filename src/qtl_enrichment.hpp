@@ -88,9 +88,10 @@ std::vector<std::string> impute_qtn(const gsl_rng *r) const {
 
 std::vector<double> run_EM(
 	const std::vector<double> &gwas_pip,
-	const std::vector<int> &   qtl_sample,
-	double                     pi_qtl,
+	const std::vector<int> &   annotation_vector,
 	double                     pi_gwas,
+	double                     pi_qtl,
+	double                     total_snp,
 	int                        max_iter = 1000,
 	double                     a1_tol = 0.01)
 {
@@ -98,14 +99,14 @@ std::vector<double> run_EM(
 	double a1 = 0;
 	double var0 = 0;
 	double var1 = 0;
-	double r1 = exp(a0 + a1);
-	double r0 = exp(a0);
+	double r0, r1;
+	r0 = r1 = exp(a0);
 	double r_null = pi_gwas / (1 - pi_gwas);
-	double total_snp = gwas_pip.size();
 	int iter = 0;
 
 	while (true) {
 		iter++;
+		// E step
 		double pseudo_count = 1.0;
 		double e0g0 = pseudo_count * (1 - pi_gwas) * (1 - pi_qtl);
 		double e0g1 = pseudo_count * (1 - pi_qtl) * pi_gwas;
@@ -116,17 +117,20 @@ std::vector<double> run_EM(
 			double val = gwas_pip[i];
 			if (val == 1)
 				val = 1 - 1e-8;
+			// posterior ratio
 			val = val / (1 - val);
-
-			if (qtl_sample[i] == 0) {
+			// val/r_null is marginal likelihood/bayes factor
+			if (annotation_vector[i] == 0) {
 				val = r0 * (val / r_null);
+				// updated posterior with current prior given eqtl = 0
 				val = val / (1 + val);
 				e0g1 += val;
 				e0g0 += 1 - val;
 			}
 
-			if (qtl_sample[i] == 1) {
+			if (annotation_vector[i] == 1) {
 				val = r1 * (val / r_null);
+				// updated posterior with current prior given eqtl = 1
 				val = val / (1 + val);
 				e1g1 += val;
 				e1g0 += 1 - val;
@@ -137,7 +141,7 @@ std::vector<double> run_EM(
 
 		double a1_new = log(e1g1 * e0g0 / (e1g0 * e0g1));
 		a1 = a1_new;
-		a0 = log(e0g1 / e0g0);
+		a0 = log(e0g1 / e0g0); // a0 = log((e0g1+1)/(e0g0+1));
 		r0 = exp(a0);
 		r1 = exp(a0 + a1);
 		var1 = (1.0 / e0g0 + 1.0 / e1g0 + 1.0 / e1g1 + 1.0 / e0g1);
@@ -185,9 +189,12 @@ std::map<std::string, double> qtl_enrichment_workhorse(
 		gwas_variant_index[gwas_variable_names[i]] = i;
 	}
 
-	Rcpp::Rcout << "Data loaded successfully!" << std::endl;
+	// pi_gwas = sum(gwas_pip) / total_snp
+	double total_snp = std::accumulate(gwas_pip.begin(), gwas_pip.end(), 0.0) / pi_gwas;
 
-    #pragma omp parallel for num_threads(num_threads)
+	Rcpp::Rcout << "Fine-mapped GWAS and QTL data loaded successfully for enrichment analysis!" << std::endl;
+
+	#pragma omp parallel for num_threads(num_threads)
 	for (int k = 0; k < ImpN; k++) {
 		// Initialize the GSL RNG for this thread
 		const gsl_rng_type *T;
@@ -198,17 +205,18 @@ std::map<std::string, double> qtl_enrichment_workhorse(
 		// Set the seed for this thread's RNG
 		gsl_rng_set(r, static_cast<unsigned long int>(k));
 
-		std::vector<int> qtl_sample(gwas_pip.size(), 0);
+		// Use QTL to annotate GWAS variants
+		std::vector<int> annotation_vector(gwas_pip.size(), 0);
 
 		for (size_t i = 0; i < qtl_susie_fits.size(); i++) {
 			std::vector<std::string> variants = qtl_susie_fits[i].impute_qtn(r);
 			for (const auto &variant : variants) {
-				qtl_sample[gwas_variant_index[variant]] = 1;
+				annotation_vector[gwas_variant_index[variant]] = 1;
 			}
 		}
 		gsl_rng_free(r);
 
-		std::vector<double> rst = run_EM(gwas_pip, qtl_sample, pi_qtl, pi_gwas);
+		std::vector<double> rst = run_EM(gwas_pip, annotation_vector, pi_gwas, pi_qtl, total_snp);
 
 	#pragma omp critical
 		{
@@ -219,7 +227,7 @@ std::map<std::string, double> qtl_enrichment_workhorse(
 		}
 	}
 
-	Rcpp::Rcout << "EM algorithm completed!" << std::endl;
+	Rcpp::Rcout << "EM updates completed!" << std::endl;
 
 	double a0_est = 0;
 	double a1_est = 0;
@@ -252,21 +260,20 @@ std::map<std::string, double> qtl_enrichment_workhorse(
 	double sd1_ns = sd1;
 
 	// Apply shrinkage
-	double pv = (shrinkage_lambda == 0) ? -1 : 1.0/shrinkage_lambda;
+	double pv = (shrinkage_lambda == 0) ? -1.0 : 1.0/shrinkage_lambda;
 	if (pv > 0) {
-		double post_var = 1.0 / (1.0 / pv + 1 / (sd1 * sd1));
 		a1_est = (a1_est_ns * pv) / (pv + sd1_ns * sd1_ns);
-		sd1 = sqrt(post_var);
+		sd1 = sqrt( 1.0 / (1.0 / pv + 1 / (sd1_ns * sd1_ns)) );
 	}
 
 	a0_est = log(pi_gwas / (1 + pi_qtl * exp(a1_est) - pi_qtl - pi_gwas));
 
-	double p1 = (1 - pi_qtl) * exp(a0_est) / (1 + exp(a0_est));
-	double p2 = pi_qtl / (1 + exp(a0_est + a1_est));
-	double p12 = pi_qtl * exp(a0_est + a1_est) / (1 + exp(a0_est + a1_est));
-
-	double pi1_e = exp(a0_est + a1_est) / (1 + exp(a0_est + a1_est));
 	double pi1_ne = exp(a0_est) / (1 + exp(a0_est));
+	double pi1_e = exp(a0_est + a1_est) / (1 + exp(a0_est + a1_est));
+
+	double p1 = (1 - pi_qtl) * pi1_ne;
+	double p2 = pi_qtl / (1 + exp(a0_est + a1_est));
+	double p12 = pi_qtl * pi1_e;
 
 	// Create the map to store output
 	std::map<std::string, double> output_map;
@@ -279,8 +286,6 @@ std::map<std::string, double> qtl_enrichment_workhorse(
 	output_map["Alternative (coloc) p1"] = p1;
 	output_map["Alternative (coloc) p2"] = p2;
 	output_map["Alternative (coloc) p12"] = p12;
-	output_map["pi1_e"] = pi1_e;
-	output_map["pi1_ne"] = pi1_ne;
 
 	return output_map;
 }
