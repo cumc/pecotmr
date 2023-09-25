@@ -40,7 +40,8 @@ connected to Internet while running these commands):
    ```
 
 + After editing C++ code in the `src` directory, please use
-[uncrustify][uncrustify] to format the code using configuration file
+[uncrustify][https://github.com/uncrustify/uncrustify] (version >=0.74.0, available from conda-forge) 
+to format the code using configuration file
 `inst/misc/uncrustify_default.cfg`. For example:
 
    ```bash

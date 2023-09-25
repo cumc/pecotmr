@@ -5,25 +5,37 @@
 \title{Implementation of enrichment analysis described in https://doi.org/10.1371/journal.pgen.1006646}
 \usage{
 compute_qtl_enrichment(
-  susie_gwas,
+  gwas_pip,
   susie_qtl_regions,
   pi_gwas = NULL,
   pi_qtl = NULL,
-  ImpN = 10,
-  shrinkage_prior_variance = 0,
+  lambda = 1,
+  ImpN = 25,
   num_threads = 1
 )
 }
 \arguments{
-\item{susie_gwas}{}
+\item{gwas_pip}{This is a vector of GWAS PIP, genome-wide.}
 
-\item{susie_qtl_regions}{}
+\item{susie_qtl_regions}{This is a list of SuSiE fitted objects per QTL unit analyzed}
+
+\item{pi_gwas}{This parameter is highly important if GWAS input does not contain all SNPs interrogated (e.g., in some cases, only fine-mapped geomic regions are included). 
+Then users must pick a value of total_variants and estimate pi_gwas beforehand by: sum(gwas_pip$pip)/total_variants}
+
+\item{pi_qtl}{This parameter can be safely left to default if your input QTL data has enough regions to estimate it.}
+
+\item{lambda}{Similar to the shrinkage parameter used in ridge regression. It takes any non-negative value and shrinks the enrichment estimate towards 0. 
+When it is set to 0, no shrinkage will be applied. A large value indicates strong shrinkage. The default value is set to 1.0.}
+
+\item{ImpN}{Rounds of multiple imputation to draw QTL from, default is 25.}
+
+\item{num_threads}{Number of Simultaneous running CPU threads for multiple imputation, default is 1.}
 }
 \value{
 A list of enrichment parameter estimates
 }
 \description{
-Largely does the same thing as fastenloc https://github.com/xqwen/fastenloc 
+Largely follows from fastenloc https://github.com/xqwen/fastenloc 
 but uses `susieR` objects as input and outputs parameters to use as prior with `coloc` package.
 }
 \details{
@@ -58,10 +70,10 @@ names(susie_fits) <- paste0("fit", 1:length(susie_fits))
 pi_gwas <- 0.01
 pi_qtl <- 0.01
 ImpN <- 10
-shrinkage_prior_variance <- 1
+lambda <- 1
 num_threads <- 1
 library(intactR)
-en <- compute_qtl_enrichment(gwas_fit, susie_fits, pi_gwas, pi_qtl, ImpN, shrinkage_prior_variance)
+en <- compute_qtl_enrichment(gwas_fit, susie_fits, pi_gwas, pi_qtl, lambda, ImpN)
 
 }
 \seealso{

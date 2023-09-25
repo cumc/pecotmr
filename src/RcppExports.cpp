@@ -13,8 +13,8 @@ Rcpp::Rostream<false>& Rcpp::Rcerr = Rcpp::Rcpp_cerr_get();
 #endif
 
 // qtl_enrichment_rcpp
-Rcpp::List qtl_enrichment_rcpp(SEXP r_gwas_pip, SEXP r_qtl_susie_fit, double pi_gwas, double pi_qtl, int ImpN, double shrinkage_prior, int num_threads);
-RcppExport SEXP _intactR_qtl_enrichment_rcpp(SEXP r_gwas_pipSEXP, SEXP r_qtl_susie_fitSEXP, SEXP pi_gwasSEXP, SEXP pi_qtlSEXP, SEXP ImpNSEXP, SEXP shrinkage_priorSEXP, SEXP num_threadsSEXP) {
+Rcpp::List qtl_enrichment_rcpp(SEXP r_gwas_pip, SEXP r_qtl_susie_fit, double pi_gwas, double pi_qtl, int ImpN, double shrinkage_lambda, int num_threads);
+RcppExport SEXP _intactR_qtl_enrichment_rcpp(SEXP r_gwas_pipSEXP, SEXP r_qtl_susie_fitSEXP, SEXP pi_gwasSEXP, SEXP pi_qtlSEXP, SEXP ImpNSEXP, SEXP shrinkage_lambdaSEXP, SEXP num_threadsSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -23,9 +23,9 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< double >::type pi_gwas(pi_gwasSEXP);
     Rcpp::traits::input_parameter< double >::type pi_qtl(pi_qtlSEXP);
     Rcpp::traits::input_parameter< int >::type ImpN(ImpNSEXP);
-    Rcpp::traits::input_parameter< double >::type shrinkage_prior(shrinkage_priorSEXP);
+    Rcpp::traits::input_parameter< double >::type shrinkage_lambda(shrinkage_lambdaSEXP);
     Rcpp::traits::input_parameter< int >::type num_threads(num_threadsSEXP);
-    rcpp_result_gen = Rcpp::wrap(qtl_enrichment_rcpp(r_gwas_pip, r_qtl_susie_fit, pi_gwas, pi_qtl, ImpN, shrinkage_prior, num_threads));
+    rcpp_result_gen = Rcpp::wrap(qtl_enrichment_rcpp(r_gwas_pip, r_qtl_susie_fit, pi_gwas, pi_qtl, ImpN, shrinkage_lambda, num_threads));
     return rcpp_result_gen;
 END_RCPP
 }

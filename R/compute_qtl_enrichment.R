@@ -1,18 +1,20 @@
 #' @title Implementation of enrichment analysis described in https://doi.org/10.1371/journal.pgen.1006646
 #'
-#' @description Largely does the same thing as fastenloc https://github.com/xqwen/fastenloc 
+#' @description Largely follows from fastenloc https://github.com/xqwen/fastenloc 
 #' but uses `susieR` objects as input and outputs parameters to use as prior with `coloc` package.
 #'
 #' @details Uses output of \code{\link[susieR]{susie}} from the
 #'   \code{susieR} package.
 #'
-#' @param susie_gwas 
-#' @param susie_qtl_regions 
-#' @param pi_gwas
-#' @param pi_qtl
-#' @param ImpN
-#' @param shrinkage_prior_variance
-#' @param num_threads
+#' @param gwas_pip This is a vector of GWAS PIP, genome-wide. 
+#' @param susie_qtl_regions This is a list of SuSiE fitted objects per QTL unit analyzed 
+#' @param pi_gwas This parameter is highly important if GWAS input does not contain all SNPs interrogated (e.g., in some cases, only fine-mapped geomic regions are included). 
+#' Then users must pick a value of total_variants and estimate pi_gwas beforehand by: sum(gwas_pip$pip)/total_variants
+#' @param pi_qtl This parameter can be safely left to default if your input QTL data has enough regions to estimate it.
+#' @param lambda Similar to the shrinkage parameter used in ridge regression. It takes any non-negative value and shrinks the enrichment estimate towards 0. 
+#' When it is set to 0, no shrinkage will be applied. A large value indicates strong shrinkage. The default value is set to 1.0.
+#' @param ImpN Rounds of multiple imputation to draw QTL from, default is 25.
+#' @param num_threads Number of Simultaneous running CPU threads for multiple imputation, default is 1.
 #' @return A list of enrichment parameter estimates 
 #'
 #' @examples
@@ -43,23 +45,24 @@
 #'pi_gwas <- 0.01
 #'pi_qtl <- 0.01
 #'ImpN <- 10
-#'shrinkage_prior_variance <- 1
+#'lambda <- 1
 #'num_threads <- 1
 #'library(intactR)
-#'en <- compute_qtl_enrichment(gwas_fit, susie_fits, pi_gwas, pi_qtl, ImpN, shrinkage_prior_variance)
+#'en <- compute_qtl_enrichment(gwas_fit, susie_fits, pi_gwas, pi_qtl, lambda, ImpN)
 #' 
 #' @seealso \code{\link[susieR]{susie}}
 #' @useDynLib intactR
 #' 
 #' @export
 #' 
-compute_qtl_enrichment <- function(susie_gwas, susie_qtl_regions, 
+compute_qtl_enrichment <- function(gwas_pip, susie_qtl_regions, 
                            pi_gwas = NULL, pi_qtl = NULL, 
-                           ImpN = 10, shrinkage_prior_variance = 0,
+                           lambda = 1.0, ImpN = 25,
                            num_threads = 1) {
 # FIXME: revisit this setting
 if (is.null(pi_gwas)) {
-  pi_gwas = sum(susie_gwas$pip) / length(susie_gwas$pip)
+  warning("Using data to estimate pi_gwas. This will be problematic if your input gwas_pip does not contain genome-wide variants.")
+  pi_gwas = sum(gwas_pip$pip) / length(gwas_pip$pip)
   cat(paste("Estimated pi_gwas is", pi_gwas))
 }
 if (is.null(pi_qtl)) {
@@ -73,12 +76,12 @@ if (is.null(pi_qtl)) {
   cat(paste("Estimated pi_qtl is", pi_qtl))
 }
 
-en <- qtl_enrichment_rcpp(r_gwas_pip = susie_gwas$pip, 
+en <- qtl_enrichment_rcpp(r_gwas_pip = gwas_pip$pip, 
                          r_qtl_susie_fit = susie_qtl_regions,
                          pi_gwas = pi_gwas,
                          pi_qtl = pi_qtl,
                          ImpN = ImpN,
-                         shrinkage_prior = shrinkage_prior_variance,
+                         shrinkage_lambda = lambda,
                          num_threads = num_threads)
 return(en)
 }

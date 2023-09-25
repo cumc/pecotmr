@@ -4,8 +4,8 @@
 Rcpp::List qtl_enrichment_rcpp(
 	SEXP r_gwas_pip, SEXP r_qtl_susie_fit,
 	double pi_gwas = 0, double pi_qtl = 0,
-	int ImpN = 10, double shrinkage_prior = 1,
-	int num_threads = 4)
+	int ImpN = 25, double shrinkage_lambda = 1.0,
+	int num_threads = 1)
 {
 	// Convert r_gwas_pip to C++ type
 	Rcpp::NumericVector gwas_pip_vec = Rcpp::as<Rcpp::NumericVector>(r_gwas_pip);
@@ -21,7 +21,7 @@ Rcpp::List qtl_enrichment_rcpp(
 		susie_fits.push_back(susie_fit);
 	}
 
-	std::map<std::string, double> output = qtl_enrichment_workhorse(susie_fits, gwas_pip, gwas_pip_names, pi_gwas, pi_qtl, ImpN, shrinkage_prior, num_threads);
+	std::map<std::string, double> output = qtl_enrichment_workhorse(susie_fits, gwas_pip, gwas_pip_names, pi_gwas, pi_qtl, ImpN, shrinkage_lambda, num_threads);
 
 	// Convert std::map to Rcpp::List
 	Rcpp::List output_list;
