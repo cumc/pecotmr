@@ -59,6 +59,7 @@ pval_acat <- function(pvals) {
     return(pcauchy(stat/length(pvals), lower.tail = FALSE))
 }
 
+library(harmonicmeanp)
 pval_hmp <- function(pvals) {
 	# https://search.r-project.org/CRAN/refmans/harmonicmeanp/html/pLandau.html
     pvalues <- unique(pvals)
