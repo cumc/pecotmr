@@ -1,7 +1,9 @@
 # pecotmr
 
-This R package provides a **p**robabilistic **eco**system to integrate QTL and GWAS analysis, implementing **p**air-wise **e**nrichment, **co**localization, **T**WAS and **M**endelian **R**andomization based on fine-mapped single effects model.
-Under the hood, it consolidates a range of established statistical models into a streamlined, user-friendly interface complete with well-documented examples that will get you prepared to analyze your own data as soon as **t**o**m**o**r**row if you start trying it out today!
+This R package, `pecotmr` implements **p**air-wise **e**nrichment, **co**localization, **T**WAS and **M**endelian **R**andomization to integrate QTL and GWAS analysis based on fine-mapped single effects model.
+`pecotmr` also stands for a **p**robabilistic **eco**system consolidating a range of established models into a streamlined, user-friendly interface complete with well-documented examples that will help getting your analysis done by **t**o**m**o**r**row if you start working on it today!
+
+This project was developed by NIH/NIA FunGen-xQTL Project Working Group members with applications to FunGen-xQTL data analysis.
 
 ## Quick Start
 
@@ -24,7 +26,6 @@ install the package:
 ```R
 devtools::install_local("pecotmr",build_vignettes = TRUE)
 ```
-
 
 ## Developer's notes
 

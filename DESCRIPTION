@@ -13,6 +13,8 @@ License: MIT + file LICENSE
 Imports:
     Rcpp
 Suggests: 
+    susieR,
+    coloc,
     testthat,
     knitr,
     rmarkdown
