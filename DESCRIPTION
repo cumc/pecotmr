@@ -13,10 +13,10 @@ License: MIT + file LICENSE
 Imports:
     Rcpp,
     magrittr,
+    susieR,
     mr.ash.alpha,
     glmnet
 Suggests: 
-    susieR,
     coloc,
     testthat,
     knitr,
