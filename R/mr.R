@@ -1,4 +1,4 @@
-######heterogeneity:  calculate I2 statistics based on the Cochran's Q statistic
+# heterogeneity:  calculate I2 statistics based on the Cochran's Q statistic
 calc_I2 = function(Q, Est) {
     Q = Q[[1]]
     Est = length(unique(Est))
@@ -6,47 +6,47 @@ calc_I2 = function(Q, Est) {
     return(if (I2 < 0) 0 else I2)
 }
 
-#####ptwas_est
-fine_mr <- function (formatted_input, cpip_cutoff=0.5) {
+#' @export
+fine_mr <- function(formatted_input, cpip_cutoff=0.5) {
 output = formatted_input %>%
     mutate(
-        beta_eQTL = beta_eQTL/se_eQTL,
-        se_eQTL = 1) %>%
-    group_by(gene_id, cluster) %>%
-    mutate(spip = sum(pip)) %>%
-    filter(spip >= cpip_cutoff) %>% # Cumulative cluster pip greater than a user defined cumulative pip threshold
-    group_by(gene_id, cluster) %>%
+        bhat_x = bhat_x/sbhat_x,
+        sbhat_x = 1) %>%
+    group_by(X_ID, cs) %>%
+    mutate(cpip = sum(pip)) %>%
+    filter(cpip >= cpip_cutoff) %>% # Cumulative pip greater than a user defined cumulative pip threshold
+    group_by(X_ID, cs) %>%
     mutate(
-        beta_yx = beta_GWAS/beta_eQTL,
+        beta_yx = bhat_y/bhat_x,
         se_yx = sqrt(
-            (se_GWAS^2/beta_eQTL^2) + ((beta_GWAS^2*se_eQTL^2)/beta_eQTL^4)),
-        grp_beta = sum((beta_yx*pip)/spip),
-        grp_se = sum((beta_yx^2 + se_yx^2)*pip/spip)) %>%
+            (sbhat_y^2/bhat_x^2) + ((bhat_y^2*sbhat_x^2)/bhat_x^4)),
+        composite_bhat = sum((beta_yx*pip)/cpip),
+        composite_sbhat = sum((beta_yx^2 + se_yx^2)*pip/cpip)) %>%
     mutate(
-        grp_se = sqrt(grp_se - grp_beta^2),
-        wv = grp_se^-2) %>%
+        composite_sbhat = sqrt(composite_sbhat - composite_bhat^2),
+        wv = composite_sbhat^-2) %>%
     ungroup() %>%
-    group_by(gene_id) %>%
+    group_by(X_ID) %>%
     mutate(
-        meta = sum(unique(wv) * unique(grp_beta)),
+        meta_eff = sum(unique(wv) * unique(composite_bhat)),
         sum_w = sum(unique(wv)),
-        se_meta = sqrt(sum_w^-1),
-        num_cluster = length(unique(cluster))) %>%
+        se_meta_eff = sqrt(sum_w^-1),
+        num_CS = length(unique(cs))) %>%
     mutate(
-        num_instruments = length(snp),
-        meta = meta/sum_w,
-        ######sum(unique(wv)*(unique(grp_beta) - unique(meta))^2)
-        Q = sum(unique(wv)*(unique(grp_beta) - unique(meta))^2),
-        I2 = calc_I2(Q, grp_beta)) %>%
+        num_IV = length(snp),
+        meta_eff = meta_eff/sum_w,
+        ######sum(unique(wv)*(unique(composite_bhat) - unique(meta_eff))^2)
+        Q = sum(unique(wv)*(unique(composite_bhat) - unique(meta_eff))^2),
+        I2 = calc_I2(Q, composite_bhat)) %>%
         ungroup() %>%
-    distinct(gene_id, .keep_all = TRUE) %>%
+    distinct(X_ID, .keep_all = TRUE) %>%
     mutate(
-        spip = round(spip, 3),
-        grp_beta = round(grp_beta, 3),
-        meta = round(meta, 3),
-        se_meta = round(se_meta, 3),
+        cpip = round(cpip, 3),
+        composite_bhat = round(composite_bhat, 3),
+        meta_eff = round(meta_eff, 3),
+        se_meta_eff = round(se_meta_eff, 3),
         Q = round(Q, 3),
         I2 = round(I2, 3)) %>%
-    select(gene_id, num_cluster, num_instruments, spip, grp_beta, grp_se, meta, se_meta, Q, I2)
+    select(X_ID, num_CS, num_IV, cpip, composite_bhat, composite_sbhat, meta_eff, se_meta_eff, Q, I2)
     return(output)
 }

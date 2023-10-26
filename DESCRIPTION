@@ -11,7 +11,10 @@ Authors@R: person("Gao Wang",role = c("cre","aut"),
                   email = "wang.gaow@columbia.edu")
 License: MIT + file LICENSE
 Imports:
-    Rcpp
+    Rcpp,
+    magrittr,
+    mr.ash.alpha,
+    glmnet
 Suggests: 
     susieR,
     coloc,

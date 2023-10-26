@@ -1,20 +1,10 @@
-fine_twas <- function(weight_ids, gwas_ids, uber_ids, genotypeMatrix, ld_uber_ids, weights, zscores, return_stat = FALSE) {
-        modifiers <- handle_weights(gwas_ids, weight_ids)
-        weights <- modifiers * weights
-
-        common_variants <- intersect(
-            ld_uber_ids,
-            uber_ids)
-      
-        if(length(common_variants) > 1){
-      
-        genotypeMatrix <- genotypeMatrix[, which(ld_uber_ids %in% common_variants)]
-        genotypeMatrix <- data.matrix(genotypeMatrix)
-        # pick the variants with MAC > 0, maybe change to MAC > 10 in the future
-        genotypeMatrix <- genotypeMatrix[,which(colSums(genotypeMatrix,na.rm = T)>0)] 
-
+# FIXME: check that weights have the same length as z-scores
+#' @importFrom Rfast cora
+#' @export
+twas_z <- function(weights, z, R=NULL, X=NULL) {
+    if (is.null(R)) {
         # mean impute X
-        genetype_data_imputed <- apply(genotypeMatrix, 2, function(x){
+        genetype_data_imputed <- apply(X, 2, function(x){
             pos <- which(is.na(x))
             if (length(pos) != 0){
                 x[pos] <- mean(x,na.rm = TRUE)
@@ -22,29 +12,59 @@ fine_twas <- function(weight_ids, gwas_ids, uber_ids, genotypeMatrix, ld_uber_id
                 return(x)
             })
         # need to add `large = T` in Rfast::cora, or could get wrong results 
-        ld_matrix <- Rfast::cora(genetype_data_imputed,large = T)
-        colnames(ld_matrix) <- rownames(ld_matrix) <- colnames(genetype_data_imputed)
-        } else {
-        ld_matrix <- matrix(1)
-        }
-  
-        stat <- t(weights) %*% zscores
-        denom <- t(weights) %*% ld_matrix %*% weights
-        zscore <- stat/sqrt(denom)
-
-        if (length(zscores) == 1) {
-            zscore <- zscores[[1]]
-            if (weights[[1]] < 0) {
-                zscore <- zscore * -1
-            }
-        }
-        
-        pval <- pchisq( zscore * zscore, 1, lower.tail = FALSE)
-    
-        #debug_print(gwas_ids, modifiers, weights, zscores, stat, denom, paste0("${_output:d}", "/ptwas-scan.debug"))
-
-        return(if (return_stat) zscore else pval[1])
+        # R <- cora(genetype_data_imputed, large = T)
+        # FIXME: test and enable using cora if Rfast is installed
+        # See how susieR did it
+        R <- cor(genetype_data_imputed) 
+        colnames(R) <- rownames(R) <- colnames(genetype_data_imputed)
     }
+    stat <- t(weights) %*% z
+    denom <- t(weights) %*% R %*% weights
+    zscore <- stat/sqrt(denom)
+    pval <- pchisq( zscore * zscore, 1, lower.tail = FALSE)
+    return(list(z=zscore, pval=pval))
+}
+
+#' @importFrom susieR coef.susie
+#' @export
+susie_weights <- function(susie_fit) {
+    coef.susie(susie_fit)[-1]
+}
+
+# Get a reasonable setting for the standard deviations of the mixture
+# components in the mixture-of-normals prior based on the data (X, y).
+# Input se is an estimate of the residual *variance*, and n is the
+# number of standard deviations to return. This code is adapted from
+# the autoselect.mixsd function in the ashr package.
+#' @importFrom susieR univariate_regression
+init_prior_sd <- function (X, y, n = 30) {
+  res <- univariate_regression(X, y)
+  smax <- 3*max(res$betahat)
+  seq(0, smax, length.out = n)
+}
+
+#' @importFrom glmnet cv.glmnet
+#' @export
+glmnet_weights <- function(X, y, alpha=0.5) {
+	eff.wgt = matrix(0, ncol=1, nrow=ncol(X))
+	sds = apply(X, 2, sd)
+	keep = sds != 0 & !is.na(sds)
+	enet = cv.glmnet(x=X[,keep], y=y, alpha=alpha, nfold=5, intercept=T, standardize=F)
+	eff.wgt[keep] = coef( enet , s = "lambda.min")[2:(sum(keep)+1)]
+	return(eff.wgt)
+}
+
+#' @examples 
+#' wgt.lasso = glmnet_weights(X, y, alpha=1)
+#' wgt.mr.ash = mr_ash_weights(eqtl$X, eqtl$y_res, beta.init=wgt.lasso)
+#' @importFrom mr.ash.alpha mr.ash
+#' @export
+mr_ash_weights <- function(X, y, init_prior_sd=TRUE, ...) {
+    sa2 = NULL
+    if (init_prior_sd) sa2 = init_prior_sd(X,y)^2
+    fit.mr.ash = mr.ash(X, y, sa2=sa2, ...)
+    predict(fit.mr.ash, type = "coefficients")[-1]
+}
 
 pval_acat <- function(pvals) {
     if (length(pvals) == 1) {
@@ -59,7 +79,7 @@ pval_acat <- function(pvals) {
     return(pcauchy(stat/length(pvals), lower.tail = FALSE))
 }
 
-library(harmonicmeanp)
+#' @importFrom harmonicmeanp pLandau
 pval_hmp <- function(pvals) {
 	# https://search.r-project.org/CRAN/refmans/harmonicmeanp/html/pLandau.html
     pvalues <- unique(pvals)
