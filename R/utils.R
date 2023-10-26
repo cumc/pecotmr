@@ -245,7 +245,7 @@ load_regional_quantile_data <- function(...) {
 }
 
 #' @importFrom susieR get_cs_correlation univariate_regression
-post_process_susie <- function(fobj, fdat, r, signal_cutoff = 0.7) {
+post_process_susie <- function(fobj, fdat, r, signal_cutoff = 0.1) {
     get_cs_index <- function(snps_idx, susie_cs) {
         idx <- tryCatch(
             which(
