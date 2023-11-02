@@ -75,7 +75,7 @@ matched <- merge(as.data.table(sumstats), as.data.table(info_snp),
     #match.min.prop Minimum proportion of variants in the smallest data to be matched, otherwise stops with an error. Default is `20%`.
     min_match <- match.min.prop * min(nrow(sumstats), nrow(info_snp))
     if (nrow(matched) < min_match)
-    stop2("Not enough variants have been matched.")
+    stop("Not enough variants have been matched.")
 
 return(matched)
 }

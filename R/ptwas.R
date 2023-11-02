@@ -8,9 +8,10 @@ ptwas = function(susie_res_path,qtl_TAD_region,AD_GWAS_path,LD_path){
 LD_list = read.table(LD_path,header=F,sep="\t")
 LD_list_pos.bed = str_split(LD_list$V1,"_",simplify=T)%>%cbind(.,LD_list)
 
-gene_name = susie_res_path$ID
+susie = fread(susie_res_path)
+gene_name = susie$ID[i]
 ######this one should be replaced by the rds file list, load qtl_select, load the qtl_variants
-susie_res = readRDS(susie_res_path$path)
+susie_res = readRDS(susie$path[i])
 qtl_select = qtl_TAD_region%>%filter(ID==gene_name)
 chr = str_sub(qtl_select$`#chr`,4)
 #####after runing the susie fine mapping again, we will remove this line of code (this one just consider the nchar(ref)>1|nchar(alt)>1)
@@ -45,15 +46,12 @@ for (k in 1:length(LD.files.name)){
    colnames(LD.block) = rownames(LD.block) = LD.matrix.names
 ####generate the twas_z format input
 twas_z_format = data.frame(LD.matrix.names)%>%mutate(gene_name = gene_name)%>%
-mutate(AD_allele_flip[match(LD.matrix.names,AD_allele_flip$variant_allele_flip),]%>%select(beta,se,z))%>%
-mutate(susie_weights = susie_res[[1]]$susie_weights[match(LD.matrix.names,susie_res[[1]]$variant_names)])%>%
-mutate(enet_weights =  susie_res[[1]]$enet_weights[match(LD.matrix.names,susie_res[[1]]$variant_names)])%>%
-mutate(lasso_weights = susie_res[[1]]$lasso_weights[match(LD.matrix.names,susie_res[[1]]$variant_names)])%>%
-mutate(mr_ash_weights = susie_res[[1]]$mr_ash_weights[match(LD.matrix.names,susie_res[[1]]$variant_names)])
+    mutate(chr = chr)%>%
+    mutate(AD_allele_flip[match(LD.matrix.names,AD_allele_flip$variant_allele_flip),]%>%select(beta,se,z))%>%
+    mutate(susie_weights = susie_res[[1]]$susie_weights[match(LD.matrix.names,susie_res[[1]]$variant_names)])%>%
+    mutate(enet_weights =  susie_res[[1]]$enet_weights[match(LD.matrix.names,susie_res[[1]]$variant_names)])%>%
+    mutate(lasso_weights = susie_res[[1]]$lasso_weights[match(LD.matrix.names,susie_res[[1]]$variant_names)])%>%
+    mutate(mr_ash_weights = susie_res[[1]]$mr_ash_weights[match(LD.matrix.names,susie_res[[1]]$variant_names)])
 ####calculate the pvalue and zscore using twas_z function    
-weights = apply(twas_z_format[,c("susie_weights","enet_weights","lasso_weights","mr_ash_weights")],2,function(x) twas_z(x,twas_z_format$z,R = LD.block))
-twas_weights = data.frame(gene_name,weights$susie_weights$pval,weights$susie_weights$z,weights$lasso_weights$pval,weights$lasso_weights$z,
-                       weights$enet_weights$pval,weights$enet_weights$z,weights$mr_ash_weights$pval,weights$mr_ash_weights$z)
-names(twas_weights) = c("gene_name","susie_pval","susie_z","lasso_pval","lasso_z","enet_pval","enet_z","mr_ash_pval","mr_ash_z")
-return(twas_weights)
+return(twas_z_format)
 }
