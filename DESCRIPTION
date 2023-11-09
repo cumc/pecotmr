@@ -15,7 +15,18 @@ Imports:
     magrittr,
     susieR,
     mr.ash.alpha,
-    glmnet
+    data.table,
+    stringr,
+    qvalue,
+    Rlab,
+    reticulate,
+    Matrix,
+    matrixcalc,
+    bedtoolsr,
+    gdata,
+    genio,
+    pillar,
+    tibble
 Suggests: 
     coloc,
     testthat,

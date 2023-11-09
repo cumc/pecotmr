@@ -1,30 +1,30 @@
-####Match alleles between summary statistics and SNP information.
-#sumstats: A data frame with columns "chr", "pos", "A1", "A2", "beta","z"
-#info_snp: A data frame with columns "chr", "pos", "A1" and "A2".
-#remove_dups: after strand flip, whether to remove duplicates (same physical position)
-#match.min.prop: Minimum proportion of variants in the smallest data to be matched, otherwise stops with an error. Default is `20%`.
-#flip: whether to flip Z-scores and beta for mismatching alleles
-#remove: whether to remove strand ambiguous SNPs (if any)
-
-library(dplyr)
-library(pillar)
-library(tibble)
-library(ggplot2)
-library(Rlab)
-
+#' Match alleles between summary statistics and SNP information.
+#' 
+#' Match by ("chr", "A1", "A2" and "pos"), accounting for possible
+#' strand flips and major/minor allele flips (opposite effects and zscores).
+#' 
+#' @param sumstats A data frame with columns "chr", "pos", "A1", "A2", "beta" and "z". 
+#' @param info_snp A data frame with columns "chr", "pos", "A1" and "A2".
+#' @param match.min.prop  Minimum proportion of variants in the smallest data
+#' to be matched, otherwise stops with an error. Default is `20%`.
+#' @param remove_dups Whether to remove duplicates, default is `True`
+#' @param flip Whether the alleles must be flipped: A <--> T & C <--> G, in which case corresponding `$beta` and `$z` are multiplied by -1
+#' Default is `TRUE`.
+#' @param remove Whether to remove strand SNPs (if any)
+#'
+#' @return A single data frame with matched variants. Values in columns `$beta` and `$z`
+#'   are multiplied by -1 for variants with alleles reversed
+#'
 allele_qc = function(sumstats,info_snp,match.min.prop,remove_dups,flip,remove){
+    
 sumstats  =  as.data.frame(sumstats)
 info_snp  =  as.data.frame(info_snp)
-#match.min.prop Minimum proportion of variants in the smallest data to be matched, otherwise stops with an error. Default is `20%`.
-min_match <- match.min.prop * min(nrow(sumstats), nrow(info_snp))
-if (nrow(matched) < min_match)
-    stop2("Not enough variants have been matched.")
                      
 matched <- merge(as.data.table(sumstats), as.data.table(info_snp),
-                   by = c("chr","pos"), all = FALSE, suffixes = c(".sumstas", ".ref"))
+                   by = c("chr","pos"), all = FALSE, suffixes = c(".sumstats", ".ref"))
 
-  a1 = toupper(matched$A1.sumstas)
-  a2 = toupper(matched$A2.sumstas)
+  a1 = toupper(matched$A1.sumstats)
+  a2 = toupper(matched$A2.sumstats)
   ref1 = toupper(matched$A1.ref)
   ref2 = toupper(matched$A2.ref)
 
@@ -59,21 +59,26 @@ matched <- merge(as.data.table(sumstats), as.data.table(info_snp),
                mutate(strand_flip=snp[["strand_flip"]])
     
     if(flip){
-         matched$beta[matched_$sign_flip] = -1 * matched$beta[matched_$sign_flip]
-         matched$z[matched_$sign_flip] = -1 * matched$z[matched_$sign_flip]
-         matched$A1.sumstas[matched_$sign_flip] = matched$A1.ref[matched_$sign_flip]
-         matched$A2.sumstas[matched_$sign_flip] = matched$A2.ref[matched_$sign_flip]
+         matched$beta[matched$sign_flip] = -1 * matched$beta[matched$sign_flip]
+         matched$z[matched$sign_flip] = -1 * matched$z[matched$sign_flip]
+         matched$A1.sumstats[matched$sign_flip] = matched$A1.ref[matched$sign_flip]
+         matched$A2.sumstats[matched$sign_flip] = matched$A2.ref[matched$sign_flip]
         
      }  
      if(remove){
          matched = matched[matched$keep,]
      }
     if (remove_dups) {
-     dups <- vctrs::vec_duplicate_detect(matched_[, c("chr", "pos","A1.sumstas","A2.sumstas")])
+     dups <- vctrs::vec_duplicate_detect(matched[, c("chr", "pos","A1.sumstats","A2.sumstats")])
     if (any(dups)) {
       matched <- matched[!dups, ]
       message2("Some duplicates were removed.")
         }
     }
+    #match.min.prop Minimum proportion of variants in the smallest data to be matched, otherwise stops with an error. Default is `20%`.
+    min_match <- match.min.prop * min(nrow(sumstats), nrow(info_snp))
+    if (nrow(matched) < min_match)
+    stop("Not enough variants have been matched.")
+
 return(matched)
 }

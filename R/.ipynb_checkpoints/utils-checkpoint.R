@@ -262,7 +262,6 @@ post_process_susie <- function(fobj, fdat, r, secondary_coverage = 0.7, signal_c
         if(length(idx) == 0) return(NA_integer_)
         return(idx)
     }
-    # collect results
     eff_idx = which(fobj$V>0)
     if (length(eff_idx)>0) {
         fobj$sets_secondary = susie_get_cs(fobj, fdat$residual_X_scaled[[r]], coverage=secondary_coverage)
@@ -277,7 +276,6 @@ post_process_susie <- function(fobj, fdat, r, secondary_coverage = 0.7, signal_c
         if (length(variants_index)==0) {
             variants_index = which.max(fobj$pip)
         }
-        ## variants index for the secondary coverage
         variants_index_secondary = c(which(fobj$pip >= signal_cutoff), unlist(fobj$sets_secondary$cs)) %>% unique %>% sort
         if (length(variants_index_secondary)==0) {
             variants_index_secondary = which.max(fobj$pip)
@@ -292,21 +290,17 @@ post_process_susie <- function(fobj, fdat, r, secondary_coverage = 0.7, signal_c
         cs_sec= ifelse(is.na(cs_info_sec), 0, str_replace(names(fobj$sets_secondary$cs)[cs_info_sec], "L", "") %>% as.numeric)
         cs_index_primary = cs_index_secondary = rep(NA, length(variants_merge))
         cs_index_primary[match(variants_index,variants_merge)]=cs_pri
-        ## add one column of cs_index under the secondary coverage
         cs_index_secondary[match(variants_index_secondary,variants_merge)]=cs_sec
-        ## add two outputs of Y_resid_sd and X_resid_sd for transforming back the susie output
         Y_resid_sd = fdat$residual_Y_sd[[r]]
-        X_resid_sd = fdat$residual_X_sd[[r]]
-        univariate_res = univariate_regression(fdat$residual_X_scaled[[r]][, variants_index, drop=F], fdat$residual_Y_scaled[[r]])
-        fobj$top_loci = data.frame(variants, maf, univariate_res$betahat, univariate_res$sebetahat, pip, cs_index_primary,cs_index_secondary)
+        X_resid_sd = fdat$residual_X_sd[[r]][variants_merge]
+        univariate_res = univariate_regression(fdat$residual_X_scaled[[r]][, variants_merge, drop=F], fdat$residual_Y_scaled[[r]])
+        fobj$top_loci = data.frame(variants, maf, univariate_res$betahat*Y_resid_sd/X_resid_sd, univariate_res$sebetahat*Y_resid_sd/X_resid_sd, pip, cs_index_primary,cs_index_secondary)
         colnames(fobj$top_loci) = c("variant_id", "maf", "bhat", "sbhat", "pip", "cs_index_primary","cs_index_secondary")
         rownames(fobj$top_loci) = NULL
-        # trim effects
         fobj$alpha = fobj$alpha[eff_idx,,drop=F]
         fobj$mu = fobj$mu[eff_idx,,drop=F]
         fobj$mu2 = fobj$mu2[eff_idx,,drop=F]
         fobj$V = fobj$V[eff_idx]
-        # trim results
         fobj$Xr = NULL
         fobj$fitted = NULL
         colnames(fobj$lbf_variable) = NULL
@@ -325,6 +319,7 @@ post_process_susie <- function(fobj, fdat, r, secondary_coverage = 0.7, signal_c
       fobj$lasso_r2 = cor(fdat$residual_X_scaled[[r]] %*% fobj$lasso_weights, fdat$residual_Y_scaled[[r]])^2
       fobj$mr_ash_weights = mr_ash_weights(fdat$residual_X_scaled[[r]], fdat$residual_Y_scaled[[r]], beta.init=fobj$lasso_weights)
       fobj$mr_ash_r2 = cor(fdat$residual_X_scaled[[r]] %*% fobj$mr_ash_weights, fdat$residual_Y_scaled[[r]])^2
+
     } else {
         fobj = list(analysis_script = load_script(), pip = fobj$pip, variant_names = gsub("_",":",names(fobj$pip)))
         names(fobj$pip) = NULL
