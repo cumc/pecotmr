@@ -2,3 +2,4 @@ src/*.o
 src/*.so
 src/*.dylib
 src/Makevars
+**/.ipynb_checkpoints
