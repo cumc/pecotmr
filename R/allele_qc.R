@@ -6,14 +6,15 @@
 #' @param sumstats A data frame with columns "chr", "pos", "A1", "A2", "beta" and "z". 
 #' @param info_snp A data frame with columns "chr", "pos", "A1" and "A2".
 #' @param match.min.prop  Minimum proportion of variants in the smallest data
-#' to be matched, otherwise stops with an error. Default is `20%`.
-#' @param remove_dups Whether to remove duplicates, default is `True`
+#' to be matched, otherwise stops with an error. Default is 20\%.
+#' @param remove_dups Whether to remove duplicates, default is True.
 #' @param flip Whether the alleles must be flipped: A <--> T & C <--> G, in which case corresponding `$beta` and `$z` are multiplied by -1
 #' Default is `TRUE`.
 #' @param remove Whether to remove strand SNPs (if any)
 #'
-#' @return A single data frame with matched variants. Values in columns `$beta` and `$z`
+#' @return A single data frame with matched variants. Values in columns "beta" and "z"
 #'   are multiplied by -1 for variants with alleles reversed
+#' @export
 #'
 allele_qc = function(sumstats,info_snp,match.min.prop,remove_dups,flip,remove){
     

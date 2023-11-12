@@ -25,12 +25,17 @@ Imports:
     bedtoolsr,
     gdata,
     genio,
-    pillar,
-    tibble
+    plink2R,
+    readr,
+    glmnet,
+    harmonicmeanp,
+    Rfast
 Suggests: 
     coloc,
     testthat,
     knitr,
+    pillar,
+    tibble,
     rmarkdown
 LinkingTo: 
     Rcpp,
