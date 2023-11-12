@@ -7,6 +7,7 @@
 #' @return A dataframe  of the mr function input format with the columns "snp", "bhat_x",	"sbhat_x", "pip", "cs", "X_ID", "gene_id", "bhat_y" and "sbhat_y", 
 #' "bhat_x" and "sbhat_x" are effect size and standard error of exposure, "bhat_y" and "sbhat_y" are effect size and standard error of outcome, "pip" is the posterior inclusion probability (PIP) and "cs" is the credible set index
 #' of susie result. "X_ID" and "gene_id" are ensemble ID and gene name respectively.
+#' @export
 #'
 twas_mr_format_input <- function(cand_genes, susie_path, weights_file_path) {
   mr_format_input <- NULL
