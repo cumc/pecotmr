@@ -14,6 +14,7 @@
 #' \item{gene_weights_pq}{twas_z function results with pvalue, qvalue and zscore}
 #' \item{outcome_QC}{the GWAS summary statistics of the outcome after QC (mainly accounting for allele flip)}
 #' }
+#' @export
 
 ptwas <- function(susie_path, region, GWAS_data, LD_block_path) {
   # Load susie results
