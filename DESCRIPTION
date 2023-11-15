@@ -26,6 +26,7 @@ Imports:
     gdata,
     plink2R,
     readr,
+    tidyr,
     glmnet,
     pgenlibr,
     purrr,

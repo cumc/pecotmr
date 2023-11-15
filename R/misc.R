@@ -33,6 +33,7 @@ filter_X <- function(X, missing_rate_thresh, maf_thresh) {
 #' @importFrom readr read_delim
 #' @import purrr dplyr
 #' @importFrom utils read.table
+#' @importFrom tidyr unnest
 load_regional_association_data <- function(genotype, # PLINK file
                                            phenotype, # a vector of phenotype file names 
                                            covariate, # a vector of covariate file names corresponding to the phenotype file vector
@@ -77,7 +78,7 @@ load_regional_association_data <- function(genotype, # PLINK file
                                Y_resid_sd = map2(Y,covar,~.lm.fit(x = cbind(1,.y), y = .x)$residuals%>%sd),
                                Y_resid = map2(Y,covar,~.lm.fit(x = cbind(1,.y), y = .x)$residuals%>%scale%>%t%>%as_tibble)) ## T so that it can be unnest
     if(y_as_matrix) {
-        Y_resid = data_list%>%select(Y_resid)%>%tidyr::unnest(Y_resid)%>%t%>%as.matrix
+        Y_resid = data_list%>%select(Y_resid)%>%unnest(Y_resid)%>%t%>%as.matrix
         colnames(Y_resid) = conditions
         print(paste("Dimension of Y matrix:", nrow(Y_resid), ncol(Y_resid)))
     } else {

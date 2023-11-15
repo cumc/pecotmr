@@ -61,6 +61,7 @@ twas_mr_format_input <- function(cand_genes, susie_path, weights_file_path) {
 #' "Q" is Cochran’s Q statistic, "I2" quantifies the heterogeneity, range from 0 to 1.
 #' @import dplyr
 #' @importFrom qvalue qvalue
+#' @importFrom stats pnorm
 #' @export
 #' 
 
@@ -92,7 +93,7 @@ output = formatted_input %>%
     mutate(
         num_IV = length(snp),
         meta_eff = meta_eff/sum_w,
-        meta_pval = 2 * stats::pnorm(abs(meta_eff) / se_meta_eff, lower.tail=FALSE),
+        meta_pval = 2 * pnorm(abs(meta_eff) / se_meta_eff, lower.tail=FALSE),
         ######sum(unique(wv)*(unique(composite_bhat) - unique(meta_eff))^2)
         Q = sum(unique(wv)*(unique(composite_bhat) - unique(meta_eff))^2),
         I2 = calc_I2(Q, composite_bhat),
