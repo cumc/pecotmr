@@ -1,4 +1,5 @@
 #' @importFrom susieR get_cs_correlation univariate_regression susie_get_cs
+#' @export 
 susie_twas_wrapper <- function(fobj, X_data, y_data, X_sd, y_sd, maf, secondary_coverage = 0.7, signal_cutoff = 0.1, twas_weights = TRUE, other_quantities=list()) {
     get_cs_index <- function(snps_idx, susie_cs) {
         idx <- tryCatch(
@@ -89,6 +90,7 @@ susie_twas_wrapper <- function(fobj, X_data, y_data, X_sd, y_sd, maf, secondary_
     return(fobj)
 }
 
+#' @export 
 susie_wrapper = function(X, y, init_L = 10, max_L = 30, coverage = 0.95, max_iter=500, l_step = 5) {
         L = init_L
         # Perform SuSiE by dynamically increase L
