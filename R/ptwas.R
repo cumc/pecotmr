@@ -6,7 +6,7 @@
 #' @param susie_path a data frame with columns "ID" and "path", "ID" is the gene name, and "path" is the susie result path of the corresponding gene.
 #' @param region a data frame with columns "chr", "start", "end", and "ID", "chr" is the chromosome of gene, "start" and "end" are the position, "ID" is the gene name.
 #' @param GWAS_data a data frame of GWAS summary statistics with columns "chr","pos","A1","A2","beta","se" and "z".
-#' @param LD_path a data frame of LD block matrix path with columns "chr","start","end" and "path"
+#' @param LD_block_path a data frame of LD block matrix path with columns "chr","start","end" and "path"
 #'
 #' @return A list 
 #' \describe{
@@ -15,6 +15,11 @@
 #' \item{outcome_QC}{the GWAS summary statistics of the outcome after QC (mainly accounting for allele flip)}
 #' }
 #' @importFrom bedtoolsr bt.intersect
+#' @importFrom gdata upperTriangle lowerTriangle
+#' @importFrom Matrix bdiag
+#' @importFrom stringr str_split
+#' @importFrom stats setNames
+#' @importFrom utils read.table
 #' @export
 
 ptwas <- function(susie_path, region, GWAS_data, LD_block_path) {

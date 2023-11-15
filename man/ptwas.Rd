@@ -13,7 +13,7 @@ ptwas(susie_path, region, GWAS_data, LD_block_path)
 
 \item{GWAS_data}{a data frame of GWAS summary statistics with columns "chr","pos","A1","A2","beta","se" and "z".}
 
-\item{LD_path}{a data frame of LD block matrix path with columns "chr","start","end" and "path"}
+\item{LD_block_path}{a data frame of LD block matrix path with columns "chr","start","end" and "path"}
 }
 \value{
 A list 

@@ -31,6 +31,8 @@ filter_X <- function(X, missing_rate_thresh, maf_thresh) {
 
 #' @importFrom plink2R read_plink
 #' @importFrom readr read_delim
+#' @import purrr dplyr
+#' @importFrom utils read.table
 load_regional_association_data <- function(genotype, # PLINK file
                                            phenotype, # a vector of phenotype file names 
                                            covariate, # a vector of covariate file names corresponding to the phenotype file vector
@@ -41,11 +43,11 @@ load_regional_association_data <- function(genotype, # PLINK file
                                            imiss_cutoff = 0,
                                            y_as_matrix = FALSE,
                                            keep_indel = TRUE) {
-    library(plink2R)
-    library(dplyr)
-    library(readr)
-    library(stringr)
-    library(purrr)
+    # library(plink2R)
+    # library(dplyr)
+    # library(readr)
+    # library(stringr)
+    # library(purrr)
 
     ## Load genotype
     geno = read_plink(genotype)
