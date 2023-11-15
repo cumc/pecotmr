@@ -1,4 +1,3 @@
-## genotype matrix preprocesing
 compute_maf <- function(geno){
   f <- mean(geno,na.rm = TRUE)/2
   return(min(f, 1-f))
