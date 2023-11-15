@@ -1,4 +1,4 @@
-#' @importFrom susieR get_cs_correlation univariate_regression
+#' @importFrom susieR get_cs_correlation univariate_regression susie_get_cs
 post_process_susie <- function(fobj, fdat, r, secondary_coverage = 0.7, signal_cutoff = 0.1) {
     get_cs_index <- function(snps_idx, susie_cs) {
         idx <- tryCatch(
