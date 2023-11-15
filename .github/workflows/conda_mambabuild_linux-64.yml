@@ -1,0 +1,38 @@
+name: linux-64 
+
+on:
+  pull_request:
+    paths:
+      - 'recipe/build.sh'
+      - 'recipe/meta.yaml'
+
+jobs:
+  build_packages:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+
+    steps:
+      - name: Checkout pull request branch
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Setup up docker buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Build and export docker containers
+        uses: docker/build-push-action@v4
+        with:
+          load: true
+          file: .github/mambaforge_container.df
+          tags: conda_mambabuild:latest
+
+      - name: Build conda packages
+        run: docker run --rm --volume /tmp:/tmp --volume $(pwd) --workdir $(pwd) conda_mambabuild conda mambabuild --output-folder /tmp/conda-bld recipe
+
+      - name: Upload artifacts to GitHub Actions
+        uses: actions/upload-artifact@v3
+        with:
+          name: conda-bld_${{github.event.pull_request.head.sha}}_linux-64
+          path: /tmp/conda-bld
