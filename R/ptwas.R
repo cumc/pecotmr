@@ -14,6 +14,7 @@
 #' \item{gene_weights_pq}{twas_z function results with pvalue, qvalue and zscore}
 #' \item{outcome_QC}{the GWAS summary statistics of the outcome after QC (mainly accounting for allele flip)}
 #' }
+#' @importFrom bedtoolsr bt.intersect
 #' @export
 
 ptwas <- function(susie_path, region, GWAS_data, LD_block_path) {
@@ -32,7 +33,7 @@ ptwas <- function(susie_path, region, GWAS_data, LD_block_path) {
       mutate(variant_allele_flip = paste(chr, pos, A1.sumstats, A2.sumstats, sep = ":"))
     
     # Load LD matrix
-    LD.files <- bedtoolsr::bt.intersect(a = LD_block_path, b = region)
+    LD.files <- bt.intersect(a = LD_block_path, b = region)
     LD.files.name <- unique(LD.files$V5)
     LD.list <- list()
     LD.matrix.names <- NULL

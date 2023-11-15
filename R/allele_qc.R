@@ -14,14 +14,14 @@
 #'
 #' @return A single data frame with matched variants. Values in columns "beta" and "z"
 #'   are multiplied by -1 for variants with alleles reversed
+#' @importFrom vctrs vec_duplicate_detect
 #' @export
 #'
-allele_qc = function(sumstats,info_snp,match.min.prop,remove_dups,flip,remove){
-    
-sumstats  =  as.data.frame(sumstats)
-info_snp  =  as.data.frame(info_snp)
+allele_qc = function(sumstats,info_snp,match.min.prop,remove_dups,flip,remove) {
+  sumstats  =  as.data.frame(sumstats)
+  info_snp  =  as.data.frame(info_snp)
                      
-matched <- merge(as.data.table(sumstats), as.data.table(info_snp),
+  matched <- merge(as.data.table(sumstats), as.data.table(info_snp),
                    by = c("chr","pos"), all = FALSE, suffixes = c(".sumstats", ".ref"))
 
   a1 = toupper(matched$A1.sumstats)
@@ -29,14 +29,14 @@ matched <- merge(as.data.table(sumstats), as.data.table(info_snp),
   ref1 = toupper(matched$A1.ref)
   ref2 = toupper(matched$A2.ref)
 
-#### Strand flip, to change the allele representation in the 2nd data-set
+  #### Strand flip, to change the allele representation in the 2nd data-set
 	strand_flip = function(ref) {
 		flip = ref
 		flip[ref == "A"] = "T"
 		flip[ref == "T"] = "A"
 		flip[ref == "G"] = "C"
 		flip[ref == "C"] = "G"
-		flip
+		return(flip)
 	}
 	flip1 = strand_flip(ref1)
 	flip2 = strand_flip(ref2)
@@ -54,32 +54,29 @@ matched <- merge(as.data.table(sumstats), as.data.table(info_snp),
  	exact_match = (a1 == ref1 & a2 == ref2) 
  	snp[["keep"]][!(exact_match | snp[["sign_flip"]] | snp[["strand_flip"]])] = F
    
-    matched = matched%>%
-               mutate(keep = snp[["keep"]])%>%
-               mutate(sign_flip= snp[["sign_flip"]])%>%
-               mutate(strand_flip=snp[["strand_flip"]])
-    
-    if(flip){
-         matched$beta[matched$sign_flip] = -1 * matched$beta[matched$sign_flip]
-         matched$z[matched$sign_flip] = -1 * matched$z[matched$sign_flip]
-         matched$A1.sumstats[matched$sign_flip] = matched$A1.ref[matched$sign_flip]
-         matched$A2.sumstats[matched$sign_flip] = matched$A2.ref[matched$sign_flip]
-        
-     }  
-     if(remove){
-         matched = matched[matched$keep,]
-     }
-    if (remove_dups) {
-     dups <- vctrs::vec_duplicate_detect(matched[, c("chr", "pos","A1.sumstats","A2.sumstats")])
+  matched = matched%>%
+            mutate(keep = snp[["keep"]])%>%
+            mutate(sign_flip= snp[["sign_flip"]])%>%
+            mutate(strand_flip=snp[["strand_flip"]])
+  if(flip) {
+    matched$beta[matched$sign_flip] = -1 * matched$beta[matched$sign_flip]
+    matched$z[matched$sign_flip] = -1 * matched$z[matched$sign_flip]
+    matched$A1.sumstats[matched$sign_flip] = matched$A1.ref[matched$sign_flip]
+    matched$A2.sumstats[matched$sign_flip] = matched$A2.ref[matched$sign_flip]
+  }  
+  if(remove) {
+    matched = matched[matched$keep,]
+  }
+  if (remove_dups) {
+    dups <- vec_duplicate_detect(matched[, c("chr", "pos","A1.sumstats","A2.sumstats")])
     if (any(dups)) {
       matched <- matched[!dups, ]
       message2("Some duplicates were removed.")
-        }
     }
-    #match.min.prop Minimum proportion of variants in the smallest data to be matched, otherwise stops with an error. Default is `20%`.
-    min_match <- match.min.prop * min(nrow(sumstats), nrow(info_snp))
-    if (nrow(matched) < min_match)
-    stop("Not enough variants have been matched.")
-
-return(matched)
+  }
+  #match.min.prop Minimum proportion of variants in the smallest data to be matched, otherwise stops with an error. Default is `20%`.
+  min_match <- match.min.prop * min(nrow(sumstats), nrow(info_snp))
+  if (nrow(matched) < min_match)
+  stop("Not enough variants have been matched.")
+  return(matched)
 }

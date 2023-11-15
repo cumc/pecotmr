@@ -60,33 +60,33 @@ compute_qtl_enrichment <- function(gwas_pip, susie_qtl_regions,
                            pi_gwas = NULL, pi_qtl = NULL, 
                            lambda = 1.0, ImpN = 25,
                            num_threads = 1) {
-if (is.null(pi_gwas)) {
-  warning("Using data to estimate pi_gwas. This will be problematic if your input gwas_pip does not contain genome-wide variants.")
-  pi_gwas = sum(gwas_pip$pip) / length(gwas_pip$pip)
-  cat(paste("Estimated pi_gwas is:", round(pi_gwas, 5), "\n"))
-}
-if (is.null(pi_qtl)) {
-  warning("Using data to estimate pi_qtl. This will be problematic if either 1) your input susie_qtl_regions is not genome-wide, or 2) your single effects only includes variables inside of credible sets or signal clusters.")
-  num_signal = 0
-  num_test = 0
-  for (d in susie_qtl_regions) {
-    num_signal = num_signal + sum(d$pip)
-    num_test = num_test + length(d$pip)
+  if (is.null(pi_gwas)) {
+    warning("Using data to estimate pi_gwas. This will be problematic if your input gwas_pip does not contain genome-wide variants.")
+    pi_gwas = sum(gwas_pip$pip) / length(gwas_pip$pip)
+    cat(paste("Estimated pi_gwas is:", round(pi_gwas, 5), "\n"))
   }
-  pi_qtl = num_signal/num_test
-  cat(paste("Estimated pi_qtl is:", round(pi_qtl, 5), "\n"))
-}
-if (pi_gwas == 0) stop("Cannot perform enrichment analysis because there is no association signal from GWAS")
-if (pi_qtl == 0) stop("Cannot perform enrichment analysis because there is no QTL associated with molecular phenotype")
+  if (is.null(pi_qtl)) {
+    warning("Using data to estimate pi_qtl. This will be problematic if either 1) your input susie_qtl_regions is not genome-wide, or 2) your single effects only includes variables inside of credible sets or signal clusters.")
+    num_signal = 0
+    num_test = 0
+    for (d in susie_qtl_regions) {
+      num_signal = num_signal + sum(d$pip)
+      num_test = num_test + length(d$pip)
+    }
+    pi_qtl = num_signal/num_test
+    cat(paste("Estimated pi_qtl is:", round(pi_qtl, 5), "\n"))
+  }
+  if (pi_gwas == 0) stop("Cannot perform enrichment analysis because there is no association signal from GWAS")
+  if (pi_qtl == 0) stop("Cannot perform enrichment analysis because there is no QTL associated with molecular phenotype")
 
-# FIXME: need to check SNP name overlapping here? Need enough SNP names to overlap
+  # FIXME: need to check SNP name overlapping here? Need enough SNP names to overlap
 
-en <- qtl_enrichment_rcpp(r_gwas_pip = gwas_pip$pip, 
+  en <- qtl_enrichment_rcpp(r_gwas_pip = gwas_pip$pip, 
                          r_qtl_susie_fit = susie_qtl_regions,
                          pi_gwas = pi_gwas,
                          pi_qtl = pi_qtl,
                          ImpN = ImpN,
                          shrinkage_lambda = lambda,
                          num_threads = num_threads)
-return(en)
+  return(en)
 }

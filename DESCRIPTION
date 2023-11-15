@@ -18,18 +18,16 @@ Imports:
     data.table,
     stringr,
     qvalue,
-    Rlab,
     reticulate,
     Matrix,
-    matrixcalc,
     bedtoolsr,
-    gdata,
     genio,
     plink2R,
     readr,
     glmnet,
     harmonicmeanp,
-    Rfast
+    Rfast,
+    vctrs
 Suggests: 
     coloc,
     testthat,
