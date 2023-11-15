@@ -44,13 +44,14 @@ init_prior_sd <- function (X, y, n = 30) {
 }
 
 #' @importFrom glmnet cv.glmnet
+#' @importFrom stats coef
 #' @export
 glmnet_weights <- function(X, y, alpha=0.5) {
 	eff.wgt = matrix(0, ncol=1, nrow=ncol(X))
 	sds = apply(X, 2, sd)
 	keep = sds != 0 & !is.na(sds)
 	enet = cv.glmnet(x=X[,keep], y=y, alpha=alpha, nfold=5, intercept=T, standardize=F)
-	eff.wgt[keep] = stats::coef( enet , s = "lambda.min")[2:(sum(keep)+1)]
+	eff.wgt[keep] = coef( enet , s = "lambda.min")[2:(sum(keep)+1)]
 	return(eff.wgt)
 }
 
@@ -58,12 +59,13 @@ glmnet_weights <- function(X, y, alpha=0.5) {
 #' wgt.lasso = glmnet_weights(X, y, alpha=1)
 #' wgt.mr.ash = mr_ash_weights(eqtl$X, eqtl$y_res, beta.init=wgt.lasso)
 #' @importFrom mr.ash.alpha mr.ash
+#' @importFrom stats predict
 #' @export
 mr_ash_weights <- function(X, y, init_prior_sd=TRUE, ...) {
     sa2 = NULL
     if (init_prior_sd) sa2 = init_prior_sd(X,y)^2
     fit.mr.ash = mr.ash(X, y, sa2=sa2, ...)
-    stats::predict(fit.mr.ash, type = "coefficients")[-1]
+    predict(fit.mr.ash, type = "coefficients")[-1]
 }
 
 pval_acat <- function(pvals) {
