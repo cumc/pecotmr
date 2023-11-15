@@ -8,10 +8,9 @@ calc_I2 = function(Q, Est) {
 
 #' Generate input format for MR
 #'
-#' @param cand_genes A data frame of significant candidate genes after PTWAS step with columns "chr", "gene_id" and "gene_name"
-#' @param susie_path A data frame of the susie results path with columns "ID" and "path", "ID" is the gene names of cand_genes, and "path" is their susie results path.
-#' @param weights_file_path A data frame of the output files path of ptwas.R with the columns "ID" and "path".
-#'
+#' @param target_genes A data frame of significant candidate genes after PTWAS step with columns "chr", "gene_id" and "gene_name"
+#' @param susie_path A data frame of the susie results path with columns "ID" and "path", "ID" is the gene names of target_genes, and "path" is their susie results path.
+#' @param weights_file_path A data frame of the output files path of twas_scan() with the columns "ID" and "path".
 #' @return A dataframe  of the mr function input format with the columns "snp", "bhat_x",	"sbhat_x", "pip", "cs", "X_ID", "gene_id", "bhat_y" and "sbhat_y", 
 #' "bhat_x" and "sbhat_x" are effect size and standard error of exposure, "bhat_y" and "sbhat_y" are effect size and standard error of outcome, "pip" is the posterior inclusion probability (PIP) and "cs" is the credible set index
 #' of susie result. "X_ID" and "gene_id" are ensemble ID and gene name respectively.
@@ -19,12 +18,11 @@ calc_I2 = function(Q, Est) {
 #' @importFrom qvalue qvalue
 #' @import dplyr
 #' @export
-#'
-twas_mr_format_input <- function(cand_genes, susie_path, weights_file_path) {
+twas_mr_format_input <- function(target_genes, susie_path, weights_file_path) {
   mr_format_input <- NULL
-  for (k in 1:dim(cand_genes)[1]) {
-    gene_name <- cand_genes$gene_name[k]
-    gene_id <- cand_genes$gene_id[k]
+  for (k in 1:dim(target_genes)[1]) {
+    gene_name <- target_genes$gene_name[k]
+    gene_id <- target_genes$gene_id[k]
     qtl_susie_res <- readRDS(susie_path$path[susie_path$ID == gene_name])
     
     if (!is.null(names(qtl_susie_res[[1]]$sets$cs))) {
@@ -52,9 +50,7 @@ twas_mr_format_input <- function(cand_genes, susie_path, weights_file_path) {
 #' Mendelian Randomization (MR)
 #' 
 #' @param formatted_input the output of twas_mr_format_input function
-#'
 #' @param cpip_cutoff the threshold of cumulative posterior inclusion probability, default is 0.5
-#'
 #' @return A single data frame of output with columns "X_ID", "gene_id", "chr", "num_CS", "num_IV",
 #' "meta_eff", "se_meta_eff", "meta_pval", "Q", "Q_pval" and "I2". "X_ID" and "gene_id" are ensemble ID and gene name, respectively. "num_CS" is the number of credible sets
 #' contained in each gene, "num_IV" is the number of variants contained in each gene. "meta_eff", "se_meta_eff" and "meta_pval" are the MR estimate, standard error and pvalue.
@@ -63,8 +59,6 @@ twas_mr_format_input <- function(cand_genes, susie_path, weights_file_path) {
 #' @importFrom qvalue qvalue
 #' @importFrom stats pnorm
 #' @export
-#' 
-
 fine_mr <- function(formatted_input, cpip_cutoff=0.5) {
 output = formatted_input %>%
     mutate(

@@ -4,14 +4,14 @@
 \alias{twas_mr_format_input}
 \title{Generate input format for MR}
 \usage{
-twas_mr_format_input(cand_genes, susie_path, weights_file_path)
+twas_mr_format_input(target_genes, susie_path, weights_file_path)
 }
 \arguments{
-\item{cand_genes}{A data frame of significant candidate genes after PTWAS step with columns "chr", "gene_id" and "gene_name"}
+\item{target_genes}{A data frame of significant candidate genes after PTWAS step with columns "chr", "gene_id" and "gene_name"}
 
-\item{susie_path}{A data frame of the susie results path with columns "ID" and "path", "ID" is the gene names of cand_genes, and "path" is their susie results path.}
+\item{susie_path}{A data frame of the susie results path with columns "ID" and "path", "ID" is the gene names of target_genes, and "path" is their susie results path.}
 
-\item{weights_file_path}{A data frame of the output files path of ptwas.R with the columns "ID" and "path".}
+\item{weights_file_path}{A data frame of the output files path of twas_scan() with the columns "ID" and "path".}
 }
 \value{
 A dataframe  of the mr function input format with the columns "snp", "bhat_x",	"sbhat_x", "pip", "cs", "X_ID", "gene_id", "bhat_y" and "sbhat_y", 
