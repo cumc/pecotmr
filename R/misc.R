@@ -31,7 +31,7 @@ filter_X <- function(X, missing_rate_thresh, maf_thresh) {
 
 #' @importFrom plink2R read_plink
 #' @importFrom readr read_delim
-#' @import purrr dplyr
+#' @import purrr dplyr tibble
 #' @importFrom utils read.table
 #' @importFrom tidyr unnest
 load_regional_association_data <- function(genotype, # PLINK file
@@ -44,21 +44,15 @@ load_regional_association_data <- function(genotype, # PLINK file
                                            imiss_cutoff = 0,
                                            y_as_matrix = FALSE,
                                            keep_indel = TRUE) {
-    # library(plink2R)
-    # library(dplyr)
-    # library(readr)
-    # library(stringr)
-    # library(purrr)
-
     ## Load genotype
     geno = read_plink(genotype)
     rownames(geno$bed) = read.table(text = rownames(geno$bed), sep= ":")$V2
     ## if indel is false, remove the indel in the genotype
-    if (!keep_indel){
-    geno_bim = geno$bim%>%rename("chrom" = "V1","variant_id" = "V2","alt" = "V5","ref"="V6")%>%mutate(indel = ifelse(grepl("[^ATCG]",alt)=="TRUE"|grepl("[^ATCG]",ref)=="TRUE"|nchar(alt)>1|nchar(ref)>1,1, 0))
-    geno_bed = geno$bed[,geno_bim$indel==0]}
-    else {
-    geno_bed = geno$bed
+    if (!keep_indel) {
+      geno_bim = geno$bim%>%rename("chrom" = "V1","variant_id" = "V2","alt" = "V5","ref"="V6")%>%mutate(indel = ifelse(grepl("[^ATCG]",alt)=="TRUE"|grepl("[^ATCG]",ref)=="TRUE"|nchar(alt)>1|nchar(ref)>1,1, 0))
+      geno_bed = geno$bed[,geno_bim$indel==0]
+    } else {
+      geno_bed = geno$bed
     }
     ## Load phenotype and covariates and perform some pre-processing
     ### including Y ( cov ) and specific X and covar match, filter X variants based on the overlapped samples.

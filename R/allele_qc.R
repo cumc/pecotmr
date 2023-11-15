@@ -30,7 +30,7 @@ allele_qc = function(sumstats,info_snp,match.min.prop,remove_dups,flip,remove) {
   ref1 = toupper(matched$A1.ref)
   ref2 = toupper(matched$A2.ref)
 
-  #### Strand flip, to change the allele representation in the 2nd data-set
+  # Strand flip, to change the allele representation in the 2nd data-set
 	strand_flip = function(ref) {
 		flip = ref
 		flip[ref == "A"] = "T"
