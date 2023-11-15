@@ -15,6 +15,9 @@ calc_I2 = function(Q, Est) {
 #' @return A dataframe  of the mr function input format with the columns "snp", "bhat_x",	"sbhat_x", "pip", "cs", "X_ID", "gene_id", "bhat_y" and "sbhat_y", 
 #' "bhat_x" and "sbhat_x" are effect size and standard error of exposure, "bhat_y" and "sbhat_y" are effect size and standard error of outcome, "pip" is the posterior inclusion probability (PIP) and "cs" is the credible set index
 #' of susie result. "X_ID" and "gene_id" are ensemble ID and gene name respectively.
+#' 
+#' @importFrom qvalue qvalue
+#' @import dplyr
 #' @export
 #'
 twas_mr_format_input <- function(cand_genes, susie_path, weights_file_path) {
@@ -56,11 +59,13 @@ twas_mr_format_input <- function(cand_genes, susie_path, weights_file_path) {
 #' "meta_eff", "se_meta_eff", "meta_pval", "Q", "Q_pval" and "I2". "X_ID" and "gene_id" are ensemble ID and gene name, respectively. "num_CS" is the number of credible sets
 #' contained in each gene, "num_IV" is the number of variants contained in each gene. "meta_eff", "se_meta_eff" and "meta_pval" are the MR estimate, standard error and pvalue.
 #' "Q" is Cochran’s Q statistic, "I2" quantifies the heterogeneity, range from 0 to 1.
+#' @import dplyr
+#' @importFrom qvalue qvalue
 #' @export
 #' 
 
 fine_mr <- function(formatted_input, cpip_cutoff=0.5) {
-  output = formatted_input %>%
+output = formatted_input %>%
     mutate(
         bhat_x = bhat_x/sbhat_x,
         sbhat_x = 1) %>%
@@ -87,18 +92,26 @@ fine_mr <- function(formatted_input, cpip_cutoff=0.5) {
     mutate(
         num_IV = length(snp),
         meta_eff = meta_eff/sum_w,
+        meta_pval = 2 * stats::pnorm(abs(meta_eff) / se_meta_eff, lower.tail=FALSE),
         ######sum(unique(wv)*(unique(composite_bhat) - unique(meta_eff))^2)
         Q = sum(unique(wv)*(unique(composite_bhat) - unique(meta_eff))^2),
-        I2 = calc_I2(Q, composite_bhat)) %>%
+        I2 = calc_I2(Q, composite_bhat),
+        Q_pval = pchisq(Q, df = length(unique(composite_bhat))-1, lower = F)) %>%
         ungroup() %>%
     distinct(X_ID, .keep_all = TRUE) %>%
     mutate(
+        meta_qval = qvalue(meta_pval,lambda=0)$qvalues
+        )%>%
+    mutate(
         cpip = round(cpip, 3),
-        composite_bhat = round(composite_bhat, 3),
+        meta_qval = round(meta_qval,3),
+        meta_pval= round(meta_pval,3),
+        #composite_bhat = round(composite_bhat, 3),
         meta_eff = round(meta_eff, 3),
         se_meta_eff = round(se_meta_eff, 3),
         Q = round(Q, 3),
-        I2 = round(I2, 3)) %>%
-    select(X_ID, num_CS, num_IV, cpip, composite_bhat, composite_sbhat, meta_eff, se_meta_eff, Q, I2)
+        Q_pval = round(Q_pval,3),
+        I2 = round(I2, 3)) %>%arrange(meta_pval)%>%
+    select(X_ID, num_CS, num_IV, cpip, gene_id, meta_eff, se_meta_eff, meta_pval,meta_qval,Q, Q_pval,I2)
     return(output)
 }

@@ -15,6 +15,7 @@
 #' @return A single data frame with matched variants. Values in columns "beta" and "z"
 #'   are multiplied by -1 for variants with alleles reversed
 #' @importFrom vctrs vec_duplicate_detect
+#' @importFrom Rlab message2
 #' @export
 #'
 allele_qc = function(sumstats,info_snp,match.min.prop,remove_dups,flip,remove) {

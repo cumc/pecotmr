@@ -89,3 +89,11 @@ load_script <- function() {
 tabix_region <- function(file, region){
     fread(cmd = paste0("tabix -h ", file, " ", region))%>%as_tibble() 
 }
+utils::globalVariables(c("bhat_x", "sbhat_x", "X_ID", "cs", "pip", "cpip", "bhat_y",
+                         "sbhat_y", "beta_yx", "se_yx", "composite_sbhat",
+                         "composite_bhat", "wv", "sum_w", "snp", "meta_eff",
+                         "se_meta_eff", ".", "meta_pval", "meta_qval", "Q_pval", "I2",
+                         "num_CS", "num_IV", "gene_id", "sd","alt","ref","covariate_path",
+                         "phenotype_path","covar","Y","X_data","X_resid_mean","X_resid_sd","X_resid","chr","pos","A1.sumstats",
+                         "A2.sumstats","np","se","z","cs_index_primary",
+                         "cs_index_secondary","var","Q"))
