@@ -77,7 +77,7 @@ susie_twas_wrapper <- function(fobj, X_data, y_data, X_sd, y_sd, maf, secondary_
         fobj = list(analysis_script = load_script(), pip = fobj$pip, variant_names = gsub("_",":",names(fobj$pip)))
         names(fobj$pip) = NULL
     }
-    if (run_twas) {
+    if (twas_weights) {
         # generate weights for TWAS using some alternative approaches
         fobj$susie_weights = susie_weights(fobj)
         fobj$susie_r2 = cor(X_data %*% fobj$susie_weights, y_data)^2
