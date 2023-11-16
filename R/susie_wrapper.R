@@ -1,5 +1,5 @@
 #' @importFrom susieR get_cs_correlation univariate_regression susie_get_cs
-#' @importFrom stringr string_replace
+#' @importFrom stringr str_replace
 #' @export 
 susie_twas_wrapper <- function(fobj, X_data, y_data, X_sd, y_sd, maf, secondary_coverage = 0.7, signal_cutoff = 0.1, twas_weights = TRUE, other_quantities=list()) {
     get_cs_index <- function(snps_idx, susie_cs) {
