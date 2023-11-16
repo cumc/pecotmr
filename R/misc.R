@@ -107,6 +107,13 @@ load_regional_association_data <- function(genotype, # PLINK file
             ))
 }
 
+
+#' Title
+#'
+#' @return A list
+#' @export
+#' 
+
 load_regional_finemapping_data <- function(...) {
   dat <- load_regional_association_data(...)
   return (list(
@@ -119,6 +126,7 @@ load_regional_finemapping_data <- function(...) {
           maf = dat$maf
           ))
 }
+
 
 load_regional_regression_data <- function(...) {
   dat <- load_regional_association_data(...)
