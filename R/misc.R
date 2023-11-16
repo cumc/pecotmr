@@ -108,8 +108,7 @@ load_regional_association_data <- function(genotype, # PLINK file
 }
 
 
-#' Title
-#'
+
 #' @return A list
 #' @export
 #' 
