@@ -90,6 +90,7 @@ susie_twas_wrapper <- function(fobj, X_data, y_data, X_sd, y_sd, maf, secondary_
     return(fobj)
 }
 
+#' @importFrom susieR susie
 #' @export 
 susie_wrapper = function(X, y, init_L = 10, max_L = 30, coverage = 0.95, max_iter=500, l_step = 5) {
         L = init_L
