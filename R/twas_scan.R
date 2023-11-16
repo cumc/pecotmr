@@ -19,8 +19,11 @@
 #' @importFrom stringr str_split
 #' @importFrom stats setNames
 #' @importFrom utils read.table
+#' @importFrom reticulate import
 #' @export
 twas_scan <- function(weights_path, region, GWAS_data, LD_block_path) {
+  #import numpy
+  np = import("numpy")
   # Load weights
   gene_name <- weights_path$ID
   qtl_weights <- readRDS(weights_path$path)
