@@ -14,13 +14,15 @@
 #' \item{outcome_QC}{the GWAS summary statistics of the outcome after QC (mainly accounting for allele flip)}
 #' }
 #' @importFrom bedtoolsr bt.intersect
-#' @importFrom gdata upperTriangle lowerTriangle
 #' @importFrom Matrix bdiag
 #' @importFrom stringr str_split
 #' @importFrom stats setNames
 #' @importFrom utils read.table
+#' @importFrom reticulate import
 #' @export
 twas_scan <- function(weights_path, region, GWAS_data, LD_block_path) {
+  #import numpy
+  np = import("numpy")
   # Load weights
   gene_name <- weights_path$ID
   qtl_weights <- readRDS(weights_path$path)
@@ -58,7 +60,8 @@ twas_scan <- function(weights_path, region, GWAS_data, LD_block_path) {
     }
     
     LD.block <- as.matrix(bdiag(LD.list))
-    upperTriangle(LD.block, byrow = TRUE) <- lowerTriangle(LD.block)
+    LD.block[upper.tri(LD.block)] <- t(LD.block)[upper.tri(LD.block)]
+    #upperTriangle(LD.block, byrow = TRUE) <- lowerTriangle(LD.block)
     colnames(LD.block) <- rownames(LD.block) <- LD.matrix.names
     
     # Generate the twas_z format input

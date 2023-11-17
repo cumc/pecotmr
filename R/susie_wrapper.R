@@ -1,4 +1,5 @@
 #' @importFrom susieR get_cs_correlation univariate_regression susie_get_cs
+#' @importFrom stringr str_replace
 #' @export 
 susie_twas_wrapper <- function(fobj, X_data, y_data, X_sd, y_sd, maf, secondary_coverage = 0.7, signal_cutoff = 0.1, twas_weights = TRUE, other_quantities=list()) {
     get_cs_index <- function(snps_idx, susie_cs) {
@@ -76,7 +77,7 @@ susie_twas_wrapper <- function(fobj, X_data, y_data, X_sd, y_sd, maf, secondary_
         fobj = list(analysis_script = load_script(), pip = fobj$pip, variant_names = gsub("_",":",names(fobj$pip)))
         names(fobj$pip) = NULL
     }
-    if (run_twas) {
+    if (twas_weights) {
         # generate weights for TWAS using some alternative approaches
         fobj$susie_weights = susie_weights(fobj)
         fobj$susie_r2 = cor(X_data %*% fobj$susie_weights, y_data)^2
@@ -90,6 +91,7 @@ susie_twas_wrapper <- function(fobj, X_data, y_data, X_sd, y_sd, maf, secondary_
     return(fobj)
 }
 
+#' @importFrom susieR susie
 #' @export 
 susie_wrapper = function(X, y, init_L = 10, max_L = 30, coverage = 0.95, max_iter=500, l_step = 5) {
         L = init_L
