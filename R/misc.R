@@ -8,6 +8,16 @@ compute_missing <- function(geno){
   return(miss)
 }
 
+compute_non_missing_y <- function(y){
+  nonmiss <- sum(!is.na(y))
+  return(nonmiss)
+}
+  
+compute_all_missing_y <- function(y){
+  allmiss <- all(is.na(y))
+  return(allmiss)
+}
+
 mean_impute <- function(geno){
   f <- apply(geno, 2, function(x) mean(x,na.rm = TRUE))
   for (i in 1:length(f)) geno[,i][which(is.na(geno[,i]))] <- f[i]
@@ -19,14 +29,32 @@ is_zero_variance <- function(x) {
   else return(F)
 }
 
-filter_X <- function(X, missing_rate_thresh, maf_thresh) {
+#' @importFrom matrixStats colVars
+filter_X <- function(X, missing_rate_thresh, maf_thresh, var_thresh=0) {
     rm_col <- which(apply(X, 2, compute_missing) > missing_rate_thresh)
     if (length(rm_col)) X <- X[, -rm_col]
     rm_col <- which(apply(X, 2, compute_maf) <= maf_thresh)
     if (length(rm_col)) X <- X[, -rm_col]
     rm_col <- which(apply(X, 2, is_zero_variance))
     if (length(rm_col)) X <- X[, -rm_col]
-    return(mean_impute(X))
+    X <- mean_impute(X)
+    if (var_thresh>0) {
+      rm_col <- which(matrixStats::colVars(X) < var_thresh)
+      if (length(rm_col)) X <- X[, -rm_col]
+    }
+    return(X)
+}
+
+filter_Y <- function(Y, n_nonmiss){
+  rm_col <- which(apply(Y, 2, compute_non_missing_y) < n_nonmiss)
+  if (length(rm_col)) Y <- Y[, -rm_col]
+  if(is.matrix(Y)){
+    rm_rows <- which(apply(Y, 1, compute_all_missing_y))
+    if (length(rm_rows)) Y <- Y[-rm_rows, ]  
+  } else {
+    Y <- Y[which(!is.na(Y))]
+  }
+  return(list(Y=Y, rm_rows = rm_rows))
 }
 
 #' @importFrom plink2R read_plink
@@ -41,6 +69,7 @@ load_regional_association_data <- function(genotype, # PLINK file
                                            conditions, # a vector of strings
                                            maf_cutoff = 0,
                                            mac_cutoff = 0,
+                                           xvar_cutoff = 0,
                                            imiss_cutoff = 0,
                                            y_as_matrix = FALSE,
                                            keep_indel = TRUE) {
@@ -65,7 +94,7 @@ load_regional_association_data <- function(genotype, # PLINK file
         Y = map(Y, ~.x%>%na.omit),    # remove na where Y raw data has na which block regression
         dropped_sample = map2(covar, Y , ~rownames(.x)[!rownames(.x) %in% rownames(.y)]),
         covar = map2(covar, Y , ~.x[intersect(.x%>%rownames,rownames(.y)),]), # remove the dropped samples from Y
-        X_data = map(covar,~ filter_X( geno_bed[intersect(rownames(.x),rownames(geno_bed)),], imiss_cutoff, max(maf_cutoff, mac_cutoff/(2*length(intersect(rownames(.x),rownames(geno_bed))) ) ))   ))
+        X_data = map(covar,~ filter_X( geno_bed[intersect(rownames(.x),rownames(geno_bed)),], imiss_cutoff, max(maf_cutoff, mac_cutoff/(2*length(intersect(rownames(.x),rownames(geno_bed))) ) ), xvar_cutoff)   ))
               
     ## Get residue Y for each of condition and its mean and sd
     data_list = data_list%>%mutate(Y_resid_mean = map2(Y,covar,~.lm.fit(x = cbind(1,.y), y = .x)$residuals%>%mean),
@@ -82,7 +111,7 @@ load_regional_association_data <- function(genotype, # PLINK file
     # Get X matrix for union of samples
     all_samples = map(data_list$covar, ~rownames(.x))%>%unlist%>%unique()
     maf_cutoff = max(maf_cutoff,mac_cutoff/(2*length(all_samples)))
-    X = filter_X(geno_bed[all_samples,], imiss_cutoff, maf_cutoff) ## Filter X for mvSuSiE
+    X = filter_X(geno_bed[all_samples,], imiss_cutoff, maf_cutoff, xvar_cutoff) ## Filter X for mvSuSiE
     #
     maf_list = lapply(data_list$X_data, function(x) apply(x, 2, compute_maf))
     ## Get residue X for each of condition and its mean and sd
@@ -111,10 +140,8 @@ load_regional_association_data <- function(genotype, # PLINK file
 
 #' @return A list
 #' @export
-#' 
-
-load_regional_finemapping_data <- function(...) {
-  dat <- load_regional_association_data(...)
+load_regional_univariate_data <- function(...) {
+  dat <- load_regional_association_data(y_as_matrix = FALSE, ...)
   return (list(
           residual_Y_scaled = dat$residual_Y_scaled,
           residual_X_scaled = dat$residual_X_scaled,
@@ -126,7 +153,8 @@ load_regional_finemapping_data <- function(...) {
           ))
 }
 
-
+#' @return A list
+#' @export
 load_regional_regression_data <- function(...) {
   dat <- load_regional_association_data(...)
   return (list(
@@ -136,4 +164,31 @@ load_regional_regression_data <- function(...) {
           dropped_sample = dat$dropped_sample,
           maf = dat$maf
           ))
+}
+
+#' @return A list
+#' @export
+load_regional_multivariate_data <- function(matrix_y_min_complete = NULL, # when Y is saved as matrix, remove those with non-missing counts less than this cutoff
+                                            ...) {
+  dat <- load_regional_association_data(y_as_matrix = TRUE, ...)
+  if (!is.null(matrix_y_min_complete)) {
+    Y <- filter_Y(dat$residual_Y_scaled, matrix_y_min_complete)
+    if (Y$rm_rows>0) {
+      X <- dat$X[-Y$rm_rows, ]
+      Y_sd <- Y_sd[-rm_rows]
+      dropped_sample = rownames(dat$residual_Y_scaled)[rm_rows]
+    }
+  } else {
+    Y = dat$residual_Y_scaled
+    X = dat$X
+    Y_sd = dat$residual_Y_sd
+    dropped_sample = dat$dropped_sample
+  }
+  return (list(
+        residual_Y_scaled = Y,
+        residual_Y_sd = Y_sd,
+        dropped_sample = dropped_sample,
+        X = X,
+        maf = dat$maf
+        ))
 }
