@@ -105,52 +105,6 @@ pval_global <- function(pvals, comb_method = "HMP", naive=FALSE) {
                            
            
 #twas_z
-    library(mr.mash.alpha)
-    library(matrixStats)
-    library(GBJ)
-    library(readr)
-
-#utility functions
-compute_missing <- function(geno){
-    miss <- sum(is.na(geno))/length(geno)
-    return(miss)
-}
-
-compute_maf <- function(geno){
-    f <- mean(geno,na.rm = TRUE)/2
-    return(min(f, 1-f))
-}
-
-mean_impute <- function(geno){
-    f <- apply(geno, 2, function(x) mean(x,na.rm = TRUE))
-    for (i in 1:length(f)) geno[,i][which(is.na(geno[,i]))] <- f[i]
-    return(geno)
-}
-get_center <- function(k,n) {
-    ## For given number k, get the range k surrounding n/2
-    ## but have to make sure it does not go over the bounds
-    if (is.null(k)) {
-      return(1:n)
-    }
-    start = floor(n/2 - k/2)
-    end = floor(n/2 + k/2)
-    if (start<1) start = 1
-    if (end>n) end = n
-    return(start:end)
-}
-
-filter_X <- function(X, missing_rate_thresh, maf_thresh, var_thresh) {
-    rm_col <- which(apply(X, 2, compute_missing) > missing_rate_thresh)
-    if (length(rm_col)) X <- X[, -rm_col]
-    rm_col <- which(apply(X, 2, compute_maf) < maf_thresh)
-    if (length(rm_col)) X <- X[, -rm_col]
-    X <- mean_impute(X)
-    rm_col <- which(matrixStats::colVars(X) < var_thresh)
-    if (length(rm_col)) X <- X[, -rm_col]
-    return(X)
-}
-
-
 twas_z <- function(X, bhat, gwas){
     #calculate sd_j (standard deviation per SNP in X) 
     sdco <- colSds(X, na.rm=TRUE)
