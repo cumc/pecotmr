@@ -105,7 +105,7 @@ pval_global <- function(pvals, comb_method = "HMP", naive=FALSE) {
                            
            
 #twas_z
-twas_z <- function(X, bhat, gwas){
+twas_joint_z <- function(X, bhat, gwas){
     #calculate sd_j (standard deviation per SNP in X) 
     sdco <- colSds(X, na.rm=TRUE)
 
@@ -138,7 +138,6 @@ twas_z <- function(X, bhat, gwas){
             la <- as.matrix(bhat[,p] %*% g[[p]])
             lam[p, ] <-  la
             }
-        rownames(lam)=colnames(bhat)
 
     #covariance matrix & sigma & GBJ
     D <- cov(X)
