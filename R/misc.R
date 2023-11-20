@@ -119,6 +119,8 @@ load_regional_association_data <- function(genotype, # PLINK file
     X_list = data_list%>%mutate(X_resid_mean= map2(X_data,covar,~.lm.fit(x = cbind(1,.y), y = .x)$residuals%>%data.frame()%>%apply(.,2,mean)),
                                X_resid_sd= map2(X_data,covar,~.lm.fit(x = cbind(1,.y), y = .x)$residuals%>%data.frame()%>%apply(.,2,sd)),
                                X_resid = map2(X_data,covar,~.lm.fit(x = cbind(1,.y), y = .x)$residuals%>%scale))%>%select(X_resid_mean,X_resid_sd,X_resid)
+    ## process region
+    region <- unlist(strsplit(region, ":", fixed = TRUE))
     ## residual_Y_scaled: if y_as_matrix is true, then return a matrix of R conditions, with column names being the names of the conditions (phenotypes) and row names being sample names. Even for one condition it has to be a matrix with just one column. if y_as_matrix is false, then return a list of y either vector or matrix (CpG for example), and they need to match with residual_X_scaled in terms of which samples are missing.
     ## residual_X_scaled: is a list of R conditions each is a matrix, with list names being the names of conditions, column names being SNP names and row names being sample names.
     ## X: is the somewhat original genotype matrix output from `filter_X`, with column names being SNP names and row names being sample names. Sample names of X should match example sample names of residual_Y_scaled matrix form (not list); but the matrices inside residual_X_scaled would be subsets of sample name of residual_Y_scaled matrix form (not list).
@@ -132,11 +134,11 @@ load_regional_association_data <- function(genotype, # PLINK file
             Y = data_list$Y,
             X = X,
             X_data = data_list$X_data,
-            maf = maf_list
+            maf = maf_list,
+            chrom = region[1],
+            grange = unlist(strsplit(region[2], "-", fixed = TRUE))
             ))
 }
-
-
 
 #' @return A list
 #' @export
@@ -149,7 +151,9 @@ load_regional_univariate_data <- function(...) {
           residual_X_sd = dat$residual_X_sd,
           X = dat$X,
           dropped_sample = dat$dropped_sample,
-          maf = dat$maf
+          maf = dat$maf,
+          chrom = region[1],
+          grange = unlist(strsplit(region[2], "-", fixed = TRUE))
           ))
 }
 
@@ -162,7 +166,9 @@ load_regional_regression_data <- function(...) {
           X_data = dat$X_data,
           covar = dat$covar,
           dropped_sample = dat$dropped_sample,
-          maf = dat$maf
+          maf = dat$maf,
+          chrom = region[1],
+          grange = unlist(strsplit(region[2], "-", fixed = TRUE))
           ))
 }
 
@@ -189,6 +195,8 @@ load_regional_multivariate_data <- function(matrix_y_min_complete = NULL, # when
         residual_Y_sd = Y_sd,
         dropped_sample = dropped_sample,
         X = X,
-        maf = dat$maf
+        maf = dat$maf,
+        chrom = region[1],
+        grange = unlist(strsplit(region[2], "-", fixed = TRUE)) 
         ))
 }
