@@ -102,3 +102,94 @@ pval_global <- function(pvals, comb_method = "HMP", naive=FALSE) {
     naive_pval <- min(n_total_tests*min_pval, 1.0)
     return(if (naive) naive_pval else global_pval) # global_pval and naive_pval
 }
+                           
+           
+#twas_z
+    library(mr.mash.alpha)
+    library(matrixStats)
+    library(GBJ)
+    library(readr)
+
+#utility functions
+compute_missing <- function(geno){
+    miss <- sum(is.na(geno))/length(geno)
+    return(miss)
+}
+
+compute_maf <- function(geno){
+    f <- mean(geno,na.rm = TRUE)/2
+    return(min(f, 1-f))
+}
+
+mean_impute <- function(geno){
+    f <- apply(geno, 2, function(x) mean(x,na.rm = TRUE))
+    for (i in 1:length(f)) geno[,i][which(is.na(geno[,i]))] <- f[i]
+    return(geno)
+}
+get_center <- function(k,n) {
+    ## For given number k, get the range k surrounding n/2
+    ## but have to make sure it does not go over the bounds
+    if (is.null(k)) {
+      return(1:n)
+    }
+    start = floor(n/2 - k/2)
+    end = floor(n/2 + k/2)
+    if (start<1) start = 1
+    if (end>n) end = n
+    return(start:end)
+}
+
+filter_X <- function(X, missing_rate_thresh, maf_thresh, var_thresh) {
+    rm_col <- which(apply(X, 2, compute_missing) > missing_rate_thresh)
+    if (length(rm_col)) X <- X[, -rm_col]
+    rm_col <- which(apply(X, 2, compute_maf) < maf_thresh)
+    if (length(rm_col)) X <- X[, -rm_col]
+    X <- mean_impute(X)
+    rm_col <- which(matrixStats::colVars(X) < var_thresh)
+    if (length(rm_col)) X <- X[, -rm_col]
+    return(X)
+}
+
+
+twas_z <- function(X, bhat, gwas){
+    #calculate sd_j (standard deviation per SNP in X) 
+    sdco <- colSds(X, na.rm=TRUE)
+
+    # Get eta (sd per tissue in expression) 
+    E_hat <- X %*% bhat ## E_hat <- predict(bhat,X) 
+    sde <- colSds(E_hat, na.rm=TRUE)
+
+    #get gamma matrix MxM (snp x snp) 
+    g <- lapply(colnames(bhat), function(x){
+        gm <- diag(sdco/sde[x], length(sdco), length(sdco))
+        return(gm)
+        })
+        names(g) <- colnames(bhat)
+
+    ######### Get TWAS - Z statistics & P-value, GBJ test ########  
+    z_list <- lapply(colnames(bhat), function(x){
+                Zi <- crossprod(bhat[,x], g[[x]]) %*% as.numeric(gwas[,"Z"])
+                pval <- 2*pnorm(abs(Zi), lower.tail=FALSE)
+                Zp <- data.frame(Zi, pval)
+                colnames(Zp) <- c("Z", "pval")
+                z <- do.call(c, Zp)
+                return(z)})
+    z <- do.call(rbind, z_list)
+    rownames(z) = colnames(bhat) 
+
+    #lambda
+    lam <- matrix(rep(NA,ncol(bhat)*nrow(bhat)), nrow = ncol(bhat))
+        rownames(lam) <- colnames(bhat)
+        for (p in colnames(bhat)) {
+            la <- as.matrix(bhat[,p] %*% g[[p]])
+            lam[p, ] <-  la
+            }
+        rownames(lam)=colnames(bhat)
+
+    #covariance matrix & sigma & GBJ
+    D <- cov(X)
+    sig <- tcrossprod((lam %*% D), lam)
+    gbj <- GBJ(test_stats=z[,1], cor_mat=sig)
+    rs <- list("Z" =z, "GBJ"=gbj)
+    return(rs)
+}
