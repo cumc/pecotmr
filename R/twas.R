@@ -104,18 +104,11 @@ pval_global <- function(pvals, comb_method = "HMP", naive=FALSE) {
 }
                            
            
-#twas_z
-twas_joint_z <- function(X, bhat, gwas){
-    #calculate sd_j (standard deviation per SNP in X) 
-    sdco <- colSds(X, na.rm=TRUE)
-
-    # Get eta (sd per tissue in expression) 
-    E_hat <- X %*% bhat ## E_hat <- predict(bhat,X) 
-    sde <- colSds(E_hat, na.rm=TRUE)
-
+#twas_joint_z and gbj
+twas_joint_z <- function(y_sd, x_sd, bhat, gwas){
     #get gamma matrix MxM (snp x snp) 
     g <- lapply(colnames(bhat), function(x){
-        gm <- diag(sdco/sde[x], length(sdco), length(sdco))
+        gm <- diag(x_sd/y_sd[x], length(x_sd), length(x_sd))
         return(gm)
         })
         names(g) <- colnames(bhat)
@@ -139,10 +132,11 @@ twas_joint_z <- function(X, bhat, gwas){
             lam[p, ] <-  la
             }
 
-    #covariance matrix & sigma & GBJ
-    D <- cov(X)
+    #covariance matrix & sigma
+    D <- cov(Xnew)
     sig <- tcrossprod((lam %*% D), lam)
     gbj <- GBJ(test_stats=z[,1], cor_mat=sig)
     rs <- list("Z" =z, "GBJ"=gbj)
     return(rs)
+    
 }
