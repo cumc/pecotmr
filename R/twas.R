@@ -105,7 +105,7 @@ pval_global <- function(pvals, comb_method = "HMP", naive=FALSE) {
                            
            
 #twas_joint_z and gbj
-twas_joint_z <- function(y_sd, x_sd, bhat, gwas){
+twas_joint_z <- function(y_sd, x_sd, bhat, gwas, ld){
     #get gamma matrix MxM (snp x snp) 
     g <- lapply(colnames(bhat), function(x){
         gm <- diag(x_sd/y_sd[x], length(x_sd), length(x_sd))
@@ -133,7 +133,9 @@ twas_joint_z <- function(y_sd, x_sd, bhat, gwas){
             }
 
     #covariance matrix & sigma
-    D <- cov(Xnew)
+    #D <- cov(Xnew)
+    idx <- which(rownames(ld) %in% rownames(bhat))
+    D <- ld[idx,idx]
     sig <- tcrossprod((lam %*% D), lam)
     gbj <- GBJ(test_stats=z[,1], cor_mat=sig)
     rs <- list("Z" =z, "GBJ"=gbj)
