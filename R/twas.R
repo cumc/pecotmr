@@ -105,36 +105,36 @@ pval_global <- function(pvals, comb_method = "HMP", naive=FALSE) {
                            
            
 #twas_joint_z and gbj
-twas_joint_z <- function(y_sd, x_sd, bhat, gwas, ld){
+twas_joint_z <- function(y_sd, x_sd, Bhat, gwas, ld){
     #get gamma matrix MxM (snp x snp) 
-    g <- lapply(colnames(bhat), function(x){
+    g <- lapply(colnames(Bhat), function(x){
         gm <- diag(x_sd/y_sd[x], length(x_sd), length(x_sd))
         return(gm)
         })
-        names(g) <- colnames(bhat)
+        names(g) <- colnames(Bhat)
 
     ######### Get TWAS - Z statistics & P-value, GBJ test ########  
-    z_list <- lapply(colnames(bhat), function(x){
-                Zi <- crossprod(bhat[,x], g[[x]]) %*% as.numeric(gwas[,"Z"])
+    z_list <- lapply(colnames(Bhat), function(x){
+                Zi <- crossprod(Bhat[,x], g[[x]]) %*% as.numeric(gwas[,"Z"])
                 pval <- 2*pnorm(abs(Zi), lower.tail=FALSE)
                 Zp <- data.frame(Zi, pval)
                 colnames(Zp) <- c("Z", "pval")
                 z <- do.call(c, Zp)
                 return(z)})
     z <- do.call(rbind, z_list)
-    rownames(z) = colnames(bhat) 
+    rownames(z) = colnames(Bhat) 
 
     #lambda
-    lam <- matrix(rep(NA,ncol(bhat)*nrow(bhat)), nrow = ncol(bhat))
-        rownames(lam) <- colnames(bhat)
-        for (p in colnames(bhat)) {
-            la <- as.matrix(bhat[,p] %*% g[[p]])
+    lam <- matrix(rep(NA,ncol(Bhat)*nrow(Bhat)), nrow = ncol(Bhat))
+        rownames(lam) <- colnames(Bhat)
+        for (p in colnames(Bhat)) {
+            la <- as.matrix(Bhat[,p] %*% g[[p]])
             lam[p, ] <-  la
             }
 
     #covariance matrix & sigma
     #D <- cov(Xnew)
-    idx <- which(rownames(ld) %in% rownames(bhat))
+    idx <- which(rownames(ld) %in% rownames(Bhat))
     D <- ld[idx,idx]
     sig <- tcrossprod((lam %*% D), lam)
     gbj <- GBJ(test_stats=z[,1], cor_mat=sig)
