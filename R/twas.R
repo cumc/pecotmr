@@ -105,7 +105,7 @@ pval_global <- function(pvals, comb_method = "HMP", naive=FALSE) {
                            
            
 #twas_joint_z and gbj
-twas_joint_z <- function(y_sd, x_sd, Bhat, gwas, ld){
+twas_joint_z <- function(y_sd, x_sd, Bhat, z, ld){
     #get gamma matrix MxM (snp x snp) 
     g <- lapply(colnames(Bhat), function(x){
         gm <- diag(x_sd/y_sd[x], length(x_sd), length(x_sd))
@@ -114,15 +114,15 @@ twas_joint_z <- function(y_sd, x_sd, Bhat, gwas, ld){
         names(g) <- colnames(Bhat)
 
     ######### Get TWAS - Z statistics & P-value, GBJ test ########  
-    z_list <- lapply(colnames(Bhat), function(x){
-                Zi <- crossprod(Bhat[,x], g[[x]]) %*% as.numeric(gwas[,"Z"])
+    twas_z_list <- lapply(colnames(Bhat), function(x){
+                Zi <- crossprod(Bhat[,x], g[[x]]) %*% as.numeric(z[,"Z"])
                 pval <- 2*pnorm(abs(Zi), lower.tail=FALSE)
                 Zp <- data.frame(Zi, pval)
                 colnames(Zp) <- c("Z", "pval")
-                z <- do.call(c, Zp)
-                return(z)})
-    z <- do.call(rbind, z_list)
-    rownames(z) = colnames(Bhat) 
+                twas_z <- do.call(c, Zp)
+                return(twas_z)})
+    twas_z <- do.call(rbind, twas_z_list)
+    rownames(twas_z) = colnames(Bhat) 
 
     #lambda
     lam <- matrix(rep(NA,ncol(Bhat)*nrow(Bhat)), nrow = ncol(Bhat))
@@ -137,8 +137,8 @@ twas_joint_z <- function(y_sd, x_sd, Bhat, gwas, ld){
     idx <- which(rownames(ld) %in% rownames(Bhat))
     D <- ld[idx,idx]
     sig <- tcrossprod((lam %*% D), lam)
-    gbj <- GBJ(test_stats=z[,1], cor_mat=sig)
-    rs <- list("Z" =z, "GBJ"=gbj)
+    gbj <- GBJ(test_stats=twas_z[,1], cor_mat=sig)
+    rs <- list("TWAS_Z" =twas_z, "GBJ"=gbj)
     return(rs)
     
 }
