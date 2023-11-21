@@ -105,7 +105,7 @@ pval_global <- function(pvals, comb_method = "HMP", naive=FALSE) {
                            
            
 #twas_joint_z and gbj
-twas_joint_z <- function(y_sd, x_sd, Bhat, z, ld){
+twas_joint_z <- function(y_sd, x_sd, Bhat, gwas_z, ld){
     #get gamma matrix MxM (snp x snp) 
     g <- lapply(colnames(Bhat), function(x){
         gm <- diag(x_sd/y_sd[x], length(x_sd), length(x_sd))
@@ -115,7 +115,7 @@ twas_joint_z <- function(y_sd, x_sd, Bhat, z, ld){
 
     ######### Get TWAS - Z statistics & P-value, GBJ test ########  
     twas_z_list <- lapply(colnames(Bhat), function(x){
-                Zi <- crossprod(Bhat[,x], g[[x]]) %*% as.numeric(z[,"Z"])
+                Zi <- crossprod(Bhat[,x], g[[x]]) %*% as.numeric(gwas_z[,"Z"])
                 pval <- 2*pnorm(abs(Zi), lower.tail=FALSE)
                 Zp <- data.frame(Zi, pval)
                 colnames(Zp) <- c("Z", "pval")
