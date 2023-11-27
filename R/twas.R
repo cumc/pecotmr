@@ -104,25 +104,31 @@ pval_global <- function(pvals, comb_method = "HMP", naive=FALSE) {
 }
                            
            
-#twas_joint_z and gbj
-twas_joint_z <- function(y_sd, x_sd, Bhat, gwas_z, ld){
+#utmost_twas_z
+twas_joint_z <- function(X, Bhat, gwas_z){
+    #calculate sd_j (standard deviation per SNP in X) 
+    sdco <- colSds(X, na.rm=TRUE)
+
+    # Get eta (sd per tissue in expression) 
+    E_hat <- X %*% Bhat ## E_hat <- predict(Bhat,X) 
+    sde <- colSds(E_hat, na.rm=TRUE)
+
     #get gamma matrix MxM (snp x snp) 
     g <- lapply(colnames(Bhat), function(x){
-        gm <- diag(x_sd/y_sd[x], length(x_sd), length(x_sd))
+        gm <- diag(sdco/sde[x], length(sdco), length(sdco))
         return(gm)
         })
         names(g) <- colnames(Bhat)
 
     ######### Get TWAS - Z statistics & P-value, GBJ test ########  
-    twas_z_list <- lapply(colnames(Bhat), function(x){
-                Zi <- crossprod(Bhat[,x], g[[x]]) %*% as.numeric(gwas_z[,"Z"])
-                pval <- 2*pnorm(abs(Zi), lower.tail=FALSE)
-                Zp <- data.frame(Zi, pval)
-                colnames(Zp) <- c("Z", "pval")
-                twas_z <- do.call(c, Zp)
-                return(twas_z)})
-    twas_z <- do.call(rbind, twas_z_list)
-    rownames(twas_z) = colnames(Bhat) 
+    z <- do.call(rbind, lapply(colnames(Bhat), function(x){
+            Zi <- crossprod(Bhat[,x], g[[x]]) %*% as.numeric(gwas_z[,"Z"])
+            pval <- 2*pnorm(abs(Zi), lower.tail=FALSE)
+            Zp <- data.frame(Zi, pval)
+            colnames(Zp) <- c("Z", "pval")
+            twas_z <- do.call(c, Zp)
+            return(twas_z)}))
+    rownames(z) = colnames(Bhat) 
 
     #lambda
     lam <- matrix(rep(NA,ncol(Bhat)*nrow(Bhat)), nrow = ncol(Bhat))
@@ -132,13 +138,10 @@ twas_joint_z <- function(y_sd, x_sd, Bhat, gwas_z, ld){
             lam[p, ] <-  la
             }
 
-    #covariance matrix & sigma
-    #D <- cov(Xnew)
-    idx <- which(rownames(ld) %in% rownames(Bhat))
-    D <- ld[idx,idx]
+    #covariance matrix & sigma & GBJ
+    D <- cov(X)
     sig <- tcrossprod((lam %*% D), lam)
-    gbj <- GBJ(test_stats=twas_z[,1], cor_mat=sig)
-    rs <- list("TWAS_Z" =twas_z, "GBJ"=gbj)
+    gbj <- GBJ(test_stats=z[,1], cor_mat=sig)
+    rs <- list("Z" =z, "GBJ"=gbj)
     return(rs)
-    
 }
