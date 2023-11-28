@@ -42,6 +42,7 @@ read_fam <- function(bed) {
 }
 
 # open pgen/pvar PLINK 2 data format
+#' @importFrom pgenlibr NewPgen
 open_pgen <- function(pgenf){
     return(NewPgen(pgenf))
 } 
@@ -52,7 +53,7 @@ open_bed <- function(bed){
     raw_s_ct <- nrow(read_fam(bed))
     return(NewPgen(bed, raw_sample_ct = raw_s_ct))
 }
-#' @importFrom pgenlibr ReadList
+#' @importFrom pgenlibr ReadList GetVariantCt
 read_pgen <- function(pgen, variantidx = NULL, meanimpute = F ) {
   if (is.null(variantidx)){
     variantidx <- 1:GetVariantCt(pgen)}
