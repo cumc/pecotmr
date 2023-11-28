@@ -114,7 +114,7 @@ twas_joint_z <- function(ld, Bhat, gwas_z){
     
     cov_y <- crossprod(Bhat, D) %*% Bhat
     y_sd <- sqrt(diag(cov_y))
-    x_sd <- rep(1, nrow(bhat))   #we assume X is standardized
+    x_sd <- rep(1, nrow(Bhat))   #we assume X is standardized
     
     #get gamma matrix MxM (snp x snp) 
     g <- lapply(colnames(Bhat), function(x){
