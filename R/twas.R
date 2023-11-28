@@ -105,17 +105,20 @@ pval_global <- function(pvals, comb_method = "HMP", naive=FALSE) {
                            
            
 #utmost_twas_z
-twas_joint_z <- function(X, Bhat, gwas_z){
-    #calculate sd_j (standard deviation per SNP in X) 
-    sdco <- colSds(X, na.rm=TRUE)
-
-    # Get eta (sd per tissue in expression) 
-    E_hat <- X %*% Bhat ## E_hat <- predict(Bhat,X) 
-    sde <- colSds(E_hat, na.rm=TRUE)
-
+## the utmost paper assumes X are not standardized, in the formula below - the input of X is assumed to be standardized 
+library(GBJ)
+           
+twas_joint_z <- function(ld, Bhat, gwas_z){
+    idx <- which(rownames(ld) %in% rownames(Bhat))
+    D <- ld[idx,idx]
+    
+    cov_y <- crossprod(Bhat, D) %*% Bhat
+    y_sd <- sqrt(diag(cov_y))
+    x_sd <- rep(1, nrow(bhat))   #we assume X is standardized
+    
     #get gamma matrix MxM (snp x snp) 
     g <- lapply(colnames(Bhat), function(x){
-        gm <- diag(sdco/sde[x], length(sdco), length(sdco))
+        gm <- diag(x_sd/y_sd[x], length(x_sd), length(x_sd))
         return(gm)
         })
         names(g) <- colnames(Bhat)
@@ -124,22 +127,19 @@ twas_joint_z <- function(X, Bhat, gwas_z){
     z <- do.call(rbind, lapply(colnames(Bhat), function(x){
             Zi <- crossprod(Bhat[,x], g[[x]]) %*% as.numeric(gwas_z[,"Z"])
             pval <- 2*pnorm(abs(Zi), lower.tail=FALSE)
-            Zp <- data.frame(Zi, pval)
-            colnames(Zp) <- c("Z", "pval")
-            twas_z <- do.call(c, Zp)
-            return(twas_z)}))
+            Zp <- c(Zi, pval)
+            names(Zp) <- c("Z", "pval")
+            return(Zp)}))
     rownames(z) = colnames(Bhat) 
 
-    #lambda
+    # GBJ test 
     lam <- matrix(rep(NA,ncol(Bhat)*nrow(Bhat)), nrow = ncol(Bhat))
         rownames(lam) <- colnames(Bhat)
         for (p in colnames(Bhat)) {
             la <- as.matrix(Bhat[,p] %*% g[[p]])
             lam[p, ] <-  la
             }
-
-    #covariance matrix & sigma & GBJ
-    D <- cov(X)
+    
     sig <- tcrossprod((lam %*% D), lam)
     gbj <- GBJ(test_stats=z[,1], cor_mat=sig)
     rs <- list("Z" =z, "GBJ"=gbj)
