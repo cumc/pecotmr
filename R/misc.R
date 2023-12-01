@@ -62,6 +62,7 @@ filter_Y <- function(Y, n_nonmiss){
 #' @import purrr dplyr tibble
 #' @importFrom utils read.table
 #' @importFrom tidyr unnest
+#' @importFrom stringr str_split
 load_regional_association_data <- function(genotype, # PLINK file
                                            phenotype, # a vector of phenotype file names 
                                            covariate, # a vector of covariate file names corresponding to the phenotype file vector
@@ -97,8 +98,8 @@ load_regional_association_data <- function(genotype, # PLINK file
         X_data = map(covar,~ filter_X( geno_bed[intersect(rownames(.x),rownames(geno_bed)),], imiss_cutoff, max(maf_cutoff, mac_cutoff/(2*length(intersect(rownames(.x),rownames(geno_bed))) ) ), xvar_cutoff)   ))
               
     ## Get residue Y for each of condition and its mean and sd
-    data_list = data_list%>%mutate(Y_resid_mean = map2(Y,covar,~.lm.fit(x = cbind(1,.y), y = .x)$residuals%>%mean),
-                               Y_resid_sd = map2(Y,covar,~.lm.fit(x = cbind(1,.y), y = .x)$residuals%>%sd),
+    data_list = data_list%>%mutate(Y_resid_mean = map2(Y,covar,~.lm.fit(x = cbind(1,.y), y = .x)$residuals%>%apply(.,2,mean)),
+                               Y_resid_sd = map2(Y,covar,~.lm.fit(x = cbind(1,.y), y = .x)$residuals%>%apply(.,2,sd)),
                                Y_resid = map2(Y,covar,~.lm.fit(x = cbind(1,.y), y = .x)$residuals%>%scale%>%t%>%as_tibble)) ## T so that it can be unnest
     if(y_as_matrix) {
         Y_resid = data_list%>%select(Y_resid)%>%unnest(Y_resid)%>%t%>%as.matrix
@@ -120,7 +121,7 @@ load_regional_association_data <- function(genotype, # PLINK file
                                X_resid_sd= map2(X_data,covar,~.lm.fit(x = cbind(1,.y), y = .x)$residuals%>%data.frame()%>%apply(.,2,sd)),
                                X_resid = map2(X_data,covar,~.lm.fit(x = cbind(1,.y), y = .x)$residuals%>%scale))%>%select(X_resid_mean,X_resid_sd,X_resid)
     ## process region
-    region <- unlist(strsplit(region, ":", fixed = TRUE))
+    region = unlist(strsplit(region, ":", fixed = TRUE))
     ## residual_Y_scaled: if y_as_matrix is true, then return a matrix of R conditions, with column names being the names of the conditions (phenotypes) and row names being sample names. Even for one condition it has to be a matrix with just one column. if y_as_matrix is false, then return a list of y either vector or matrix (CpG for example), and they need to match with residual_X_scaled in terms of which samples are missing.
     ## residual_X_scaled: is a list of R conditions each is a matrix, with list names being the names of conditions, column names being SNP names and row names being sample names.
     ## X: is the somewhat original genotype matrix output from `filter_X`, with column names being SNP names and row names being sample names. Sample names of X should match example sample names of residual_Y_scaled matrix form (not list); but the matrices inside residual_X_scaled would be subsets of sample name of residual_Y_scaled matrix form (not list).
@@ -152,8 +153,8 @@ load_regional_univariate_data <- function(...) {
           X = dat$X,
           dropped_sample = dat$dropped_sample,
           maf = dat$maf,
-          chrom = region[1],
-          grange = unlist(strsplit(region[2], "-", fixed = TRUE))
+          chrom = dat$chrom,
+          grange = dat$grange
           ))
 }
 
@@ -167,8 +168,8 @@ load_regional_regression_data <- function(...) {
           covar = dat$covar,
           dropped_sample = dat$dropped_sample,
           maf = dat$maf,
-          chrom = region[1],
-          grange = unlist(strsplit(region[2], "-", fixed = TRUE))
+          chrom = dat$chrom,
+          grange = dat$grange
           ))
 }
 
@@ -176,14 +177,18 @@ load_regional_regression_data <- function(...) {
 #' @export
 load_regional_multivariate_data <- function(matrix_y_min_complete = NULL, # when Y is saved as matrix, remove those with non-missing counts less than this cutoff
                                             ...) {
-  dat <- load_regional_association_data(y_as_matrix = TRUE, ...)
+  dat = load_regional_association_data(y_as_matrix = TRUE, ...)
   if (!is.null(matrix_y_min_complete)) {
-    Y <- filter_Y(dat$residual_Y_scaled, matrix_y_min_complete)
-    if (Y$rm_rows>0) {
-      X <- dat$X[-Y$rm_rows, ]
-      Y_sd <- Y_sd[-rm_rows]
-      dropped_sample = rownames(dat$residual_Y_scaled)[rm_rows]
-    }
+    Y = filter_Y(dat$residual_Y_scaled, matrix_y_min_complete)
+    if (length(Y$rm_rows)>0) {
+      X =  dat$X[-Y$rm_rows, ]
+      Y_sd = dat$residual_Y_sd[-Y$rm_rows]
+      dropped_sample = rownames(dat$residual_Y_scaled)[Y$rm_rows]
+    }else{
+     X = dat$X
+     Y_sd = dat$residual_Y_sd
+     dropped_sample = dat$dropped_sample
+     }   
   } else {
     Y = dat$residual_Y_scaled
     X = dat$X
@@ -196,7 +201,7 @@ load_regional_multivariate_data <- function(matrix_y_min_complete = NULL, # when
         dropped_sample = dropped_sample,
         X = X,
         maf = dat$maf,
-        chrom = region[1],
-        grange = unlist(strsplit(region[2], "-", fixed = TRUE)) 
+        chrom = dat$chrom,
+        grange = dat$grange
         ))
 }

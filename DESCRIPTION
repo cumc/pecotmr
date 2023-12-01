@@ -26,10 +26,10 @@ Imports:
     plink2R,
     readr,
     tidyr,
-    pgenlibr,
     glmnet,
     purrr,
     harmonicmeanp,
+    pgenlibr,
     Rfast,
     vctrs
 Suggests: 
