@@ -109,35 +109,35 @@ pval_global <- function(pvals, comb_method = "HMP", naive=FALSE) {
 #' @importFrom GBJ GBJ
 #' @export
            
-twas_joint_z <- function(ld, Bhat, gwas_z){
-    idx <- which(rownames(ld) %in% rownames(Bhat))
+twas_joint_z <- function(ld, weight_matrix, gwas_z){
+    idx <- which(rownames(ld) %in% rownames(weight_matrix))
     D <- ld[idx,idx]
     
-    cov_y <- crossprod(Bhat, D) %*% Bhat
+    cov_y <- crossprod(weight_matrix, D) %*% weight_matrix
     y_sd <- sqrt(diag(cov_y))
-    x_sd <- rep(1, nrow(Bhat))   #we assume X is standardized
+    x_sd <- rep(1, nrow(weight_matrix))   #we assume X is standardized
     
     #get gamma matrix MxM (snp x snp) 
-    g <- lapply(colnames(Bhat), function(x){
+    g <- lapply(colnames(weight_matrix), function(x){
         gm <- diag(x_sd/y_sd[x], length(x_sd), length(x_sd))
         return(gm)
         })
-        names(g) <- colnames(Bhat)
+        names(g) <- colnames(weight_matrix)
 
     ######### Get TWAS - Z statistics & P-value, GBJ test ########  
-    z <- do.call(rbind, lapply(colnames(Bhat), function(x){
-            Zi <- crossprod(Bhat[,x], g[[x]]) %*% as.numeric(gwas_z[,"Z"])
+    z <- do.call(rbind, lapply(colnames(weight_matrix), function(x){
+            Zi <- crossprod(weight_matrix[,x], g[[x]]) %*% as.numeric(gwas_z[,"Z"])
             pval <- 2*pnorm(abs(Zi), lower.tail=FALSE)
             Zp <- c(Zi, pval)
             names(Zp) <- c("Z", "pval")
             return(Zp)}))
-    rownames(z) = colnames(Bhat) 
+    rownames(z) = colnames(weight_matrix) 
 
     # GBJ test 
-    lam <- matrix(rep(NA,ncol(Bhat)*nrow(Bhat)), nrow = ncol(Bhat))
-        rownames(lam) <- colnames(Bhat)
-        for (p in colnames(Bhat)) {
-            la <- as.matrix(Bhat[,p] %*% g[[p]])
+    lam <- matrix(rep(NA,ncol(weight_matrix)*nrow(weight_matrix)), nrow = ncol(weight_matrix))
+        rownames(lam) <- colnames(weight_matrix)
+        for (p in colnames(weight_matrix)) {
+            la <- as.matrix(weight_matrix[,p] %*% g[[p]])
             lam[p, ] <-  la
             }
     
