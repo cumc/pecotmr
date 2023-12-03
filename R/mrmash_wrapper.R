@@ -2,13 +2,10 @@
 # remotes::install_github("stephenslab/mr.mash.alpha")
 #
 # mr.mash pipeline 
-# fit mr.mash
 #' @importFrom mr.mash.alpha compute_V_init extract_missing_Y_pattern impute_missing_Y compute_canonical_covs mr.mash expand_covs
 #' @importFrom matrixStats colVars rowSds
 #' @importFrom glmnet cv.glmnet
 #' @importFrom doMC registerDoMC
-#' @export
-
 
 
 
@@ -189,6 +186,13 @@
     }
     
 
+
+# fit mr.mash
+#' @importFrom mr.mash.alpha compute_V_init extract_missing_Y_pattern impute_missing_Y compute_canonical_covs mr.mash expand_covs
+#' @importFrom matrixStats colVars rowSds
+#' @importFrom glmnet cv.glmnet
+#' @importFrom doMC registerDoMC
+#' @export
 
 mr.mash.pipeline  <- function(X, 
                               Y, 
