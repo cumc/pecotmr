@@ -323,18 +323,11 @@ mr.mash.pipeline  <- function(X,
             Ytrain=Y
             } #For no CV
     
-        fit_mrmash <- tryCatch({mr.mash(X=Xtrain, Y=Ytrain, S0=S0, w0=w0, update_w0=update_w0, tol=tol,
+        fit_mrmash <- mr.mash(X=Xtrain, Y=Ytrain, S0=S0, w0=w0, update_w0=update_w0, tol=tol,
                                                  max_iter=max_iter, convergence_criterion="ELBO", compute_ELBO=TRUE,
                                                  standardize=standardize, verbose=verbose, update_V=update_V, update_V_method=update_V_method,
                                                  w0_threshold=w0_threshold, nthreads=nthreads, mu1_init=B_init)
-                          },
-                         error=function(e) {
-                              message("Original mr.mash error message:")
-                              message(e)
-                              return(NULL)
-                          })
 
-        
 
         time2 <- proc.time()
         elapsed_time <- time2["elapsed"] - time1["elapsed"]
