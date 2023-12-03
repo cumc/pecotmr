@@ -2,13 +2,7 @@
 # requires mr.mash.alpha package. 
 # remotes::install_github("stephenslab/mr.mash.alpha")
 #
-#' mr.mash pipeline 
-#' @importFrom mr.mash.alpha compute_V_init extract_missing_Y_pattern impute_missing_Y
-#' @importFrom matrixStats colVars rowSds
-#' @importFrom glmnet cv.glmnet
-#' @importFrom doMC registerDoMC
-#' @export
-#'
+# mr.mash pipeline 
  
 
 
@@ -33,7 +27,7 @@ fdat <- load_regional_multivariate_data <- function(gene,
 
 #fit mr.mash
 #function for mrmash prediction 
-#' @importFrom mr.mash.alpha compute_V_init extract_missing_Y_pattern impute_missing_Y
+#' @importFrom mr.mash.alpha compute_V_init extract_missing_Y_pattern impute_missing_Y compute_canonical_cov mr.mash expand_covs
 #' @importFrom matrixStats colVars rowSds
 #' @importFrom glmnet cv.glmnet
 #' @importFrom doMC registerDoMC
