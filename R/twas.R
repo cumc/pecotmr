@@ -106,7 +106,8 @@ pval_global <- function(pvals, comb_method = "HMP", naive=FALSE) {
            
 #utmost_twas_z
 ## the utmost paper assumes X are not standardized, in the formula below - the input of X is assumed to be standardized 
-library(GBJ)
+#' @importFrom GBJ GBJ
+#' @export
            
 twas_joint_z <- function(ld, Bhat, gwas_z){
     idx <- which(rownames(ld) %in% rownames(Bhat))
