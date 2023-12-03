@@ -354,9 +354,6 @@ fishr_pval <- function(pvals){
 #Functions to compute mr.mash prediction accuracy
 prediction_accuracy <- function(dat_first, dat_input){
     thresh <- 100
-    if(!dir.exists(file.path(wd, "pred_score"))){dir.create(file.path(wd, "pred_score"))}
-    
-    
     
     ###Extract sample size
     sample_size <- apply(dat_input$y_res, 2, function(x){sum(!is.na(x))})

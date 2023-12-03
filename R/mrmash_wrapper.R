@@ -55,8 +55,7 @@ mr.mash.pipeline  <- function(X,
                               save_model=FALSE, 
                               glmnet_pred = TRUE){
     set.seed(999)                      
-    if(!dir.exists(file.path(wd, "prediction"))){dir.create(file.path(wd, "prediction"))}
-    resdir <- paste0(wd, "/prediction")
+    
     
     w0_init <- tryCatch(readRDS('.'), 
         error = function(e) {
@@ -76,8 +75,6 @@ mr.mash.pipeline  <- function(X,
         myfold <- "all"
         message("sample_partition not provided, fitting mr.mash without cross validation. ")
         }
-
-    if(!dir.exists(file.path(resdir, myfold))){dir.create(file.path(resdir, myfold))}  
         
 
     sumstats <- NULL
