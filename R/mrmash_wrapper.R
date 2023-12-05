@@ -346,12 +346,6 @@ mr.mash.pipeline <- function(X,
       }
     }
 
-  # get fold information
-  fold <- unique(sample_partition$fold)
-  if (length(fold) != 1) {
-    message("Please provide sample IDs for one fold.")
-  }
-
   # computing prior weights
   w0_init <- prior_weights
   if (is.null(w0_init)) {
