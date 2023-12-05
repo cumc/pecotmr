@@ -112,8 +112,7 @@ mrmash_wrapper <- function(X,
                            B_init_method="enet",
                            max_iter=5000, 
                            tol = 0.01, 
-                           verbose = FALSE 
-                           ){
+                           verbose = FALSE){
 
   if (is.null(prior_grid)) {
     stop("Please provide prior grid.")
