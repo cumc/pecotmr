@@ -5,10 +5,11 @@
 #' 
 #' @description Take precomputed prior grid and mixture prior to compute weights with mr.mash
 #' 
-#' @param X n x p matrix of genotype, where n is the total number of individuals and p denotes the number of SNPs.
+#' @param X n x p matrix of genotype, where n is the total number of individuals and p denotes
+#' the number of SNPs.
 #' 
-#' @param Y n x r matrix of residual for expression, where n is the total number of individuals and 
-#' r is the total number of conditions (tissue/cell-types). 
+#' @param Y n x r matrix of residual for expression, where n is the total number of individuals 
+#' and r is the total number of conditions (tissue/cell-types). 
 #' 
 #' @param prior_data_driven_matrices A list of data-driven covariance matrices.
 #' 
@@ -29,8 +30,8 @@
 #'   
 #' \item{V}{r x r residual covariance matrix. }
 #' 
-#' \item{w0}{K-vector with (updated, if \code{update_w0=TRUE}) prior mixture weights, each associated with
-#'   the respective covariance matrix in \code{S0}}.
+#' \item{w0}{K-vector with (updated, if \code{update_w0=TRUE}) prior mixture weights, each 
+#'  associated with the respective covariance matrix in \code{S0}}.
 #'   
 #' \item{S0}{r x r x K array of prior covariance matrices
 #'   on the regression coefficients. }
@@ -69,7 +70,8 @@
 #' X<- matrix(sample(0:2, size=n*p, replace=TRUE, prob=c(.65,.30,.05)), nrow=n)
 #' rownames(X) <- sample_id
 #' colnames(X) <- paste0("rs", sample(10000:100000, p)) #snp names
-#' tissues <- c('Adipose Tissue','Muscle Tissue', 'Brain Tissue','Liver Tissue','Kidney Tissue','Heart Tissue','Lung Tissue')
+#' tissues <- c('Adipose Tissue','Muscle Tissue', 'Brain Tissue','Liver Tissue','Kidney Tissue',
+#' 'Heart Tissue','Lung Tissue')
 #' Y <- matrix(runif(n*r,-2,2), nrow=n)
 #' Y <- scale(Y)
 #' colnames(Y) <- tissues
@@ -77,8 +79,7 @@
 #' 
 #' 
 #' set.seed(Sys.time())
-#' components <- c('XtX','tFLASH_default','FLASH_default_1','FLASH_default_2','FLASH_default_3','FLASH_default_4','
-#' FLASH_default_5','tFLASH_nonneg','FLASH_nonneg_1','FLASH_nonneg_2','FLASH_nonneg_3','PCA_1','PCA_2','PCA_3','tPCA')
+#' components <- c('XtX','tFLASH_default','FLASH_default','tFLASH_nonneg','FLASH_nonneg','PCA')
 #' 
 #' prior_data_driven_matrices <- list()
 #' for (i in components){
@@ -106,7 +107,6 @@ mrmash_wrapper <- function(X,
                            prior_canonical_matrices = FALSE,
                            standardize=TRUE, 
                            update_w0 = TRUE,
-                           w0_threshold = 1e-8,
                            update_V=TRUE, 
                            update_V_method = "full", 
                            B_init_method="enet",
@@ -163,7 +163,7 @@ mrmash_wrapper <- function(X,
   fit_mrmash <- mr.mash(X=X, Y=Y, S0=S0, w0=w0, update_w0=update_w0, tol=tol,
                         max_iter=max_iter, convergence_criterion="ELBO", compute_ELBO=TRUE,
                         standardize=standardize, verbose=verbose, update_V=update_V, update_V_method=update_V_method,
-                        w0_threshold=w0_threshold, nthreads=nthreads, mu1_init=B_init)
+                        nthreads=nthreads, mu1_init=B_init)
 
   time2 <- proc.time()
   elapsed_time <- time2["elapsed"] - time1["elapsed"]
