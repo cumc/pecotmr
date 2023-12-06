@@ -242,14 +242,33 @@ init_prior_sd <- function (X, y, n = 30) {
 
 #' @importFrom glmnet cv.glmnet
 #' @importFrom stats coef
-#' @export
-glmnet_weights <- function(X, y, alpha=0.5) {
+glmnet_weights <- function(X, y, alpha) {
 	eff.wgt = matrix(0, ncol=1, nrow=ncol(X))
 	sds = apply(X, 2, sd)
 	keep = sds != 0 & !is.na(sds)
 	enet = cv.glmnet(x=X[,keep], y=y, alpha=alpha, nfold=5, intercept=T, standardize=F)
 	eff.wgt[keep] = coef( enet , s = "lambda.min")[2:(sum(keep)+1)]
 	return(eff.wgt)
+}
+
+#' @export 
+enet_weights <- function(X, y) glmnet_weights(X,y,0.5) 
+
+#' @export
+lasso_weights <- function(X, y) glmnet_weights(X,y,1) 
+
+#' @examples 
+#' wgt.mr.ash = mr_ash_weights(eqtl$X, eqtl$y_res, beta.init=lasso_weights(X,y))
+#' @importFrom mr.ash.alpha mr.ash
+#' @importFrom stats predict
+#' @export
+mr_ash_weights <- function(X, y, init_prior_sd=TRUE, ...) {
+    args_list <- list(...)
+    if (!"beta.init" %in% names(args_list)) {
+        args_list$beta.init <- lasso_weights(X, y)
+    }
+    fit.mr.ash <- do.call("mr.ash", c(list(X = X, y = y, sa2 = ifelse(init_prior_sd, init_prior_sd(X, y)^2, NULL)), args_list))
+    predict(fit.mr.ash, type = "coefficients")[-1]
 }
 
 #' @examples 
