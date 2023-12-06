@@ -107,6 +107,7 @@ mrmash_wrapper <- function(X,
                            prior_canonical_matrices = FALSE,
                            standardize=TRUE, 
                            update_w0 = TRUE,
+                           w0_threshold = 1e-8,
                            update_V=TRUE, 
                            update_V_method = "full", 
                            B_init_method="enet",
@@ -151,18 +152,12 @@ mrmash_wrapper <- function(X,
   B_init <- out$Bhat
   w0 <- compute_w0(B_init, length(S0))
 
-    
-  ### Filter prior components based on weights
-  comps_filtered <- filter_S0_w0(S0=S0, w0=w0)
-  S0 <- comps_filtered$S0
-  w0 <- comps_filtered$w0
-  rm(comps_filtered)
 
   ### Fit mr.mash
   fit_mrmash <- mr.mash(X=X, Y=Y, S0=S0, w0=w0, update_w0=update_w0, tol=tol,
                         max_iter=max_iter, convergence_criterion="ELBO", compute_ELBO=TRUE,
                         standardize=standardize, verbose=verbose, update_V=update_V, update_V_method=update_V_method,
-                        nthreads=nthreads, mu1_init=B_init)
+                        w0_threshold = w0_threshold, nthreads=nthreads, mu1_init=B_init)
 
   time2 <- proc.time()
   elapsed_time <- time2["elapsed"] - time1["elapsed"]
@@ -290,17 +285,6 @@ compute_coefficients_univ_glmnet <- function(X, Y, alpha, standardize, nthreads,
     results <- list(Bhat=Bhat[-1, ], intercept=Bhat[1, ])
   }
   return(results)
-}
-
-
-
-### Filter S0 and w0Drop mixture components with weight equal to 0
-filter_S0_w0 <- function(S0, w0, thresh=.Machine$double.eps) {
-  comps_to_keep <- which(w0 > thresh)
-  S0 <- S0[comps_to_keep]
-  w0 <- w0[comps_to_keep]
-
-  return(list(S0=S0, w0=w0))
 }
 
 
