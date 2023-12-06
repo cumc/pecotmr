@@ -1,7 +1,7 @@
 #' @importFrom susieR get_cs_correlation univariate_regression susie_get_cs
 #' @importFrom stringr str_replace
 #' @export 
-susie_twas_wrapper <- function(fobj, X_data, y_data, X_sd, y_sd, maf, secondary_coverage = 0.7, signal_cutoff = 0.1, twas_weights = TRUE, other_quantities=list()) {
+susie_post_processor <- function(fobj, X_data, y_data, X_sd, y_sd, maf, secondary_coverage = 0.5, signal_cutoff = 0.1, other_quantities=list()) {
     get_cs_index <- function(snps_idx, susie_cs) {
         idx <- tryCatch(
             which(
@@ -76,17 +76,6 @@ susie_twas_wrapper <- function(fobj, X_data, y_data, X_sd, y_sd, maf, secondary_
     } else {
         fobj = list(analysis_script = load_script(), pip = fobj$pip, variant_names = gsub("_",":",names(fobj$pip)))
         names(fobj$pip) = NULL
-    }
-    if (twas_weights) {
-        # generate weights for TWAS using some alternative approaches
-        fobj$susie_weights = susie_weights(fobj)
-        fobj$susie_r2 = cor(X_data %*% fobj$susie_weights, y_data)^2
-        fobj$enet_weights = glmnet_weights(X_data, y_data)
-        fobj$enet_r2 = cor(X_data %*% fobj$enet_weights, y_data)^2
-        fobj$lasso_weights = glmnet_weights(X_data, y_data, alpha = 1)
-        fobj$lasso_r2 = cor(X_data %*% fobj$lasso_weights, y_data)^2
-        fobj$mr_ash_weights = mr_ash_weights(X_data, y_data, beta.init=fobj$lasso_weights)
-        fobj$mr_ash_r2 = cor(X_data %*% fobj$mr_ash_weights, y_data)^2
     }
     return(fobj)
 }

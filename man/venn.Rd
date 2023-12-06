@@ -9,6 +9,9 @@ venn(data)
 \arguments{
 \item{data}{a list with the twas siginificant gene_id results of four method "SuSiE","Lasso","Enet" and "MR.ASH"}
 }
+\value{
+
+}
 \description{
 Venn Diagram
 }
