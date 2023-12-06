@@ -2,8 +2,9 @@
 
 export(allele_qc)
 export(compute_qtl_enrichment)
+export(enet_weights)
 export(fine_mr)
-export(glmnet_weights)
+export(lasso_weights)
 export(load_regional_multivariate_data)
 export(load_regional_regression_data)
 export(load_regional_univariate_data)
