@@ -227,11 +227,11 @@ susie_weights <- function(X=NULL, y=NULL, susie_fit=NULL, ...) {
     return(coef.susie(susie_fit)[-1])
 }
 
-#' @importFrom mr.mash.alpha coef.mr.mash.alpha
+#' @importFrom mr.mash.alpha coef.mr.mash
 #' @export
 mrmash_weights <- function(...) {
     res <- mrmash_wrapper(...)
-    return(coef.mr.mash.alpha(res)[-1,])
+    return(coef.mr.mash(res)[-1,])
 }
 
 # Get a reasonable setting for the standard deviations of the mixture
