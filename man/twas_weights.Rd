@@ -21,8 +21,3 @@ A list where each element is named after a method and contains the weight matrix
 Applies specified methods to the datasets X and Y, returning weight matrices for each method.
 Handles both univariate and multivariate methods, and filters out columns in X with zero standard error.
 }
-\examples{
-# Example usage with predefined methods and arguments:
-# twas_new_fusion(X = my_data_matrix, Y = outcome_vector, methods = list(method1 = list(arg1 = value1, arg2 = value2), method2 = list(arg1 = value1)))
-
-}
