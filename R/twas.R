@@ -123,7 +123,7 @@ twas_cv = function(X, Y, fold = NULL, sample_partitions = NULL, methods = NULL, 
                     predictions_matrix[fold_indices, ] <- Y_pred
                 } else {
                     for (k in 1:ncol(Y)) {
-                        weights <- do.call(method_name, c(list(X = X_train_filtered, Y = Y_train[, k]), args))
+                        weights <- do.call(method_name, c(list(X = X_train_filtered, y = Y_train[, k]), args))
                         full_weights <- rep(0, ncol(X))
                         full_weights[valid_columns] <- weights
                         # Handle NAs in weights
@@ -157,6 +157,70 @@ twas_cv = function(X, Y, fold = NULL, sample_partitions = NULL, methods = NULL, 
               )
     }
 }
+
+
+#' Run multiple TWAS methods
+#'
+#' Applies specified methods to the datasets X and Y, returning weight matrices for each method.
+#' Handles both univariate and multivariate methods, and filters out columns in X with zero standard error.
+#'
+#' @param X A matrix of samples by features, where each row represents a sample and each column a feature.
+#' @param Y A matrix (or vector, which will be converted to a matrix) of samples by outcomes, where each row corresponds to a sample.
+#' @param methods A list of methods and their specific arguments, formatted as list(method1 = method1_args, method2 = method2_args). 
+#' Methods in the list are applied to the datasets X and Y.
+#'
+#' @return A list where each element is named after a method and contains the weight matrix produced by that method.
+#'
+#' @examples
+#' # Example usage with predefined methods and arguments:
+#' # twas_new_fusion(X = my_data_matrix, Y = outcome_vector, methods = list(method1 = list(arg1 = value1, arg2 = value2), method2 = list(arg1 = value1)))
+#'
+#' @export
+twas_weights = function(X, Y, methods) {
+    if (!is.matrix(X) || (!is.matrix(Y) && !is.vector(Y))) {
+        stop("X must be a matrix and Y must be a matrix or a vector.")
+    }
+
+    if (is.vector(Y)) {
+        Y <- matrix(Y, ncol = 1)
+    }
+
+    if (nrow(X) != nrow(Y)) {
+        stop("The number of rows in X and Y must be the same.")
+    }
+
+    # Hardcoded vector of multivariate methods
+    multivariate_methods = c('mr.mash.wrapper')
+
+    weights_list <- list()
+    for (method_name in names(methods)) {
+        args <- methods[[method_name]]  # Specific arguments for this method
+
+        # Remove columns with zero standard error
+        valid_columns <- apply(X, 2, function(col) sd(col) != 0)
+        X_filtered <- X[, valid_columns]
+
+        if (method_name %in% multivariate_methods) {
+            # Apply multivariate method
+            weights_matrix <- do.call(method_name, c(list(X = X_filtered, Y = Y), args))
+            # Adjust the weights matrix to include zeros for invalid columns
+            full_weights_matrix <- matrix(0, nrow = ncol(X), ncol = ncol(Y))
+            full_weights_matrix[valid_columns, ] <- weights_matrix
+            weights_list[[method_name]] <- full_weights_matrix
+        } else {
+            # Apply univariate method to each column of Y
+            weights_matrix <- matrix(NA, nrow = ncol(X_filtered), ncol = ncol(Y))
+            for (k in 1:ncol(Y)) {
+                weights_vector <- do.call(method_name, c(list(X = X_filtered, y = Y[, k]), args))
+                weights_matrix[, k] <- weights_vector
+            }
+            weights_list[[method_name]] <- weights_matrix
+        }
+    }
+
+    return(weights_list)
+}
+
 
 #' @importFrom susieR coef.susie
 #' @export
