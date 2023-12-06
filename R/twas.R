@@ -171,10 +171,6 @@ twas_cv = function(X, Y, fold = NULL, sample_partitions = NULL, methods = NULL, 
 #'
 #' @return A list where each element is named after a method and contains the weight matrix produced by that method.
 #'
-#' @examples
-#' # Example usage with predefined methods and arguments:
-#' # twas_new_fusion(X = my_data_matrix, Y = outcome_vector, methods = list(method1 = list(arg1 = value1, arg2 = value2), method2 = list(arg1 = value1)))
-#'
 #' @export
 twas_weights = function(X, Y, methods) {
     if (!is.matrix(X) || (!is.matrix(Y) && !is.vector(Y))) {
@@ -224,8 +220,12 @@ twas_weights = function(X, Y, methods) {
 
 #' @importFrom susieR coef.susie
 #' @export
-susie_weights <- function(susie_fit) {
-    coef.susie(susie_fit)[-1]
+susie_weights <- function(X=NULL, y=NULL, susie_fit=NULL, ...) {
+    if (is.null(susie_fit)) {
+        # get susie_fit object
+        susie_fit = susie_wrapper(X,y,...)
+    }
+    return(coef.susie(susie_fit)[-1])
 }
 
 # Get a reasonable setting for the standard deviations of the mixture
