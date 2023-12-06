@@ -25,7 +25,6 @@ twas_z <- function(weights, z, R=NULL, X=NULL) {
     return(list(z=zscore, pval=pval))
 }
 
-
 #' Cross-Validation for Transcriptome-Wide Association Studies (TWAS)
 #'
 #' Performs cross-validation for TWAS, supporting both univariate and multivariate methods. 
@@ -226,6 +225,13 @@ susie_weights <- function(X=NULL, y=NULL, susie_fit=NULL, ...) {
         susie_fit = susie_wrapper(X,y,...)
     }
     return(coef.susie(susie_fit)[-1])
+}
+
+#' @importFrom susieR coef.susie
+#' @export
+mrmash_weights <- function(...) {
+    res <- mrmash_wrapper(...)
+    return(coef.mr.mash.alpha(res)[-1,])
 }
 
 # Get a reasonable setting for the standard deviations of the mixture
