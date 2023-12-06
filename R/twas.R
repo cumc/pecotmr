@@ -227,7 +227,7 @@ susie_weights <- function(X=NULL, y=NULL, susie_fit=NULL, ...) {
     return(coef.susie(susie_fit)[-1])
 }
 
-#' @importFrom susieR coef.susie
+#' @importFrom mr.mash.alpha coef.mr.mash.alpha
 #' @export
 mrmash_weights <- function(...) {
     res <- mrmash_wrapper(...)
