@@ -123,17 +123,20 @@ mrmash_wrapper <- function(X,
     stop("Please provide prior_data_driven_matrices or set prior_canonical_matrices=TRUE.")
   }  
     
-    
+
   ### Compute canonical matrices, if requested
   if (isTRUE(prior_canonical_matrices)) {
     prior_canonical_matrices <- compute_canonical_covs(ncol(Y), singletons=TRUE, hetgrid=c(0, 0.25, 0.5, 0.75, 1))
+      
     if (!is.null(prior_data_driven_matrices)) {
-      S0_raw <- c(prior_canonical_matrices, prior_data_driven_matrices)
+      prior_data_driven_matrices <- filter_datadriven_mats(Y, prior_data_driven_matrices)
+      S0_raw <- c(prior_canonical_matrices, prior_data_driven_matrices)  
     } else {
       S0_raw <- prior_canonical_matrices 
     }
+      
   } else {
-    S0_raw <- prior_data_driven_matrices
+    S0_raw <- filter_datadriven_mats(Y, prior_data_driven_matrices)
   }
     
     
@@ -174,7 +177,6 @@ mrmash_wrapper <- function(X,
 ########## utility functions for mr.mash#########
 
 #' @importFrom doMC registerDoMC
-#' @importFrom mr.mash.alpha extract_missing_Y_pattern compute_V_init impute_missing_Y
 #' @importFrom glmnet cv.glmnet
 #'
 ### Function to compute initial estimates of the coefficients from group-lasso
@@ -188,10 +190,10 @@ compute_coefficients_glasso <- function(X, Y, standardize, nthreads, Xnew=NULL, 
 
   if (Y_has_missing) {
     ### Extract per-individual Y missingness patterns
-    Y_miss_patterns <- extract_missing_Y_pattern(Y)
+    Y_miss_patterns <- mr.mash.alpha:::extract_missing_Y_pattern(Y)
 
     ### Compute V and its inverse
-    V <- compute_V_init(X, Y, matrix(0, p, r), method="flash")
+    V <- mr.mash.alpha:::compute_V_init(X, Y, matrix(0, p, r), method="flash")
     Vinv <- chol2inv(chol(V))
 
     ### Initialize missing Ys
@@ -204,7 +206,7 @@ compute_coefficients_glasso <- function(X, Y, standardize, nthreads, Xnew=NULL, 
     mu <- matrix(rep(muy, each=n), n, r)
 
     ### Impute missing Ys
-    Y <- impute_missing_Y(Y=Y, mu=mu, Vinv=Vinv, miss=Y_miss_patterns$miss, non_miss=Y_miss_patterns$non_miss,
+    Y <- mr.mash.alpha:::impute_missing_Y(Y=Y, mu=mu, Vinv=Vinv, miss=Y_miss_patterns$miss, non_miss=Y_miss_patterns$non_miss,
                           version=version)$Y
   }
 
@@ -299,4 +301,12 @@ compute_w0 <- function(Bhat, ncomps) {
   }
 
   return(w0)
+}
+
+
+###Filter data-driven matrices 
+filter_datadriven_mats<- function(Y, datadriven_mats){
+  tissues_to_keep <- colnames(Y)
+  datadriven_mats_filt <- lapply(datadriven_mats, function(x, to_keep){x[to_keep, to_keep]}, tissues_to_keep)
+  return(datadriven_mats_filt)
 }
