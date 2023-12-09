@@ -50,6 +50,6 @@ load_LD_matrix <- function(LD_block_path, region) {
     LD.block[upper.tri(LD.block)] <- t(LD.block)[upper.tri(LD.block)]
     #upperTriangle(LD.block, byrow = TRUE) <- lowerTriangle(LD.block)
     colnames(LD.block) <- rownames(LD.block) <- LD.matrix.names
-    return list("names" = LD.matrix.names, "block" = LD.block)
+    return(list("names" = LD.matrix.names, "block" = LD.block))
 
 }
