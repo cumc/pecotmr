@@ -37,32 +37,7 @@ twas_scan <- function(weights_path, region, GWAS_data, LD_block_path) {
                             remove_dups = TRUE, flip = TRUE, remove = TRUE) %>% 
       mutate(variant_allele_flip = paste(chr, pos, A1.sumstats, A2.sumstats, sep = ":"))
     
-    # Load LD matrix
-    LD.files <- bt.intersect(a = LD_block_path, b = region)
-    LD.files.name <- unique(LD.files$V5)
-    LD.list <- list()
-    LD.matrix.names <- NULL
-    
-    for (k in seq_along(LD.files.name)) {
-      npz <- np$load(LD.files.name[k])
-      LD.matrix <- npz$f[["arr_0"]]
-      LD.snps <- str_split(LD.files.name[k], "[.]", simplify = TRUE) %>% 
-        .[,-c(length(.), (length(.) - 1))] %>% 
-        paste(., collapse = ".") %>% 
-        paste0(., ".bim", sep = "") %>% 
-        read.table(.)
-      
-      LD_names <- colnames(LD.matrix) <- rownames(LD.matrix) <- gsub("_", ":", LD.snps$V2)
-      snp_merge <- intersect(LD_names, outcome_QC$variant_allele_flip)
-      LD.select <- as.matrix(LD.matrix[snp_merge, snp_merge])
-      LD.list[[k]] <- LD.select
-      LD.matrix.names <- append(LD.matrix.names, snp_merge)
-    }
-    
-    LD.block <- as.matrix(bdiag(LD.list))
-    LD.block[upper.tri(LD.block)] <- t(LD.block)[upper.tri(LD.block)]
-    #upperTriangle(LD.block, byrow = TRUE) <- lowerTriangle(LD.block)
-    colnames(LD.block) <- rownames(LD.block) <- LD.matrix.names
+    LD.matrix <- load_LD_matrix(LD_block_path, region)
     
     # Generate the twas_z format input
     twas_z_format <- data.frame(LD.matrix.names) %>% 
