@@ -336,3 +336,48 @@ pval_global <- function(pvals, comb_method = "HMP", naive=FALSE) {
     naive_pval <- min(n_total_tests*min_pval, 1.0)
     return(if (naive) naive_pval else global_pval) # global_pval and naive_pval
 }
+           
+
+           
+## TWAS with UTMOST framework
+## the utmost paper assumes X are not standardized, in the formula below - the input of X is assumed to be standardized 
+#' @importFrom GBJ GBJ
+#' @export
+           
+twas_joint_z <- function(ld, Bhat, gwas_z){
+    idx <- which(rownames(ld) %in% rownames(Bhat))
+    D <- ld[idx,idx]
+    
+    cov_y <- crossprod(Bhat, D) %*% Bhat
+    y_sd <- sqrt(diag(cov_y))
+    x_sd <- rep(1, nrow(Bhat))   #we assume X is standardized
+    
+    #get gamma matrix MxM (snp x snp) 
+    g <- lapply(colnames(Bhat), function(x){
+        gm <- diag(x_sd/y_sd[x], length(x_sd), length(x_sd))
+        return(gm)
+        })
+        names(g) <- colnames(Bhat)
+
+    ######### Get TWAS - Z statistics & P-value, GBJ test ########  
+    z <- do.call(rbind, lapply(colnames(Bhat), function(x){
+            Zi <- crossprod(Bhat[,x], g[[x]]) %*% as.numeric(gwas_z[,"Z"])
+            pval <- 2*pnorm(abs(Zi), lower.tail=FALSE)
+            Zp <- c(Zi, pval)
+            names(Zp) <- c("Z", "pval")
+            return(Zp)}))
+    rownames(z) = colnames(Bhat) 
+
+    # GBJ test 
+    lam <- matrix(rep(NA,ncol(Bhat)*nrow(Bhat)), nrow = ncol(Bhat))
+        rownames(lam) <- colnames(Bhat)
+        for (p in colnames(Bhat)) {
+            la <- as.matrix(Bhat[,p] %*% g[[p]])
+            lam[p, ] <-  la
+            }
+    
+    sig <- tcrossprod((lam %*% D), lam)
+    gbj <- GBJ(test_stats=z[,1], cor_mat=sig)
+    rs <- list("Z" =z, "GBJ"=gbj)
+    return(rs)
+}
