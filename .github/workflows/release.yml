@@ -9,7 +9,6 @@ on:
       commit:
         description: Commit to use for tag
         required: false
-        default: ${{ GITHUB_SHA }}
 
 jobs:
   release:
@@ -21,13 +20,22 @@ jobs:
       - name: Checkout HEAD
         uses: actions/checkout@v3
 
+      - name: Determine commit
+        id: determine-commit
+        run:
+          if [[ ${{ github.events.input.commit }} != '' ]]; then
+            echo "commit=${{ github.events.input.commit }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "commit=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Create new tag
         id: tag_version
         uses: mathieudutour/github-tag-action@v6.1
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           custom_tag: ${{ github.events.input.tag }}
-          commit_sha: ${{ github.events.input.commit }}
+          commit_sha: ${{ needs.determine-commit.outputs.commit }}
           tag_prefix: ""
 
       - name: Create a GitHub release
