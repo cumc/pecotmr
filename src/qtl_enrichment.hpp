@@ -5,6 +5,7 @@
 #include <vector>
 #include <string>
 #include <map>
+#include <memory>
 #include <gsl/gsl_rng.h>
 #include <gsl/gsl_randist.h>
 #include <omp.h>

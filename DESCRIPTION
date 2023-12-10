@@ -16,6 +16,7 @@ Imports:
     susieR,
     mr.ash.alpha,
     mr.mash.alpha,
+    coloc,
     data.table,
     stringr,
     dplyr,
@@ -35,9 +36,11 @@ Imports:
     pgenlibr,
     ggvenn,
     Rfast,
+    GBJ,
+    doMC,
     vctrs
 Suggests: 
-    coloc,
+    harmonicmeanp,
     testthat,
     knitr,
     pillar,
