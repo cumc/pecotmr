@@ -1,0 +1,93 @@
+{% set version = "VERSION_PLACEHOLDER" %}
+{% set name = "pecotmr" %}
+
+package:
+  name: r-{{ name }}
+  version: {{ version }}
+
+source:
+  url: https://github.com/cumc/{{ name }}/archive/{{ version }}.tar.gz
+  sha256: SHA256SUM_PLACEHOLDER
+
+build:
+  merge_build_host: true  # [win]
+  number: 0
+  rpaths:
+    - lib/R/lib/
+    - lib/
+
+requirements:
+  build:
+    - cross-r-base {{ r_base }}  # [build_platform != target_platform]
+  host:
+    - bioconductor-qvalue
+    - r-bedtoolsr
+    - r-base=4.2
+    - r-coloc
+    - r-data.table
+    - r-domc
+    - r-dplyr
+    - r-gbj
+    - r-ggplot2
+    - r-ggnewscale
+    - r-ggrepel
+    - r-ggvenn
+    - r-glmnet
+    - r-harmonicmeanp
+    - r-magrittr
+    - r-matrix
+    - r-mr.ash.alpha
+    - r-mr.mash.alpha
+    - r-pgenlibr
+    - r-plink2r
+    - r-purrr
+    - r-rcpp
+    - r-readr
+    - r-rfast
+    - r-rlab
+    - r-stringr
+    - r-susier
+    - r-vctrs
+  run:
+    - bioconductor-qvalue
+    - r-bedtoolsr
+    - r-base=4.2
+    - r-coloc
+    - r-data.table
+    - r-domc
+    - r-dplyr
+    - r-gbj
+    - r-ggplot2
+    - r-ggnewscale
+    - r-ggrepel
+    - r-ggvenn
+    - r-glmnet
+    - r-harmonicmeanp
+    - r-magrittr
+    - r-matrix
+    - r-mr.ash.alpha
+    - r-mr.mash.alpha
+    - r-pgenlibr
+    - r-plink2r
+    - r-purrr
+    - r-rcpp
+    - r-readr
+    - r-rfast
+    - r-rlab
+    - r-stringr
+    - r-susier
+    - r-vctrs
+
+test:
+  commands:
+    - $R -e "library('{{ name }}')"
+
+about:
+  home: https://github.com/stephenslab/mvsusier
+  license: GPL-3.0-or-later
+  license_file: LICENSE.md
+  summary: pecotmr implements pair-wise enrichment, colocalization, TWAS and Mendelian Randomization to integrate QTL and GWAS analysis based on a fine-mapped single effects model.
+
+extra:
+  recipe-maintainers:
+    - danielnachun
