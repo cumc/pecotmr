@@ -21,7 +21,6 @@ Imports:
     dplyr,
     Rlab,
     qvalue,
-    reticulate,
     Matrix,
     bedtoolsr,
     plink2R,
