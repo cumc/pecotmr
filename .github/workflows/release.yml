@@ -27,6 +27,7 @@ jobs:
         github_token: ${{ secrets.GITHUB_TOKEN }}
         custom_tag: ${{ github.events.input.tag }}
         commit_sha: ${{ github.events.input.commit }}
+        tag_prefix: ""
 
    - name: Create a GitHub release
         uses: ncipollo/release-action@v1
