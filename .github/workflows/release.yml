@@ -17,21 +17,21 @@ jobs:
     permissions:
       contents: write
 
-  steps:
-    - uses: actions/checkout@v2
+    steps:
+      - uses: actions/checkout@v2
 
-    - name: Create new tag
-      id: tag_version
-      uses: mathieudutour/github-tag-action@v6.1
-      with:
-        github_token: ${{ secrets.GITHUB_TOKEN }}
-        custom_tag: ${{ github.events.input.tag }}
-        commit_sha: ${{ github.events.input.commit }}
-        tag_prefix: ""
-
-   - name: Create a GitHub release
-        uses: ncipollo/release-action@v1
+      - name: Create new tag
+        id: tag_version
+        uses: mathieudutour/github-tag-action@v6.1
         with:
-          tag: ${{ steps.tag_version.outputs.new_tag }}
-          name: Release ${{ steps.tag_version.outputs.new_tag }}
-          body: ${{ steps.tag_version.outputs.changelog }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          custom_tag: ${{ github.events.input.tag }}
+          commit_sha: ${{ github.events.input.commit }}
+          tag_prefix: ""
+
+     - name: Create a GitHub release
+          uses: ncipollo/release-action@v1
+          with:
+            tag: ${{ steps.tag_version.outputs.new_tag }}
+            name: Release ${{ steps.tag_version.outputs.new_tag }}
+            body: ${{ steps.tag_version.outputs.changelog }}
