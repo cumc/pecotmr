@@ -18,7 +18,7 @@ twas_scan(weights_path, region, GWAS_data, LD_block_path)
 \value{
 A list 
 \describe{
-\item{twas_z_format}{the input format of twas_z function with the columns "variants_name","gene_name","chr","beta"."se","z","susie_weights","lasso_weights","enet_weights" and "mr_ash_weights".}
+\item{twas_z_format}{the input format of twas_z function with the columns "variants_name","gene_name","chr","beta"."se","z","susie_weights","lasso_weights","enet_weights" and "mrash_weights".}
 \item{gene_weights_pq}{twas_z function results with pvalue, qvalue and zscore}
 \item{outcome_QC}{the GWAS summary statistics of the outcome after QC (mainly accounting for allele flip)}
 }
