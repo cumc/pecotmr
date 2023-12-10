@@ -20,4 +20,5 @@ A list where each element is named after a method and contains the weight matrix
 \description{
 Applies specified methods to the datasets X and Y, returning weight matrices for each method.
 Handles both univariate and multivariate methods, and filters out columns in X with zero standard error.
+This function utilizes parallel processing to handle multiple methods.
 }

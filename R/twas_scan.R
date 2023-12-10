@@ -9,7 +9,7 @@
 #'
 #' @return A list 
 #' \describe{
-#' \item{twas_z_format}{the input format of twas_z function with the columns "variants_name","gene_name","chr","beta"."se","z","susie_weights","lasso_weights","enet_weights" and "mr_ash_weights".}
+#' \item{twas_z_format}{the input format of twas_z function with the columns "variants_name","gene_name","chr","beta"."se","z","susie_weights","lasso_weights","enet_weights" and "mrash_weights".}
 #' \item{gene_weights_pq}{twas_z function results with pvalue, qvalue and zscore}
 #' \item{outcome_QC}{the GWAS summary statistics of the outcome after QC (mainly accounting for allele flip)}
 #' }
@@ -48,27 +48,27 @@ twas_scan <- function(weights_path, region, GWAS_data, LD_block_path) {
       mutate(susie_weights = qtl_weights[[1]]$susie_weights[match(LD.matrix.names, qtl_weights[[1]]$variant_names)]) %>% 
       mutate(enet_weights = qtl_weights[[1]]$enet_weights[match(LD.matrix.names, qtl_weights[[1]]$variant_names)]) %>% 
       mutate(lasso_weights = qtl_weights[[1]]$lasso_weights[match(LD.matrix.names, qtl_weights[[1]]$variant_names)]) %>% 
-      mutate(mr_ash_weights = qtl_weights[[1]]$mr_ash_weights[match(LD.matrix.names, qtl_weights[[1]]$variant_names)]) %>% 
+      mutate(mrash_weights = qtl_weights[[1]]$mrash_weights[match(LD.matrix.names, qtl_weights[[1]]$variant_names)]) %>% 
       rename("variants_name" = "LD.matrix.names")
     
-    weights <- apply(twas_z_format[, c("susie_weights", "enet_weights", "lasso_weights", "mr_ash_weights")], 2, 
+    weights <- apply(twas_z_format[, c("susie_weights", "enet_weights", "lasso_weights", "mrash_weights")], 2, 
                      function(x) twas_z(x, twas_z_format$z, R = LD.block))
     
     twas_weights <- data.frame(gene_name = gene_name, chr = region$chr, 
                                weights$susie_weights$pval, weights$susie_weights$z, 
                                weights$lasso_weights$pval, weights$lasso_weights$z, 
                                weights$enet_weights$pval, weights$enet_weights$z, 
-                               weights$mr_ash_weights$pval, weights$mr_ash_weights$z)
+                               weights$mrash_weights$pval, weights$mrash_weights$z)
     
     names(twas_weights) <- c("gene_name", "chr", "susie_pval", "susie_z", "lasso_pval", 
-                             "lasso_z", "enet_pval", "enet_z", "mr_ash_pval", "mr_ash_z")
+                             "lasso_z", "enet_pval", "enet_z", "mrash_pval", "mrash_z")
     
-    p_values <- twas_weights[, c("susie_pval", "lasso_pval", "enet_pval", "mr_ash_pval")]
+    p_values <- twas_weights[, c("susie_pval", "lasso_pval", "enet_pval", "mrash_pval")]
     p_values[is.na(p_values)] <- 1
     q_values <- qvalue(p_values, lambda = 0)$qvalues
     
     gene_weights_pq <- data.frame(twas_weights, qvalue = q_values)
-    names(gene_weights_pq)[11:14] <- c("susie_qval", "lasso_qval", "enet_qval", "mr_ash_qval")
+    names(gene_weights_pq)[11:14] <- c("susie_qval", "lasso_qval", "enet_qval", "mrash_qval")
     
     # Calculate the pvalue and zscore using twas_z function
     return(list(twas_z_format = twas_z_format,

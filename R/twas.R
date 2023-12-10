@@ -276,11 +276,11 @@ enet_weights <- function(X, y) glmnet_weights(X,y,0.5)
 lasso_weights <- function(X, y) glmnet_weights(X,y,1) 
 
 #' @examples 
-#' wgt.mr.ash = mr_ash_weights(eqtl$X, eqtl$y_res, beta.init=lasso_weights(X,y))
+#' wgt.mr.ash = mrash_weights(eqtl$X, eqtl$y_res, beta.init=lasso_weights(X,y))
 #' @importFrom mr.ash.alpha mr.ash
 #' @importFrom stats predict
 #' @export
-mr_ash_weights <- function(X, y, init_prior_sd=TRUE, ...) {
+mrash_weights <- function(X, y, init_prior_sd=TRUE, ...) {
     args_list <- list(...)
     if (!"beta.init" %in% names(args_list)) {
         args_list$beta.init <- lasso_weights(X, y)
@@ -291,11 +291,11 @@ mr_ash_weights <- function(X, y, init_prior_sd=TRUE, ...) {
 
 #' @examples 
 #' wgt.lasso = glmnet_weights(X, y, alpha=1)
-#' wgt.mr.ash = mr_ash_weights(eqtl$X, eqtl$y_res, beta.init=wgt.lasso)
+#' wgt.mr.ash = mrash_weights(eqtl$X, eqtl$y_res, beta.init=wgt.lasso)
 #' @importFrom mr.ash.alpha mr.ash
 #' @importFrom stats predict
 #' @export
-mr_ash_weights <- function(X, y, init_prior_sd=TRUE, ...) {
+mrash_weights <- function(X, y, init_prior_sd=TRUE, ...) {
     sa2 = NULL
     if (init_prior_sd) sa2 = init_prior_sd(X,y)^2
     fit.mr.ash = mr.ash(X, y, sa2=sa2, ...)

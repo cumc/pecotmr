@@ -10,8 +10,8 @@ return(venn_plot)
 
 
 #' Manhattan plot
-#' @param twas_results a data frame of twas results with columns “gene_name", "gene_id","chr","susie_pval","lasso_pval","enet_pval" and "mr_ash_pval", where twas results are the output of the twas_scan function. "gene_name" is the ensemble ID and "gene_id" is the corresponding gene name,
-#'        "susie_pval", "lasso_pval","enet_pval" and "mr_ash_pval" are the pvalues of susie and other three competing twas method.
+#' @param twas_results a data frame of twas results with columns “gene_name", "gene_id","chr","susie_pval","lasso_pval","enet_pval" and "mrash_pval", where twas results are the output of the twas_scan function. "gene_name" is the ensemble ID and "gene_id" is the corresponding gene name,
+#'        "susie_pval", "lasso_pval","enet_pval" and "mrash_pval" are the pvalues of susie and other three competing twas method.
 #' @param gene_data a data frame with columns "chr", "start", "end", and "ID", "chr" is the chromosome of gene, "start" and "end" are the position, "ID" is the gene name.
 #' @return 
 #' @import ggplot2
@@ -20,15 +20,15 @@ return(venn_plot)
 #' @importFrom ggnewscale new_scale_color 
 #' @export
 manhattan_plot = function(twas_results,gene_data){
-min_pval = apply(twas_results[,c("susie_pval","lasso_pval","enet_pval","mr_ash_pval")],1,function(x) min(x,na.rm=TRUE))
-data_all_gene = twas_results%>%select(gene_name,chr,gene_id,susie_pval,lasso_pval,enet_pval,mr_ash_pval)%>%mutate(min_pval = min_pval)%>%mutate(chr=as.numeric(chr))
+min_pval = apply(twas_results[,c("susie_pval","lasso_pval","enet_pval","mrash_pval")],1,function(x) min(x,na.rm=TRUE))
+data_all_gene = twas_results%>%select(gene_name,chr,gene_id,susie_pval,lasso_pval,enet_pval,mrash_pval)%>%mutate(min_pval = min_pval)%>%mutate(chr=as.numeric(chr))
 gene_pos = gene_data%>%mutate(chr = as.numeric(str_sub(`#chr`,4)))%>%select(-`#chr`)%>%setNames(c("start_bp","end_bp","gene_name","chr"))
 gene_pos_pval = merge(data_all_gene,gene_pos,by = c("gene_name","chr"))
 
 susie_select = Mic_genes$gene_pq_adj%>%filter(susie_pval<(2.5*10^(-6)/4))%>%select(gene_id)%>%t()%>%as.vector()
 lasso_select = Mic_genes$gene_pq_adj%>%filter(lasso_pval<(2.5*10^(-6)/4))%>%select(gene_id)%>%t()%>%as.vector()
 enet_select = Mic_genes$gene_pq_adj%>%filter(enet_pval<(2.5*10^(-6)/4))%>%select(gene_id)%>%t()%>%as.vector()
-ash_select = Mic_genes$gene_pq_adj%>%filter(mr_ash_pval<(2.5*10^(-6)/4))%>%select(gene_id)%>%t()%>%as.vector()
+ash_select = Mic_genes$gene_pq_adj%>%filter(mrash_pval<(2.5*10^(-6)/4))%>%select(gene_id)%>%t()%>%as.vector()
 gene_annotate = unique(c(susie_select,lasso_select,enet_select,ash_select))
 
 results = NULL
