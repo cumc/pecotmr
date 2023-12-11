@@ -24,7 +24,7 @@ jobs:
 
       - name: Determine commit
         id: determine-commit
-        run:
+        run: |
           if [[ ${INPUT_COMMIT} != '' ]]; then
             echo "commit=${{ github.events.input.commit }}" >> "$GITHUB_OUTPUT"
           else
