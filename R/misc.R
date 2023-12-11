@@ -57,6 +57,10 @@ filter_Y <- function(Y, n_nonmiss){
   return(list(Y=Y, rm_rows = rm_rows))
 }
 
+matxMax <- function(mtx) {
+  return(arrayInd(which.max(mtx), dim(mtx)))
+}
+
 #' @import dplyr
 extract_tensorqtl_data <- function(path, region) {
         tabix_region(path, region) %>%
@@ -86,6 +90,12 @@ load_multitrait_tensorqtl_sumstat <- function(sumstats_paths, region, trait_name
         select(6:ncol(df)) %>%
         mutate(across(everything(), ~as.numeric(strsplit(as.character(.), ":")[[1]][component_index]))) %>%
         as.matrix
+    }
+
+    handle_nan_etc = function(x) {
+      x$bhat[which(is.nan(x$bhat))] = 0
+      x$sbhat[which(is.nan(x$sbhat) | is.infinite(x$sbhat))] = 1E3
+      return(x)
     }
     
     Y <- lapply(sumstats_paths, extract_tensorqtl_data, region)
@@ -120,7 +130,42 @@ load_multitrait_tensorqtl_sumstat <- function(sumstats_paths, region, trait_name
 
     rownames(dat$bhat) <- rownames(dat$sbhat) <- combined_matrix$variant
     colnames(dat$bhat) <- colnames(dat$sbhat) <- trait_names
+    dat <- handle_invalid_summary_stat(dat)
     return(dat)
+}
+
+#' @export
+load_susie_top_loci <- function(rds_files, trait_names) {
+    read_and_extract <- function(rds_file) {
+        dat <- readRDS(rds_file)
+
+        bhats <- lapply(dat, function(x) as.data.table(x$qtl_identified)[, .(variants, bhat)])
+        sbhats <- lapply(dat, function(x) as.data.table(x$qtl_identified)[, .(variants, sbhat)])
+
+        list(
+            bhat = do.call(cbind, lapply(bhats, `[[`, "bhat")),
+            sbhat = do.call(cbind, lapply(sbhats, `[[`, "sbhat")),
+            variants = bhats[[1]]$variants
+        )
+    }
+
+    results <- lapply(rds_files, read_and_extract)
+
+    out <- list(
+        bhat = rbindlist(lapply(results, function(x) data.table(variants = x$variants, x$bhat)), fill = TRUE),
+        sbhat = rbindlist(lapply(results, function(x) data.table(variants = x$variants, x$sbhat)), fill = TRUE)
+    )
+
+    variants <- out$bhat$variants
+
+    out$bhat <- out$bhat[, -1, with = FALSE]
+    out$sbhat <- out$sbhat[, -1, with = FALSE]
+    colnames(out$bhat) <- colnames(out$sbhat) <- trait_names
+
+    out$z <- out$bhat / out$sbhat
+    rownames(out$bhat) <- rownames(out$sbhat) <- rownames(out$z) <- variants
+
+    return(out)
 }
 
 
