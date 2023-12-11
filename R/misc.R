@@ -107,7 +107,7 @@ load_multitrait_tensorqtl_sumstat <- function(sumstats_paths, region, trait_name
         if (!file.exists(filter_file)) {
             stop("Filter file does not exist.")
         }
-        filter_df <- fread(filter_file, data.table = FALSE)
+        filter_df <- tabix_region(filter_file, region)
         if (!all(c("#CHROM", "POS") %in% colnames(filter_df))) {
             stop("Filter file must contain columns: #CHROM, POS.")
         }
