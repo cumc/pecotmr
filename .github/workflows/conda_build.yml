@@ -6,6 +6,10 @@ on:
       version:
         description: Version to build package for
         required: true
+      build:
+        description: "Build revision of package (default: 0)"
+        required: false
+        default: '0'
 
 jobs:
   build_package_linux:
@@ -25,13 +29,15 @@ jobs:
       - name: Create recipe from template
         run: |
           mkdir /tmp/recipe
-          cp recipe/meta.yaml /tmp/recipe/meta.yaml
-          cp recipe/build.sh /tmp/recipe/build.sh
+          cp .github/recipe/meta.yaml /tmp/recipe/meta.yaml
+          cp .github/recipe/build.sh /tmp/recipe/build.sh
           version=${{ github.event.inputs.version }}
+          build=${{ github.event.inputs.build }}
           wget https://github.com/cumc/pecotmr/archive/${version}.tar.gz
           sha256sum=$(sha256sum ${version}.tar.gz | cut -d ' ' -f 1)
           sed -i "s/VERSION_PLACEHOLDER/${version}/g" /tmp/recipe/meta.yaml
           sed -i "s/SHA256SUM_PLACEHOLDER/${sha256sum}/g" /tmp/recipe/meta.yaml
+          sed -i "s/BUILD_PLACEHOLDER/${build}/g" /tmp/recipe/meta.yaml
 
       - name: Setup up docker buildx
         uses: docker/setup-buildx-action@v2
@@ -75,20 +81,22 @@ jobs:
         uses: mamba-org/setup-micromamba@v1
         with:
           environment-name: boa
-          create-args: boa conda-verify anaconda-client sed
+          create-args: boa conda-verify anaconda-client sed coreutils
           generate-run-shell: true
 
       - name: Create recipe from template
         shell: micromamba-shell {0}
         run: |
           mkdir /tmp/recipe
-          cp recipe/meta.yaml /tmp/recipe/meta.yaml
-          cp recipe/build.sh /tmp/recipe/build.sh
+          cp .github/recipe/meta.yaml /tmp/recipe/meta.yaml
+          cp .github/recipe/build.sh /tmp/recipe/build.sh
           version=${{ github.event.inputs.version }}
+          build=${{ github.event.inputs.build }}
           wget https://github.com/cumc/pecotmr/archive/${version}.tar.gz
           sha256sum=$(sha256sum ${version}.tar.gz | cut -d ' ' -f 1)
           sed -i "s/VERSION_PLACEHOLDER/${version}/g" /tmp/recipe/meta.yaml
           sed -i "s/SHA256SUM_PLACEHOLDER/${sha256sum}/g" /tmp/recipe/meta.yaml
+          sed -i "s/BUILD_PLACEHOLDER/${build}/g" /tmp/recipe/meta.yaml
 
       - name: Set up channels
         shell: micromamba-shell {0}
