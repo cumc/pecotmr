@@ -147,7 +147,7 @@ twas_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, methods = NULL,
         for (k in 1:ncol(Y)) {
             for (m in 1:length(methods)) {
                 method_name <- names(methods)[m]
-                Y_pred <- method_results[[method_name]][, k]
+                Y_pred <- results[[method_name]][, k]
                 lm_fit <- lm(Y[, k] ~ Y_pred)
                 rsq_pval_table[m, 1] <- summary(lm_fit)$adj.r.squared
                 rsq_pval_table[m, 2] <- summary(lm_fit)$coefficients[2,4]
