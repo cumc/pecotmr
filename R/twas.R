@@ -57,7 +57,7 @@ twas_z <- function(weights, z, R=NULL, X=NULL) {
 #' @importFrom foreach %dopar%
 #' @importFrom doParallel registerDoParallel
 #' @export 
-twas_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, methods = NULL, seed = NULL) {
+twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, methods = NULL, seed = NULL) {
     # Validation checks
     if (is.null(fold) || !is.numeric(fold) || fold <= 0) {
         stop("Invalid value for 'fold'. It must be a positive integer.")
