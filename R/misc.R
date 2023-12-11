@@ -57,7 +57,42 @@ filter_Y <- function(Y, n_nonmiss){
   return(list(Y=Y, rm_rows = rm_rows))
 }
 
-load_genotype_data <- function(genotype, kkeep_indel = TRUE) {
+#' @import dplyr
+extract_tensorqtl_data <- function(path, region) {
+        tabix_region(path, region) %>%
+            mutate(variant = paste(`#CHROM`, POS, REF, ALT, sep = ":")) %>%
+            select(-c(3, 6:9)) %>%
+            distinct(variant, .keep_all = TRUE) %>%
+            as.matrix
+}
+
+# This function extracts tensorQTL results for given region for multiple summary statistics files
+#' @import dplyr
+#' @export 
+load_multitrait_tensorqtl_sumstat <- function(sumstats_paths, region, trait_names) {
+        extract_component <- function(df, component_index) {
+            df %>%
+            select(6:ncol(df)) %>%
+            mutate(across(everything(), ~as.numeric(strsplit(as.character(.), ":")[[1]][component_index]))) %>%
+            as.matrix
+        }
+        Y <- lapply(sumstats_paths, extract_tensorqtl_data, region)
+
+        # Combine matrices
+        combined_matrix <- Reduce(function(x, y) merge(x, y, by = c("variant", "#CHROM", "POS", "REF", "ALT")), Y) %>%
+            distinct(variant, .keep_all = TRUE)
+
+        dat <- list(
+            bhat = extract_component(combined_matrix, 1),
+            sbhat = extract_component(combined_matrix, 2)
+        )
+
+        rownames(dat$bhat) <- rownames(dat$sbhat) <- combined_matrix$variant
+        colnames(dat$bhat) <- colnames(dat$sbhat) <- trait_names
+        return(dat)
+}
+
+load_genotype_data <- function(genotype, keep_indel = TRUE) {
   # Only geno_bed is used in the functions
   geno = read_plink(genotype)
   rownames(geno$bed) = read.table(text = rownames(geno$bed), sep= ":")$V2
