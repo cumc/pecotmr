@@ -96,7 +96,7 @@ twas_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, methods = NULL,
         return(list(sample_partition = sample_partition))
     } else {
         # Hardcoded vector of multivariate methods
-        multivariate_methods <- c('mr.mash.wrapper')
+        multivariate_methods <- c('mrmash_wrapper')
 
         # Set up parallel backend to use multiple cores
         cl <- makeCluster(detectCores())
