@@ -68,29 +68,61 @@ extract_tensorqtl_data <- function(path, region) {
 
 # This function extracts tensorQTL results for given region for multiple summary statistics files
 #' @import dplyr
+#' @importFrom data.table fread
 #' @export 
-load_multitrait_tensorqtl_sumstat <- function(sumstats_paths, region, trait_names) {
-        extract_component <- function(df, component_index) {
-            df %>%
-            select(6:ncol(df)) %>%
-            mutate(across(everything(), ~as.numeric(strsplit(as.character(.), ":")[[1]][component_index]))) %>%
-            as.matrix
+load_multitrait_tensorqtl_sumstat <- function(sumstats_paths, region, trait_names, filter_file = NULL, remove_any_missing = TRUE, max_rows_selected = 300) {
+    if (!is.vector(sumstats_paths) || !all(file.exists(sumstats_paths))) {
+        stop("sumstats_paths must be a vector of existing file paths.")
+    }
+    if (!is.character(region) || length(region) != 1) {
+        stop("region must be a single character string.")
+    }
+    if (!is.character(trait_names)) {
+        stop("trait_names must be a vector of character strings.")
+    }
+
+    extract_component <- function(df, component_index) {
+        df %>%
+        select(6:ncol(df)) %>%
+        mutate(across(everything(), ~as.numeric(strsplit(as.character(.), ":")[[1]][component_index]))) %>%
+        as.matrix
+    }
+    
+    Y <- lapply(sumstats_paths, extract_tensorqtl_data, region)
+
+    combined_matrix <- Reduce(function(x, y) merge(x, y, by = c("variant", "#CHROM", "POS", "REF", "ALT")), Y) %>%
+        distinct(variant, .keep_all = TRUE)
+
+    if (!is.null(filter_file)) {
+        if (!file.exists(filter_file)) {
+            stop("Filter file does not exist.")
         }
-        Y <- lapply(sumstats_paths, extract_tensorqtl_data, region)
+        filter_df <- fread(filter_file, data.table = FALSE)
+        if (!all(c("#CHROM", "POS") %in% colnames(filter_df))) {
+            stop("Filter file must contain columns: #CHROM, POS.")
+        }
+        combined_matrix <- inner_join(combined_matrix, filter_df %>% select(`#CHROM`, POS), by = c("#CHROM", "POS"))
+    }
 
-        # Combine matrices
-        combined_matrix <- Reduce(function(x, y) merge(x, y, by = c("variant", "#CHROM", "POS", "REF", "ALT")), Y) %>%
-            distinct(variant, .keep_all = TRUE)
+    if (remove_any_missing) {
+        combined_matrix <- combined_matrix[complete.cases(combined_matrix), ]
+    }
 
-        dat <- list(
-            bhat = extract_component(combined_matrix, 1),
-            sbhat = extract_component(combined_matrix, 2)
-        )
+    if (!is.null(max_rows_selected) && max_rows_selected > 0 && max_rows_selected < nrow(combined_matrix)) {
+        selected_rows <- sample(nrow(combined_matrix), max_rows_selected)
+        combined_matrix <- combined_matrix[selected_rows, ]
+    }
 
-        rownames(dat$bhat) <- rownames(dat$sbhat) <- combined_matrix$variant
-        colnames(dat$bhat) <- colnames(dat$sbhat) <- trait_names
-        return(dat)
+    dat <- list(
+        bhat = extract_component(combined_matrix, 1),
+        sbhat = extract_component(combined_matrix, 2)
+    )
+
+    rownames(dat$bhat) <- rownames(dat$sbhat) <- combined_matrix$variant
+    colnames(dat$bhat) <- colnames(dat$sbhat) <- trait_names
+    return(dat)
 }
+
 
 load_genotype_data <- function(genotype, keep_indel = TRUE) {
   # Only geno_bed is used in the functions
