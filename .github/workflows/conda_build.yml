@@ -7,7 +7,7 @@ on:
         description: Version to build package for
         required: true
       build:
-        description: Build revision of package (default: 0)
+        description: "Build revision of package (default: 0)"
         required: false
         default: '0'
 
