@@ -1,0 +1,86 @@
+---
+title: "Intro to mr.mash"
+date: "`r Sys.Date()`"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Intro to mr.mash}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(collapse = TRUE,comment = "#",fig.width = 5,
+                      fig.height = 3,fig.align = "center",
+                      fig.cap = "&nbsp;",dpi = 120)
+```
+
+This vignette demonstrates how we use `pecotmr` package to implement mr.mash to compute weights 
+matrices for performing TWAS analysis. We use simulated data of a gene ($Y$) with expression 
+level in multi-conditions in $N \approx 400$ individuals. We want to first identify imputable 
+genotype matrix $X_{N\times P}$ ($P\approx3000$) for gene expression level using cross validation, 
+then compute weight matrix for TWAS analysis input.  
+
+
+## Set up your environment
+Load the `pecotmr` package.
+
+```{r load-pkgs}
+set.seed(999)
+library(pecotmr)
+```
+
+
+## Load data-set
+
+```{r}
+data(mrmash_data)
+attach(mrmash_data)
+```
+
+
+The genotype matrix $X$ is centered and standardized and filtered with MAF threshold of 
+0.05, missing rate threshold of 0.05
+
+The expression matrix $Y$ is quantile normalized, and filtered out conditions with subject
+less than 100. 
+
+```{r}
+dim(X)
+```
+
+```{r}
+dim(Y)
+```
+
+The mrmash_data includes mixture prior matrices and prior grids for the scenario of 
+cross validation and without cross validation. `prior_data_driven_matrices_folds` and
+`prior_grid_folds` contains list of data for each fold. In this example, we have prepared 
+the data for five-fold cross validation on the partition of the subjects.
+
+
+```{r}
+names(mrmash_data)
+```
+
+```{r}
+str(prior_data_driven_matrices)
+```
+
+```{r}
+str(prior_grid)
+```
+
+## twas_weights_cv()
+
+## twas_weights()
+
+#### mr.mash Wrapper without Cross-validation
+We fit mr.mash with pre-computed mixture_prior matrices and grid to compute weight matrix. 
+
+```{r}
+weight_matrix <- mrmash_wrapper(X=X, Y=Y, prior_data_driven_matrices=prior_matrices, 
+    prior_grid=prior_grid)
+    
+str(weight_matrix)
+```
