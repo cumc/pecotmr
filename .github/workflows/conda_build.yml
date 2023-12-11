@@ -75,7 +75,7 @@ jobs:
         uses: mamba-org/setup-micromamba@v1
         with:
           environment-name: boa
-          create-args: boa conda-verify anaconda-client sed
+          create-args: boa conda-verify anaconda-client sed coreutils
           generate-run-shell: true
 
       - name: Create recipe from template

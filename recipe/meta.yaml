@@ -95,7 +95,7 @@ test:
 about:
   home: https://github.com/stephenslab/mvsusier
   license: GPL-3.0-or-later
-  license_file: LICENSE.md
+  license_file: LICENSE
   summary: pecotmr implements pair-wise enrichment, colocalization, TWAS and Mendelian Randomization to integrate QTL and GWAS analysis based on a fine-mapped single effects model.
 
 extra:
