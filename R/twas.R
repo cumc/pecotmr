@@ -191,7 +191,7 @@ twas_weights <- function(X, Y, methods) {
     }
 
     # Hardcoded vector of multivariate methods
-    multivariate_methods <- c('mr.mash.wrapper')
+    multivariate_methods <- c('mrmash_wrapper')
 
     # Set up parallel backend to use multiple cores
     cl <- makeCluster(detectCores())
@@ -207,6 +207,7 @@ twas_weights <- function(X, Y, methods) {
         if (method_name %in% multivariate_methods) {
             # Apply multivariate method
             weights_matrix <- do.call(method_name, c(list(X = X_filtered, Y = Y), args))
+            weights_matrix <- weights_matrix$mu1
             # Adjust the weights matrix to include zeros for invalid columns
             full_weights_matrix <- matrix(0, nrow = ncol(X), ncol = ncol(Y))
             full_weights_matrix[valid_columns, ] <- weights_matrix
@@ -217,7 +218,7 @@ twas_weights <- function(X, Y, methods) {
             weights_matrix <- matrix(0, nrow = ncol(X_filtered), ncol = ncol(Y))
             for (k in 1:ncol(Y)) {
                 weights_vector <- do.call(method_name, c(list(X = X_filtered, Y = Y[, k]), args))
-                weights_matrix[, k] <- weights_vector
+                weights_matrix[, k] <- weights_vector$mu1
             }
             return(weights_matrix)
         }
