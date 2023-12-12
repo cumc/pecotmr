@@ -57,7 +57,7 @@ twas_z <- function(weights, z, R=NULL, X=NULL) {
 #' @importFrom foreach %dopar%
 #' @importFrom doParallel registerDoParallel
 #' @export 
-twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, methods = NULL, seed = NULL) {
+twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, methods = NULL, seed = NULL, num_threads = 1) {
     # Validation checks
     if (is.null(fold) || !is.numeric(fold) || fold <= 0) {
         stop("Invalid value for 'fold'. It must be a positive integer.")
@@ -167,7 +167,10 @@ twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, methods
 #' @param Y A matrix (or vector, which will be converted to a matrix) of samples by outcomes, where each row corresponds to a sample.
 #' @param methods A list of methods and their specific arguments, formatted as list(method1 = method1_args, method2 = method2_args). 
 #' Methods in the list are applied to the datasets X and Y.
-#'
+#' @param num_threads The number of threads to use for parallel processing.
+#'        If set to -1, the function uses all available cores.
+#'        If set to 0 or 1, no parallel processing is performed.
+#'        If set to 2 or more, parallel processing is enabled with that many threads.
 #' @return A list where each element is named after a method and contains the weight matrix produced by that method.
 #'
 #' @importFrom parallel makeCluster
@@ -177,7 +180,7 @@ twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, methods
 #' @importFrom foreach %dopar%
 #' @importFrom doParallel registerDoParallel
 #' @export
-twas_weights <- function(X, Y, methods) {
+twas_weights <- function(X, Y, methods, num_threads = 1) {
     if (!is.matrix(X) || (!is.matrix(Y) && !is.vector(Y))) {
         stop("X must be a matrix and Y must be a matrix or a vector.")
     }
@@ -190,16 +193,13 @@ twas_weights <- function(X, Y, methods) {
         stop("The number of rows in X and Y must be the same.")
     }
 
-    # Hardcoded vector of multivariate methods
-    multivariate_methods <- c('mrmash_weights')
+    # Determine number of cores to use
+    num_cores <- ifelse(num_threads == -1, parallel::detectCores(), num_threads)
 
-    # Set up parallel backend to use multiple cores
-    cl <- makeCluster(detectCores())
-    registerDoParallel(cl)
-
-    weights_list <- foreach(method_name = names(methods), .combine = 'c') %dopar% {
-        args <- methods[[method_name]]  # Specific arguments for this method
-
+    process_method <- function(method_name) {
+        # Hardcoded vector of multivariate methods
+        multivariate_methods <- c('mrmash_weights')
+        args <- methods[[method_name]]
         # Remove columns with zero standard error
         valid_columns <- apply(X, 2, function(col) sd(col) != 0)
         X_filtered <- X[, valid_columns]
@@ -217,13 +217,23 @@ twas_weights <- function(X, Y, methods) {
             weights_matrix <- matrix(0, nrow = ncol(X_filtered), ncol = ncol(Y))
             for (k in 1:ncol(Y)) {
                 weights_vector <- do.call(method_name, c(list(X = X_filtered, Y = Y[, k]), args))
+                weights_matrix[, k] <- weights_vector
             }
             return(weights_matrix)
         }
     }
 
-    # Stop the parallel cluster
-    stopCluster(cl)
+    if (num_cores >= 2) {
+        # Set up parallel backend to use multiple cores
+        cl <- makeCluster(num_cores)
+        registerDoParallel(cl)
+        weights_list <- foreach(method_name = names(methods), .combine = 'c') %dopar% {
+            process_method(method_name)
+        }
+        stopCluster(cl)
+    } else {
+        weights_list <- lapply(names(methods), process_method)
+    }
 
     return(weights_list)
 }
