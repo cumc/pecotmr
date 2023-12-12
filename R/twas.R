@@ -40,7 +40,10 @@ twas_z <- function(weights, z, R=NULL, X=NULL) {
 #' @param methods A list of methods and their specific arguments, formatted as list(method1 = method1_args, method2 = method2_args). 
 #' Methods in the list can be either univariate (applied to each column of Y) or multivariate (applied to the entire Y matrix).
 #' @param seed An optional integer to set the random seed for reproducibility of sample splitting.
-#'
+#' @param num_threads The number of threads to use for parallel processing.
+#'        If set to -1, the function uses all available cores.
+#'        If set to 0 or 1, no parallel processing is performed.
+#'        If set to 2 or more, parallel processing is enabled with that many threads.
 #' @return A list with the following components:
 #' \itemize{
 #'   \item `sample_partition`: A dataframe showing the sample partitioning used in the cross-validation.
@@ -98,15 +101,13 @@ twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, methods
         # Hardcoded vector of multivariate methods
         multivariate_methods <- c('mrmash_weights')
 
-        # Set up parallel backend to use multiple cores
-        cl <- makeCluster(detectCores())
-        registerDoParallel(cl)
-
+        # Determine the number of cores to use
+        num_cores <- ifelse(num_threads == -1, detectCores(), num_threads)
         # Perform CV with parallel processing
-        # After cross validation, each sample should have been in 
-        # test set at some point, and therefore has predicted value. 
+        # After cross validation, each sample should have been in
+        # test set at some point, and therefore has predicted value.
         # The prediction matrix is therefore exactly the same dimension as input Y
-        results <- foreach(j = 1:fold, .combine = 'c') %dopar% {
+        process_method <- function(j) {
             fold_indices <- which(folds == j)
             training_indices <- setdiff(1:nrow(X), fold_indices)
             X_train <- X[training_indices, ]
@@ -138,7 +139,17 @@ twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, methods
                 }
             })
         }
-        stopCluster(cl)
+
+        if (num_cores >= 2) {
+            cl <- makeCluster(num_cores)
+            registerDoParallel(cl)
+            results <- foreach(j = 1:fold, .combine = 'c') %dopar% {
+                process_method(j)
+            }
+            stopCluster(cl)
+        } else {
+            results <- lapply(1:fold, process_method)
+        }
 
         # Compute rsq and p-value for each method
         rsq_pval_table <- matrix(NA, nrow = length(methods), ncol = 2)
