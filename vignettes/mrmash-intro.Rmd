@@ -26,16 +26,18 @@ then compute weight matrix for TWAS analysis input.
 Load the `pecotmr` package.
 
 ```{r load-pkgs}
+rm(list=ls())
 set.seed(999)
 library(pecotmr)
+library(doParallel) 
 ```
 
 
 ## Load data-set
 
 ```{r}
-data(mrmash_data)
-attach(mrmash_data)
+data(multitrait_data)
+attach(multitrait_data)
 ```
 
 
@@ -54,33 +56,42 @@ dim(Y)
 ```
 
 The mrmash_data includes mixture prior matrices and prior grids for the scenario of 
-cross validation and without cross validation. `prior_data_driven_matrices_folds` and
-`prior_grid_folds` contains list of data for each fold. In this example, we have prepared 
+cross validation and without cross validation. `prior_matrices_cv` and
+`prior_grid_cv` contains list of data for each fold. In this example, we have prepared 
 the data for five-fold cross validation on the partition of the subjects.
 
-
 ```{r}
-names(mrmash_data)
+names(multitrait_data)
 ```
 
 ```{r}
-str(prior_data_driven_matrices)
+str(prior_matrices)
 ```
 
 ```{r}
 str(prior_grid)
 ```
 
-## twas_weights_cv()
+## twas_cv()
 
-## twas_weights()
-
-#### mr.mash Wrapper without Cross-validation
+## Compute Weight Matrix with mr.mash wrapper Function 
+#### Without Cross Validation
 We fit mr.mash with pre-computed mixture_prior matrices and grid to compute weight matrix. 
 
+
 ```{r}
-weight_matrix <- mrmash_wrapper(X=X, Y=Y, prior_data_driven_matrices=prior_matrices, 
-    prior_grid=prior_grid)
+source("~/githubrepo/pecotmr/R/twas.R") # with pecotmr library loaded inside function
+methods <- list(mrmash_wrapper = list(prior_data_driven_matrices=prior_matrices, 
+    prior_grid=prior_grid))
     
+weight_matrix <- twas_weights(X=X,Y=Y,methods=methods)
+```
+
+```{r}
 str(weight_matrix)
+```
+
+
+```{r}
+detach(multitrait_data)
 ```
