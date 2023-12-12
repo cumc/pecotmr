@@ -23,13 +23,11 @@ then compute weight matrix for TWAS analysis input.
 
 
 ## Set up your environment
+
 Load the `pecotmr` package.
 
 ```{r load-pkgs}
-rm(list=ls())
-set.seed(999)
 library(pecotmr)
-library(doParallel) 
 ```
 
 
@@ -72,26 +70,34 @@ str(prior_matrices)
 str(prior_grid)
 ```
 
-## twas_cv()
+## Cross validation to determine imputability of the unit
 
-## Compute Weight Matrix with mr.mash wrapper Function 
-#### Without Cross Validation
-We fit mr.mash with pre-computed mixture_prior matrices and grid to compute weight matrix. 
+```{r}
+set.seed(999)
+```
+
+## Compute Weight Matrix using mr.mash method 
+
+We fit mr.mash with pre-computed mixture prior matrices and grid to compute weight matrix. 
 
 
 ```{r}
-source("~/githubrepo/pecotmr/R/twas.R") # with pecotmr library loaded inside function
-methods <- list(mrmash_wrapper = list(prior_data_driven_matrices=prior_matrices, 
-    prior_grid=prior_grid))
+methods <- list(
+    mrmash_weights = list(
+    prior_data_driven_matrices=prior_matrices,
+    prior_grid=prior_grid)
+    )
     
-weight_matrix <- twas_weights(X=X,Y=Y,methods=methods)
+weight <- twas_weights(X=X,Y=Y,methods=methods)
 ```
 
 ```{r}
-str(weight_matrix)
+str(weight)
 ```
+
 
 
 ```{r}
 detach(multitrait_data)
 ```
+
