@@ -49,12 +49,12 @@ susie_post_processor <- function(fobj, X_data, y_data, X_scalar, y_scalar, maf, 
         } else {
             X_resid_scalar = 1
         }
-        univariate_res = univariate_regression(X_data[, variants_merge, drop=F], y_data)
+        fobj$sumstats = univariate_regression(X_data, y_data)
         if (!is.null(maf)) {
-            fobj$top_loci = data.frame(variants, maf[variants_merge], univariate_res$betahat*Y_resid_scalar/X_resid_scalar, univariate_res$sebetahat*Y_resid_scalar/X_resid_scalar, pip, cs_index_primary,cs_index_secondary)
+            fobj$top_loci = data.frame(variants, maf[variants_merge], fobj$sumstats$betahat[variants_merge]*Y_resid_scalar/X_resid_scalar, fobj$sumstats$sebetahat[variants_merge]*Y_resid_scalar/X_resid_scalar, pip, cs_index_primary, cs_index_secondary)
             colnames(fobj$top_loci) = c("variant_id", "maf", "bhat", "sbhat", "pip", "cs_index_primary","cs_index_secondary")
         } else {
-            fobj$top_loci = data.frame(variants, univariate_res$betahat*Y_resid_scalar/X_resid_scalar, univariate_res$sebetahat*Y_resid_scalar/X_resid_scalar, pip, cs_index_primary,cs_index_secondary)
+            fobj$top_loci = data.frame(variants, fobj$sumstats$betahat[variants_merge]*Y_resid_scalar/X_resid_scalar, fobj$sumstats$sebetahat[variants_merge]*Y_resid_scalar/X_resid_scalar, pip, cs_index_primary,cs_index_secondary)
             colnames(fobj$top_loci) = c("variant_id", "bhat", "sbhat", "pip", "cs_index_primary","cs_index_secondary")
         }
         rownames(fobj$top_loci) = NULL
