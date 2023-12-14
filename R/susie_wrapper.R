@@ -1,7 +1,7 @@
 #' @importFrom susieR get_cs_correlation univariate_regression susie_get_cs
 #' @importFrom stringr str_replace
 #' @export 
-susie_post_processor <- function(fobj, X_data, y_data, X_sd, y_sd, maf, secondary_coverage = 0.5, signal_cutoff = 0.1, other_quantities=list()) {
+susie_post_processor <- function(fobj, X_data, y_data, X_scalar, y_scalar, maf, secondary_coverage = 0.5, signal_cutoff = 0.1, other_quantities=list()) {
     get_cs_index <- function(snps_idx, susie_cs) {
         idx <- tryCatch(
             which(
@@ -39,22 +39,22 @@ susie_post_processor <- function(fobj, X_data, y_data, X_sd, y_sd, maf, secondar
         cs_index_primary = cs_index_secondary = rep(NA, length(variants_merge))
         cs_index_primary[match(variants_index,variants_merge)]=cs_pri
         cs_index_secondary[match(variants_index_secondary,variants_merge)]=cs_sec
-        if (!is.null(y_sd)) {
-            Y_resid_sd = fdat$residual_Y_sd[[r]]
+        if (!is.null(y_scalar)) {
+            Y_resid_scalar = fdat$residual_Y_scalar[[r]]
         } else {
-            Y_resid_sd = 1
+            Y_resid_scalar = 1
         }
-        if (!is.null(X_sd)) {
-            X_resid_sd = fdat$residual_X_sd[[r]][variants_merge]
+        if (!is.null(X_scalar)) {
+            X_resid_scalar = fdat$residual_X_scalar[[r]][variants_merge]
         } else {
-            X_resid_sd = 1
+            X_resid_scalar = 1
         }
         univariate_res = univariate_regression(X_data[, variants_merge, drop=F], y_data)
         if (!is.null(maf)) {
-            fobj$top_loci = data.frame(variants, maf[variants_merge], univariate_res$betahat*Y_resid_sd/X_resid_sd, univariate_res$sebetahat*Y_resid_sd/X_resid_sd, pip, cs_index_primary,cs_index_secondary)
+            fobj$top_loci = data.frame(variants, maf[variants_merge], univariate_res$betahat*Y_resid_scalar/X_resid_scalar, univariate_res$sebetahat*Y_resid_scalar/X_resid_scalar, pip, cs_index_primary,cs_index_secondary)
             colnames(fobj$top_loci) = c("variant_id", "maf", "bhat", "sbhat", "pip", "cs_index_primary","cs_index_secondary")
         } else {
-            fobj$top_loci = data.frame(variants, univariate_res$betahat*Y_resid_sd/X_resid_sd, univariate_res$sebetahat*Y_resid_sd/X_resid_sd, pip, cs_index_primary,cs_index_secondary)
+            fobj$top_loci = data.frame(variants, univariate_res$betahat*Y_resid_scalar/X_resid_scalar, univariate_res$sebetahat*Y_resid_scalar/X_resid_scalar, pip, cs_index_primary,cs_index_secondary)
             colnames(fobj$top_loci) = c("variant_id", "bhat", "sbhat", "pip", "cs_index_primary","cs_index_secondary")
         }
         rownames(fobj$top_loci) = NULL

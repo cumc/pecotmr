@@ -21,7 +21,7 @@ twas_z <- function(weights, z, R=NULL, X=NULL) {
     stat <- t(weights) %*% z
     denom <- t(weights) %*% R %*% weights
     zscore <- stat/sqrt(denom)
-    pval <- pchisq( zscore * zscore, 1, lower.tail = FALSE)
+    pval <- pchisq(zscore * zscore, 1, lower.tail = FALSE)
     return(list(z=zscore, pval=pval))
 }
 

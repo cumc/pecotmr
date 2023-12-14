@@ -168,7 +168,6 @@ load_susie_top_loci <- function(rds_files, trait_names) {
     return(out)
 }
 
-
 load_genotype_data <- function(genotype, keep_indel = TRUE) {
   # Only geno_bed is used in the functions
   geno = read_plink(genotype)
@@ -202,13 +201,20 @@ prepare_data_list <- function(phenotype, covariate, geno_bed, imiss_cutoff, maf_
   return(data_list)
 }
 
-compute_residuals <- function(data_list) {
+prepare_Y_residuals <- function(data_list, scale_residuals = FALSE) {
   ## Get residue Y for each of condition and its mean and sd
-  data_list = data_list %>%
+  data_list <- data_list %>%
     mutate(
-      Y_resid_mean = map2(Y, covar, ~.lm.fit(x = cbind(1,.y), y = .x)$residuals %>% apply(.,2,mean)),
-      Y_resid_sd = map2(Y, covar, ~.lm.fit(x = cbind(1,.y), y = .x)$residuals %>% apply(.,2,sd)),
-      Y_resid = map2(Y, covar, ~.lm.fit(x = cbind(1,.y), y = .x)$residuals %>% scale %>% t %>% as_tibble)) ## T so that it can be unnest
+      Y_resid_mean = map2(Y, covar, ~.lm.fit(x = cbind(1, .y), y = .x)$residuals %>% apply(., 2, mean)),
+      Y_resid_sd = map2(Y, covar, ~.lm.fit(x = cbind(1, .y), y = .x)$residuals %>% apply(., 2, sd)),
+      Y_resid = map2(Y, covar, ~{
+        residuals <- .lm.fit(x = cbind(1, .y), y = .x)$residuals
+        if (scale_residuals) {
+          residuals <- scale(residuals)
+        }
+        t(as_tibble(residuals))
+      })
+    )
   return(data_list)
 }
 
@@ -232,15 +238,20 @@ prepare_X_matrix <- function(geno_bed, data_list, imiss_cutoff, maf_cutoff, xvar
   return(X)
 }
 
-prepare_X_residuals <- function(data_list, X) {
-  ## Get residue X for each of condition and its mean and sd
-  print(paste0("Dimension of input genotype data is row:", nrow(X), " column: ", ncol(X) ))
-  X_list = data_list %>%
+prepare_X_residuals <- function(data_list, scale_residuals = FALSE) {
+  ## Get residue X for each condition and its mean and sd
+  X_list <- data_list %>%
     mutate(
-      X_resid_mean= map2(X_data,covar,~.lm.fit(x = cbind(1,.y), y = .x)$residuals %>% data.frame() %>% apply(.,2,mean)),
-      X_resid_sd= map2(X_data,covar,~.lm.fit(x = cbind(1,.y), y = .x)$residuals %>% data.frame() %>% apply(.,2,sd)),
-      X_resid = map2(X_data,covar,~.lm.fit(x = cbind(1,.y), y = .x)$residuals %>% scale)) %>%
-    select(X_resid_mean,X_resid_sd,X_resid)
+      X_resid_mean = map2(X_data, covar, ~.lm.fit(x = cbind(1, .y), y = .x)$residuals %>% data.frame() %>% apply(., 2, mean)),
+      X_resid_sd = map2(X_data, covar, ~.lm.fit(x = cbind(1, .y), y = .x)$residuals %>% data.frame() %>% apply(., 2, sd)),
+      X_resid = map2(X_data, covar, ~{
+        residuals <- .lm.fit(x = cbind(1, .y), y = .x)$residuals
+        if (scale_residuals) {
+          residuals <- scale(residuals)
+        }
+        residuals
+      })) %>%
+    select(X_resid_mean, X_resid_sd, X_resid)
   return(X_list)
 }
 
@@ -260,7 +271,8 @@ load_regional_association_data <- function(genotype, # PLINK file
                                            xvar_cutoff = 0,
                                            imiss_cutoff = 0,
                                            y_as_matrix = FALSE,
-                                           keep_indel = TRUE) {
+                                           keep_indel = TRUE,
+                                           scale_residuals = FALSE) {
     ## Load genotype
     geno <- load_genotype_data(genotype, keep_indel)
     ## Load phenotype and covariates and perform some pre-processing
@@ -268,23 +280,23 @@ load_regional_association_data <- function(genotype, # PLINK file
     data_list <- prepare_data_list(covariate, phenotype, region, geno$bed, imiss_cutoff,
                                     maf_cutoff, mac_cutoff, xvar_cutoff)
     ## Get residue Y for each of condition and its mean and sd
-    data_list <- compute_residuals(data_list)
+    data_list <- prepare_Y_residuals(data_list, scale_residuals)
     Y_resid <- process_Y_residuals(data_list, y_as_matrix, conditions)
     # Get X matrix for union of samples
     X <- prepare_X_matrix(geno$bed, data_list$covar, imiss_cutoff, maf_cutoff, xvar_cutoff)
-    X_list <- prepare_X_residuals(data_list, X)
-    maf_list = lapply(data_list$X_data, function(x) apply(x, 2, compute_maf))
-    region <- unlist(strsplit(region, ":", fixed = TRUE))
     ## Get residue X for each of condition and its mean and sd
     print(paste0("Dimension of input genotype data is row:", nrow(X), " column: ", ncol(X) ))
-    ## residual_Y_scaled: if y_as_matrix is true, then return a matrix of R conditions, with column names being the names of the conditions (phenotypes) and row names being sample names. Even for one condition it has to be a matrix with just one column. if y_as_matrix is false, then return a list of y either vector or matrix (CpG for example), and they need to match with residual_X_scaled in terms of which samples are missing.
-    ## residual_X_scaled: is a list of R conditions each is a matrix, with list names being the names of conditions, column names being SNP names and row names being sample names.
-    ## X: is the somewhat original genotype matrix output from `filter_X`, with column names being SNP names and row names being sample names. Sample names of X should match example sample names of residual_Y_scaled matrix form (not list); but the matrices inside residual_X_scaled would be subsets of sample name of residual_Y_scaled matrix form (not list).
+    X_list <- prepare_X_residuals(data_list, scale_residuals)
+    maf_list = lapply(data_list$X_data, function(x) apply(x, 2, compute_maf))
+    region <- unlist(strsplit(region, ":", fixed = TRUE))
+    ## residual_Y: if y_as_matrix is true, then return a matrix of R conditions, with column names being the names of the conditions (phenotypes) and row names being sample names. Even for one condition it has to be a matrix with just one column. if y_as_matrix is false, then return a list of y either vector or matrix (CpG for example), and they need to match with residual_X in terms of which samples are missing.
+    ## residual_X: is a list of R conditions each is a matrix, with list names being the names of conditions, column names being SNP names and row names being sample names.
+    ## X: is the somewhat original genotype matrix output from `filter_X`, with column names being SNP names and row names being sample names. Sample names of X should match example sample names of residual_Y matrix form (not list); but the matrices inside residual_X would be subsets of sample name of residual_Y matrix form (not list).
     return (list(
-      residual_Y_scaled = Y_resid,
-      residual_X_scaled = X_list$X_resid,
-      residual_Y_sd = data_list$Y_resid_sd,
-      residual_X_sd = X_list$X_resid_sd,
+      residual_Y = Y_resid,
+      residual_X = X_list$X_resid,
+      residual_Y_scalar = ifelse(scale_residuals, data_list$Y_resid_sd, 1)
+      residual_X_scalar = ifelse(scale_residuals, X_list$X_resid_sd, 1)
       dropped_sample = data_list$dropped_sample,
       covar = data_list$covar,
       Y = data_list$Y,
@@ -301,10 +313,10 @@ load_regional_association_data <- function(genotype, # PLINK file
 load_regional_univariate_data <- function(...) {
   dat <- load_regional_association_data(y_as_matrix = FALSE, ...)
   return (list(
-          residual_Y_scaled = dat$residual_Y_scaled,
-          residual_X_scaled = dat$residual_X_scaled,
-          residual_Y_sd = dat$residual_Y_sd,
-          residual_X_sd = dat$residual_X_sd,
+          residual_Y = dat$residual_Y,
+          residual_X = dat$residual_X,
+          residual_Y_scalar = dat$residual_Y_scalar,
+          residual_X_scalar = dat$residual_X_scalar,
           X = dat$X,
           dropped_sample = dat$dropped_sample,
           maf = dat$maf,
@@ -334,25 +346,25 @@ load_regional_multivariate_data <- function(matrix_y_min_complete = NULL, # when
                                             ...) {
   dat = load_regional_association_data(y_as_matrix = TRUE, ...)
   if (!is.null(matrix_y_min_complete)) {
-    Y = filter_Y(dat$residual_Y_scaled, matrix_y_min_complete)
+    Y = filter_Y(dat$residual_Y, matrix_y_min_complete)
     if (length(Y$rm_rows)>0) {
       X =  dat$X[-Y$rm_rows, ]
-      Y_sd = dat$residual_Y_sd[-Y$rm_rows]
-      dropped_sample = rownames(dat$residual_Y_scaled)[Y$rm_rows]
+      Y_scalar = dat$residual_Y_scalar[-Y$rm_rows]
+      dropped_sample = rownames(dat$residual_Y)[Y$rm_rows]
     }else{
      X = dat$X
-     Y_sd = dat$residual_Y_sd
+     Y_scalar = dat$residual_Y_scalar
      dropped_sample = dat$dropped_sample
     }   
   } else {
-    Y = dat$residual_Y_scaled
+    Y = dat$residual_Y
     X = dat$X
-    Y_sd = dat$residual_Y_sd
+    Y_scalar = dat$residual_Y_scalar
     dropped_sample = dat$dropped_sample
   }
   return (list(
-        residual_Y_scaled = Y,
-        residual_Y_sd = Y_sd,
+        residual_Y = Y,
+        residual_Y_scalar = Y_scalar,
         dropped_sample = dropped_sample,
         X = X,
         maf = dat$maf,
