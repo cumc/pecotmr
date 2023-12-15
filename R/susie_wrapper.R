@@ -14,10 +14,13 @@ susie_post_processor <- function(fobj, X_data, y_data, X_scalar, y_scalar, maf, 
     }
     eff_idx = which(fobj$V>0)
     if (length(eff_idx)>0) {
-        fobj$sets_secondary = susie_get_cs(fobj, X_data, coverage=secondary_coverage)
         fobj$analysis_script = load_script()
         fobj$cs_corr = get_cs_correlation(fobj, X=X_data)
         fobj$cs_snps = gsub("_",":",names(fobj$pip[unlist(fobj$sets$cs)]))
+        fobj_secondary = list(sets = susie_get_cs(fobj, X_data, coverage=secondary_coverage))
+        fobj$cs_secondary_corr = get_cs_correlation(fobj_secondary, X=X_data)
+        fobj$sets_secondary = fobj_secondary$sets
+        fobj_secondary = NULL
         fobj$phenotype_name = colnames(y_data)
         fobj$sample_names = rownames(y_data)
         fobj$variant_names = gsub("_",":",names(fobj$pip))
