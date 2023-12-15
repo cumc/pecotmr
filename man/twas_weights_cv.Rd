@@ -10,7 +10,8 @@ twas_weights_cv(
   fold = NULL,
   sample_partitions = NULL,
   methods = NULL,
-  seed = NULL
+  seed = NULL,
+  num_threads = 1
 )
 }
 \arguments{
@@ -28,6 +29,11 @@ containing columns 'Sample' (sample names) and 'Fold' (fold number). If NULL, 'f
 Methods in the list can be either univariate (applied to each column of Y) or multivariate (applied to the entire Y matrix).}
 
 \item{seed}{An optional integer to set the random seed for reproducibility of sample splitting.}
+
+\item{num_threads}{The number of threads to use for parallel processing.
+If set to -1, the function uses all available cores.
+If set to 0 or 1, no parallel processing is performed.
+If set to 2 or more, parallel processing is enabled with that many threads.}
 }
 \value{
 A list with the following components:

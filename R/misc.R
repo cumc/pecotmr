@@ -295,8 +295,8 @@ load_regional_association_data <- function(genotype, # PLINK file
     return (list(
       residual_Y = Y_resid,
       residual_X = X_list$X_resid,
-      residual_Y_scalar = ifelse(scale_residuals, data_list$Y_resid_sd, 1)
-      residual_X_scalar = ifelse(scale_residuals, X_list$X_resid_sd, 1)
+      residual_Y_scalar = ifelse(scale_residuals, data_list$Y_resid_sd, 1),
+      residual_X_scalar = ifelse(scale_residuals, X_list$X_resid_sd, 1),
       dropped_sample = data_list$dropped_sample,
       covar = data_list$covar,
       Y = data_list$Y,

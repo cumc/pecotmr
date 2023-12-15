@@ -1,8 +1,8 @@
 #' Venn Diagram
 #' @param data a list with the twas siginificant gene_id results of four method "SuSiE","Lasso","Enet" and "MR.ASH"
 #' @return 
-#' @importFrom ggvenn ggvenn
-#' @export
+# @importFrom ggvenn ggvenn
+# @export
 venn = function(data){
 venn_plot = ggvenn(data,c("SuSiE","Lasso","Enet","MR.ASH"),show_percentage=TRUE,fill_color = c("red","orange","blue","green"))
 return(venn_plot)
@@ -14,11 +14,11 @@ return(venn_plot)
 #'        "susie_pval", "lasso_pval","enet_pval" and "mrash_pval" are the pvalues of susie and other three competing twas method.
 #' @param gene_data a data frame with columns "chr", "start", "end", and "ID", "chr" is the chromosome of gene, "start" and "end" are the position, "ID" is the gene name.
 #' @return 
-#' @import ggplot2
-#' @importFrom ggrepel geom_label_repel
-#' @importFrom stringr str_sub
-#' @importFrom ggnewscale new_scale_color 
-#' @export
+# @import ggplot2
+# @importFrom ggrepel geom_label_repel
+# @importFrom stringr str_sub
+# @importFrom ggnewscale new_scale_color 
+# @export
 manhattan_plot = function(twas_results,gene_data){
 min_pval = apply(twas_results[,c("susie_pval","lasso_pval","enet_pval","mrash_pval")],1,function(x) min(x,na.rm=TRUE))
 data_all_gene = twas_results%>%select(gene_name,chr,gene_id,susie_pval,lasso_pval,enet_pval,mrash_pval)%>%mutate(min_pval = min_pval)%>%mutate(chr=as.numeric(chr))

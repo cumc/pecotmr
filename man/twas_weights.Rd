@@ -13,6 +13,11 @@ twas_weights(X, Y, methods, num_threads = 1)
 
 \item{methods}{A list of methods and their specific arguments, formatted as list(method1 = method1_args, method2 = method2_args). 
 Methods in the list are applied to the datasets X and Y.}
+
+\item{num_threads}{The number of threads to use for parallel processing.
+If set to -1, the function uses all available cores.
+If set to 0 or 1, no parallel processing is performed.
+If set to 2 or more, parallel processing is enabled with that many threads.}
 }
 \value{
 A list where each element is named after a method and contains the weight matrix produced by that method.
