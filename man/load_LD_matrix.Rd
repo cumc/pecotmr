@@ -4,7 +4,7 @@
 \alias{load_LD_matrix}
 \title{Load and Format LD Matrix}
 \usage{
-load_LD_matrix(LD_block_path, region)
+load_LD_matrix(LD_block_path, region, variants_select = NULL)
 }
 \arguments{
 \item{LD_block_path}{A path to the LD block files}
@@ -19,6 +19,6 @@ A list
 }
 }
 \description{
-For each LD LD file, produce a matrix of LD values for the SNPs in the LD file
+For each LD file, produce a matrix of LD values for the SNPs in the LD file
 Then merge all the LD matrices into one big matrix
 }

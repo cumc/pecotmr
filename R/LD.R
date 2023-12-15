@@ -82,7 +82,6 @@ bt_intersect <- function(df, region_strings) {
 #' \item{names}{The SNPs in the LD matrix}
 #' \item{block}{The LD matrix}
 #' }
-#' @importFrom bedtoolsr bt.intersect
 #' @importFrom Matrix bdiag
 #' @export
 

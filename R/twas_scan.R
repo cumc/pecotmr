@@ -13,7 +13,6 @@
 #' \item{gene_weights_pq}{twas_z function results with pvalue, qvalue and zscore}
 #' \item{outcome_QC}{the GWAS summary statistics of the outcome after QC (mainly accounting for allele flip)}
 #' }
-#' @importFrom bedtoolsr bt.intersect
 #' @importFrom Matrix bdiag
 #' @importFrom stringr str_split
 #' @importFrom stats setNames
