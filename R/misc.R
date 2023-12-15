@@ -184,7 +184,7 @@ load_genotype_data <- function(genotype, keep_indel = TRUE) {
   return(geno_bed)
 }
 
-prepare_data_list <- function(phenotype, covariate, geno_bed, imiss_cutoff, maf_cutoff, mac_cutoff, xvar_cutoff) {
+prepare_data_list <- function(geno_bed, phenotype, covariate, region, imiss_cutoff, maf_cutoff, mac_cutoff, xvar_cutoff) {
   ## Load phenotype and covariates and perform some pre-processing
   ### including Y ( cov ) and specific X and covar match, filter X variants based on the overlapped samples.
   data_list = tibble(covariate_path = covariate, phenotype_path =phenotype) %>%
@@ -277,7 +277,7 @@ load_regional_association_data <- function(genotype, # PLINK file
     geno <- load_genotype_data(genotype, keep_indel)
     ## Load phenotype and covariates and perform some pre-processing
     ### including Y ( cov ) and specific X and covar match, filter X variants based on the overlapped samples.
-    data_list <- prepare_data_list(covariate, phenotype, region, geno$bed, imiss_cutoff,
+    data_list <- prepare_data_list(geno$bed, phenotype, covariate, region, imiss_cutoff,
                                     maf_cutoff, mac_cutoff, xvar_cutoff)
     ## Get residue Y for each of condition and its mean and sd
     data_list <- prepare_Y_residuals(data_list, scale_residuals)
