@@ -14,7 +14,7 @@ handle_nan_etc = function(x) {
 #' @import dplyr
 #' @importFrom data.table fread
 #' @export 
-load_multitrait_tensorqtl_sumstat <- function(sumstats_paths, region, trait_names, filter_file = NULL, remove_any_missing = TRUE, max_rows_selected = 300) {
+load_multitrait_tensorqtl_sumstat <- function(sumstats_paths, region, trait_names, filter_file = NULL, remove_any_missing = TRUE, max_rows_selected = 300, nan_remove=TRUE) {
     if (!is.vector(sumstats_paths) || !all(file.exists(sumstats_paths))) {
         stop("sumstats_paths must be a vector of existing file paths.")
     }
@@ -45,6 +45,10 @@ load_multitrait_tensorqtl_sumstat <- function(sumstats_paths, region, trait_name
     combined_matrix <- Reduce(function(x, y) merge(x, y, by = c("variant", "#CHROM", "POS", "REF", "ALT")), Y) %>%
         distinct(variant, .keep_all = TRUE)
 
+    if (remove_any_missing) {
+        combined_matrix <- combined_matrix[complete.cases(combined_matrix), ]
+    }
+
     if (!is.null(filter_file)) {
         if (!file.exists(filter_file)) {
             stop("Filter file does not exist.")
@@ -56,10 +60,6 @@ load_multitrait_tensorqtl_sumstat <- function(sumstats_paths, region, trait_name
         combined_matrix <- inner_join(combined_matrix, filter_df %>% select(`#CHROM`, POS), by = c("#CHROM", "POS"))
     }
 
-    if (remove_any_missing) {
-        combined_matrix <- combined_matrix[complete.cases(combined_matrix), ]
-    }
-
     if (!is.null(max_rows_selected) && max_rows_selected > 0 && max_rows_selected < nrow(combined_matrix)) {
         selected_rows <- sample(nrow(combined_matrix), max_rows_selected)
         combined_matrix <- combined_matrix[selected_rows, ]
@@ -69,7 +69,7 @@ load_multitrait_tensorqtl_sumstat <- function(sumstats_paths, region, trait_name
         bhat = extract_component(combined_matrix, 1),
         sbhat = extract_component(combined_matrix, 2)
     )
-    dat <- handle_invalid_summary_stat(dat)
+    if (nan_remove) dat <- handle_invalid_summary_stat(dat)
     #dat$z <- dat$bhat / dat$sbhat
     #rownames(dat$bhat) <- rownames(dat$sbhat) <- rownames(dat$z) <- combined_matrix$variant
     #colnames(dat$bhat) <- colnames(dat$sbhat) <- colnames(dat$z) <- trait_names
@@ -80,21 +80,21 @@ load_multitrait_tensorqtl_sumstat <- function(sumstats_paths, region, trait_name
 }
 
 #' @export
-load_multitrait_R_sumstat <- function(rds_files, trait_names, top_loci = FALSE, filter_file = NULL, remove_any_missing = TRUE, max_rows_selected = 300) {
-  read_and_extract <- function(rds_file, top_loci) {
-      dat <- readRDS(rds_file)
-      if (top_loci) {
-        bhats <- lapply(dat, function(x) as.data.table(x$top_loci)[, .(variants, bhat)])
-        sbhats <- lapply(dat, function(x) as.data.table(x$top_loci)[, .(variants, sbhat)])
-      } else {
-        bhats <- lapply(dat, function(x) as.data.table(cbind(x$variant_names, x$univariate_sumstats$bhat)))
-        sbhats <- lapply(dat, function(x) as.data.table(cbind(x$variant_names, x$univariate_sumstats$sbhat)))
-      }
+load_multitrait_R_sumstat <- function(rds_files, top_loci = FALSE, filter_file = NULL, remove_any_missing = TRUE, max_rows_selected = 300, nan_remove=TRUE) {
+  read_and_extract <- function(rds_file) {
+    dat <- readRDS(rds_file)
+  
+    extract_data <- function(item) {
+      bhat <- as.data.table(cbind(item$variant_names, item$univariate_sumstats$bhat))
+      sbhat <- as.data.table(cbind(item$variant_names, item$univariate_sumstats$sbhat))
       list(
-          bhat = do.call(cbind, lapply(bhats, `[[`, "bhat")),
-          sbhat = do.call(cbind, lapply(sbhats, `[[`, "sbhat")),
-          variants = bhats[[1]]$variants
-      )
+        bhat = bhat$bhat,
+        sbhat = sbhat$sbhat,
+        variants = bhat$variants,
+	top_variants = item$top_loci[, "variants"]
+     )
+    }
+    lapply(dat, extract_data)
   }
 
   split_variants_and_match <- function(variant, filter_file, max_rows_selected) {
@@ -131,20 +131,50 @@ load_multitrait_R_sumstat <- function(rds_files, trait_names, top_loci = FALSE, 
     return(matched_indices)
   }
 
-  results <- lapply(rds_files, read_and_extract)
+  merge_matrices <- function(matrix_list, value_column, id_column = "variants",  remove_any_missing = FALSE) {
+  	# Convert list items to data frames
+  	df_list <- lapply(matrix_list, function(item) {
+   	 data.frame(ID = item[[id_column]], Value = item[[value_column]], stringsAsFactors = FALSE)
+	})
 
-  out <- list(
-      bhat = rbindlist(lapply(results, function(x) data.table(variants = x$variants, x$bhat)), fill = TRUE),
-      sbhat = rbindlist(lapply(results, function(x) data.table(variants = x$variants, x$sbhat)), fill = TRUE)
-  )
-
-  variants <- out$bhat$variants
-  if (!is.null(filter_file)) {
-    var_idx = split_variants_and_match(variants, filter_file, max_rows_selected)
-    variants = variants[var_idx]
+	# Function to merge two data frames based on the 'ID' column
+  	merge_two <- function(df1, df2) {
+ 	 merged_df <- merge(df1, df2, by = "ID", all = !remove_any_missing)
+  	 rownames(merged_df) <- merged_df$ID  # Set row names
+   	 merged_df$ID <- NULL  # Drop the 'ID' column
+    	 return(merged_df)
+  	}
+ 	# Merge all data frames
+  	merged_df <- Reduce(merge_two, df_list)
+  	return(merged_df)
   }
 
-  out <- handle_invalid_summary_stat(out)
+  results <- lapply(rds_files, function(file) read_and_extract(file))
+  results <- do.call("c", results)
+  trait_names <- names(results)
+
+  out <- list(
+      bhat = merge_matrices(results, value_column="bhat", remove_any_missing),
+      sbhat = merge_matrices(results, value_column="sbhat", remove_any_missing)
+  )
+  # Check if variants are the same in both bhat and sbhat
+  if (!identical(out$bhat$variants, out$sbhat$variants)) {
+    stop("Error: Variants in bhat and sbhat are not the same.")
+  }
+  var_idx = 1:nrows(out$bhat)
+  if (!is.null(filter_file)) {
+    var_idx = split_variants_and_match(variants, filter_file, max_rows_selected)
+  }
+  if (top_loci) {
+    union_top_loci <- unique(unlist(lapply(results, function(item) item$top_loci)))
+    var_idx <- which(variants %in% union_top_loci)
+  }
+  # Extract only subset of data
+  variants <- out$bhat$variants[var_idx]
+  out$bhat <- out$bhat[var_idx,]
+  out$sbhat <- out$sbhat[var_idx,]
+
+  if (nan_remove) out <- handle_invalid_summary_stat(out)
   #out$z <- out$bhat / out$sbhat
   #rownames(out$bhat) <- rownames(out$sbhat) <- rownames(out$z) <- variants
   #colnames(out$bhat) <- colnames(out$sbhat) <- colnames(out$z) <- trait_names
@@ -155,13 +185,7 @@ load_multitrait_R_sumstat <- function(rds_files, trait_names, top_loci = FALSE, 
 }
 
 #' @export
-mash_preprocessing <- function(dat, n_random, n_null, expected_ncondition, exclude_condition, z_only = FALSE, seed=NULL) {
-  # Function to remove row names from a list of data frames
-  remove_rownames <- function(x) {
-    for (name in names(x)) rownames(x[[name]]) <- NULL
-    return(x)
-  }
-
+mash_ran_null_sample <- function(dat, n_random, n_null, expected_ncondition, exclude_condition, z_only = FALSE, seed=NULL) {
   # Function to extract one data set
   extract_one_data <- function(dat, n_random, n_null) {
     if (is.null(dat)) return(NULL)

@@ -47,7 +47,6 @@ raiss <- function(ref_panel, known_zscores, LD_matrix, lamb = 0.01, rcond = 0.01
   return(merged_results)
 }
 
-
 #' @param zt Vector of known Z scores.
 #' @param sig_t Matrix of known linkage disequilibrium (LD) correlation.
 #' @param sig_i_t Correlation matrix with rows corresponding to unknown SNPs (to impute)
