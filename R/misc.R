@@ -57,10 +57,6 @@ filter_Y <- function(Y, n_nonmiss){
   return(list(Y=Y, rm_rows = rm_rows))
 }
 
-matxMax <- function(mtx) {
-  return(arrayInd(which.max(mtx), dim(mtx)))
-}
-
 #' @import dplyr
 extract_tensorqtl_data <- function(path, region) {
         tabix_region(path, region) %>%
@@ -68,6 +64,16 @@ extract_tensorqtl_data <- function(path, region) {
             select(-c(3, 6:9)) %>%
             distinct(variant, .keep_all = TRUE) %>%
             as.matrix
+}
+
+matxMax <- function(mtx) {
+  return(arrayInd(which.max(mtx), dim(mtx)))
+}
+
+handle_nan_etc = function(x) {
+    x$bhat[which(is.nan(x$bhat))] = 0
+    x$sbhat[which(is.nan(x$sbhat) | is.infinite(x$sbhat))] = 1E3
+    return(x)
 }
 
 # This function extracts tensorQTL results for given region for multiple summary statistics files
@@ -92,11 +98,6 @@ load_multitrait_tensorqtl_sumstat <- function(sumstats_paths, region, trait_name
         as.matrix
     }
 
-    handle_nan_etc = function(x) {
-      x$bhat[which(is.nan(x$bhat))] = 0
-      x$sbhat[which(is.nan(x$sbhat) | is.infinite(x$sbhat))] = 1E3
-      return(x)
-    }
     
     Y <- lapply(sumstats_paths, extract_tensorqtl_data, region)
 
@@ -127,45 +128,83 @@ load_multitrait_tensorqtl_sumstat <- function(sumstats_paths, region, trait_name
         bhat = extract_component(combined_matrix, 1),
         sbhat = extract_component(combined_matrix, 2)
     )
-
-    rownames(dat$bhat) <- rownames(dat$sbhat) <- combined_matrix$variant
-    colnames(dat$bhat) <- colnames(dat$sbhat) <- trait_names
     dat <- handle_invalid_summary_stat(dat)
+    dat$z <- dat$bhat / dat$sbhat
+    rownames(dat$bhat) <- rownames(dat$sbhat) <- rownames(dat$z) <- combined_matrix$variant
+    colnames(dat$bhat) <- colnames(dat$sbhat) <- colnames(dat$z) <- trait_names
     return(dat)
 }
 
 #' @export
-load_susie_top_loci <- function(rds_files, trait_names) {
-    read_and_extract <- function(rds_file) {
-        dat <- readRDS(rds_file)
+load_multitrait_R_sumstat <- function(rds_files, trait_names, top_loci = FALSE, filter_file = NULL, remove_any_missing = TRUE, max_rows_selected = 300) {
+  read_and_extract <- function(rds_file, top_loci) {
+      dat <- readRDS(rds_file)
+      if (top_loci) {
+        bhats <- lapply(dat, function(x) as.data.table(x$top_loci)[, .(variants, bhat)])
+        sbhats <- lapply(dat, function(x) as.data.table(x$top_loci)[, .(variants, sbhat)])
+      } else {
+        bhats <- lapply(dat, function(x) as.data.table(cbind(x$variant_names, x$univariate_sumstats$bhat)))
+        sbhats <- lapply(dat, function(x) as.data.table(cbind(x$variant_names, x$univariate_sumstats$sbhat)))
+      }
+      list(
+          bhat = do.call(cbind, lapply(bhats, `[[`, "bhat")),
+          sbhat = do.call(cbind, lapply(sbhats, `[[`, "sbhat")),
+          variants = bhats[[1]]$variants
+      )
+  }
 
-        bhats <- lapply(dat, function(x) as.data.table(x$qtl_identified)[, .(variants, bhat)])
-        sbhats <- lapply(dat, function(x) as.data.table(x$qtl_identified)[, .(variants, sbhat)])
-
-        list(
-            bhat = do.call(cbind, lapply(bhats, `[[`, "bhat")),
-            sbhat = do.call(cbind, lapply(sbhats, `[[`, "sbhat")),
-            variants = bhats[[1]]$variants
-        )
+  split_variants_and_match <- function(variant, filter_file, max_rows_selected) {
+    if (!file.exists(filter_file)) {
+         stop("Filter file does not exist.")
     }
 
-    results <- lapply(rds_files, read_and_extract)
-
-    out <- list(
-        bhat = rbindlist(lapply(results, function(x) data.table(variants = x$variants, x$bhat)), fill = TRUE),
-        sbhat = rbindlist(lapply(results, function(x) data.table(variants = x$variants, x$sbhat)), fill = TRUE)
+    # Split the variant vector into components
+    variant_split <- strsplit(variant, ":")
+    variant_df <- data.frame(
+      chr = sapply(variant_split, `[`, 1),
+      pos = sapply(variant_split, `[`, 2),
+      stringsAsFactors = FALSE
     )
+    variant_df$pos <- as.numeric(variant_df$pos)
 
-    variants <- out$bhat$variants
+    # get the region of interest
+    min_pos <- min(variant_df$pos)
+    max_pos <- max(variant_df$pos)
+    chrom <- unique(variant_df$chr)
+    if (length(chrom) != 1) {
+      stop("Variants are from multiple chromosomes. Cannot create a single range string.")
+    }
+    region = paste0(chrom, ":", min_pos, "-", max_pos)
+    ref_table <- tabix_region(filter_file, region)
+    if (!all(c("#CHROM", "POS") %in% colnames(filter_df))) {
+        stop("Filter file must contain columns: #CHROM, POS.")
+    }
+    matched_indices <- which(variant_df$chr %in% ref_table$`#CHROM` & variant_df$pos %in% ref_table$POS)
+    if (!is.null(max_rows_selected) && max_rows_selected > 0 && max_rows_selected < length(matched_indices)) {
+        selected_rows <- sample(length(matched_indices), max_rows_selected)
+        matched_indices <- matched_indices[selected_rows]
+    }
+    return(matched_indices)
+  }
 
-    out$bhat <- out$bhat[, -1, with = FALSE]
-    out$sbhat <- out$sbhat[, -1, with = FALSE]
-    colnames(out$bhat) <- colnames(out$sbhat) <- trait_names
+  results <- lapply(rds_files, read_and_extract)
 
-    out$z <- out$bhat / out$sbhat
-    rownames(out$bhat) <- rownames(out$sbhat) <- rownames(out$z) <- variants
+  out <- list(
+      bhat = rbindlist(lapply(results, function(x) data.table(variants = x$variants, x$bhat)), fill = TRUE),
+      sbhat = rbindlist(lapply(results, function(x) data.table(variants = x$variants, x$sbhat)), fill = TRUE)
+  )
 
-    return(out)
+  variants <- out$bhat$variants
+  if (!is.null(filter_file)) {
+    var_idx = split_variants_and_match(variants, filter_file, max_rows_selected)
+    variants = variants[var_idx]
+  }
+
+  out <- handle_invalid_summary_stat(out)
+  out$z <- out$bhat / out$sbhat
+  rownames(out$bhat) <- rownames(out$sbhat) <- rownames(out$z) <- variants
+  colnames(out$bhat) <- colnames(out$sbhat) <- colnames(out$z) <- trait_names
+  return(out)
 }
 
 load_genotype_data <- function(genotype, keep_indel = TRUE) {

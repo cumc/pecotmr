@@ -86,5 +86,10 @@ load_script <- function() {
 
 #' importFrom data.table fread 
 tabix_region <- function(file, region){
-    fread(cmd = paste0("tabix -h ", file, " ", region))%>%as_tibble() 
+    fread(cmd = paste0("tabix -h ", file, " ", region)) %>%
+     as_tibble() %>%
+     mutate(
+        !!names(.)[1] := as.character(.[[1]]),
+        !!names(.)[2] := as.numeric(.[[2]])
+    ) 
 }
