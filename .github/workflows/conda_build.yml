@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: Version to build package for
+        description: Version to package
         required: true
       build:
         description: "Build revision of package (default: 0)"
