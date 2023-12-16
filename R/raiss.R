@@ -6,7 +6,48 @@
 #' Noah Zaitlen, et al., titled "Fast and accurate imputation of summary
 #' statistics enhances evidence of functional enrichment", published in
 #' Bioinformatics in 2014.
+#' @param ref_panel A data frame containing 'chr', 'pos', 'variant_id', 'ref', and 'alt'.
+#' @param known_zscores A data frame containing 'chr', 'pos', 'variant_id', 'A0', 'A1', and 'Z' values.
+#' @param LD_matrix A square matrix of dimension equal to the number of rows in ref_panel.
+#' @param lamb Regularization term added to the diagonal of the LD_matrix in the RAImputation model.
+#' @param rcond Threshold for filtering eigenvalues in the pseudo-inverse computation in the RAImputation model.
+#' @param R2_threshold R square threshold below which SNPs are filtered from the output.
+#' @param minimum_ld Minimum LD score threshold for SNP filtering.
 #'
+#' @return A data frame that is the result of merging the imputed SNP data with known z-scores.
+#' @export
+#'
+#' @examples
+#' # Example usage (assuming appropriate data is available):
+#' # result <- raiss(ref_panel, known_zscores, LD_matrix, lamb = 0.01, rcond = 0.01, R2_threshold = 0.6, minimum_ld = 5)
+raiss <- function(ref_panel, known_zscores, LD_matrix, lamb = 0.01, rcond = 0.01, R2_threshold = 0.6, minimum_ld = 5) {
+  # Check that ref_panel and known_zscores are both increasing in terms of pos
+  if (!is.ordered(ref_panel$pos) || !is.ordered(known_zscores$pos)) {
+    stop("ref_panel and known_zscores must be in increasing order of pos.")
+  }
+
+  # Define knowns and unknowns
+  knowns <- match(known_zscores$variant_id, ref_panel$variant_id)
+  unknowns <- setdiff(seq_len(nrow(ref_panel)), knowns)
+
+  # Extract zt, sig_t, and sig_i_t
+  zt <- known_zscores$Z
+  sig_t <- LD_matrix[knowns, knowns]
+  sig_i_t <- LD_matrix[unknowns, knowns]
+
+  # Call raiss_model
+  imp_results <- raiss_model(zt, sig_t, sig_i_t, lamb, rcond)
+
+  # Format the results
+  formatted_results <- format_raiss_df(imp_results, ref_panel, unknowns)
+
+  # Merge with known z-scores
+  merged_results <- merge_raiss_df(formatted_results, known_zscores, R2_threshold, minimum_ld)
+
+  return(merged_results)
+}
+
+
 #' @param zt Vector of known Z scores.
 #' @param sig_t Matrix of known linkage disequilibrium (LD) correlation.
 #' @param sig_i_t Correlation matrix with rows corresponding to unknown SNPs (to impute)
@@ -18,18 +59,8 @@
 #' @return A list containing the variance 'var', estimation 'mu', LD score 'ld_score',
 #'         condition number 'condition_number', and correctness of inversion
 #'         'correct_inversion'.
-#' @export
-#'
-#' @examples
-#' # Example usage
-#' # Define zt, sig_t, and sig_i_t with appropriate values
-#' # result <- raiss_model(zt, sig_t, sig_i_t)
 raiss_model <- function(zt, sig_t, sig_i_t, lamb=0.01, rcond=0.01, batch=TRUE, report_condition_number=FALSE) {
-  # Translated content from Python function
   sig_t_inv <- invert_sig_t(sig_t, lamb, rcond)
-  if (is.null(sig_t_inv)) {
-    return(NULL)
-  }
 
   if (batch) {
     
@@ -52,6 +83,82 @@ raiss_model <- function(zt, sig_t, sig_i_t, lamb=0.01, rcond=0.01, batch=TRUE, r
 
   return(list(var=var_norm, mu=mu, ld_score=ld_score, condition_number=condition_number, correct_inversion=correct_inversion))
 }
+
+#' @imp is the output of raiss_model()
+#' @ref_panel is a data frame with columns 'chr', 'pos', 'variant_id', 'ref', and 'alt'.
+format_raiss_df <- function(imp, ref_panel, unknowns) {
+  result_df <- data.frame(
+    chr = ref_panel[unknowns, 'chr'],
+    pos = ref_panel[unknowns, 'pos'],
+    id = ref_panel[unknowns, 'variant_id'],
+    A0 = ref_panel[unknowns, 'ref'],
+    A1 = ref_panel[unknowns, 'alt'],
+    Z = imp$mu,
+    Var = imp$var,
+    ld_score = imp$ld_score,
+    condition_number = imp$condition_number,
+    correct_inversion = imp$correct_inversion
+  )
+
+  # Specify the column order
+  column_order <- c('chr', 'pos', 'variant_id', 'A0', 'A1', 'Z', 'Var', 'ld_score', 'condition_number', 
+                    'correct_inversion')
+
+  # Reorder the columns
+  result_df <- result_df[, column_order]
+  return(result_df)
+}
+
+merge_raiss_df <- function(raiss_df, known_zscores) {
+  # Merge the data frames
+  merged_df <- merge(raiss_df, known_zscores, by = c("chr", "pos", "variant_id"), all = TRUE)
+
+  # Identify rows that came from known_zscores
+  from_known <- !is.na(merged_df$Z.y) & is.na(merged_df$Z.x)
+
+  # Set Var to -1 and ld_score to Inf for these rows
+  merged_df$Var[from_known] <- -1
+  merged_df$ld_score[from_known] <- Inf
+
+  # If there are overlapping columns (e.g., Z.x and Z.y), resolve them
+  # For example, use Z from known_zscores where available, otherwise use Z from raiss_df
+  merged_df$Z <- ifelse(from_known, merged_df$Z.y, merged_df$Z.x)
+
+  # Remove the extra columns resulted from the merge (e.g., Z.x, Z.y)
+  merged_df <- merged_df[, !colnames(merged_df) %in% c("Z.x", "Z.y")]
+
+  return(merged_df)
+}
+
+
+filter_raiss_output <- function(zscores, R2_threshold = 0.6, minimum_ld = 5) {
+  # Reset the index and subset the data frame
+  zscores <- zscores[, c('variant_id', 'A0', 'A1', 'Z', 'Var', 'ld_score')]
+  zscores$imputation_R2 <- 1 - zscores$Var
+
+  # Count statistics before filtering
+  NSNPs_bf_filt <- nrow(zscores)
+  NSNPs_initial <- sum(zscores$imputation_R2 == 2.0)
+  NSNPs_imputed <- sum(zscores$imputation_R2 != 2.0)
+  NSNPs_ld_filt <- sum(zscores$ld_score < minimum_ld)
+  NSNPs_R2_filt <- sum(zscores$imputation_R2 < R2_threshold)
+
+  # Apply filters
+  zscores <- zscores[zscores$imputation_R2 > R2_threshold & zscores$ld_score >= minimum_ld, ]
+  NSNPs_af_filt <- nrow(zscores)
+
+  # Print report
+  cat("IMPUTATION REPORT\n")
+  cat("Number of SNPs:\n")
+  cat("before filter:", NSNPs_bf_filt, "\n")
+  cat("not imputed:", NSNPs_initial, "\n")
+  cat("imputed:", NSNPs_imputed, "\n")
+  cat("filtered because of ld:", NSNPs_ld_filt, "\n")
+  cat("filtered because of R2:", NSNPs_R2_filt, "\n")
+  cat("after filter:", NSNPs_af_filt, "\n")
+  return(zscores)
+}
+
 
 compute_mu <- function(sig_i_t, sig_t_inv, zt) {
   return(sig_i_t %*% (sig_t_inv %*% zt))
@@ -79,7 +186,29 @@ var_in_boundaries <- function(var, lamb) {
 }
 
 invert_sig_t <- function(sig_t, lamb, rcond) {
-  diag(sig_t) <- 1 + lamb
-  sig_t_inv <- MASS::ginv(sig_t, tol=rcond)
-  return(sig_t_inv)
+  tryCatch({
+    # Modify the diagonal elements of sig_t
+    diag(sig_t) <- 1 + lamb
+    # Compute the pseudo-inverse
+    sig_t_inv <- MASS::ginv(sig_t, tol = rcond)
+    return(sig_t_inv)
+  }, error = function(e) {
+    # Second attempt with updated lamb and rcond in case of an error
+    diag(sig_t) <- 1 + lamb * 1.1
+    sig_t_inv <- MASS::ginv(sig_t, tol = rcond * 1.1)
+    return(sig_t_inv)
+  })
+}
+
+invert_sig_t_recursive <- function(sig_t, lamb, rcond) {
+  tryCatch({
+    # Modify the diagonal elements of sig_t
+    diag(sig_t) <- 1 + lamb
+    # Compute the pseudo-inverse
+    sig_t_inv <- MASS::ginv(sig_t, tol = rcond)
+    return(sig_t_inv)
+  }, error = function(e) {
+    # Recursive call with updated lamb and rcond in case of an error
+    invert_sig_t(sig_t, lamb * 1.1, rcond * 1.1)
+  })
 }
