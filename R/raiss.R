@@ -84,8 +84,8 @@ raiss_model <- function(zt, sig_t, sig_i_t, lamb=0.01, rcond=0.01, batch=TRUE, r
   return(list(var=var_norm, mu=mu, ld_score=ld_score, condition_number=condition_number, correct_inversion=correct_inversion))
 }
 
-#' @imp is the output of raiss_model()
-#' @ref_panel is a data frame with columns 'chr', 'pos', 'variant_id', 'ref', and 'alt'.
+#' @param imp is the output of raiss_model()
+#' @param ref_panel is a data frame with columns 'chr', 'pos', 'variant_id', 'ref', and 'alt'.
 format_raiss_df <- function(imp, ref_panel, unknowns) {
   result_df <- data.frame(
     chr = ref_panel[unknowns, 'chr'],
