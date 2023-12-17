@@ -2,23 +2,25 @@
 % Please edit documentation in R/LD.R
 \name{load_LD_matrix}
 \alias{load_LD_matrix}
-\title{Load and Format LD Matrix}
+\title{Function to load and process LD matrix}
 \usage{
-load_LD_matrix(LD_block_path, region, variants_select = NULL)
+load_LD_matrix(LD_meta_file, region, extract_variants = NULL)
 }
 \arguments{
-\item{LD_block_path}{A path to the LD block files}
+\item{LD_meta_file}{A data frame specifying the information of LD blocks with the olumns "chrom", "start", "end" and "path".
+"start" and "end" are the start and end positions of LD blocks, respectively. "path" is the path of each LD block.}
+
+\item{region}{A data frame specifying the regions of interest with the columns "chrom", "start" and "end".}
+
+\item{extract_variants}{A vector of variants to be extracted (optional).}
 }
 \value{
-A list that contains the LD matrix and the names of the SNPs in the LD matrix
-
-A list 
+A list containing:
 \describe{
-\item{names}{The SNPs in the LD matrix}
-\item{block}{The LD matrix}
+\item{variants}{merge the variants within each LD block to a vector.}
+\item{LD}{The linkage disequilibrium block matrix, the row and column names are identical to `variants_id_all`}.
 }
 }
 \description{
-For each LD file, produce a matrix of LD values for the SNPs in the LD file
-Then merge all the LD matrices into one big matrix
+Function to load and process LD matrix
 }

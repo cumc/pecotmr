@@ -3,9 +3,9 @@
 #' 2) load the corresponding LD block within the region (start and end) of gene;
 #' 3) use twas_z function to calculate TWAS results (pvalue and zscore) from multiple methods of calculating xQTL weights.
 #' @param weights_path a data frame with columns "ID" and "path", "ID" is the gene name, and "path" is the susie result path of the corresponding gene.
-#' @param region a data frame with columns "chr", "start", "end", and "ID", "chr" is the chromosome of gene, "start" and "end" are the position, "ID" is the gene name.
+#' @param region a data frame with columns "chrom", "start", "end", and "ID", "chrom" is the chromosome of gene, "start" and "end" are the position, "ID" is the gene name.
 #' @param GWAS_data a data frame of GWAS summary statistics with columns "chr","pos","A1","A2","beta","se" and "z".
-#' @param LD_block_path a data frame of LD block matrix path with columns "chr","start","end" and "path"
+#' @param LD_meta_file a data frame of LD block matrix path with columns "chrom","start","end" and "path"
 #'
 #' @return A list 
 #' \describe{
@@ -17,11 +17,8 @@
 #' @importFrom stringr str_split
 #' @importFrom stats setNames
 #' @importFrom utils read.table
-#' @importFrom reticulate import
 #' @export
-twas_scan <- function(weights_path, region, GWAS_data, LD_block_path) {
-  #import numpy
-  np = import("numpy")
+twas_scan <- function(weights_path, region, GWAS_data, LD_meta_file) {
   # Load weights
   gene_name <- weights_path$ID
   qtl_weights <- readRDS(weights_path$path)
@@ -36,22 +33,22 @@ twas_scan <- function(weights_path, region, GWAS_data, LD_block_path) {
                             remove_dups = TRUE, flip = TRUE, remove = TRUE) %>% 
       mutate(variant_allele_flip = paste(chr, pos, A1.sumstats, A2.sumstats, sep = ":"))
     
-    LD.matrix <- load_LD_matrix(LD_block_path, region)
+    LD.matrix <- load_LD_matrix(LD_meta_file, region)
     
     # Generate the twas_z format input
-    twas_z_format <- data.frame(LD.matrix.names) %>% 
+    twas_z_format <- data.frame(LD.matrix$variants_id_all) %>% 
       mutate(gene_name = gene_name) %>% 
       mutate(chr = region$chr) %>% 
-      mutate(outcome_QC[match(LD.matrix.names, outcome_QC$variant_allele_flip), ] %>% 
+      mutate(outcome_QC[match(LD.matrix$variants_id_all, outcome_QC$variant_allele_flip), ] %>% 
                select(beta, se, z)) %>% 
-      mutate(susie_weights = qtl_weights[[1]]$susie_weights[match(LD.matrix.names, qtl_weights[[1]]$variant_names)]) %>% 
-      mutate(enet_weights = qtl_weights[[1]]$enet_weights[match(LD.matrix.names, qtl_weights[[1]]$variant_names)]) %>% 
-      mutate(lasso_weights = qtl_weights[[1]]$lasso_weights[match(LD.matrix.names, qtl_weights[[1]]$variant_names)]) %>% 
-      mutate(mrash_weights = qtl_weights[[1]]$mrash_weights[match(LD.matrix.names, qtl_weights[[1]]$variant_names)]) %>% 
-      rename("variants_name" = "LD.matrix.names")
+      mutate(susie_weights = qtl_weights[[1]]$susie_weights[match(LD.matrix$variants_id_all, qtl_weights[[1]]$variant_names)]) %>% 
+      mutate(enet_weights = qtl_weights[[1]]$enet_weights[match(LD.matrix$variants_id_all, qtl_weights[[1]]$variant_names)]) %>% 
+      mutate(lasso_weights = qtl_weights[[1]]$lasso_weights[match(LD.matrix$variants_id_all, qtl_weights[[1]]$variant_names)]) %>% 
+      mutate(mrash_weights = qtl_weights[[1]]$mrash_weights[match(LD.matrix$variants_id_all, qtl_weights[[1]]$variant_names)]) %>% 
+      rename("variants_name" = "LD.files.variants")
     
     weights <- apply(twas_z_format[, c("susie_weights", "enet_weights", "lasso_weights", "mrash_weights")], 2, 
-                     function(x) twas_z(x, twas_z_format$z, R = LD.block))
+                     function(x) twas_z(x, twas_z_format$z, R = LD.matrix$LD))
     
     twas_weights <- data.frame(gene_name = gene_name, chr = region$chr, 
                                weights$susie_weights$pval, weights$susie_weights$z, 
