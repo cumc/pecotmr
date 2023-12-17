@@ -1,0 +1,51 @@
+---
+title: "SuSiE RSS with QC"
+output: html_document
+date: "2023-12-17"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+We demonstrates how we use `pecotmr` package to implement `load_LD_matrix` to extract LD matrix of the regions of interest and `allele_qc` to match alleles between summary statistics and variants from reference panel.
+
+## Set up your environment
+
+Load the `pecotmr` package.
+
+```{r load-pkgs}
+library(pecotmr)
+```
+
+## allele flips
+
+Match by ("chr", "A1", "A2" and "pos"), accounting for possible strand flips and major/minor allele flips (opposite effects and zscores). We use LD block file as reference panel.
+```{r}
+sumstats = readRDS("sumstat.rds")
+reference = readRDS("reference.rds")
+```
+
+```{r}
+allele_fip = allele_qc(sumstats,reference,match.min.prop=0.2,remove_dups=TRUE,flip=TRUE,remove=TRUE)
+```
+
+## extract LD matrix
+After QC for the allele_flips, we can obtain the `extract_variants` as the input of `load_LD_matrix`. Given the region of interest, we can use `load_LD_matrix` to extract the LD matrix. The row and column names of LD matrix are identical to the elements of `extract_variants`. In the same folder of LD block path, a corresponding bim file for each LD block is also required.
+
+```{r}
+library(stringr)
+library(dplyr)
+extract_variants = allele_flip%>%mutate(variant_allele_flip = paste(chr,pos,A1.sumstats,A2.sumstats,sep=":"))
+```
+
+```{r}
+LD_meta_file = data.frame(chrom = "chr1",start = 50179506, end = 54277735, path = "ROSMAP_NIA_WGS.leftnorm.filtered.filtered.chr1_50179506_54277735.float16.txt.xz")
+region = data.frame(chrom = "chr1",start = 51800000,end = 53927212)
+```
+
+```{r}
+LD.files = load_LD_matrix(LD_meta_file,region,extract_variants$variant_allele_flip)
+```

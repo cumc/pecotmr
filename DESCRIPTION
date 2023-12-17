@@ -29,25 +29,25 @@ Imports:
     tidyr,
     glmnet,
     purrr,
+    harmonicmeanp,
+    ggrepel,
+    ggplot2,
+    ggnewscale,
     tidyr,
     pgenlibr,
+    ggvenn,
     Rfast,
+    GBJ,
     doMC,
     doParallel,
     foreach,
     reticulate,
-    vctrs
+    vctrs,
+    tibble
 Suggests: 
     testthat,
     knitr,
     pillar,
-    tibble,
-    ggplot2,
-    ggvenn,
-    ggrepel,
-    ggnewscale,
-    harmonicmeanp,
-    GBJ,
     rmarkdown
 LinkingTo: 
     Rcpp,

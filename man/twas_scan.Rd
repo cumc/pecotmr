@@ -4,16 +4,16 @@
 \alias{twas_scan}
 \title{Calculate the pvalue and zscore of each gene using precomputed weights}
 \usage{
-twas_scan(weights_path, region, GWAS_data, LD_block_path)
+twas_scan(weights_path, region, GWAS_data, LD_meta_file)
 }
 \arguments{
 \item{weights_path}{a data frame with columns "ID" and "path", "ID" is the gene name, and "path" is the susie result path of the corresponding gene.}
 
-\item{region}{a data frame with columns "chr", "start", "end", and "ID", "chr" is the chromosome of gene, "start" and "end" are the position, "ID" is the gene name.}
+\item{region}{a data frame with columns "chrom", "start", "end", and "ID", "chrom" is the chromosome of gene, "start" and "end" are the position, "ID" is the gene name.}
 
 \item{GWAS_data}{a data frame of GWAS summary statistics with columns "chr","pos","A1","A2","beta","se" and "z".}
 
-\item{LD_block_path}{a data frame of LD block matrix path with columns "chr","start","end" and "path"}
+\item{LD_meta_file}{a data frame of LD block matrix path with columns "chrom","start","end" and "path"}
 }
 \value{
 A list 
