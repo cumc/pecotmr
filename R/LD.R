@@ -91,6 +91,8 @@ bt_intersect <- function(df, region_strings) {
   })
   return(list(result_list = result_list, df = df, region_strings= region_strings))
 }
+
+
 #' Function to load and process LD matrix
 #'
 #' @param LD_meta_file A data frame specifying the information of LD blocks with the olumns "chrom", "start", "end" and "path".
