@@ -80,8 +80,6 @@ prepare_data_list <- function(geno_bed, phenotype, covariate, region, imiss_cuto
         mutate(
           covar = map(covariate_path, ~read_delim(.x,"\t")%>%select(-1)%>%na.omit%>%t()),
           Y = map2(phenotype_path,covar, ~{
-            print(.x)
-            print(region)
             y_data <- tabix_region(.x, region)%>%select(-4)%>%select(rownames(.y))%>%t()%>%as.matrix
             return(y_data)
           }),
@@ -125,9 +123,7 @@ prepare_X_matrix <- function(geno_bed, data_list, imiss_cutoff, maf_cutoff, mac_
   # Get X matrix for union of samples
   all_samples = map(data_list$covar, ~rownames(.x)) %>% unlist %>% unique()
   all_samples = map(data_list$covar, ~rownames(.x)) %>% unlist %>% unique()
-  print(paste0("Length of all_samples is ", length(all_samples)))
   maf_cutoff = max(maf_cutoff,mac_cutoff/(2*length(all_samples)))
-  print(paste0("maf_cutoff is ", maf_cutoff))
   X = filter_X(geno_bed[all_samples,], imiss_cutoff, maf_cutoff, xvar_cutoff) ## Filter X for mvSuSiE
   return(X)
 }
@@ -175,19 +171,14 @@ load_regional_association_data <- function(genotype, # PLINK file
                                     maf_cutoff, mac_cutoff, xvar_cutoff)
     ## Get residue Y for each of condition and its mean and sd
     data_list <- prepare_Y_residuals(data_list, scale_residuals)
-    print(paste0("Dimension of data_list is row:", nrow(data_list), " column: ", ncol(data_list) ))
     Y_resid <- process_Y_residuals(data_list, y_as_matrix, conditions)
-    print(paste0("Length of Y_resid is ", length(Y_resid)))
     # Get X matrix for union of samples
     X <- prepare_X_matrix(geno, data_list, imiss_cutoff, maf_cutoff, mac_cutoff, xvar_cutoff)
     ## Get residue X for each of condition and its mean and sd
     print(paste0("Dimension of input genotype data is row:", nrow(X), " column: ", ncol(X) ))
     X_list <- prepare_X_residuals(data_list, scale_residuals)
-    print(paste0("Dimension of X_list data is row:", nrow(X_list), " column: ", ncol(X_list) ))
     maf_list = lapply(data_list$X_data, function(x) apply(x, 2, compute_maf))
-    print(paste0("Length of maf_list is ", length(maf_list)))
     region <- unlist(strsplit(region, ":", fixed = TRUE))
-    print(region)
     ## residual_Y: if y_as_matrix is true, then return a matrix of R conditions, with column names being the names of the conditions (phenotypes) and row names being sample names. Even for one condition it has to be a matrix with just one column. if y_as_matrix is false, then return a list of y either vector or matrix (CpG for example), and they need to match with residual_X in terms of which samples are missing.
     ## residual_X: is a list of R conditions each is a matrix, with list names being the names of conditions, column names being SNP names and row names being sample names.
     ## X: is the somewhat original genotype matrix output from `filter_X`, with column names being SNP names and row names being sample names. Sample names of X should match example sample names of residual_Y matrix form (not list); but the matrices inside residual_X would be subsets of sample name of residual_Y matrix form (not list).
