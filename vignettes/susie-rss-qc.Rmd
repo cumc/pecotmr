@@ -20,25 +20,41 @@ library(pecotmr)
 
 ## Load summary statistics and corresponding LD matrix
 
-For given region of interest, we load the LD matrix and corresponding summary statistics data:
+For given region of interest, we load the LD matrix and corresponding summary statistics data, where the summary statistics data should be a data frame with the columns "chr" and "pos":
 
 ```{r}
+library(data.table)
+sumstats = fread("ADGWAS2022.chr1.sumstat.tsv")
 LD_meta_data = data.frame(chrom = "chr1",start = 50179506, end = 54277735, path = "ROSMAP_NIA_WGS.leftnorm.filtered.filtered.chr1_50179506_54277735.float16.txt.xz")
 region = c("chr1", 51800000, 53927212)
 ```
 
 ```{r}
-LD_data = load_LD_matrix(LD_meta_data, region, extract_variants$variant_allele_flip)
+LD_data = load_LD_matrix(LD_meta_data, region, sumstats)
 ```
+
+The output LD_data is a list contains the `LD` and `variants_df`, where the `variants_df` is a data frame with the columns "chr","variants","GD(genetic distance)"," pos","A1" and "A2" in a format of bim file. The row and column names of LD are identical to the elements of the `variants` in the data frame `variants_df`. The `variants_df` will be the input of `allele_qc` as the reference panel data.
 
 ## Summary statistics QC
 
-Match variants and LD matrix by ("chr", "A1", "A2" and "pos"), accounting for possible strand flips and major/minor allele flips (opposite effects and zscores). We use LD data as reference to match the summary statistics to:
+Match summary statistics data and `variants_df` by ("chr", "A1", "A2" and "pos"), accounting for possible strand flips and major/minor allele flips (opposite effects and zscores). We need to ensure that the format of summary statistics data with the columns "chr", "pos", "A1" and "A2".
 
 ```{r}
-sumstats = readRDS("sumstat.rds")
+allele_fip = allele_qc(sumstats, LD.data$variants_df, match.min.prop=0.2, remove_dups=TRUE, flip=TRUE, remove=TRUE)
 ```
 
+The output `allele_flip` will be the summary statistics after allele flip.
+
+Because we match sumstats and `LD.data$variants_df` by chrom and position after ``allele_qc` step, we need to use the variants of output to extract the `LD.data$LD`.
+
 ```{r}
-allele_fip = allele_qc(sumstats,reference,match.min.prop=0.2,remove_dups=TRUE,flip=TRUE,remove=TRUE)
+library(dplyr)
+allele_flip = allele_flip%>%mutate(variant_allele_flip =         paste(chr,pos,A1.sumstats,A2.sumstats,sep=":"))
+LD_extract = LD.data$LD[allele_flip$variant_allele_flip,allele_flip$variant_allele_flip]
+```
+
+## run SuSiE RSS:
+
+```{r}
+res = susie_rss(allele_flip$z, LD_extract)
 ```

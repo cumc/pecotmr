@@ -98,11 +98,12 @@ bt_intersect <- function(df, region_strings) {
 #' @param LD_meta_file A data frame specifying the information of LD blocks with the olumns "chrom", "start", "end" and "path".
 #' "start" and "end" are the start and end positions of LD blocks, respectively. "path" is the path of each LD block. 
 #' @param region A data frame specifying the regions of interest with the columns "chrom", "start" and "end".
-#' @param extract_variants A vector of variants to be extracted (optional).
+#' @param extract_coordinate A data frame with the columns "chr","pos" to be extracted (optional).
 #'
 #' @return A list containing:
 #' \describe{
-#' \item{variants}{merge the variants within each LD block to a vector.}
+#' \item{variants_df}{merge the variants_selected_df within each LD block to a data frame in the format of bim file with the columns "chr", "variants", 
+#' "GD", "pos", "A1" and "A2".}
 #' \item{LD}{The linkage disequilibrium block matrix, the row and column names are identical to `variants_id_all`}.
 #' }
 #' @importFrom Matrix bdiag
@@ -111,7 +112,8 @@ bt_intersect <- function(df, region_strings) {
 #' @import dplyr
 #' 
 #' @export
-load_LD_matrix <- function(LD_meta_file, region, extract_variants = NULL) {
+# Function to load and process LD matrix
+load_LD_matrix <- function(LD_meta_file, region, extract_coordinate = NULL) {
     
     # Intersect LD metadata file with the specified region
     region.LD.files <- bt_intersect(LD_meta_file, region)
@@ -151,39 +153,39 @@ load_LD_matrix <- function(LD_meta_file, region, extract_variants = NULL) {
             paste(., collapse = ".") %>%
             paste0(., ".bim", sep = "") %>%
             read.table(.) %>%
-            mutate(V2 = gsub("_", ":", V2))
+            setNames(c("chr","variants","GD","pos","A2","A1"))%>%
+            mutate(chr = paste0("chr",chr))%>%
+            mutate(variants = gsub("_", ":", variants))
 
         # Set column and row names of the LD matrix
-        colnames(LD.matrix) <- rownames(LD.matrix) <- LD.variants$V2
+        colnames(LD.matrix) <- rownames(LD.matrix) <- LD.variants$variants
 
         # Select SNP indices within the specified genomic range
         LD.variants.index.selected <- lapply(seq_len(nrow(LD.index)), function(m) {
-            filter(LD.variants, V4 >= LD.index$start[m], V4 <= LD.index$end[m])
+            filter(LD.variants, pos >= LD.index$start[m], pos <= LD.index$end[m])
         })
 
         # Combine SNP index metadata into a single data frame
         LD.variants.index.selected <- do.call(rbind, LD.variants.index.selected)
 
-        # Select variants if specified and store their IDs
-        if (!is.null(extract_variants)) {
-            variants_selected <- intersect(LD.variants.index.selected$V2, extract_variants)
-            #variants_id_all[[j]] <- variants_selected
-            return(list(LD.block = LD.matrix[variants_selected, variants_selected],variants_id_all = variants_selected))
+        # Select variants if specified and store their variants table in the format of bim file
+        if (!is.null(extract_coordinate)) {
+            variants_selected_df <- merge(LD.variants.index.selected, extract_coordinate, by = c("chr","pos"))%>%select(chr,variants,pos,GD,A1,A2)
+            return(list(LD.block = LD.matrix[variants_selected_df$variants, variants_selected_df$variants],variants_selected_df = variants_selected_df))
         } else {
-            #variants_id_all[[j]] <- LD.variants.index.selected$V2
-            return(list(LD.block = LD.matrix[LD.variants.index.selected$V2, LD.variants.index.selected$V2],variants_id_all = LD.variants.index.selected$V2))
+            return(list(LD.block = LD.matrix[LD.variants.index.selected$variants, LD.variants.index.selected$variants],variants_selected_df = LD.variants.index.selected))
         }
     })
 
-    # Extract and combine LD matrices and variant IDs from the results
+    # Extract and combine LD matrices and variant selected_df from the results
     LD.blocks <- lapply(LD.list, function(x) x$LD.block)
-    variants_id_all <- unlist(lapply(LD.list, function(x) x$variants_id_all))
+    variants_all_df <- do.call(rbind, lapply(LD.list, function(x) x$variants_selected_df))
 
     # Create a block matrix with correct names
     LD.block <- as.matrix(bdiag(LD.blocks))
     LD.block[upper.tri(LD.block)] <- t(LD.block)[upper.tri(LD.block)]                              
-    rownames(LD.block) <- colnames(LD.block) <- variants_id_all
+    rownames(LD.block) <- colnames(LD.block) <- variants_all_df$variants
 
-    # Return a list containing the unique variant IDs and the LD block matrix
-    return(list("variants" = variants_id_all, "LD" = LD.block))
-}
+    # Return a list containing the variants_all_df and the LD block matrix
+    return(list("variants_df" = variants_all_df, "LD" = LD.block))
+}     
