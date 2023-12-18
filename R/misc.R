@@ -76,7 +76,7 @@ load_genotype_data <- function(genotype, keep_indel = TRUE) {
 prepare_data_list <- function(geno_bed, phenotype, covariate, region, imiss_cutoff, maf_cutoff, mac_cutoff, xvar_cutoff) {
   ## Load phenotype and covariates and perform some pre-processing
   ### including Y ( cov ) and specific X and covar match, filter X variants based on the overlapped samples.
-  data_list = tibble(covariate_path = covariate, phenotype_path =phenotype) %>%
+  data_list = tibble(covariate_path = covariate, phenotype_path = phenotype) %>%
         mutate(
           covar = map(covariate_path, ~read_delim(.x,"\t")%>%select(-1)%>%na.omit%>%t()),
           Y = map2(phenotype_path,covar, ~{
@@ -101,7 +101,7 @@ prepare_Y_residuals <- function(data_list, scale_residuals = FALSE) {
         if (scale_residuals) {
           residuals <- scale(residuals)
         }
-        t(as_tibble(residuals))
+        as_tibble(t(residuals))
       })
     )
   return(data_list)
@@ -119,8 +119,9 @@ process_Y_residuals <- function(data_list, y_as_matrix, conditions) {
   return(Y_resid)
 }
 
-prepare_X_matrix <- function(geno_bed, data_list, imiss_cutoff, maf_cutoff, xvar_cutoff) {
+prepare_X_matrix <- function(geno_bed, data_list, imiss_cutoff, maf_cutoff, mac_cutoff, xvar_cutoff) {
   # Get X matrix for union of samples
+  all_samples = map(data_list$covar, ~rownames(.x)) %>% unlist %>% unique()
   all_samples = map(data_list$covar, ~rownames(.x)) %>% unlist %>% unique()
   maf_cutoff = max(maf_cutoff,mac_cutoff/(2*length(all_samples)))
   X = filter_X(geno_bed[all_samples,], imiss_cutoff, maf_cutoff, xvar_cutoff) ## Filter X for mvSuSiE
@@ -166,13 +167,13 @@ load_regional_association_data <- function(genotype, # PLINK file
     geno <- load_genotype_data(genotype, keep_indel)
     ## Load phenotype and covariates and perform some pre-processing
     ### including Y ( cov ) and specific X and covar match, filter X variants based on the overlapped samples.
-    data_list <- prepare_data_list(geno$bed, phenotype, covariate, region, imiss_cutoff,
+    data_list <- prepare_data_list(geno, phenotype, covariate, region, imiss_cutoff,
                                     maf_cutoff, mac_cutoff, xvar_cutoff)
     ## Get residue Y for each of condition and its mean and sd
     data_list <- prepare_Y_residuals(data_list, scale_residuals)
     Y_resid <- process_Y_residuals(data_list, y_as_matrix, conditions)
     # Get X matrix for union of samples
-    X <- prepare_X_matrix(geno$bed, data_list$covar, imiss_cutoff, maf_cutoff, xvar_cutoff)
+    X <- prepare_X_matrix(geno, data_list, imiss_cutoff, maf_cutoff, mac_cutoff, xvar_cutoff)
     ## Get residue X for each of condition and its mean and sd
     print(paste0("Dimension of input genotype data is row:", nrow(X), " column: ", ncol(X) ))
     X_list <- prepare_X_residuals(data_list, scale_residuals)
