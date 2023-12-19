@@ -1,0 +1,5 @@
+chrom,start,end,path
+1,10000,19000,LD_block_1.xz
+1,20000,29000,LD_block_2.xz
+2,15000,24000,LD_block_3.xz
+2,25000,34000,LD_block_4.xz
