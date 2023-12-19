@@ -57,18 +57,21 @@ filter_Y <- function(Y, n_nonmiss){
   return(list(Y=Y, rm_rows = rm_rows))
 }
 
-load_genotype_data <- function(genotype, keep_indel = TRUE) {
+load_genotype_data <- function(genotype, keep_indel = TRUE, keep_samples = c()) {
   # Only geno_bed is used in the functions
   geno = read_plink(genotype)
   rownames(geno$bed) = read.table(text = rownames(geno$bed), sep= ":")$V2
+  geno_bed <- geno$bed
   ## if indel is false, remove the indel in the genotype
   if (!keep_indel) {
     geno_bim = geno$bim %>%
       rename("chrom" = "V1","variant_id" = "V2","alt" = "V5","ref"="V6") %>%
       mutate(indel = ifelse(grepl("[^ATCG]",alt)=="TRUE"|grepl("[^ATCG]",ref)=="TRUE"|nchar(alt)>1|nchar(ref)>1,1, 0))
     geno_bed = geno$bed[,geno_bim$indel==0]
-  } else {
-    geno_bed = geno$bed
+  }
+  # if keep_samples is not empty, remove the samples not in the keep_samples
+  if (length(keep_samples) > 0) {
+    geno_bed <- geno_bed[rownames(geno_bed) %in% keep_samples, ]
   }
   return(geno_bed)
 }
@@ -162,9 +165,10 @@ load_regional_association_data <- function(genotype, # PLINK file
                                            imiss_cutoff = 0,
                                            y_as_matrix = FALSE,
                                            keep_indel = TRUE,
+                                           keep_samples = c(),
                                            scale_residuals = FALSE) {
     ## Load genotype
-    geno <- load_genotype_data(genotype, keep_indel)
+    geno <- load_genotype_data(genotype, keep_indel, keep_samples)
     ## Load phenotype and covariates and perform some pre-processing
     ### including Y ( cov ) and specific X and covar match, filter X variants based on the overlapped samples.
     data_list <- prepare_data_list(geno, phenotype, covariate, region, imiss_cutoff,
