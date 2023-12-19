@@ -83,32 +83,34 @@ prepare_data_list <- function(geno_bed, phenotype, covariate, region, imiss_cuto
   ) %>%
     mutate(
       # Load covariates and transpose
-      covar = map(covariate_path, ~ read_delim(.x, "\t", col_types = cols()) %>% select(-1) %>% na.omit() %>% t()),
+      covar = map(covariate_path, ~ read_delim(.x, "\t", col_types = cols()) %>% select(-1) %>% t()),
       # Load phenotype data
-      Y = map(phenotype_path, ~ {
-        tabix_region(.x, region) %>% select(-4) %>% t() %>% as.matrix()
+      Y = map(phenotype_path, ~ tabix_region(.x, region) %>% select(-4) %>% t() %>% as.matrix()),
+      # Determine common complete samples across Y, covar, and geno_bed, considering missing values
+      common_complete_samples = map2(covar, Y, ~ {
+        covar_non_na <- rownames(.x)[!apply(.x, 1, function(row) all(is.na(row)))]
+        y_non_na <- rownames(.y)[!apply(.y, 1, function(row) all(is.na(row)))]
+        intersect(intersect(covar_non_na, y_non_na), rownames(geno_bed))
       }),
-      # Determine common samples across Y, covar, and geno_bed
-      common_samples = map2(covar, Y, ~ intersect(intersect(rownames(.x), rownames(.y)), rownames(geno_bed))),
       # Further intersect with keep_samples if provided
-      common_samples = if (!is.null(keep_samples) && length(keep_samples) > 0) {
-        map(common_samples, ~ intersect(.x, keep_samples))
+      common_complete_samples = if (!is.null(keep_samples) && length(keep_samples) > 0) {
+        map(common_complete_samples, ~ intersect(.x, keep_samples))
       } else {
-        common_samples
+        common_complete_samples
       },
-      # Filter data based on common samples
-      Y = map2(Y, common_samples, ~ filter_by_common_samples(.x, .y)),
-      covar = map2(covar, common_samples, ~ filter_by_common_samples(.x, .y)),
-      # Apply filter_X on the geno_bed data filtered by common samples
-      X = map(common_samples, ~ {
+      # Determine dropped samples before filtering
+      dropped_samples_covar = map2(covar, common_complete_samples, ~ setdiff(rownames(.x), .y)),
+      dropped_samples_Y = map2(Y, common_complete_samples, ~ setdiff(rownames(.x), .y)),
+      dropped_samples_X = map2(X, common_samples, ~ setdiff(rownames(.x), .y)),
+      # Filter data based on common complete samples
+      Y = map2(Y, common_complete_samples, ~ filter_by_common_samples(.x, .y)),
+      covar = map2(covar, common_complete_samples, ~ filter_by_common_samples(.x, .y)),
+      # Apply filter_X on the geno_bed data filtered by common complete samples
+      X = map(common_complete_samples, ~ {
         filtered_geno_bed <- filter_by_common_samples(geno_bed, .x)
         maf_val <- max(maf_cutoff, mac_cutoff / (2 * nrow(filtered_geno_bed)))
         filter_X(filtered_geno_bed, imiss_cutoff, maf_val, xvar_cutoff)
-      }),
-      # Track dropped samples
-      dropped_samples_Y = map2(Y, common_samples, ~ setdiff(rownames(.x), .y)),
-      dropped_samples_X = map2(X, common_samples, ~ setdiff(rownames(.x), .y)),
-      dropped_samples_covar = map2(covar, common_samples, ~ setdiff(rownames(.x), .y))
+      })
     ) %>%
     select(covar, Y, X, dropped_samples_Y, dropped_samples_X, dropped_samples_covar)
 
@@ -200,10 +202,10 @@ load_regional_association_data <- function(genotype, # PLINK file
                                            imiss_cutoff = 0,
                                            y_as_matrix = FALSE,
                                            keep_indel = TRUE,
-                                           keep_samples = c(),
+                                           keep_samples = NULL,
                                            scale_residuals = FALSE) {
     ## Load genotype
-    geno <- load_genotype_data(genotype, keep_indel, keep_samples)
+    geno <- load_genotype_data(genotype, keep_indel)
     ## Load phenotype and covariates and perform some pre-processing
     ### including Y ( cov ) and specific X and covar match, filter X variants based on the overlapped samples.
     data_list <- prepare_data_list(geno, phenotype, covariate, region, imiss_cutoff,
