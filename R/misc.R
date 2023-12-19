@@ -57,96 +57,131 @@ filter_Y <- function(Y, n_nonmiss){
   return(list(Y=Y, rm_rows = rm_rows))
 }
 
-load_genotype_data <- function(genotype, keep_indel = TRUE, keep_samples = c()) {
-  # Only geno_bed is used in the functions
-  geno = read_plink(genotype)
-  rownames(geno$bed) = read.table(text = rownames(geno$bed), sep= ":")$V2
-  geno_bed <- geno$bed
-  ## if indel is false, remove the indel in the genotype
+load_genotype_data <- function(genotype, keep_indel = TRUE) {
+  # Read genotype data using plink
+  geno <- read_plink(genotype)
+  # Process row names
+  rownames(geno$bed) <- sapply(strsplit(rownames(geno$bed), ":"), `[`, 2)
+  # Remove indels if specified
   if (!keep_indel) {
-    geno_bim = geno$bim %>%
-      rename("chrom" = "V1","variant_id" = "V2","alt" = "V5","ref"="V6") %>%
-      mutate(indel = ifelse(grepl("[^ATCG]",alt)=="TRUE"|grepl("[^ATCG]",ref)=="TRUE"|nchar(alt)>1|nchar(ref)>1,1, 0))
-    geno_bed = geno$bed[,geno_bim$indel==0]
-  }
-  # if keep_samples is not empty, remove the samples not in the keep_samples
-  if (length(keep_samples) > 0) {
-    geno_bed <- geno_bed[rownames(geno_bed) %in% keep_samples, ]
+    is_indel <- with(geno$bim, grepl("[^ATCG]", V5) | grepl("[^ATCG]", V6) | nchar(V5) > 1 | nchar(V6) > 1)
+    geno_bed <- geno$bed[, !is_indel]
+  } else {
+    geno_bed <- geno$bed
   }
   return(geno_bed)
 }
 
-prepare_data_list <- function(geno_bed, phenotype, covariate, region, imiss_cutoff, maf_cutoff, mac_cutoff, xvar_cutoff) {
-  ## Load phenotype and covariates and perform some pre-processing
-  ### including Y ( cov ) and specific X and covar match, filter X variants based on the overlapped samples.
-  data_list = tibble(covariate_path = covariate, phenotype_path = phenotype) %>%
-        mutate(
-          covar = map(covariate_path, ~read_delim(.x,"\t")%>%select(-1)%>%na.omit%>%t()),
-          Y = map2(phenotype_path,covar, ~{
-            y_data <- tabix_region(.x, region)%>%select(-4)%>%select(rownames(.y))%>%t()%>%as.matrix
-            return(y_data)
-          }),
-          Y = map(Y, ~.x%>%na.omit),    # remove na where Y raw data has na which block regression
-          dropped_sample = map2(covar, Y , ~rownames(.x)[!rownames(.x) %in% rownames(.y)]),
-          covar = map2(covar, Y , ~.x[intersect(.x%>%rownames,rownames(.y)),]), # remove the dropped samples from Y
-          X_data = map(covar,~ filter_X( geno_bed[intersect(rownames(.x),rownames(geno_bed)),], imiss_cutoff, max(maf_cutoff, mac_cutoff/(2*length(intersect(rownames(.x),rownames(geno_bed))) ) ), xvar_cutoff)   ))
-  return(data_list)
+filter_by_common_samples <- function(dat, common_samples) {
+  dat[common_samples, , drop = FALSE] %>% .[order(rownames(.)), ]
 }
 
-prepare_Y_residuals <- function(data_list, scale_residuals = FALSE) {
-  ## Get residue Y for each of condition and its mean and sd
-  data_list <- data_list %>%
+prepare_data_list <- function(geno_bed, phenotype, covariate, region, imiss_cutoff, maf_cutoff, mac_cutoff, xvar_cutoff, keep_samples = NULL) {
+  data_list <- tibble(
+    covariate_path = covariate, 
+    phenotype_path = phenotype
+  ) %>%
     mutate(
-      Y_resid_mean = map2(Y, covar, ~.lm.fit(x = cbind(1, .y), y = .x)$residuals %>% apply(., 2, mean)),
-      Y_resid_sd = map2(Y, covar, ~.lm.fit(x = cbind(1, .y), y = .x)$residuals %>% apply(., 2, sd)),
-      Y_resid = map2(Y, covar, ~{
-        residuals <- .lm.fit(x = cbind(1, .y), y = .x)$residuals
-        if (scale_residuals) {
-          residuals <- scale(residuals)
-        }
-        as_tibble(t(residuals))
-      })
-    )
-  return(data_list)
-}
+      # Load covariates and transpose
+      covar = map(covariate_path, ~ read_delim(.x, "\t", col_types = cols()) %>% select(-1) %>% na.omit() %>% t()),
+      # Load phenotype data
+      Y = map(phenotype_path, ~ {
+        tabix_region(.x, region) %>% select(-4) %>% t() %>% as.matrix()
+      }),
+      # Determine common samples across Y, covar, and geno_bed
+      common_samples = map2(covar, Y, ~ intersect(intersect(rownames(.x), rownames(.y)), rownames(geno_bed))),
+      # Further intersect with keep_samples if provided
+      common_samples = if (!is.null(keep_samples) && length(keep_samples) > 0) {
+        map(common_samples, ~ intersect(.x, keep_samples))
+      } else {
+        common_samples
+      },
+      # Filter data based on common samples
+      Y = map2(Y, common_samples, ~ filter_by_common_samples(.x, .y)),
+      covar = map2(covar, common_samples, ~ filter_by_common_samples(.x, .y)),
+      # Apply filter_X on the geno_bed data filtered by common samples
+      X = map(common_samples, ~ {
+        filtered_geno_bed <- filter_by_common_samples(geno_bed, .x)
+        maf_val <- max(maf_cutoff, mac_cutoff / (2 * nrow(filtered_geno_bed)))
+        filter_X(filtered_geno_bed, imiss_cutoff, maf_val, xvar_cutoff)
+      }),
+      # Track dropped samples
+      dropped_samples_Y = map2(Y, common_samples, ~ setdiff(rownames(.x), .y)),
+      dropped_samples_X = map2(X, common_samples, ~ setdiff(rownames(.x), .y)),
+      dropped_samples_covar = map2(covar, common_samples, ~ setdiff(rownames(.x), .y))
+    ) %>%
+    select(covar, Y, X, dropped_samples_Y, dropped_samples_X, dropped_samples_covar)
 
-process_Y_residuals <- function(data_list, y_as_matrix, conditions) {
-  if(y_as_matrix) {
-      Y_resid = data_list %>% select(Y_resid) %>% unnest(Y_resid) %>% t %>% as.matrix
-      colnames(Y_resid) = conditions
-      print(paste("Dimension of Y matrix:", nrow(Y_resid), ncol(Y_resid)))
-  } else {
-      Y_resid = map(data_list$Y_resid,~.x %>% t) # Transpose back 
-      names(Y_resid) = conditions
-  }
-  return(Y_resid)
+  return(data_list)
 }
 
 prepare_X_matrix <- function(geno_bed, data_list, imiss_cutoff, maf_cutoff, mac_cutoff, xvar_cutoff) {
-  # Get X matrix for union of samples
-  all_samples = map(data_list$covar, ~rownames(.x)) %>% unlist %>% unique()
-  all_samples = map(data_list$covar, ~rownames(.x)) %>% unlist %>% unique()
-  maf_cutoff = max(maf_cutoff,mac_cutoff/(2*length(all_samples)))
-  X = filter_X(geno_bed[all_samples,], imiss_cutoff, maf_cutoff, xvar_cutoff) ## Filter X for mvSuSiE
-  return(X)
+  # Calculate the union of all samples from data_list: any of X, covar and Y would do
+  all_samples_union = map(data_list$covar, ~rownames(.x)) %>% unlist() %>% unique()
+  # Find the intersection of these samples with the samples in geno_bed
+  common_samples = intersect(all_samples_union, rownames(geno_bed))
+  # Filter geno_bed using common_samples
+  X_filtered = filter_by_common_samples(geno_bed, common_samples)
+  # Calculate MAF cutoff considering the number of common samples
+  maf_val = max(maf_cutoff, mac_cutoff / (2 * length(common_samples)))
+  # Apply further filtering on X
+  X_filtered = filter_X(X_filtered, imiss_cutoff, maf_val, xvar_cutoff)
+  print(paste0("Dimension of input genotype data is row:", nrow(X_filtered), " column: ", ncol(X_filtered) ))
+  return(X_filtered)
 }
 
-prepare_X_residuals <- function(data_list, scale_residuals = FALSE) {
-  ## Get residue X for each condition and its mean and sd
-  X_list <- data_list %>%
+
+add_X_residuals <- function(data_list, scale_residuals = FALSE) {
+  # Compute residuals for X and add them to data_list
+  data_list <- data_list %>%
     mutate(
-      X_resid_mean = map2(X_data, covar, ~.lm.fit(x = cbind(1, .y), y = .x)$residuals %>% data.frame() %>% apply(., 2, mean)),
-      X_resid_sd = map2(X_data, covar, ~.lm.fit(x = cbind(1, .y), y = .x)$residuals %>% data.frame() %>% apply(., 2, sd)),
-      X_resid = map2(X_data, covar, ~{
-        residuals <- .lm.fit(x = cbind(1, .y), y = .x)$residuals
+      lm_res_X = map2(X, covar, ~ .lm.fit(x = cbind(1, .y), y = .x)),
+      X_resid_mean = map(lm_res_X, ~ apply(.x$residuals, 2, mean)),
+      X_resid_sd = map(lm_res_X, ~ apply(.x$residuals, 2, sd)),
+      X_resid = map(lm_res_X, ~ {
+        residuals <- .x$residuals
         if (scale_residuals) {
           residuals <- scale(residuals)
         }
         residuals
-      })) %>%
-    select(X_resid_mean, X_resid_sd, X_resid)
-  return(X_list)
+      })
+    )
+
+  return(data_list)
 }
+
+add_Y_residuals <- function(data_list, conditions, y_as_matrix = FALSE, scale_residuals = FALSE) {
+  # Compute residuals, their mean, and standard deviation, and add them to data_list
+  data_list <- data_list %>%
+    mutate(
+      lm_res = map2(Y, covar, ~ .lm.fit(x = cbind(1, .y), y = .x)),
+      Y_resid_mean = map(lm_res, ~ apply(.x$residuals, 2, mean)),
+      Y_resid_sd = map(lm_res, ~ apply(.x$residuals, 2, sd)),
+      Y_resid = map(lm_res, ~ {
+        residuals <- .x$residuals
+        if (scale_residuals) {
+          residuals <- scale(residuals)
+        }
+        residuals
+      })
+    )
+
+  if(y_as_matrix) {
+    Y_resid_matrix = data_list %>%
+                     select(Y_resid) %>%
+                     unnest(Y_resid) %>%
+                     t() %>%
+                     as.matrix()
+    colnames(Y_resid_matrix) <- conditions
+    data_list$Y_resid <- Y_resid_matrix
+  } else {
+    Y_resid_list <- map(data_list$Y_resid, t) # Transpose back
+    names(Y_resid_list) <- conditions
+    data_list$Y_resid <- Y_resid_list
+  }
+  return(data_list)
+}
+
 
 #' @importFrom plink2R read_plink
 #' @importFrom readr read_delim
@@ -173,29 +208,27 @@ load_regional_association_data <- function(genotype, # PLINK file
     ### including Y ( cov ) and specific X and covar match, filter X variants based on the overlapped samples.
     data_list <- prepare_data_list(geno, phenotype, covariate, region, imiss_cutoff,
                                     maf_cutoff, mac_cutoff, xvar_cutoff)
+    maf_list <- lapply(data_list$X, function(x) apply(x, 2, compute_maf))
     ## Get residue Y for each of condition and its mean and sd
-    data_list <- prepare_Y_residuals(data_list, scale_residuals)
-    Y_resid <- process_Y_residuals(data_list, y_as_matrix, conditions)
+    data_list <- add_Y_residuals(data_list, conditions, y_as_matrix, scale_residuals)
+    ## Get residue X for each of condition and its mean and sd
+    data_list <- add_X_residuals(data_list, scale_residuals)
     # Get X matrix for union of samples
     X <- prepare_X_matrix(geno, data_list, imiss_cutoff, maf_cutoff, mac_cutoff, xvar_cutoff)
-    ## Get residue X for each of condition and its mean and sd
-    print(paste0("Dimension of input genotype data is row:", nrow(X), " column: ", ncol(X) ))
-    X_list <- prepare_X_residuals(data_list, scale_residuals)
-    maf_list = lapply(data_list$X_data, function(x) apply(x, 2, compute_maf))
     region <- unlist(strsplit(region, ":", fixed = TRUE))
     ## residual_Y: if y_as_matrix is true, then return a matrix of R conditions, with column names being the names of the conditions (phenotypes) and row names being sample names. Even for one condition it has to be a matrix with just one column. if y_as_matrix is false, then return a list of y either vector or matrix (CpG for example), and they need to match with residual_X in terms of which samples are missing.
     ## residual_X: is a list of R conditions each is a matrix, with list names being the names of conditions, column names being SNP names and row names being sample names.
     ## X: is the somewhat original genotype matrix output from `filter_X`, with column names being SNP names and row names being sample names. Sample names of X should match example sample names of residual_Y matrix form (not list); but the matrices inside residual_X would be subsets of sample name of residual_Y matrix form (not list).
     return (list(
-      residual_Y = Y_resid,
-      residual_X = X_list$X_resid,
+      residual_Y = data_list$Y_resid,
+      residual_X = data_list$X_resid,
       residual_Y_scalar = if(scale_residuals) data_list$Y_resid_sd else 1,
-      residual_X_scalar = if(scale_residuals) X_list$X_resid_sd else 1,
-      dropped_sample = data_list$dropped_sample,
+      residual_X_scalar = if(scale_residuals) data_list$X_resid_sd else 1,
+      dropped_sample = list(X=data_list$dropped_samples_X,Y=data_list$dropped_samples_Y,covar=data_list$dropped_samples_covar),
       covar = data_list$covar,
       Y = data_list$Y,
+      X_data = data_list$X,
       X = X,
-      X_data = data_list$X_data,
       maf = maf_list,
       chrom = region[1],
       grange = unlist(strsplit(region[2], "-", fixed = TRUE))
