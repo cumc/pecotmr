@@ -4,7 +4,7 @@
 \alias{load_LD_matrix}
 \title{Function to load and process LD matrix}
 \usage{
-load_LD_matrix(LD_meta_file, region, extract_variants = NULL)
+load_LD_matrix(LD_meta_file, region, extract_coordinate = NULL)
 }
 \arguments{
 \item{LD_meta_file}{A data frame specifying the information of LD blocks with the olumns "chrom", "start", "end" and "path".
@@ -12,12 +12,13 @@ load_LD_matrix(LD_meta_file, region, extract_variants = NULL)
 
 \item{region}{A data frame specifying the regions of interest with the columns "chrom", "start" and "end".}
 
-\item{extract_variants}{A vector of variants to be extracted (optional).}
+\item{extract_coordinate}{A data frame with the columns "chr","pos" to be extracted (optional).}
 }
 \value{
 A list containing:
 \describe{
-\item{variants}{merge the variants within each LD block to a vector.}
+\item{variants_df}{merge the variants_selected_df within each LD block to a data frame in the format of bim file with the columns "chr", "variants", 
+"GD", "pos", "A1" and "A2".}
 \item{LD}{The linkage disequilibrium block matrix, the row and column names are identical to `variants_id_all`}.
 }
 }
