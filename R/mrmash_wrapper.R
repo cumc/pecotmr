@@ -102,10 +102,12 @@
 mrmash_wrapper <- function(X, 
                            Y, 
                            prior_data_driven_matrices, 
-                           prior_grid, 
+                           prior_grid=NULL, 
                            nthreads=2,
+                           bhat = NULL, 
+                           sbhat= NULL,
                            prior_canonical_matrices = FALSE,
-                           standardize=TRUE, 
+                           standardize=FALSE, 
                            update_w0 = TRUE,
                            w0_threshold = 1e-8,
                            update_V=TRUE, 
@@ -115,15 +117,32 @@ mrmash_wrapper <- function(X,
                            tol = 0.01, 
                            verbose = FALSE){
 
-  if (is.null(prior_grid)) {
-    stop("Please provide prior grid.")
-  }
 
   if (is.null(prior_data_driven_matrices) && !isTRUE(prior_canonical_matrices)) {
     stop("Please provide prior_data_driven_matrices or set prior_canonical_matrices=TRUE.")
   }  
+  
     
+  Y_has_missing <- any(is.na(Y))
+    
+  if(Y_has_missing && B_init_method=="glasso"){
+        stop("B_init_method=glasso can only be used without missing values in Y")
+  }
+  
+    
+  if (is.null(prior_grid)){
+      if(is.null(bhat) || is.null(sbhat)){
+          stop("Please provide either prior_grid or bhat and sbhat")
+      } else {
+            if (ncol(Y) > 0 && (ncol(bhat) != ncol(Y) || ncol(sbhat) != ncol(Y))) {
+                  stop(paste("provided sbhat or bhat has ", ncol(dat$Bhat), "columns, different from required ", ncol(Y), " columns in Y. "))
+              } else {
+                  prior_grid <- compute_grid(bhat=bhat, sbhat=sbhat)
+              }
+      }
+  } 
 
+    
   ### Compute canonical matrices, if requested
   if (isTRUE(prior_canonical_matrices)) {
     prior_canonical_matrices <- compute_canonical_covs(ncol(Y), singletons=TRUE, hetgrid=c(0, 0.25, 0.5, 0.75, 1))
@@ -143,8 +162,8 @@ mrmash_wrapper <- function(X,
   ### Compute prior covariance
   S0 <- expand_covs(S0_raw, prior_grid, zeromat=TRUE)
   time1 <- proc.time()
-
-
+    
+    
   if (B_init_method == "enet") {
       out <- compute_coefficients_univ_glmnet(X, Y, alpha=0.5, standardize=standardize, nthreads=nthreads, Xnew=NULL)
   } else if (B_init_method == "glasso") {
@@ -181,34 +200,10 @@ mrmash_wrapper <- function(X,
 #'
 ### Function to compute initial estimates of the coefficients from group-lasso
 compute_coefficients_glasso <- function(X, Y, standardize, nthreads, Xnew=NULL, version=c("Rcpp", "R")) {
-  version <- match.arg(version)
   n <- nrow(X)
   p <- ncol(X)
   r <- ncol(Y)
-  Y_has_missing <- any(is.na(Y))
   tissue_names <- colnames(Y)
-
-  if (Y_has_missing) {
-    ### Extract per-individual Y missingness patterns
-    Y_miss_patterns <- mr.mash.alpha:::extract_missing_Y_pattern(Y)
-
-    ### Compute V and its inverse
-    V <- mr.mash.alpha:::compute_V_init(X, Y, matrix(0, p, r), method="flash")
-    Vinv <- chol2inv(chol(V))
-
-    ### Initialize missing Ys
-    muy <- colMeans(Y, na.rm=TRUE)
-    for (l in 1:r) {
-      Y[is.na(Y[, l]), l] <- muy[l]
-    }
-
-    ### Compute expected Y (assuming B=0)
-    mu <- matrix(rep(muy, each=n), n, r)
-
-    ### Impute missing Ys
-    Y <- mr.mash.alpha:::impute_missing_Y(Y=Y, mu=mu, Vinv=Vinv, miss=Y_miss_patterns$miss, non_miss=Y_miss_patterns$non_miss,
-                          version=version)$Y
-  }
 
   ## Fit group-lasso
   if (nthreads > 1) {
@@ -228,7 +223,7 @@ compute_coefficients_glasso <- function(X, Y, standardize, nthreads, Xnew=NULL, 
     B[, i] <- as.vector(coeff_glmnet[[i]])[-1]
   }
 
-  ## Make predictions if requested. (In compute_coefficients_glasso() cuntion)
+  ## Make predictions if requested. 
   if (!is.null(Xnew)) {
     Yhat_glmnet <- drop(predict(cvfit_glmnet, newx=Xnew, s="lambda.min"))
     colnames(Yhat_glmnet) <- tissue_names
@@ -238,6 +233,7 @@ compute_coefficients_glasso <- function(X, Y, standardize, nthreads, Xnew=NULL, 
   }
   return(res)
 }
+
 
 
 #' @importFrom doMC registerDoMC
@@ -291,6 +287,7 @@ compute_coefficients_univ_glmnet <- function(X, Y, alpha, standardize, nthreads,
 
 
 
+
 ### Compute prior weights from coefficients estimates
 compute_w0 <- function(Bhat, ncomps) {
   prop_nonzero <- sum(rowSums(abs(Bhat)) > 0) / nrow(Bhat)
@@ -309,4 +306,54 @@ filter_datadriven_mats<- function(Y, datadriven_mats){
   tissues_to_keep <- colnames(Y)
   datadriven_mats_filt <- lapply(datadriven_mats, function(x, to_keep){x[to_keep, to_keep]}, tissues_to_keep)
   return(datadriven_mats_filt)
+}
+
+
+
+######### Function to compute grids##########
+#compute grid
+compute_grid <- function(bhat, sbhat){
+    grid_mins = c()
+    grid_maxs = c()
+
+    #endpoints = compute_grid_endpoints(sumstat)
+    include = !(sbhat==0 | !is.finite(sbhat) | is.na(bhat))
+    gmax = grid_max(bhat[include], sbhat[include])
+    gmin = grid_min(bhat[include], sbhat[include])
+
+    grid_mins = c(grid_mins, gmin)
+    grid_maxs = c(grid_maxs, gmax)
+
+    gmin_tot = min(grid_mins)
+    gmax_tot = max(grid_maxs)
+    grid = autoselect_mixsd(gmin_tot, gmax_tot, mult=sqrt(2))^2  
+
+    return(grid)        
+}
+
+
+###Compute the minimum value for the grid
+grid_min = function(bhat,sbhat){
+  min(sbhat)
+}
+
+###Compute the maximum value for the grid
+grid_max = function(bhat,sbhat){
+  if (all(bhat^2 <= sbhat^2)) {
+    8 * grid_min(bhat,sbhat) # the unusual case where we don't need much grid
+  } else {
+    2 * sqrt(max(bhat^2 - sbhat^2))
+  }
+}
+   
+
+###Function to compute the grid
+autoselect_mixsd <- function(gmin, gmax, mult=2){
+  if (mult == 0) {
+    return(c(0, gmax/2))
+  }
+  else {
+    npoint = ceiling(log2(gmax/gmin)/log2(mult))
+    return(mult^((-npoint):0) * gmax)
+  }
 }
