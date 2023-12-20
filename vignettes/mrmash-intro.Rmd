@@ -27,7 +27,7 @@ then compute weight matrix for TWAS analysis input.
 Load the `pecotmr` package.
 
 ```{r load-pkgs}
-library(pecotmr)
+devtools::load_all("~/githubrepo/pecotmr")
 ```
 
 
@@ -56,7 +56,10 @@ dim(Y)
 The mrmash_data includes mixture prior matrices and prior grids for the scenario of 
 cross validation and without cross validation. `prior_matrices_cv` and
 `prior_grid_cv` contains list of data for each fold. In this example, we have prepared 
-the data for five-fold cross validation on the partition of the subjects.
+the data for five-fold cross validation on the partition of the subjects. 
+The `prior grid` can be computed internally if `sumstat` univariate regression results 
+are provided.
+
 
 ```{r}
 names(multitrait_data)
@@ -70,6 +73,10 @@ str(prior_matrices)
 str(prior_grid)
 ```
 
+```{r}
+str(sumstat)
+```
+
 ## Cross validation to determine imputability of the unit
 
 ```{r}
@@ -79,9 +86,12 @@ set.seed(999)
 ## Compute Weight Matrix using mr.mash method 
 
 We fit mr.mash with pre-computed mixture prior matrices and grid to compute weight matrix. 
+In the example below, we subset 200 SNPs for shorter runtime.
 
 
 ```{r}
+X <- X[, 1:200]
+
 methods <- list(
     mrmash_weights = list(
     prior_data_driven_matrices=prior_matrices,
@@ -95,9 +105,26 @@ weight <- twas_weights(X=X,Y=Y,methods=methods)
 str(weight)
 ```
 
+When `prior_grid` is not available, summary statistics should to be provided. 
 
+```{r}
+bhat <- sumstat$Bhat
+sbhat <- sumstat$Shat
+
+methods <- list(
+    mrmash_weights = list(
+    prior_data_driven_matrices=prior_matrices,
+    bhat=bhat,
+    sbhat = sbhat)
+    )
+    
+weight <- twas_weights(X=X,Y=Y,methods=methods)
+
+str(weight)
+```
 
 ```{r}
 detach(multitrait_data)
+rm(X, multitrait_data)
 ```
 
