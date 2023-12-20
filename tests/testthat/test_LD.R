@@ -4,9 +4,13 @@ context("LD")
 # Use simulated data from PLINK
 
 test_that("Check that we correctly retrieve the names from the matrix",{
-  set.seed(1)
+  region <- read_delim("test_data/region.csv", delim = ",")
+  meta <- read_delim("test_data/LD_meta_file.csv", delim = ",")
+  load_LD_matrix(meta, region)
 })
 
-test_that("Check that the block is correctly acquired",{
-  set.seed(1)
-})
+
+
+#test_that("Check that the block is correctly acquired",{
+#  set.seed(1)
+#})
