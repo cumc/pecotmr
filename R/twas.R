@@ -125,7 +125,9 @@ twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, methods
                     weights_matrix <- do.call(method, c(list(X = X_train, Y = Y_train), args))
                     # Adjust the weights matrix to include zeros for invalid columns
                     full_weights_matrix <- matrix(0, nrow = ncol(X), ncol = ncol(Y))
-                    full_weights_matrix[valid_columns, ] <- weights_matrix
+                    rownames(full_weights_matrix) <- rownames(weights_matrix)
+                    colnames(full_weights_matrix) <- colnames(weights_matrix)
+                    full_weights_matrix[valid_columns, ] <- weights_matrix[valid_columns, ]
                     return(X_test %*% full_weights_matrix)
                 } else {
                     sapply(1:ncol(Y), function(k) {
@@ -220,7 +222,9 @@ twas_weights <- function(X, Y, methods, num_threads = 1) {
             weights_matrix <- do.call(method_name, c(list(X = X_filtered, Y = Y), args))
             # Adjust the weights matrix to include zeros for invalid columns
             full_weights_matrix <- matrix(0, nrow = ncol(X), ncol = ncol(Y))
-            full_weights_matrix[valid_columns, ] <- weights_matrix
+            rownames(full_weights_matrix) <- rownames(weights_matrix)
+            colnames(full_weights_matrix) <- colnames(weights_matrix)
+            full_weights_matrix[valid_columns, ] <- weights_matrix[valid_columns, ]
             return(full_weights_matrix)
         } else {
             # Apply univariate method to each column of Y
