@@ -9,8 +9,8 @@ check_consecutive_regions <- function(df) {
   df <- df %>%
     arrange(chrom, start)
 
-  # Check if the input regions are in increasing order based on 'chr' and 'start'
-  if (!all(df$chrom[-1] >= df$chrom[-nrow(df)] & df$start[-1] >= df$start[-nrow(df)])) {
+  # Check if the input regions are in increasing order based on 'start'
+  if (!all(df$start[-1] >= df$start[-nrow(df)])) {
     stop("The input list of regions is not in increasing order.")
   }
   return(df)
@@ -144,8 +144,8 @@ load_LD_matrix <- function(LD_meta_file, region, extract_coordinate = NULL) {
         LD.index <- filter(region_index, index == j)
 
         # Read the LD matrix from the file
-        LD.matrix <- as.matrix(fread(cmd = paste("xzcat", unique(LD.index$region_LD_file_path)), 
-                                     header = TRUE, sep = "\t")[, -1])
+        LD.matrix <- as.matrix(read_delim(
+          unique(LD.index$region_LD_file_path), col_names = T, delim = "\t")[-1])
 
         # Process variant names from file paths
         LD.variants <- str_split(unique(LD.index$region_LD_file_path), "\\.", simplify = TRUE) %>%
