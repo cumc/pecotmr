@@ -278,7 +278,12 @@ susie_weights <- function(X=NULL, y=NULL, susie_fit=NULL, ...) {
         # get susie_fit object
         susie_fit = susie_wrapper(X,y,...)
     }
-    return(coef.susie(susie_fit)[-1])
+    if ("intercept" %in% names(susie_fit) && "alpha" %in% names(susie_fit) && "mu" %in% names(susie_fit) && "X_column_scale_factors" %in% names(susie_fit)) {
+        # This is designed to cope with output from pecotmr::susie_post_processor()
+        return(coef.susie(susie_fit)[-1])
+    } else {
+        return(rep(0, length(susie_fit$pip)))
+    }
 }
 
 #' @importFrom mr.mash.alpha coef.mr.mash
