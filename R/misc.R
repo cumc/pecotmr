@@ -76,6 +76,7 @@ filter_by_common_samples <- function(dat, common_samples) {
   dat[common_samples, , drop = FALSE] %>% .[order(rownames(.)), ]
 }
 
+#' @importFrom readr read_delim
 prepare_data_list <- function(geno_bed, phenotype, covariate, region, imiss_cutoff, maf_cutoff, mac_cutoff, xvar_cutoff, keep_samples = NULL) {
   data_list <- tibble(
     covariate_path = covariate, 
@@ -101,7 +102,7 @@ prepare_data_list <- function(geno_bed, phenotype, covariate, region, imiss_cuto
       # Determine dropped samples before filtering
       dropped_samples_covar = map2(covar, common_complete_samples, ~ setdiff(rownames(.x), .y)),
       dropped_samples_Y = map2(Y, common_complete_samples, ~ setdiff(rownames(.x), .y)),
-      dropped_samples_X = map2(X, common_samples, ~ setdiff(rownames(.x), .y)),
+      dropped_samples_X = map(common_complete_samples, ~ setdiff(rownames(geno_bed), .x)),
       # Filter data based on common complete samples
       Y = map2(Y, common_complete_samples, ~ filter_by_common_samples(.x, .y)),
       covar = map2(covar, common_complete_samples, ~ filter_by_common_samples(.x, .y)),
@@ -137,15 +138,15 @@ add_X_residuals <- function(data_list, scale_residuals = FALSE) {
   # Compute residuals for X and add them to data_list
   data_list <- data_list %>%
     mutate(
-      lm_res_X = map2(X, covar, ~ .lm.fit(x = cbind(1, .y), y = .x)),
-      X_resid_mean = map(lm_res_X, ~ apply(.x$residuals, 2, mean)),
-      X_resid_sd = map(lm_res_X, ~ apply(.x$residuals, 2, sd)),
+      lm_res_X = map2(X, covar, ~ .lm.fit(x = cbind(1, .y), y = .x)$residuals %>% as.matrix()),
+      X_resid_mean = map(lm_res_X, ~ apply(.x, 2, mean)),
+      X_resid_sd = map(lm_res_X, ~ apply(.x, 2, sd)),
       X_resid = map(lm_res_X, ~ {
-        residuals <- .x$residuals
         if (scale_residuals) {
-          residuals <- scale(residuals)
+          scale(.x)
+        } else {
+          .x
         }
-        residuals
       })
     )
 
@@ -156,15 +157,15 @@ add_Y_residuals <- function(data_list, conditions, y_as_matrix = FALSE, scale_re
   # Compute residuals, their mean, and standard deviation, and add them to data_list
   data_list <- data_list %>%
     mutate(
-      lm_res = map2(Y, covar, ~ .lm.fit(x = cbind(1, .y), y = .x)),
-      Y_resid_mean = map(lm_res, ~ apply(.x$residuals, 2, mean)),
-      Y_resid_sd = map(lm_res, ~ apply(.x$residuals, 2, sd)),
+      lm_res = map2(Y, covar, ~ .lm.fit(x = cbind(1, .y), y = .x)$residuals %>% as.matrix()),
+      Y_resid_mean = map(lm_res, ~ apply(.x, 2, mean)),
+      Y_resid_sd = map(lm_res, ~ apply(.x, 2, sd)),
       Y_resid = map(lm_res, ~ {
-        residuals <- .x$residuals
         if (scale_residuals) {
-          residuals <- scale(residuals)
+          scale(.x)
+        } else {
+          .x
         }
-        residuals
       })
     )
 
@@ -186,7 +187,6 @@ add_Y_residuals <- function(data_list, conditions, y_as_matrix = FALSE, scale_re
 
 
 #' @importFrom plink2R read_plink
-#' @importFrom readr read_delim
 #' @import purrr dplyr tibble
 #' @importFrom utils read.table
 #' @importFrom tidyr unnest
