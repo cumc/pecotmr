@@ -266,6 +266,7 @@ twas_weights <- function(X, Y, weight_methods, num_threads = 1) {
     } else {
         weights_list <- lapply(names(weight_methods), process_method)
     }
+    names(weights_list) <- names(weight_methods)
 
     return(weights_list)
 }
