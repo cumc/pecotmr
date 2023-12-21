@@ -9,7 +9,7 @@ twas_weights_cv(
   Y,
   fold = NULL,
   sample_partitions = NULL,
-  methods = NULL,
+  weight_methods = NULL,
   seed = NULL,
   num_threads = 1
 )
@@ -25,8 +25,8 @@ If NULL, 'sample_partitions' must be provided.}
 \item{sample_partitions}{An optional dataframe with predefined sample partitions, 
 containing columns 'Sample' (sample names) and 'Fold' (fold number). If NULL, 'fold' must be provided.}
 
-\item{methods}{A list of methods and their specific arguments, formatted as list(method1 = method1_args, method2 = method2_args). 
-Methods in the list can be either univariate (applied to each column of Y) or multivariate (applied to the entire Y matrix).}
+\item{weight_methods}{A list of methods and their specific arguments, formatted as list(method1 = method1_args, method2 = method2_args). 
+methods in the list can be either univariate (applied to each column of Y) or multivariate (applied to the entire Y matrix).}
 
 \item{seed}{An optional integer to set the random seed for reproducibility of sample splitting.}
 

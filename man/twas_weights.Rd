@@ -2,17 +2,17 @@
 % Please edit documentation in R/twas.R
 \name{twas_weights}
 \alias{twas_weights}
-\title{Run multiple TWAS methods}
+\title{Run multiple TWAS weight methods}
 \usage{
-twas_weights(X, Y, methods, num_threads = 1)
+twas_weights(X, Y, weight_methods, num_threads = 1)
 }
 \arguments{
 \item{X}{A matrix of samples by features, where each row represents a sample and each column a feature.}
 
 \item{Y}{A matrix (or vector, which will be converted to a matrix) of samples by outcomes, where each row corresponds to a sample.}
 
-\item{methods}{A list of methods and their specific arguments, formatted as list(method1 = method1_args, method2 = method2_args). 
-Methods in the list are applied to the datasets X and Y.}
+\item{weight_methods}{A list of methods and their specific arguments, formatted as list(method1 = method1_args, method2 = method2_args). 
+methods in the list are applied to the datasets X and Y.}
 
 \item{num_threads}{The number of threads to use for parallel processing.
 If set to -1, the function uses all available cores.
@@ -23,7 +23,7 @@ If set to 2 or more, parallel processing is enabled with that many threads.}
 A list where each element is named after a method and contains the weight matrix produced by that method.
 }
 \description{
-Applies specified methods to the datasets X and Y, returning weight matrices for each method.
+Applies specified weight methods to the datasets X and Y, returning weight matrices for each method.
 Handles both univariate and multivariate methods, and filters out columns in X with zero standard error.
 This function utilizes parallel processing to handle multiple methods.
 }

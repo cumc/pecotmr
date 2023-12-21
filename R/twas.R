@@ -37,8 +37,8 @@ twas_z <- function(weights, z, R=NULL, X=NULL) {
 #' If NULL, 'sample_partitions' must be provided.
 #' @param sample_partitions An optional dataframe with predefined sample partitions, 
 #' containing columns 'Sample' (sample names) and 'Fold' (fold number). If NULL, 'fold' must be provided.
-#' @param methods A list of methods and their specific arguments, formatted as list(method1 = method1_args, method2 = method2_args). 
-#' Methods in the list can be either univariate (applied to each column of Y) or multivariate (applied to the entire Y matrix).
+#' @param weight_methods A list of methods and their specific arguments, formatted as list(method1 = method1_args, method2 = method2_args). 
+#' methods in the list can be either univariate (applied to each column of Y) or multivariate (applied to the entire Y matrix).
 #' @param seed An optional integer to set the random seed for reproducibility of sample splitting.
 #' @param num_threads The number of threads to use for parallel processing.
 #'        If set to -1, the function uses all available cores.
@@ -59,8 +59,8 @@ twas_z <- function(weights, z, R=NULL, X=NULL) {
 #' @importFrom foreach foreach
 #' @importFrom foreach %dopar%
 #' @importFrom doParallel registerDoParallel
-#' @export 
-twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, methods = NULL, seed = NULL, num_threads = 1) {
+#' @export
+twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_methods = NULL, seed = NULL, num_threads = 1) {
     # Validation checks
     if (is.null(fold) || !is.numeric(fold) || fold <= 0) {
         stop("Invalid value for 'fold'. It must be a positive integer.")
@@ -76,15 +76,20 @@ twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, methods
     }
 
     # Get sample names
-    sample_names <- ifelse(!is.null(rownames(X)), rownames(X), 
-                           ifelse(!is.null(rownames(Y)), rownames(Y), 1:nrow(X)))
+    if (!is.null(rownames(X))) {
+        sample_names <- rownames(X)
+    } else if (!is.null(rownames(Y))) {
+        sample_names <- rownames(Y)
+    } else {
+        sample_names <- 1:nrow(X)
+    }
 
     # Create or use provided folds
     if (!is.null(fold)) {
         if (!is.null(seed)) set.seed(seed)
         sample_indices <- sample(nrow(X))
         folds <- cut(seq(1, nrow(X)), breaks = fold, labels = FALSE)
-        sample_partition <- data.frame(Sample = sample_names[sample_indices], Fold = folds)
+        sample_partition <- data.frame(Sample = sample_names[sample_indices], Fold = folds, stringsAsFactors = FALSE)
     } else if (!is.null(sample_partitions)) {
         if (!all(sample_partitions$Sample %in% sample_names)) {
             stop("Some samples in 'sample_partitions' do not match the samples in 'X' and 'Y'.")
@@ -95,32 +100,29 @@ twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, methods
         stop("Either 'fold' or 'sample_partitions' must be provided.")
     }
 
-    if (is.null(methods)) {
+    if (is.null(weight_methods)) {
         return(list(sample_partition = sample_partition))
     } else {
-        # Hardcoded vector of multivariate methods
-        multivariate_methods <- c('mrmash_weights')
+        # Hardcoded vector of multivariate weight_methods
+        multivariate_weight_methods <- c('mrmash_weights')
 
         # Determine the number of cores to use
         num_cores <- ifelse(num_threads == -1, detectCores(), num_threads)
         # Perform CV with parallel processing
-        # After cross validation, each sample should have been in
-        # test set at some point, and therefore has predicted value.
-        # The prediction matrix is therefore exactly the same dimension as input Y
         process_method <- function(j) {
             fold_indices <- which(folds == j)
             training_indices <- setdiff(1:nrow(X), fold_indices)
             X_train <- X[training_indices, ]
-            Y_train <- Y[training_indices, ]
+            Y_train <- Y[training_indices, ,drop=F]
             X_test <- X[fold_indices, ]
 
             # Remove columns with zero standard error
             valid_columns <- apply(X_train, 2, function(col) sd(col) != 0)
-            X_train <- X_train[, valid_columns]
+            X_train <- X_train[, valid_columns, drop=F]
 
-            sapply(names(methods), function(method) {
-                args <- methods[[method]]
-                if (method %in% multivariate_methods) {
+            setNames(lapply(names(weight_methods), function(method) {
+                args <- weight_methods[[method]]
+                if (method %in% multivariate_weight_methods) {
                     # Apply multivariate method to entire Y for this fold
                     weights_matrix <- do.call(method, c(list(X = X_train, Y = Y_train), args))
                     # Adjust the weights matrix to include zeros for invalid columns
@@ -130,7 +132,8 @@ twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, methods
                     full_weights_matrix[valid_columns, ] <- weights_matrix[valid_columns, ]
                     return(X_test %*% full_weights_matrix)
                 } else {
-                    sapply(1:ncol(Y), function(k) {
+                    sapply(1:ncol(Y_train), function(k) {
+                        
                         weights <- do.call(method, c(list(X = X_train, y = Y_train[, k]), args))
                         full_weights <- rep(0, ncol(X))
                         full_weights[valid_columns] <- weights
@@ -139,47 +142,61 @@ twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, methods
                         return(X_test %*% full_weights)
                     })
                 }
-            })
+            }), names(weight_methods))
         }
 
         if (num_cores >= 2) {
             cl <- makeCluster(num_cores)
             registerDoParallel(cl)
-            results <- foreach(j = 1:fold, .combine = 'c') %dopar% {
+            fold_results <- foreach(j = 1:fold, .combine = 'c') %dopar% {
                 process_method(j)
             }
             stopCluster(cl)
         } else {
-            results <- lapply(1:fold, process_method)
+            fold_results <- lapply(1:fold, process_method)
         }
-
-        # Compute rsq and p-value for each method
-        rsq_pval_table <- matrix(NA, nrow = length(methods), ncol = 2)
-        rownames(rsq_pval_table) <- names(methods)
-        colnames(rsq_pval_table) <- c("rsq", "pval")
-        for (k in 1:ncol(Y)) {
-            for (m in 1:length(methods)) {
-                method_name <- names(methods)[m]
-                Y_pred <- results[[method_name]][, k]
-                lm_fit <- lm(Y[, k] ~ Y_pred)
-                rsq_pval_table[m, 1] <- summary(lm_fit)$adj.r.squared
-                rsq_pval_table[m, 2] <- summary(lm_fit)$coefficients[2,4]
+        # Reorganize into Y_pred
+        # After cross validation, each sample should have been in
+        # test set at some point, and therefore has predicted value.
+        # The prediction matrix is therefore exactly the same dimension as input Y
+        Y_pred <- setNames(lapply(weight_methods, function(x) matrix(NA, nrow = nrow(Y), ncol = ncol(Y))), names(weight_methods))
+        for (j in 1:length(fold_results)) {
+            fold_indices <- which(folds == j)
+            for (method in names(weight_methods)) {
+                Y_pred[[method]][fold_indices, ] <- fold_results[[j]][[method]]
             }
         }
-        return(list(sample_partition = sample_partition, prediction = results, rsq_pval = rsq_pval_table))
+        names(Y_pred) <- gsub("_weights", "_predicted", names(Y_pred))
+        # Compute rsq and p-value for each method
+        rsq_pval_table <- matrix(NA, nrow = length(weight_methods), ncol = 2)
+        rownames(rsq_pval_table) <- names(Y_pred)
+        colnames(rsq_pval_table) <- c("rsq", "pval")
+        for (r in 1:ncol(Y)) {
+            for (m in 1:length(weight_methods)) {
+                if ( !is.na(sd(Y_pred[[m]][, r])) && sd(Y_pred[[m]][, r]) != 0 ) {
+                    lm_fit <- lm(Y[, r] ~ Y_pred[[m]][, r])
+                    rsq_pval_table[m, 1] <- summary(lm_fit)$adj.r.squared
+                    rsq_pval_table[m, 2] <- summary(lm_fit)$coefficients[2,4]
+                } else {
+                    rsq_pval_table[m, 1] <- NA
+                    rsq_pval_table[m, 2] <- NA
+                }
+            }
+        }
+        return(list(sample_partition = sample_partition, prediction = Y_pred, rsq_pval = rsq_pval_table))
     }
-}
+} 
 
-#' Run multiple TWAS methods
+#' Run multiple TWAS weight methods
 #'
-#' Applies specified methods to the datasets X and Y, returning weight matrices for each method.
+#' Applies specified weight methods to the datasets X and Y, returning weight matrices for each method.
 #' Handles both univariate and multivariate methods, and filters out columns in X with zero standard error.
 #' This function utilizes parallel processing to handle multiple methods.
 #'
 #' @param X A matrix of samples by features, where each row represents a sample and each column a feature.
 #' @param Y A matrix (or vector, which will be converted to a matrix) of samples by outcomes, where each row corresponds to a sample.
-#' @param methods A list of methods and their specific arguments, formatted as list(method1 = method1_args, method2 = method2_args). 
-#' Methods in the list are applied to the datasets X and Y.
+#' @param weight_methods A list of methods and their specific arguments, formatted as list(method1 = method1_args, method2 = method2_args). 
+#' methods in the list are applied to the datasets X and Y.
 #' @param num_threads The number of threads to use for parallel processing.
 #'        If set to -1, the function uses all available cores.
 #'        If set to 0 or 1, no parallel processing is performed.
@@ -193,7 +210,7 @@ twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, methods
 #' @importFrom foreach %dopar%
 #' @importFrom doParallel registerDoParallel
 #' @export
-twas_weights <- function(X, Y, methods, num_threads = 1) {
+twas_weights <- function(X, Y, weight_methods, num_threads = 1) {
     if (!is.matrix(X) || (!is.matrix(Y) && !is.vector(Y))) {
         stop("X must be a matrix and Y must be a matrix or a vector.")
     }
@@ -211,13 +228,13 @@ twas_weights <- function(X, Y, methods, num_threads = 1) {
 
     process_method <- function(method_name) {
         # Hardcoded vector of multivariate methods
-        multivariate_methods <- c('mrmash_weights')
-        args <- methods[[method_name]]
+        multivariate_weight_methods <- c('mrmash_weights')
+        args <- weight_methods[[method_name]]
         # Remove columns with zero standard error
         valid_columns <- apply(X, 2, function(col) sd(col) != 0)
         X_filtered <- X[, valid_columns]
 
-        if (method_name %in% multivariate_methods) {
+        if (method_name %in% multivariate_weight_methods) {
             # Apply multivariate method
             weights_matrix <- do.call(method_name, c(list(X = X_filtered, Y = Y), args))
             # Adjust the weights matrix to include zeros for invalid columns
@@ -231,7 +248,7 @@ twas_weights <- function(X, Y, methods, num_threads = 1) {
             # Initialize it with zeros to avoid NA
             weights_matrix <- matrix(0, nrow = ncol(X_filtered), ncol = ncol(Y))
             for (k in 1:ncol(Y)) {
-                weights_vector <- do.call(method_name, c(list(X = X_filtered, Y = Y[, k]), args))
+                weights_vector <- do.call(method_name, c(list(X = X_filtered, y = Y[, k]), args))
                 weights_matrix[, k] <- weights_vector
             }
             return(weights_matrix)
@@ -242,12 +259,12 @@ twas_weights <- function(X, Y, methods, num_threads = 1) {
         # Set up parallel backend to use multiple cores
         cl <- makeCluster(num_cores)
         registerDoParallel(cl)
-        weights_list <- foreach(method_name = names(methods), .combine = 'c') %dopar% {
+        weights_list <- foreach(method_name = names(weight_methods), .combine = 'c') %dopar% {
             process_method(method_name)
         }
         stopCluster(cl)
     } else {
-        weights_list <- lapply(names(methods), process_method)
+        weights_list <- lapply(names(weight_methods), process_method)
     }
 
     return(weights_list)

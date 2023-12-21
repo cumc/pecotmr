@@ -92,13 +92,13 @@ In the example below, we subset 200 SNPs for shorter runtime.
 ```{r}
 X <- X[, 1:200]
 
-methods <- list(
+weight_methods <- list(
     mrmash_weights = list(
     prior_data_driven_matrices=prior_matrices,
     prior_grid=prior_grid)
     )
     
-weight <- twas_weights(X=X,Y=Y,methods=methods)
+weight <- twas_weights(X=X,Y=Y,weight_methods=weight_methods)
 ```
 
 ```{r}
@@ -111,14 +111,14 @@ When `prior_grid` is not available, summary statistics should to be provided.
 bhat <- sumstat$Bhat
 sbhat <- sumstat$Shat
 
-methods <- list(
+weight_methods <- list(
     mrmash_weights = list(
     prior_data_driven_matrices=prior_matrices,
     bhat=bhat,
     sbhat = sbhat)
     )
     
-weight <- twas_weights(X=X,Y=Y,methods=methods)
+weight <- twas_weights(X=X,Y=Y,weight_methods=weight_methods)
 
 str(weight)
 ```

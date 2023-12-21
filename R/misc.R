@@ -76,7 +76,7 @@ filter_by_common_samples <- function(dat, common_samples) {
   dat[common_samples, , drop = FALSE] %>% .[order(rownames(.)), ]
 }
 
-#' @importFrom readr read_delim
+#' @importFrom readr read_delim cols
 prepare_data_list <- function(geno_bed, phenotype, covariate, region, imiss_cutoff, maf_cutoff, mac_cutoff, xvar_cutoff, keep_samples = NULL) {
   data_list <- tibble(
     covariate_path = covariate, 
@@ -129,7 +129,7 @@ prepare_X_matrix <- function(geno_bed, data_list, imiss_cutoff, maf_cutoff, mac_
   maf_val = max(maf_cutoff, mac_cutoff / (2 * length(common_samples)))
   # Apply further filtering on X
   X_filtered = filter_X(X_filtered, imiss_cutoff, maf_val, xvar_cutoff)
-  print(paste0("Dimension of input genotype data is row:", nrow(X_filtered), " column: ", ncol(X_filtered) ))
+  print(paste0("Dimension of input genotype data is row: ", nrow(X_filtered), " column: ", ncol(X_filtered) ))
   return(X_filtered)
 }
 
@@ -170,17 +170,15 @@ add_Y_residuals <- function(data_list, conditions, y_as_matrix = FALSE, scale_re
     )
 
   if(y_as_matrix) {
+    # FIXME: double check the logic here see if NA is padded into it when there are missing data input
     Y_resid_matrix = data_list %>%
                      select(Y_resid) %>%
                      unnest(Y_resid) %>%
-                     t() %>%
                      as.matrix()
     colnames(Y_resid_matrix) <- conditions
     data_list$Y_resid <- Y_resid_matrix
   } else {
-    Y_resid_list <- map(data_list$Y_resid, t) # Transpose back
-    names(Y_resid_list) <- conditions
-    data_list$Y_resid <- Y_resid_list
+    names(data_list$Y_resid) <- conditions
   }
   return(data_list)
 }
