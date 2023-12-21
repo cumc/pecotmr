@@ -131,7 +131,7 @@ susie_post_processor <- function(fobj, X_data, y_data, X_scalar, y_scalar, maf,
         )
         class(res$susie_result_trimmed) <- "susie"
     } else {
-        res <- list(analysis_script = load_script(), pip = fobj$pip, variant_names = format_variant_id(names(fobj$pip)), sumstats = fobj$sumstats)
+        res <- list(analysis_script = load_script(), pip = fobj$pip, variant_names = format_variant_id(names(fobj$pip)), sumstats = fobj$sumstats, susie_result_trimmed = list())
         names(res$pip) <- NULL
     }
     return(fobj)
