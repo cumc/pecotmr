@@ -48,6 +48,7 @@ susie_wrapper = function(X, y, init_L = 10, max_L = 30, coverage = 0.95, max_ite
 #' @examples
 #' # Example usage
 #' # susie_result <- susie_post_processor(fobj, X_data, y_data, X_scalar, y_scalar, maf, c(0.5, 0.7))
+#' @importFrom susieR get_cs_correlation susie_get_cs
 #' @export
 susie_post_processor <- function(fobj, X_data, y_data, X_scalar, y_scalar, maf, 
                                  secondary_coverage = c(0.5, 0.7), signal_cutoff = 0.1, 
@@ -94,7 +95,10 @@ susie_post_processor <- function(fobj, X_data, y_data, X_scalar, y_scalar, maf,
         pip <- fobj$pip[top_variants_idx]
 
         cs_info_pri <- map_int(top_variants_idx, ~get_cs_index(.x, fobj$sets$cs))
-        cs_pri <- if (is.na(cs_info_pri)) 0 else as.numeric(str_replace(names(fobj$sets$cs)[cs_info_pri], "L", ""))
+        cs_pri <- tryCatch(
+            as.numeric(str_replace(names(fobj$sets$cs)[cs_info_pri], "L", "")),
+            error = function(e) 0
+        )
 
         ## Compute secondary CS information
         cs_secondary_info <- matrix(NA_integer_, nrow = length(top_variants_idx), ncol = length(secondary_coverage))
@@ -118,7 +122,7 @@ susie_post_processor <- function(fobj, X_data, y_data, X_scalar, y_scalar, maf,
             phenotype_name = fobj$phenotype_name,
             sample_names = fobj$sample_names,
             variant_names = fobj$variant_names,
-            pip = fobj$pip
+            pip = fobj$pip,
             sets = fobj$sets,
             cs_corr = fobj$cs_corr,
             cs_secondary_corr = fobj$cs_secondary_corr,
@@ -127,7 +131,7 @@ susie_post_processor <- function(fobj, X_data, y_data, X_scalar, y_scalar, maf,
             mu = fobj$mu[eff_idx, , drop = FALSE],
             mu2 = fobj$mu2[eff_idx, , drop = FALSE],
             V = fobj$V[eff_idx],
-            X_column_scale_factors = fobj$X_column_scale_factors,
+            X_column_scale_factors = fobj$X_column_scale_factors
         )
         class(res$susie_result_trimmed) <- "susie"
     } else {
