@@ -57,6 +57,10 @@ filter_Y <- function(Y, n_nonmiss){
   return(list(Y=Y, rm_rows = rm_rows))
 }
 
+format_variant_id <- function(names_vector) {
+    gsub("_", ":", names_vector)
+}
+
 load_genotype_data <- function(genotype, keep_indel = TRUE) {
   # Read genotype data using plink
   geno <- read_plink(genotype)
