@@ -49,9 +49,9 @@ susie_wrapper = function(X, y, init_L = 10, max_L = 30, coverage = 0.95, max_ite
 #' # Example usage
 #' # susie_result <- susie_post_processor(fobj, X_data, y_data, X_scalar, y_scalar, maf, c(0.5, 0.7))
 #' @export
-
 susie_post_processor <- function(fobj, X_data, y_data, X_scalar, y_scalar, maf, 
-                                 secondary_coverage = c(0.5), signal_cutoff = 0.1, other_quantities = list()) {
+                                 secondary_coverage = c(0.5, 0.7), signal_cutoff = 0.1, 
+                                 other_quantities = list()) {
     get_cs_index <- function(snps_idx, susie_cs) {
         idx <- tryCatch(
             which(
@@ -64,7 +64,7 @@ susie_post_processor <- function(fobj, X_data, y_data, X_scalar, y_scalar, maf,
     }
 
     # Compute univariate regression results 
-    fobj$sumstats <- univariate_regression(X_data, y_data)
+    res <- list(sumstats = univariate_regression(X_data, y_data), other_quantities = other_quantities)
     eff_idx <- which(fobj$V > 0)
     if (length(eff_idx) > 0) {
         fobj$analysis_script <- load_script()
@@ -96,7 +96,7 @@ susie_post_processor <- function(fobj, X_data, y_data, X_scalar, y_scalar, maf,
         cs_info_pri <- map_int(top_variants_idx, ~get_cs_index(.x, fobj$sets$cs))
         cs_pri <- if (is.na(cs_info_pri)) 0 else as.numeric(str_replace(names(fobj$sets$cs)[cs_info_pri], "L", ""))
 
-        ## modified: Compute secondary CS information
+        ## Compute secondary CS information
         cs_secondary_info <- matrix(NA_integer_, nrow = length(top_variants_idx), ncol = length(secondary_coverage))
         colnames(cs_secondary_info) <- paste0("cs_secondary_", as.character(secondary_coverage))
 
@@ -114,24 +114,25 @@ susie_post_processor <- function(fobj, X_data, y_data, X_scalar, y_scalar, maf,
         fobj$top_loci <- data.frame(variants, maf = if (!is.null(maf)) maf[top_variants_idx] else NULL, fobj$sumstats$betahat[top_variants_idx] * Y_resid_scalar / X_resid_scalar, fobj$sumstats$sebetahat[top_variants_idx] * Y_resid_scalar / X_resid_scalar, pip, cs_info_pri, cs_secondary_info, stringsAsFactors = FALSE)
         colnames(fobj$top_loci) <- top_loci_cols
 
-        fobj$alpha <- fobj$alpha[eff_idx, , drop = FALSE]
-        fobj$mu <- fobj$mu[eff_idx, , drop = FALSE]
-        fobj$mu2 <- fobj$mu2[eff_idx, , drop = FALSE]
-        fobj$V <- fobj$V[eff_idx]
-        fobj$Xr <- NULL
-        fobj$fitted <- NULL
-        fobj$lbf_variable <- NULL
-        fobj$alpha <- NULL
-        fobj$mu <- NULL
-        fobj$mu2 <- NULL
-        fobj$X_column_scale_factors <- NULL
-        fobj$pip <- NULL
-        for (item in names(other_quantities)) {
-            fobj[[item]] <- other_quantities[[item]]
-        }
+        res$susie_result_trimmed <- list(
+            phenotype_name = fobj$phenotype_name,
+            sample_names = fobj$sample_names,
+            variant_names = fobj$variant_names,
+            pip = fobj$pip
+            sets = fobj$sets,
+            cs_corr = fobj$cs_corr,
+            cs_secondary_corr = fobj$cs_secondary_corr,
+            sets_secondary = fobj$sets_secondary,
+            alpha = fobj$alpha[eff_idx, , drop = FALSE],
+            mu = fobj$mu[eff_idx, , drop = FALSE],
+            mu2 = fobj$mu2[eff_idx, , drop = FALSE],
+            V = fobj$V[eff_idx],
+            X_column_scale_factors = fobj$X_column_scale_factors,
+        )
+        class(res$susie_result_trimmed) <- "susie"
     } else {
-        fobj <- list(analysis_script = load_script(), pip = fobj$pip, variant_names = format_variant_id(names(fobj$pip)), sumstats = fobj$sumstats)
-        names(fobj$pip) <- NULL
+        res <- list(analysis_script = load_script(), pip = fobj$pip, variant_names = format_variant_id(names(fobj$pip)), sumstats = fobj$sumstats)
+        names(res$pip) <- NULL
     }
     return(fobj)
 }
