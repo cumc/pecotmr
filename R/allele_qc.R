@@ -23,7 +23,7 @@ allele_qc = function(sumstats,info_snp,match.min.prop,remove_dups,flip,remove) {
   info_snp  =  as.data.frame(info_snp)
                      
   matched <- merge(as.data.table(sumstats), as.data.table(info_snp),
-                   by = c("chr","pos"), all = FALSE, suffixes = c(".sumstats", ".ref"))
+                   by = c("chrom","pos"), all = FALSE, suffixes = c(".sumstats", ".ref"))
 
   a1 = toupper(matched$A1.sumstats)
   a2 = toupper(matched$A2.sumstats)
@@ -69,7 +69,7 @@ allele_qc = function(sumstats,info_snp,match.min.prop,remove_dups,flip,remove) {
     matched = matched[matched$keep,]
   }
   if (remove_dups) {
-    dups <- vec_duplicate_detect(matched[, c("chr", "pos","A1.sumstats","A2.sumstats")])
+    dups <- vec_duplicate_detect(matched[, c("chrom", "pos","A1.sumstats","A2.sumstats")])
     if (any(dups)) {
       matched <- matched[!dups, ]
       message2("Some duplicates were removed.")
