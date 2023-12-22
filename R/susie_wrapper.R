@@ -14,7 +14,7 @@ susie_wrapper = function(X, y, init_L = 10, max_L = 30, coverage = 0.95, max_ite
                              min_abs_corr=0.5,
                              median_abs_corr=0.8,
                              coverage=coverage)
-            res$analysis_time <- proc.time() - st
+            res$time_elapsed <- proc.time() - st
             if (!is.null(res$sets$cs)) {
                 if (length(res$sets$cs)>=L && L<=max_L) {
                   L = L + l_step
