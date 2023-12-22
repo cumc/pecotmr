@@ -1,7 +1,7 @@
 Encoding: UTF-8
 Type: Package
 Package: pecotmr
-Version: 0.1.2
+Version: 0.1.4
 Date: 2023-09-22
 Title: The INTACT methods for colocalization, TWAS and MR
 Description: An implementation of Okamoto J et al (2023) AJHG using SuSiE, Wang G et al (2020) JRSS-B
