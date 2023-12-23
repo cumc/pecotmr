@@ -52,7 +52,7 @@ susie_wrapper = function(X, y, init_L = 10, max_L = 30, coverage = 0.95, max_ite
 #' @export
 susie_post_processor <- function(fobj, X_data, y_data, X_scalar, y_scalar, maf, 
                                  secondary_coverage = c(0.5, 0.7), signal_cutoff = 0.1, 
-                                 other_quantities = list()) {
+                                 other_quantities = list(), prior_eff_tol = 0) {
     get_cs_index <- function(snps_idx, susie_cs) {
         idx <- tryCatch(
             which(
@@ -66,7 +66,7 @@ susie_post_processor <- function(fobj, X_data, y_data, X_scalar, y_scalar, maf,
 
     # Compute univariate regression results 
     res <- list(sumstats = univariate_regression(X_data, y_data), other_quantities = other_quantities)
-    eff_idx <- which(fobj$V > 0)
+    eff_idx <- which(fobj$V > prior_eff_tol)
     if (length(eff_idx) > 0) {
         fobj$analysis_script <- load_script()
         fobj$cs_corr <- get_cs_correlation(fobj, X = X_data)
@@ -128,7 +128,7 @@ susie_post_processor <- function(fobj, X_data, y_data, X_scalar, y_scalar, maf,
             cs_secondary_corr = fobj$cs_secondary_corr,
             sets_secondary = fobj$sets_secondary,
             alpha = fobj$alpha[eff_idx, , drop = FALSE],
-            log_BF = fobj$lbf_variable[eff_idx, , drop = FALSE],
+            lbf_variable = fobj$lbf_variable[eff_idx, , drop = FALSE],
             mu = fobj$mu[eff_idx, , drop = FALSE],
             mu2 = fobj$mu2[eff_idx, , drop = FALSE],
             V = fobj$V[eff_idx],
