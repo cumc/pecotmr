@@ -279,8 +279,10 @@ susie_weights <- function(X=NULL, y=NULL, susie_fit=NULL, ...) {
         # get susie_fit object
         susie_fit = susie_wrapper(X,y,...)
     }
-    if ("intercept" %in% names(susie_fit) && "alpha" %in% names(susie_fit) && "mu" %in% names(susie_fit) && "X_column_scale_factors" %in% names(susie_fit)) {
+    if ("alpha" %in% names(susie_fit) && "mu" %in% names(susie_fit) && "X_column_scale_factors" %in% names(susie_fit)) {
         # This is designed to cope with output from pecotmr::susie_post_processor()
+        # We set intercept to 0 and later trim it off anyways
+        susie_fit$intercept = 0 
         return(coef.susie(susie_fit)[-1])
     } else {
         return(rep(0, length(susie_fit$pip)))
