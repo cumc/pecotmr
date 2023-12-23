@@ -76,6 +76,18 @@ load_genotype_data <- function(genotype, keep_indel = TRUE) {
   return(geno_bed)
 }
 
+load_covariate_data <- function(covariate) {
+  # Load covariates and transpose
+  covar <- read_delim(covariate, "\t", col_types = cols()) %>% select(-1) %>% t()
+  return(covar)
+}
+
+load_phenotype_data <- function(phenotype, region) {
+  # Load phenotype data
+  Y <- tabix_region(phenotype, region) %>% select(-4) %>% t() %>% as.matrix()
+  return(Y)
+}
+
 filter_by_common_samples <- function(dat, common_samples) {
   dat[common_samples, , drop = FALSE] %>% .[order(rownames(.)), ]
 }
@@ -83,14 +95,9 @@ filter_by_common_samples <- function(dat, common_samples) {
 #' @importFrom readr read_delim cols
 prepare_data_list <- function(geno_bed, phenotype, covariate, region, imiss_cutoff, maf_cutoff, mac_cutoff, xvar_cutoff, keep_samples = NULL) {
   data_list <- tibble(
-    covariate_path = covariate, 
-    phenotype_path = phenotype
-  ) %>%
+    covar = covariate,
+    Y = phenotype) %>%
     mutate(
-      # Load covariates and transpose
-      covar = map(covariate_path, ~ read_delim(.x, "\t", col_types = cols()) %>% select(-1) %>% t()),
-      # Load phenotype data
-      Y = map(phenotype_path, ~ tabix_region(.x, region) %>% select(-4) %>% t() %>% as.matrix()),
       # Determine common complete samples across Y, covar, and geno_bed, considering missing values
       common_complete_samples = map2(covar, Y, ~ {
         covar_non_na <- rownames(.x)[!apply(.x, 1, function(row) all(is.na(row)))]
@@ -136,7 +143,6 @@ prepare_X_matrix <- function(geno_bed, data_list, imiss_cutoff, maf_cutoff, mac_
   print(paste0("Dimension of input genotype data is row: ", nrow(X_filtered), " column: ", ncol(X_filtered) ))
   return(X_filtered)
 }
-
 
 add_X_residuals <- function(data_list, scale_residuals = FALSE) {
   # Compute residuals for X and add them to data_list
@@ -186,7 +192,6 @@ add_Y_residuals <- function(data_list, conditions, y_as_matrix = FALSE, scale_re
   }
   return(data_list)
 }
-
 
 #' @importFrom plink2R read_plink
 #' @import purrr dplyr tibble
