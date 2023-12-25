@@ -304,58 +304,93 @@ load_regional_multivariate_data <- function(matrix_y_min_complete = NULL, # when
         ))
 }
 
-#' Load and Consolidate TWAS Weights from Multiple RDS Files
+#' Load, Validate, and Consolidate TWAS Weights from Multiple RDS Files
 #'
-#' This function loads TWAS weight data from multiple RDS files, validates the presence 
-#' of a specified region and condition across files, and consolidates the weights into a 
-#' single matrix for the specified condition and region.
+#' This function loads TWAS weight data from multiple RDS files, checks for the presence
+#' of specified region and condition. If variable_name_obj is provided, it aligns and
+#' consolidates weight matrices based on the object's variant names, filling missing data
+#' with zeros. If variable_name_obj is NULL, it checks that all files have the same row
+#' numbers for the condition and consolidates weights accordingly.
 #'
 #' @param weight_db_files Vector of file paths for RDS files containing TWAS weights.
 #' @param condition The specific condition to be checked and consolidated across all files.
 #' @param region The specific region to be checked and consolidated across all files.
-#' @return A consolidated matrix of weights for the specified condition and region.
+#' @param variable_name_obj The name of the variable/object to fetch from each file, if not NULL.
+#' @return A consolidated matrix of weights for the specified condition.
 #' @examples
-#' # Example usage (replace with actual file paths, condition, and region):
+#' # Example usage (replace with actual file paths, condition, region, and variable_name_obj):
 #' weight_db_files <- c("path/to/file1.rds", "path/to/file2.rds")
 #' condition <- "example_condition"
 #' region <- "example_region"
-#' consolidated_weights <- load_twas_weights(weight_db_files, condition, region)
+#' variable_name_obj <- "example_variable" # or NULL for standard processing
+#' consolidated_weights <- load_twas_weights(weight_db_files, condition, region, variable_name_obj)
 #' print(consolidated_weights)
 #' @import dplyr
 #' @export
 load_twas_weights <- function(weight_db_files, condition, region, 
-                              variant_name_obj = "variant_names", 
+                              variable_name_obj = NULL,
                               twas_weights_table = "twas_weights") {
+  ## Internal function to load and validate data from RDS files
   load_and_validate_data <- function(weight_db_files, condition, region) {
     all_data <- lapply(weight_db_files, readRDS)
 
-    region_exists <- sapply(all_data, function(data) region %in% names(data))
-    if (!all(region_exists)) {
-      stop("The specified region is not available in all RDS files.")
-    }
-
-    condition_exists <- sapply(all_data, function(data) condition %in% names(data[[region]]))
-    if (!all(condition_exists)) {
-      stop("The specified condition is not available in all RDS files.")
+    ## Check if the specified region and condition are available in all files
+    for (data in all_data) {
+      if (!(region %in% names(data)) || !(condition %in% names(data[[region]]))) {
+        stop("The specified region and/or condition is not available in all RDS files.")
+      }
+      if (!is.null(variable_name_obj) && !(variable_name_obj %in% names(data[[region]][[condition]]))) {
+        stop("The specified variable_name_obj is not available in all RDS files.")
+      }
     }
 
     return(all_data)
   }
 
-  consolidate_weights <- function(all_data, condition, region) {
-    weights_list <- lapply(all_data, function(data) data[[region]][[condition]][[twas_weights_table]])
+  ## Internal function to align and merge weight matrices
+  align_and_merge <- function(weights_list, variable_objs) {
+    # Get the complete list of variant names across all files
+    all_variants <- unique(unlist(lapply(variable_objs, names)))
+    
+    # Initialize the consolidated matrix with zeros
+    consolidated_matrix <- matrix(0, nrow = length(all_variants), ncol = 0)
 
-    consolidated_weights <- do.call(cbind, weights_list) %>%
-      setNames(make.unique(names(.)))
+    # Fill the matrix with weights, aligning by variant names
+    for (i in seq_along(weights_list)) {
+      temp_matrix <- matrix(0, nrow = length(all_variants), ncol = ncol(weights_list[[i]]))
+      rownames(temp_matrix) <- all_variants
+      idx <- match(names(variable_objs[[i]]), all_variants)
+      temp_matrix[idx, ] <- weights_list[[i]]
+      consolidated_matrix <- cbind(consolidated_matrix, temp_matrix)
+    }
 
-    return(consolidated_weights)
+    colnames(consolidated_matrix) <- make.unique(rep(names(weights_list), sapply(weights_list, ncol)))
+    return(consolidated_matrix)
   }
 
-  weights <- try({
+  ## Internal function to consolidate weights for a given condition and region
+  consolidate_weights <- function(all_data, condition, region, variable_name_obj) {
+    if (is.null(variable_name_obj)) {
+      # Standard processing: Check for identical row numbers and consolidate
+      row_numbers <- sapply(all_data, function(data) nrow(data[[region]][[condition]][[twas_weights_table]]))
+      if (length(unique(row_numbers)) > 1) {
+        stop("Not all files have the same number of rows for the specified condition.")
+      }
+      weights_list <- lapply(all_data, function(data) data[[region]][[condition]])
+    } else {
+      # Processing with variable_name_obj: Align and merge data, fill missing with zeros
+      variable_objs <- lapply(all_data, function(data) data[[region]][[condition]][[variable_name_obj]])
+      weights_list <- lapply(all_data, function(data) data[[region]][[condition]][[twas_weights_table]])
+      weights_list <- align_and_merge(weights_list, variable_objs)
+    }
+
+    return(weights_list)
+  }
+
+  ## Load, validate, and consolidate data
+  try({
     all_data <- load_and_validate_data(weight_db_files, condition, region)
-    consolidated_weights <- consolidate_weights(all_data, condition, region)
-    print("Weights successfully consolidated.")
+    consolidated_weights <- consolidate_weights(all_data, condition, region, variable_name_obj)
     return(consolidated_weights)
   }, silent = TRUE)
-  return(weights)
 }
