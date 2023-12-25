@@ -303,3 +303,59 @@ load_regional_multivariate_data <- function(matrix_y_min_complete = NULL, # when
         grange = dat$grange
         ))
 }
+
+#' Load and Consolidate TWAS Weights from Multiple RDS Files
+#'
+#' This function loads TWAS weight data from multiple RDS files, validates the presence 
+#' of a specified region and condition across files, and consolidates the weights into a 
+#' single matrix for the specified condition and region.
+#'
+#' @param weight_db_files Vector of file paths for RDS files containing TWAS weights.
+#' @param condition The specific condition to be checked and consolidated across all files.
+#' @param region The specific region to be checked and consolidated across all files.
+#' @return A consolidated matrix of weights for the specified condition and region.
+#' @examples
+#' # Example usage (replace with actual file paths, condition, and region):
+#' weight_db_files <- c("path/to/file1.rds", "path/to/file2.rds")
+#' condition <- "example_condition"
+#' region <- "example_region"
+#' consolidated_weights <- load_twas_weights(weight_db_files, condition, region)
+#' print(consolidated_weights)
+#' @import dplyr
+#' @export
+load_twas_weights <- function(weight_db_files, condition, region, 
+                              variant_name_obj = "variant_names", 
+                              twas_weights_table = "twas_weights") {
+  load_and_validate_data <- function(weight_db_files, condition, region) {
+    all_data <- lapply(weight_db_files, readRDS)
+
+    region_exists <- sapply(all_data, function(data) region %in% names(data))
+    if (!all(region_exists)) {
+      stop("The specified region is not available in all RDS files.")
+    }
+
+    condition_exists <- sapply(all_data, function(data) condition %in% names(data[[region]]))
+    if (!all(condition_exists)) {
+      stop("The specified condition is not available in all RDS files.")
+    }
+
+    return(all_data)
+  }
+
+  consolidate_weights <- function(all_data, condition, region) {
+    weights_list <- lapply(all_data, function(data) data[[region]][[condition]][[twas_weights_table]])
+
+    consolidated_weights <- do.call(cbind, weights_list) %>%
+      setNames(make.unique(names(.)))
+
+    return(consolidated_weights)
+  }
+
+  weights <- try({
+    all_data <- load_and_validate_data(weight_db_files, condition, region)
+    consolidated_weights <- consolidate_weights(all_data, condition, region)
+    print("Weights successfully consolidated.")
+    return(consolidated_weights)
+  }, silent = TRUE)
+  return(weights)
+}
