@@ -354,6 +354,7 @@ load_twas_weights <- function(weight_db_files, condition, region,
     
     # Initialize the consolidated matrix with zeros
     consolidated_matrix <- matrix(0, nrow = length(all_variants), ncol = 0)
+    existing_colnames <- character(0)
 
     # Fill the matrix with weights, aligning by variant names
     for (i in seq_along(weights_list)) {
@@ -361,10 +362,18 @@ load_twas_weights <- function(weight_db_files, condition, region,
       rownames(temp_matrix) <- all_variants
       idx <- match(names(variable_objs[[i]]), all_variants)
       temp_matrix[idx, ] <- weights_list[[i]]
+
+      # Ensure no duplicate column names
+      new_colnames <- colnames(weights_list[[i]])
+      if (any(duplicated(c(existing_colnames, new_colnames)))) {
+        stop("Duplicate column names detected during merging process.")
+      }
+      existing_colnames <- c(existing_colnames, new_colnames)
+
       consolidated_matrix <- cbind(consolidated_matrix, temp_matrix)
     }
 
-    colnames(consolidated_matrix) <- make.unique(rep(names(weights_list), sapply(weights_list, ncol)))
+    colnames(consolidated_matrix) <- existing_colnames
     return(consolidated_matrix)
   }
 
@@ -376,7 +385,7 @@ load_twas_weights <- function(weight_db_files, condition, region,
       if (length(unique(row_numbers)) > 1) {
         stop("Not all files have the same number of rows for the specified condition.")
       }
-      weights_list <- lapply(all_data, function(data) data[[region]][[condition]])
+      weights_list <- lapply(all_data, function(data) data[[region]][[condition]][[twas_weights_table]])
     } else {
       # Processing with variable_name_obj: Align and merge data, fill missing with zeros
       variable_objs <- lapply(all_data, function(data) data[[region]][[condition]][[variable_name_obj]])
