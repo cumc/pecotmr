@@ -100,6 +100,7 @@ twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_
         stop("Either 'fold' or 'sample_partitions' must be provided.")
     }
 
+    st = proc.time()
     if (is.null(weight_methods)) {
         return(list(sample_partition = sample_partition))
     } else {
@@ -183,7 +184,7 @@ twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_
                 }
             }
         }
-        return(list(sample_partition = sample_partition, prediction = Y_pred, rsq_pval = rsq_pval_table))
+        return(list(sample_partition = sample_partition, prediction = Y_pred, rsq_pval = rsq_pval_table, time_elapsed = proc.time() - st))
     }
 } 
 
@@ -224,7 +225,7 @@ twas_weights <- function(X, Y, weight_methods, num_threads = 1) {
     }
 
     # Determine number of cores to use
-    num_cores <- ifelse(num_threads == -1, parallel::detectCores(), num_threads)
+    num_cores <- ifelse(num_threads == -1, detectCores(), num_threads)
 
     process_method <- function(method_name) {
         # Hardcoded vector of multivariate methods
@@ -278,8 +279,10 @@ susie_weights <- function(X=NULL, y=NULL, susie_fit=NULL, ...) {
         # get susie_fit object
         susie_fit = susie_wrapper(X,y,...)
     }
-    if ("intercept" %in% names(susie_fit) && "alpha" %in% names(susie_fit) && "mu" %in% names(susie_fit) && "X_column_scale_factors" %in% names(susie_fit)) {
+    if ("alpha" %in% names(susie_fit) && "mu" %in% names(susie_fit) && "X_column_scale_factors" %in% names(susie_fit)) {
         # This is designed to cope with output from pecotmr::susie_post_processor()
+        # We set intercept to 0 and later trim it off anyways
+        susie_fit$intercept = 0 
         return(coef.susie(susie_fit)[-1])
     } else {
         return(rep(0, length(susie_fit$pip)))

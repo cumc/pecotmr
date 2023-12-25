@@ -14,7 +14,7 @@ susie_wrapper = function(X, y, init_L = 10, max_L = 30, coverage = 0.95, max_ite
                              min_abs_corr=0.5,
                              median_abs_corr=0.8,
                              coverage=coverage)
-            res$analysis_time <- proc.time() - st
+            res$time_elapsed <- proc.time() - st
             if (!is.null(res$sets$cs)) {
                 if (length(res$sets$cs)>=L && L<=max_L) {
                   L = L + l_step
@@ -52,7 +52,7 @@ susie_wrapper = function(X, y, init_L = 10, max_L = 30, coverage = 0.95, max_ite
 #' @export
 susie_post_processor <- function(fobj, X_data, y_data, X_scalar, y_scalar, maf, 
                                  secondary_coverage = c(0.5, 0.7), signal_cutoff = 0.1, 
-                                 other_quantities = list()) {
+                                 other_quantities = list(), prior_eff_tol = 0) {
     get_cs_index <- function(snps_idx, susie_cs) {
         idx <- tryCatch(
             which(
@@ -63,61 +63,60 @@ susie_post_processor <- function(fobj, X_data, y_data, X_scalar, y_scalar, maf,
         if(length(idx) == 0) return(NA_integer_)
         return(idx)
     }
-
+    get_top_variants_idx <- function(fobj, signal_cutoff) {
+        # it is okay to have PIP = NULL here
+        c(which(fobj$pip >= signal_cutoff), unlist(fobj$sets$cs)) %>% unique %>% sort
+    }
+    get_cs_info <- function(fobj_sets_cs, top_variants_idx) {
+        cs_info_pri <- map_int(top_variants_idx, ~get_cs_index(.x, fobj_sets_cs))
+        ifelse(is.na(cs_info_pri), 0, as.numeric(str_replace(names(fobj_sets_cs)[cs_info_pri], "L", "")))
+    }
+    get_cs_and_corr <- function(fobj, coverage, X_data) {
+        fobj_secondary <- list(sets = susie_get_cs(fobj, X_data, coverage = coverage))
+        fobj_secondary$cs_corr <- get_cs_correlation(fobj_secondary, X = X_data)
+        fobj_secondary
+    }
     # Compute univariate regression results 
     res <- list(sumstats = univariate_regression(X_data, y_data), other_quantities = other_quantities)
-    eff_idx <- which(fobj$V > 0)
+    eff_idx <- which(fobj$V > prior_eff_tol)
     if (length(eff_idx) > 0) {
         fobj$analysis_script <- load_script()
-        fobj$cs_corr <- get_cs_correlation(fobj, X = X_data)
-        top_variants_idx <- c(which(fobj$pip >= signal_cutoff), unlist(fobj$sets$cs)) %>% unique %>% sort
-
-        fobj$cs_secondary_corr <- vector("list", length(secondary_coverage))
-        names(fobj$cs_secondary_corr) <- as.character(secondary_coverage)
-        fobj$sets_secondary <- vector("list", length(secondary_coverage))
-        names(fobj$sets_secondary) <- as.character(secondary_coverage)
-
-        ## Loop over each secondary coverage value
-        for (sec_cov in secondary_coverage) {
-            fobj_secondary <- list(sets = susie_get_cs(fobj, X_data, coverage = sec_cov))
-            fobj$cs_secondary_corr[[as.character(sec_cov)]] <- get_cs_correlation(fobj_secondary, X = X_data)
-            ## Store secondary sets for each coverage value and merge top loci
-            fobj$sets_secondary[[as.character(sec_cov)]] <- fobj_secondary$sets
-            variants_index_secondary <- c(which(fobj$pip >= signal_cutoff), unlist(fobj$sets_secondary[[as.character(sec_cov)]]$cs)) %>% unique %>% sort
-            top_variants_idx <- union(top_variants_idx, variants_index_secondary)
-        }
-
         fobj$phenotype_name <- colnames(y_data)
         fobj$sample_names <- rownames(y_data)
         fobj$variant_names <- format_variant_id(names(fobj$pip))
-        ## Prepare for the top loci table
-        variants <- format_variant_id(names(fobj$pip)[top_variants_idx])
-        pip <- fobj$pip[top_variants_idx]
+        # Prepare for top loci table
+        top_variants_idx_pri <- get_top_variants_idx(fobj, signal_cutoff)
+        cs_pri <- get_cs_info(fobj$sets$cs, top_variants_idx_pri)
+        fobj$cs_corr <- get_cs_correlation(fobj, X = X_data)
+        top_loci_list <- list("coverage_0.95" = data.frame(variant_idx = top_variants_idx_pri, cs_idx = cs_pri, stringsAsFactors=F))
 
-        cs_info_pri <- map_int(top_variants_idx, ~get_cs_index(.x, fobj$sets$cs))
-        cs_pri <- tryCatch(
-            as.numeric(str_replace(names(fobj$sets$cs)[cs_info_pri], "L", "")),
-            error = function(e) 0
-        )
-
-        ## Compute secondary CS information
-        cs_secondary_info <- matrix(NA_integer_, nrow = length(top_variants_idx), ncol = length(secondary_coverage))
-        colnames(cs_secondary_info) <- paste0("cs_secondary_", as.character(secondary_coverage))
-
-        for (i in seq_along(secondary_coverage)) {
-            sec_cov_name <- as.character(secondary_coverage[i])
-            for (variant_idx in top_variants_idx) {
-                cs_secondary_info[variant_idx, i] <- get_cs_index(variant_idx, fobj$sets_secondary[[sec_cov_name]]$cs)
-            }
+        ## Loop over each secondary coverage value
+        for (sec_cov in secondary_coverage) {
+            fobj_secondary <- get_cs_and_corr(fobj, sec_cov, X_data)
+            top_variants_idx_sec <- get_top_variants_idx(fobj_secondary, signal_cutoff)
+            cs_sec <- get_cs_info(fobj_secondary$sets$cs, top_variants_idx_sec)
+            top_loci_list[[paste0("coverage_", sec_cov)]] <-data.frame(variant_idx = top_variants_idx_sec, cs_idx = cs_sec, stringsAsFactors=F) 
         }
 
-        Y_resid_scalar <- if (!is.null(y_scalar)) y_scalar else 1
-        X_resid_scalar <- if (!is.null(X_scalar)) X_scalar[top_variants_idx] else 1
-
-        top_loci_cols <- c("variant_id", "bhat", "sbhat", "pip", "cs_index_primary", colnames(cs_secondary_info))
-        fobj$top_loci <- data.frame(variants, maf = if (!is.null(maf)) maf[top_variants_idx] else NULL, fobj$sumstats$betahat[top_variants_idx] * Y_resid_scalar / X_resid_scalar, fobj$sumstats$sebetahat[top_variants_idx] * Y_resid_scalar / X_resid_scalar, pip, cs_info_pri, cs_secondary_info, stringsAsFactors = FALSE)
+        # Iterate over the remaining tables, rename and merge them
+        names(top_loci_list[[1]])[2] <- paste0("cs_", names(top_loci_list)[1])
+        top_loci <- top_loci_list[[1]]
+        for (i in 2:length(top_loci_list)) {
+            names(top_loci_list[[i]])[2] <- paste0("cs_", names(top_loci_list)[i])
+            top_loci <- full_join(top_loci, top_loci_list[[i]], by = "variant_idx")
+        }
+        top_loci[is.na(top_loci)] <- 0
+        variants <- format_variant_id(names(fobj$pip)[top_loci$variant_idx])
+        pip <- fobj$pip[top_loci$variant_idx]
+        y_scalar <- if (is.null(y_scalar) || all(y_scalar == 1)) 1 else y_scalar[top_loci$variant_idx]
+        X_scalar <- if (is.null(X_scalar) || all(X_scalar == 1)) 1 else X_scalar[top_loci$variant_idx]
+        top_loci_cols <- c("variant_id", if (!is.null(maf)) "maf", "bhat", "sbhat", "pip", colnames(top_loci)[-1])
+        fobj$top_loci <- cbind(data.frame(variants, maf = if (!is.null(maf)) maf[top_loci$variant_idx] else NULL, 
+                                    res$sumstats$betahat[top_loci$variant_idx] * y_scalar / X_scalar, 
+                                    res$sumstats$sebetahat[top_loci$variant_idx] * y_scalar / X_scalar, 
+                                    pip, stringsAsFactors = FALSE), top_loci[,-1])
         colnames(fobj$top_loci) <- top_loci_cols
-
+        rownames(fobj$top_loci) <- NULL
         res$susie_result_trimmed <- list(
             phenotype_name = fobj$phenotype_name,
             sample_names = fobj$sample_names,
@@ -128,6 +127,7 @@ susie_post_processor <- function(fobj, X_data, y_data, X_scalar, y_scalar, maf,
             cs_secondary_corr = fobj$cs_secondary_corr,
             sets_secondary = fobj$sets_secondary,
             alpha = fobj$alpha[eff_idx, , drop = FALSE],
+            lbf_variable = fobj$lbf_variable[eff_idx, , drop = FALSE],
             mu = fobj$mu[eff_idx, , drop = FALSE],
             mu2 = fobj$mu2[eff_idx, , drop = FALSE],
             V = fobj$V[eff_idx],
