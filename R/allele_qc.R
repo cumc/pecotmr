@@ -21,7 +21,7 @@
 allele_qc = function(sumstats,info_snp,match.min.prop,remove_dups,flip,remove) {
   sumstats  =  as.data.frame(sumstats)
   info_snp  =  as.data.frame(info_snp)
-                     
+  
   matched <- merge(as.data.table(sumstats), as.data.table(info_snp),
                    by = c("chrom","pos"), all = FALSE, suffixes = c(".sumstats", ".ref"))
 

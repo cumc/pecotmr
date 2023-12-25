@@ -95,7 +95,7 @@ create_allele_data <- function(seed, n=100, match_min_prop=0.8, ambiguous=FALSE,
   chromosome <- unlist(rep(sample(1:20, 1), n))
   snp_positions <- sample(1:1000000, n)
   sumstats <- data.frame(
-    chr = chromosome,
+    chrom = chromosome,
     pos = snp_positions,
     A1 = sumstat_A1,
     A2 = sumstat_A2,
@@ -103,7 +103,7 @@ create_allele_data <- function(seed, n=100, match_min_prop=0.8, ambiguous=FALSE,
     z = rnorm(n)
   )
   info_snp <- data.frame(
-    chr = chromosome,
+    chrom = chromosome,
     pos = snp_positions,
     A1 = info_A1,
     A2 = info_A2
