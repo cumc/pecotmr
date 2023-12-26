@@ -80,7 +80,6 @@ susie_post_processor <- function(fobj, X_data, y_data, X_scalar, y_scalar, maf,
     res <- list(sumstats = univariate_regression(X_data, y_data), 
                 analysis_script = load_script(), 
                 other_quantities = other_quantities,
-                phenotype_name = colnames(y_data),
                 sample_names = rownames(y_data),
                 variant_names = format_variant_id(names(fobj$pip)),
                 susie_result_trimmed = list()

@@ -13,7 +13,8 @@ load_twas_weights(
 )
 }
 \arguments{
-\item{weight_db_files}{Vector of file paths for RDS files containing TWAS weights.}
+\item{weight_db_files}{Vector of file paths for RDS files containing TWAS weights. 
+Each element organized as region/condition/weights}
 
 \item{condition}{The specific condition to be checked and consolidated across all files.}
 

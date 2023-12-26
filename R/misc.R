@@ -319,7 +319,8 @@ load_regional_multivariate_data <- function(matrix_y_min_complete = NULL, # when
 #' with zeros. If variable_name_obj is NULL, it checks that all files have the same row
 #' numbers for the condition and consolidates weights accordingly.
 #'
-#' @param weight_db_files Vector of file paths for RDS files containing TWAS weights.
+#' @param weight_db_files Vector of file paths for RDS files containing TWAS weights. 
+#' Each element organized as region/condition/weights
 #' @param condition The specific condition to be checked and consolidated across all files.
 #' @param region The specific region to be checked and consolidated across all files.
 #' @param variable_name_obj The name of the variable/object to fetch from each file, if not NULL.
@@ -386,21 +387,20 @@ load_twas_weights <- function(weight_db_files, condition, region,
 
   ## Internal function to consolidate weights for a given condition and region
   consolidate_weights <- function(all_data, condition, region, variable_name_obj) {
+    weights <- lapply(all_data, function(data) sapply(data[[region]][[condition]][[twas_weights_table]], cbind))
     if (is.null(variable_name_obj)) {
       # Standard processing: Check for identical row numbers and consolidate
-      row_numbers <- sapply(all_data, function(data) nrow(data[[region]][[condition]][[twas_weights_table]]))
+      row_numbers <- sapply(weights, function(data) nrow(data))
       if (length(unique(row_numbers)) > 1) {
         stop("Not all files have the same number of rows for the specified condition.")
       }
-      weights_list <- lapply(all_data, function(data) data[[region]][[condition]][[twas_weights_table]])
+      weights <- sapply(weights, cbind)
     } else {
       # Processing with variable_name_obj: Align and merge data, fill missing with zeros
       variable_objs <- lapply(all_data, function(data) data[[region]][[condition]][[variable_name_obj]])
-      weights_list <- lapply(all_data, function(data) data[[region]][[condition]][[twas_weights_table]])
-      weights_list <- align_and_merge(weights_list, variable_objs)
+      weights <- align_and_merge(weights, variable_objs)
     }
-
-    return(weights_list)
+    return(weights)
   }
 
   ## Load, validate, and consolidate data
