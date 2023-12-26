@@ -39,11 +39,16 @@ If set to 2 or more, parallel processing is enabled with that many threads.}
 A list with the following components:
 \itemize{
   \item `sample_partition`: A dataframe showing the sample partitioning used in the cross-validation.
-  \item `results`: A list of results for each method. Each list element contains:
+  \item `prediction`: A list of matrices with predicted Y values for each method and fold.
+  \item `metrics`: A matrix with rows representing methods and columns for various metrics:
     \itemize{
-      \item `predictions`: A matrix of predicted Y values for each fold.
-      \item `rsq_pval`: A matrix with rows representing methods and two columns for R-squared and p-value, calculated for each column of Y.
+      \item `corr`: Pearson's correlation between predicated and observed values.
+      \item `adj_rsq`: Adjusted R-squared value (which indicates the proportion of variance explained by the model) that accounts for the number of predictors in the model.
+      \item `pval`: P-value assessing the significance of the model's predictions.
+      \item `RMSE`: Root Mean Squared Error, a measure of the model's prediction error.
+      \item `MAE`: Mean Absolute Error, a measure of the average magnitude of errors in a set of predictions.
     }
+  \item `time_elapsed`: The time taken to complete the cross-validation process.
 }
 }
 \description{

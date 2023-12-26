@@ -47,11 +47,16 @@ twas_z <- function(weights, z, R=NULL, X=NULL) {
 #' @return A list with the following components:
 #' \itemize{
 #'   \item `sample_partition`: A dataframe showing the sample partitioning used in the cross-validation.
-#'   \item `results`: A list of results for each method. Each list element contains:
+#'   \item `prediction`: A list of matrices with predicted Y values for each method and fold.
+#'   \item `metrics`: A matrix with rows representing methods and columns for various metrics:
 #'     \itemize{
-#'       \item `predictions`: A matrix of predicted Y values for each fold.
-#'       \item `rsq_pval`: A matrix with rows representing methods and two columns for R-squared and p-value, calculated for each column of Y.
+#'       \item `corr`: Pearson's correlation between predicated and observed values.
+#'       \item `adj_rsq`: Adjusted R-squared value (which indicates the proportion of variance explained by the model) that accounts for the number of predictors in the model.
+#'       \item `pval`: P-value assessing the significance of the model's predictions.
+#'       \item `RMSE`: Root Mean Squared Error, a measure of the model's prediction error.
+#'       \item `MAE`: Mean Absolute Error, a measure of the average magnitude of errors in a set of predictions.
 #'     }
+#'   \item `time_elapsed`: The time taken to complete the cross-validation process.
 #' }
 #' @importFrom parallel makeCluster
 #' @importFrom parallel detectCores
@@ -168,19 +173,34 @@ twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_
             }
         }
         names(Y_pred) <- gsub("_weights", "_predicted", names(Y_pred))
-        # Compute rsq and p-value for each method
-        rsq_pval_table <- matrix(NA, nrow = length(weight_methods), ncol = 2)
-        rownames(rsq_pval_table) <- names(Y_pred)
-        colnames(rsq_pval_table) <- c("rsq", "pval")
+        # Compute rsq, adj rsq, p-value, RMSE, and MAE for each method
+        metrics_table <- matrix(NA, nrow = length(weight_methods), ncol = 5)
+        rownames(metrics_table) <- names(Y_pred)
+        colnames(metrics_table) <- c("corr", "adj_rsq", "pval", "RMSE", "MAE")
+
         for (r in 1:ncol(Y)) {
             for (m in 1:length(weight_methods)) {
-                if ( !is.na(sd(Y_pred[[m]][, r])) && sd(Y_pred[[m]][, r]) != 0 ) {
-                    lm_fit <- lm(Y[, r] ~ Y_pred[[m]][, r])
-                    rsq_pval_table[m, 1] <- summary(lm_fit)$adj.r.squared
-                    rsq_pval_table[m, 2] <- summary(lm_fit)$coefficients[2,4]
+                method_predictions <- Y_pred[[m]][, r]
+                actual_values <- Y[, r]
+
+                if ( !is.na(sd(method_predictions)) && sd(method_predictions) != 0 ) {
+                    lm_fit <- lm(actual_values ~ method_predictions)
+
+                    # Calculate raw correlation and and adjusted R-squared
+                    metrics_table[m, 1] <- cor(actual_values, method_predictions)
+                    metrics_table[m, 2] <- summary(lm_fit)$adj.r.squared
+
+                    # Calculate p-value
+                    metrics_table[m, 3] <- summary(lm_fit)$coefficients[2, 4]
+
+                    # Calculate RMSE
+                    residuals <- actual_values - method_predictions
+                    metrics_table[m, 4] <- sqrt(mean(residuals^2))
+
+                    # Calculate MAE
+                    metrics_table[m, 5] <- mean(abs(residuals))
                 } else {
-                    rsq_pval_table[m, 1] <- NA
-                    rsq_pval_table[m, 2] <- NA
+                    metrics_table[m, 1:5] <- NA
                 }
             }
         }
