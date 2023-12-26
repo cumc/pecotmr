@@ -90,7 +90,6 @@ bt_intersect <- function(df, region_strings) {
     # Get file paths between row_start and row_end
     file_paths <- df$path[which(df$chrom == rows$start_row$chrom & df$start >= rows$start_row$start & df$start <= rows$end_row$start)]
     # check if there exits bim_path, if the path is present, we use directly, else is NULL
-    #if(!is.null(df$bim_path))
     if(any(names(df) == 'bim_path'))
     {
        bim_file_paths <- df$bim_path[which(df$chrom == rows$start_row$chrom & df$start >= rows$start_row$start & df$start <= rows$end_row$start)]
