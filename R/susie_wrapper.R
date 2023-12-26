@@ -35,7 +35,7 @@ susie_wrapper = function(X, y, init_L = 10, max_L = 30, coverage = 0.95, max_ite
 #' It has been updated to handle multiple secondary coverage values, performing secondary analysis for each and combining the top loci.
 #' Also, it tracks cs_secondary correlation for each coverage value and includes this information in the top_loci table.
 #'
-#' @param fobj A list representing the SuSiE analysis object.
+#' @param susie_output Output from running susieR::susie() or susieR:susie_rss()
 #' @param X_data The genotype data matrix.
 #' @param y_data The phenotype data vector.
 #' @param X_scalar Scalar for the genotype data, used in residual scaling.
@@ -44,13 +44,14 @@ susie_wrapper = function(X, y, init_L = 10, max_L = 30, coverage = 0.95, max_ite
 #' @param secondary_coverage Vector of coverage thresholds for secondary conditional analysis.
 #' @param signal_cutoff Cutoff value for signal identification in PIP values. Default is 0.1.
 #' @param other_quantities A list of other quantities to be added to the final object.
-#' @return A modified SuSiE object with additional post-processing information.
+#' @return A list containing modified SuSiE object along with additional post-processing information.
 #' @examples
 #' # Example usage
-#' # susie_result <- susie_post_processor(fobj, X_data, y_data, X_scalar, y_scalar, maf, c(0.5, 0.7))
+#' # susie_result <- susie_post_processor(susie_output, X_data, y_data, X_scalar, y_scalar, maf, c(0.5, 0.7))
 #' @importFrom susieR get_cs_correlation susie_get_cs
+#' @importFrom stringr str_replace
 #' @export
-susie_post_processor <- function(fobj, X_data, y_data, X_scalar, y_scalar, maf, 
+susie_post_processor <- function(susie_output, X_data, y_data, X_scalar, y_scalar, maf, 
                                  secondary_coverage = c(0.5, 0.7), signal_cutoff = 0.1, 
                                  other_quantities = list(), prior_eff_tol = 0) {
     get_cs_index <- function(snps_idx, susie_cs) {
@@ -63,41 +64,41 @@ susie_post_processor <- function(fobj, X_data, y_data, X_scalar, y_scalar, maf,
         if(length(idx) == 0) return(NA_integer_)
         return(idx)
     }
-    get_top_variants_idx <- function(fobj, signal_cutoff) {
+    get_top_variants_idx <- function(susie_output, signal_cutoff) {
         # it is okay to have PIP = NULL here
-        c(which(fobj$pip >= signal_cutoff), unlist(fobj$sets$cs)) %>% unique %>% sort
+        c(which(susie_output$pip >= signal_cutoff), unlist(susie_output$sets$cs)) %>% unique %>% sort
     }
-    get_cs_info <- function(fobj_sets_cs, top_variants_idx) {
-        cs_info_pri <- map_int(top_variants_idx, ~get_cs_index(.x, fobj_sets_cs))
-        ifelse(is.na(cs_info_pri), 0, as.numeric(str_replace(names(fobj_sets_cs)[cs_info_pri], "L", "")))
+    get_cs_info <- function(susie_output_sets_cs, top_variants_idx) {
+        cs_info_pri <- map_int(top_variants_idx, ~get_cs_index(.x, susie_output_sets_cs))
+        ifelse(is.na(cs_info_pri), 0, as.numeric(str_replace(names(susie_output_sets_cs)[cs_info_pri], "L", "")))
     }
-    get_cs_and_corr <- function(fobj, coverage, X_data) {
-        fobj_secondary <- list(sets = susie_get_cs(fobj, X_data, coverage = coverage))
-        fobj_secondary$cs_corr <- get_cs_correlation(fobj_secondary, X = X_data)
-        fobj_secondary
+    get_cs_and_corr <- function(susie_output, coverage, X_data) {
+        susie_output_secondary <- list(sets = susie_get_cs(susie_output, X_data, coverage = coverage))
+        susie_output_secondary$cs_corr <- get_cs_correlation(susie_output_secondary, X = X_data)
+        susie_output_secondary
     }
     # Compute univariate regression results 
     res <- list(sumstats = univariate_regression(X_data, y_data), 
                 analysis_script = load_script(), 
                 other_quantities = other_quantities,
                 sample_names = rownames(y_data),
-                variant_names = format_variant_id(names(fobj$pip)),
+                variant_names = format_variant_id(names(susie_output$pip)),
                 susie_result_trimmed = list()
             )
-    eff_idx <- which(fobj$V > prior_eff_tol)
+    eff_idx <- which(susie_output$V > prior_eff_tol)
     if (length(eff_idx) > 0) {
         # Prepare for top loci table
-        top_variants_idx_pri <- get_top_variants_idx(fobj, signal_cutoff)
-        cs_pri <- get_cs_info(fobj$sets$cs, top_variants_idx_pri)
-        fobj$cs_corr <- get_cs_correlation(fobj, X = X_data)
+        top_variants_idx_pri <- get_top_variants_idx(susie_output, signal_cutoff)
+        cs_pri <- get_cs_info(susie_output$sets$cs, top_variants_idx_pri)
+        susie_output$cs_corr <- get_cs_correlation(susie_output, X = X_data)
         top_loci_list <- list("coverage_0.95" = data.frame(variant_idx = top_variants_idx_pri, cs_idx = cs_pri, stringsAsFactors=F))
 
         ## Loop over each secondary coverage value
         sets_secondary <- list()
         for (sec_cov in secondary_coverage) {
-            sets_secondary[[paste0("coverage_", sec_cov)]] <- get_cs_and_corr(fobj, sec_cov, X_data)
-            top_variants_idx_sec <- get_top_variants_idx(fobj_secondary, signal_cutoff)
-            cs_sec <- get_cs_info(fobj_secondary$sets$cs, top_variants_idx_sec)
+            sets_secondary[[paste0("coverage_", sec_cov)]] <- get_cs_and_corr(susie_output, sec_cov, X_data)
+            top_variants_idx_sec <- get_top_variants_idx(sets_secondary[[paste0("coverage_", sec_cov)]], signal_cutoff)
+            cs_sec <- get_cs_info(sets_secondary[[paste0("coverage_", sec_cov)]]$sets$cs, top_variants_idx_sec)
             top_loci_list[[paste0("coverage_", sec_cov)]] <-data.frame(variant_idx = top_variants_idx_sec, cs_idx = cs_sec, stringsAsFactors=F) 
         }
 
@@ -110,28 +111,28 @@ susie_post_processor <- function(fobj, X_data, y_data, X_scalar, y_scalar, maf,
         }
         top_loci[is.na(top_loci)] <- 0
         variants <- res$variant_names[top_loci$variant_idx]
-        pip <- fobj$pip[top_loci$variant_idx]
+        pip <- susie_output$pip[top_loci$variant_idx]
         y_scalar <- if (is.null(y_scalar) || all(y_scalar == 1)) 1 else y_scalar[top_loci$variant_idx]
         X_scalar <- if (is.null(X_scalar) || all(X_scalar == 1)) 1 else X_scalar[top_loci$variant_idx]
         top_loci_cols <- c("variant_id", if (!is.null(maf)) "maf", "bhat", "sbhat", "pip", colnames(top_loci)[-1])
-        fobj$top_loci <- cbind(data.frame(variants, maf = if (!is.null(maf)) maf[top_loci$variant_idx] else NULL, 
+        susie_output$top_loci <- cbind(data.frame(variants, maf = if (!is.null(maf)) maf[top_loci$variant_idx] else NULL, 
                                     res$sumstats$betahat[top_loci$variant_idx] * y_scalar / X_scalar, 
                                     res$sumstats$sebetahat[top_loci$variant_idx] * y_scalar / X_scalar, 
                                     pip, stringsAsFactors = FALSE), top_loci[,-1])
-        colnames(fobj$top_loci) <- top_loci_cols
-        rownames(fobj$top_loci) <- NULL
-        names(fob$pip) <- NULL
+        colnames(susie_output$top_loci) <- top_loci_cols
+        rownames(susie_output$top_loci) <- NULL
+        names(susie_output$pip) <- NULL
         res$susie_result_trimmed <- list(
-            pip = fobj$pip,
-            sets = fobj$sets,
-            cs_corr = fobj$cs_corr,
+            pip = susie_output$pip,
+            sets = susie_output$sets,
+            cs_corr = susie_output$cs_corr,
             sets_secondary = sets_secondary,
-            alpha = fobj$alpha[eff_idx, , drop = FALSE],
-            lbf_variable = fobj$lbf_variable[eff_idx, , drop = FALSE],
-            mu = fobj$mu[eff_idx, , drop = FALSE],
-            mu2 = fobj$mu2[eff_idx, , drop = FALSE],
-            V = fobj$V[eff_idx],
-            X_column_scale_factors = fobj$X_column_scale_factors
+            alpha = susie_output$alpha[eff_idx, , drop = FALSE],
+            lbf_variable = susie_output$lbf_variable[eff_idx, , drop = FALSE],
+            mu = susie_output$mu[eff_idx, , drop = FALSE],
+            mu2 = susie_output$mu2[eff_idx, , drop = FALSE],
+            V = susie_output$V[eff_idx],
+            X_column_scale_factors = susie_output$X_column_scale_factors
         )
         class(res$susie_result_trimmed) <- "susie"
     } 

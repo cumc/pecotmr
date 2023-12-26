@@ -204,7 +204,7 @@ twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_
                 }
             }
         }
-        return(list(sample_partition = sample_partition, prediction = Y_pred, rsq_pval = rsq_pval_table, time_elapsed = proc.time() - st))
+        return(list(sample_partition = sample_partition, prediction = Y_pred, performance = metrics_table, time_elapsed = proc.time() - st))
     }
 } 
 

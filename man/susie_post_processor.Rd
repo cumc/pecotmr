@@ -5,7 +5,7 @@
 \title{Post-process SuSiE Analysis Results}
 \usage{
 susie_post_processor(
-  fobj,
+  susie_output,
   X_data,
   y_data,
   X_scalar,
@@ -18,7 +18,7 @@ susie_post_processor(
 )
 }
 \arguments{
-\item{fobj}{A list representing the SuSiE analysis object.}
+\item{susie_output}{Output from running susieR::susie() or susieR:susie_rss()}
 
 \item{X_data}{The genotype data matrix.}
 
@@ -37,7 +37,7 @@ susie_post_processor(
 \item{other_quantities}{A list of other quantities to be added to the final object.}
 }
 \value{
-A modified SuSiE object with additional post-processing information.
+A list containing modified SuSiE object along with additional post-processing information.
 }
 \description{
 This function processes the results from SuSiE (Sum of Single Effects) genetic analysis. 
@@ -47,5 +47,5 @@ Also, it tracks cs_secondary correlation for each coverage value and includes th
 }
 \examples{
 # Example usage
-# susie_result <- susie_post_processor(fobj, X_data, y_data, X_scalar, y_scalar, maf, c(0.5, 0.7))
+# susie_result <- susie_post_processor(susie_output, X_data, y_data, X_scalar, y_scalar, maf, c(0.5, 0.7))
 }
