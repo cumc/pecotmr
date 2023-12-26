@@ -215,7 +215,7 @@ load_regional_association_data <- function(genotype, # PLINK file
     geno <- load_genotype_data(genotype, keep_indel)
     ## Load phenotype and covariates and perform some pre-processing
     covar <- load_covariate_data(covariate)
-    pheno <- load_phenotype_data(phenotype, covar, region)
+    pheno <- load_phenotype_data(phenotype, region)
     ### including Y ( cov ) and specific X and covar match, filter X variants based on the overlapped samples.
     data_list <- prepare_data_list(geno, pheno, covar, imiss_cutoff,
                                     maf_cutoff, mac_cutoff, xvar_cutoff)
