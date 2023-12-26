@@ -77,13 +77,16 @@ susie_post_processor <- function(fobj, X_data, y_data, X_scalar, y_scalar, maf,
         fobj_secondary
     }
     # Compute univariate regression results 
-    res <- list(sumstats = univariate_regression(X_data, y_data), other_quantities = other_quantities)
+    res <- list(sumstats = univariate_regression(X_data, y_data), 
+                analysis_script = load_script(), 
+                other_quantities = other_quantities,
+                phenotype_name = colnames(y_data),
+                sample_names = rownames(y_data),
+                variant_names = format_variant_id(names(fobj$pip)),
+                susie_result_trimmed = list()
+            )
     eff_idx <- which(fobj$V > prior_eff_tol)
     if (length(eff_idx) > 0) {
-        fobj$analysis_script <- load_script()
-        fobj$phenotype_name <- colnames(y_data)
-        fobj$sample_names <- rownames(y_data)
-        fobj$variant_names <- format_variant_id(names(fobj$pip))
         # Prepare for top loci table
         top_variants_idx_pri <- get_top_variants_idx(fobj, signal_cutoff)
         cs_pri <- get_cs_info(fobj$sets$cs, top_variants_idx_pri)
@@ -91,8 +94,9 @@ susie_post_processor <- function(fobj, X_data, y_data, X_scalar, y_scalar, maf,
         top_loci_list <- list("coverage_0.95" = data.frame(variant_idx = top_variants_idx_pri, cs_idx = cs_pri, stringsAsFactors=F))
 
         ## Loop over each secondary coverage value
+        sets_secondary <- list()
         for (sec_cov in secondary_coverage) {
-            fobj_secondary <- get_cs_and_corr(fobj, sec_cov, X_data)
+            sets_secondary[[paste0("coverage_", sec_cov)]] <- get_cs_and_corr(fobj, sec_cov, X_data)
             top_variants_idx_sec <- get_top_variants_idx(fobj_secondary, signal_cutoff)
             cs_sec <- get_cs_info(fobj_secondary$sets$cs, top_variants_idx_sec)
             top_loci_list[[paste0("coverage_", sec_cov)]] <-data.frame(variant_idx = top_variants_idx_sec, cs_idx = cs_sec, stringsAsFactors=F) 
@@ -106,7 +110,7 @@ susie_post_processor <- function(fobj, X_data, y_data, X_scalar, y_scalar, maf,
             top_loci <- full_join(top_loci, top_loci_list[[i]], by = "variant_idx")
         }
         top_loci[is.na(top_loci)] <- 0
-        variants <- format_variant_id(names(fobj$pip)[top_loci$variant_idx])
+        variants <- res$variant_names[top_loci$variant_idx]
         pip <- fobj$pip[top_loci$variant_idx]
         y_scalar <- if (is.null(y_scalar) || all(y_scalar == 1)) 1 else y_scalar[top_loci$variant_idx]
         X_scalar <- if (is.null(X_scalar) || all(X_scalar == 1)) 1 else X_scalar[top_loci$variant_idx]
@@ -117,15 +121,12 @@ susie_post_processor <- function(fobj, X_data, y_data, X_scalar, y_scalar, maf,
                                     pip, stringsAsFactors = FALSE), top_loci[,-1])
         colnames(fobj$top_loci) <- top_loci_cols
         rownames(fobj$top_loci) <- NULL
+        names(fob$pip) <- NULL
         res$susie_result_trimmed <- list(
-            phenotype_name = fobj$phenotype_name,
-            sample_names = fobj$sample_names,
-            variant_names = fobj$variant_names,
             pip = fobj$pip,
             sets = fobj$sets,
             cs_corr = fobj$cs_corr,
-            cs_secondary_corr = fobj$cs_secondary_corr,
-            sets_secondary = fobj$sets_secondary,
+            sets_secondary = sets_secondary,
             alpha = fobj$alpha[eff_idx, , drop = FALSE],
             lbf_variable = fobj$lbf_variable[eff_idx, , drop = FALSE],
             mu = fobj$mu[eff_idx, , drop = FALSE],
@@ -134,9 +135,6 @@ susie_post_processor <- function(fobj, X_data, y_data, X_scalar, y_scalar, maf,
             X_column_scale_factors = fobj$X_column_scale_factors
         )
         class(res$susie_result_trimmed) <- "susie"
-    } else {
-        res <- list(analysis_script = load_script(), pip = fobj$pip, variant_names = format_variant_id(names(fobj$pip)), sumstats = fobj$sumstats, susie_result_trimmed = list())
-        names(res$pip) <- NULL
-    }
+    } 
     return(res)
 }
