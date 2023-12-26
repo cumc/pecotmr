@@ -45,21 +45,22 @@ dummy_geno_data <- function(
     return(X)
 }
 
-dummy_pheno_data <- function(number_of_samples = 10, number_of_phenotypes = 10, randomize = FALSE, sample_start_id = 1) {
+dummy_pheno_data <- function(number_of_samples = 10, number_of_phenotypes = 10, randomize = FALSE, y_as_matrix = F, sample_start_id = 1) {
     # Create dummy phenotype bed file
     # columns: Chrom, Start, End, SNP_ID, Sample_1, Sample_2, ..., Sample_N
     start_matrix <- matrix(
         c(
             rep("chr1", number_of_phenotypes),
             seq(100, 100+number_of_phenotypes-1),
-            seq(101, 101+number_of_phenotypes-1),
-            paste0("chr1_", seq(100, 100+number_of_phenotypes-1), "_G_C")),
-        nrow=number_of_phenotypes, ncol=4)
+            seq(101, 101+number_of_phenotypes-1)
+            #paste0("chr1_", seq(100, 100+number_of_phenotypes-1), "_G_C")
+        ),
+        nrow=number_of_phenotypes, ncol=3)
     end_matrix <- matrix(
         rnorm(number_of_samples*number_of_phenotypes), nrow=number_of_phenotypes, ncol=number_of_samples)
     pheno_data <- cbind(start_matrix, end_matrix)
     sample_ids <- paste0("Sample_", seq(sample_start_id, number_of_samples + sample_start_id - 1))
-    colnames(pheno_data) <- c("#chr", "start", "end", "ID", sample_ids)
+    colnames(pheno_data) <- c("#chr", "start", "end", sample_ids)
     colnames(end_matrix) <- sample_ids
     if (randomize) {
         end_matrix <- end_matrix[sample(nrow(end_matrix)),]
@@ -67,8 +68,10 @@ dummy_pheno_data <- function(number_of_samples = 10, number_of_phenotypes = 10, 
     #tmf <- tempfile(fileext = ".bed.gz")
     ## To write a CSV file for input to Excel one might use
     #write.table(pheno_data, file = tmf)
-    #return(pheno_data)
-    return(t(end_matrix))
+    pheno_data <- t(pheno_data)
+    pheno_data <- if (y_as_matrix) pheno_data else lapply(seq_len(ncol(pheno_data)), function(i) pheno_data[,i,drop=FALSE])
+    return(pheno_data)
+    #return(t(end_matrix))
 }
 
 dummy_covar_data <- function(number_of_samples = 10, number_of_covars = 10, row_na = FALSE, randomize = FALSE, sample_start_id = 1) {
@@ -183,17 +186,21 @@ test_that("Test filter_by_common_samples",{
     expect_equal(rownames(filter_by_common_samples(dat, common_samples)), common_samples)
 })
 
-test_that("Test prepare_data_list",{
+test_that("Test prepare_data_list multiple pheno",{
     # Create dummy data
+    ## Prepare Genotype Data
     dummy_geno_data <- matrix(
         c(1,NA,NA,NA, 0,0,1,1, 2,2,2,2, 1,1,1,2, 2,2,0,1, 0,1,1,2),
         # Missing Rate, MAF thresh, Zero Var, Var Thresh, Regular values
         nrow=4, ncol=6)
     rownames(dummy_geno_data) <- c("Sample_1", "Sample_2", "Sample_3", "Sample_14")
     colnames(dummy_geno_data) <- c("chr1:122:G:C", "chr1:123:G:C", "chr1:124:G:C", "chr1:125:G:C", "chr1:126:G:C", "chr1:127:G:C")
-    dummy_pheno_data <- matrix(c(1,NA,NA,NA, 1,1,2,NA, 2,1,2,NA), nrow=4, ncol=3)
-    rownames(dummy_pheno_data) <- c("Sample_3", "Sample_1", "Sample_2", "Sample_10")
-    colnames(dummy_pheno_data) <- c("pheno_1", "pheno_2", "pheno_3")
+    ## Prepare Phenotype Data
+    dummy_pheno_data_one <- matrix(c("chr1", "222", "223", "1","1","2",NA), nrow=7, ncol=1)
+    rownames(dummy_pheno_data_one) <- c("#chr", "start", "end", "Sample_3", "Sample_1", "Sample_2", "Sample_10")
+    dummy_pheno_data_two <- matrix(c("chr1", "222", "223", "2","1","2",NA), nrow=7, ncol=1)
+    rownames(dummy_pheno_data_two) <- c("#chr", "start", "end", "Sample_3", "Sample_1", "Sample_2", "Sample_10")
+    ## Prepare Covariate Data
     dummy_covar_data <- matrix(c(70,71,72,73, 28,30,15,20, 1,2,3,4), nrow=4, ncol=3)
     rownames(dummy_covar_data) <- c("Sample_1", "Sample_2", "Sample_3", "Sample_4")
     colnames(dummy_covar_data) <- c("covar_1", "covar_2", "covar_3")
@@ -203,7 +210,45 @@ test_that("Test prepare_data_list",{
     mac_cutoff <- 1.8
     xvar_cutoff <- 0.3
     keep_samples <- c("Sample_1", "Sample_2", "Sample_3")
-    res <- prepare_data_list(dummy_geno_data, dummy_pheno_data, dummy_covar_data, imiss_cutoff, maf_cutoff, mac_cutoff, xvar_cutoff, keep_samples=keep_samples)
+    res <- prepare_data_list(
+        dummy_geno_data, list(dummy_pheno_data_one, dummy_pheno_data_two), list(dummy_covar_data, dummy_covar_data), imiss_cutoff, maf_cutoff, mac_cutoff, xvar_cutoff, keep_samples=keep_samples)
+    # Check that Covar, X, and Y have the same number of rows
+    expect_equal(nrow(res$covar[[1]]), 3)
+    expect_equal(nrow(res$X[[1]]), 3)
+    expect_equal(length(res$Y[[1]]), 3)
+    # Check that filter_X occured
+    expect_equal(ncol(res$X[[1]]), 2)
+    # Check that Covar, X, and Y have the same samples
+    expect_equal(rownames(res$covar[[1]]), rownames(res$X[[1]]))
+    expect_equal(rownames(res$covar[[1]]), names(res$Y[[1]]))
+    expect_equal(rownames(res$X[[1]]), names(res$Y[[1]]))
+})
+
+test_that("Test prepare_data_list",{
+    # Create dummy data
+    ## Prepare Genotype Data
+    dummy_geno_data <- matrix(
+        c(1,NA,NA,NA, 0,0,1,1, 2,2,2,2, 1,1,1,2, 2,2,0,1, 0,1,1,2),
+        # Missing Rate, MAF thresh, Zero Var, Var Thresh, Regular values
+        nrow=4, ncol=6)
+    rownames(dummy_geno_data) <- c("Sample_1", "Sample_2", "Sample_3", "Sample_14")
+    colnames(dummy_geno_data) <- c("chr1:122:G:C", "chr1:123:G:C", "chr1:124:G:C", "chr1:125:G:C", "chr1:126:G:C", "chr1:127:G:C")
+    ## Prepare Phenotype Data
+    dummy_pheno_data <- matrix(c(1,NA,NA,NA, 1,1,2,NA, 2,1,2,NA), nrow=4, ncol=3)
+    rownames(dummy_pheno_data) <- c("Sample_3", "Sample_1", "Sample_2", "Sample_10")
+    colnames(dummy_pheno_data) <- c("pheno_1", "pheno_2", "pheno_3")
+    ## Prepare Covariate Data
+    dummy_covar_data <- matrix(c(70,71,72,73, 28,30,15,20, 1,2,3,4), nrow=4, ncol=3)
+    rownames(dummy_covar_data) <- c("Sample_1", "Sample_2", "Sample_3", "Sample_4")
+    colnames(dummy_covar_data) <- c("covar_1", "covar_2", "covar_3")
+    # Set parameters
+    imiss_cutoff <- 0.70
+    maf_cutoff <- 0.1
+    mac_cutoff <- 1.8
+    xvar_cutoff <- 0.3
+    keep_samples <- c("Sample_1", "Sample_2", "Sample_3")
+    res <- prepare_data_list(
+        dummy_geno_data, list(dummy_pheno_data), list(dummy_covar_data), imiss_cutoff, maf_cutoff, mac_cutoff, xvar_cutoff, keep_samples=keep_samples)
     # Check that Covar, X, and Y have the same number of rows
     expect_equal(nrow(res$covar[[1]]), 3)
     expect_equal(nrow(res$X[[1]]), 3)
@@ -311,7 +356,7 @@ test_that("Test load_regional_association_data complete overlap",{
             number_of_samples = 10, number_of_phenotypes = 1, randomize = FALSE, sample_start_id = 1)
     local_mocked_bindings(
         load_genotype_data = function(...) geno_data,
-        load_covariate_data = function(...) covar_data,
+        load_covariate_data = function(...) list(covar_data),
         load_phenotype_data = function(...) pheno_data
     )
     res <- load_regional_association_data(
@@ -332,7 +377,7 @@ test_that("Test load_regional_association_data complete overlap",{
     expect_equal(length(res$Y[[1]]), 10)
     expect_equal(
         as.vector(res$Y[[1]][order(as.numeric(gsub("Sample_", "", names(res$Y[[1]]))))]),
-        as.vector(asplit(pheno_data, 2)[[1]]))
+        as.vector(asplit(pheno_data[[1]], 2)[[1]])[4:13])
     expect_equal(nrow(res$covar[[1]]), 10)
     expect_equal(ncol(res$covar[[1]]), 5)
     expect_equal(res$covar[[1]][order(as.numeric(gsub("Sample_", "", rownames(res$covar[[1]])))), , drop = FALSE], covar_data)
@@ -345,11 +390,11 @@ test_that("Test load_regional_association_data complete overlap y_matrix=T",{
     covar_data <- dummy_covar_data(
             number_of_samples = 10, number_of_covars = 5, row_na = FALSE, randomize = FALSE, sample_start_id = 1)
     pheno_data <- dummy_pheno_data(
-            number_of_samples = 10, number_of_phenotypes = 2, randomize = FALSE, sample_start_id = 1)
+            number_of_samples = 10, number_of_phenotypes = 2, randomize = FALSE, y_as_matrix = T, sample_start_id = 1)
     local_mocked_bindings(
         load_genotype_data = function(...) geno_data,
-        load_covariate_data = function(...) covar_data,
-        load_phenotype_data = function(...) pheno_data
+        load_covariate_data = function(...) list(covar_data),
+        load_phenotype_data = function(...) list(pheno_data)
     )
     res <- load_regional_association_data(
         "dummy_geno.bed.gz",
@@ -370,7 +415,7 @@ test_that("Test load_regional_association_data complete overlap y_matrix=T",{
     expect_equal(ncol(res$Y[[1]]), 2)
     expect_equal(
         res$Y[[1]][order(as.numeric(gsub("Sample_", "", rownames(res$Y[[1]])))), , drop = FALSE],
-        pheno_data)
+        pheno_data[4:13,])
     expect_equal(nrow(res$covar[[1]]), 10)
     expect_equal(ncol(res$covar[[1]]), 5)
     expect_equal(res$covar[[1]][order(as.numeric(gsub("Sample_", "", rownames(res$covar[[1]])))), , drop = FALSE], covar_data)
@@ -383,11 +428,11 @@ test_that("Test load_regional_association_data fewer covar samples",{
     covar_data <- dummy_covar_data(
             number_of_samples = 10, number_of_covars = 5, row_na = FALSE, randomize = FALSE, sample_start_id = 3)
     pheno_data <- dummy_pheno_data(
-            number_of_samples = 10, number_of_phenotypes = 2, randomize = FALSE, sample_start_id = 1)
+            number_of_samples = 10, number_of_phenotypes = 2, randomize = FALSE, y_as_matrix = T, sample_start_id = 1)
     local_mocked_bindings(
         load_genotype_data = function(...) geno_data,
-        load_covariate_data = function(...) covar_data,
-        load_phenotype_data = function(...) pheno_data
+        load_covariate_data = function(...) list(covar_data),
+        load_phenotype_data = function(...) list(pheno_data)
     )
     res <- load_regional_association_data(
         "dummy_geno.bed.gz",
@@ -410,7 +455,7 @@ test_that("Test load_regional_association_data fewer covar samples",{
     expect_equal(ncol(res$Y[[1]]), 2)
     expect_equal(
         res$Y[[1]][order(as.numeric(gsub("Sample_", "", rownames(res$Y[[1]])))), , drop = FALSE],
-        pheno_data[3:10,])
+        pheno_data[6:13,])
     expect_equal(nrow(res$covar[[1]]), 8)
     expect_equal(ncol(res$covar[[1]]), 5)
     expect_equal(
@@ -425,11 +470,11 @@ test_that("Test load_regional_association_data slight overlap across geno, pheno
     covar_data <- dummy_covar_data(
             number_of_samples = 10, number_of_covars = 5, row_na = FALSE, randomize = FALSE, sample_start_id = 3)
     pheno_data <- dummy_pheno_data(
-            number_of_samples = 10, number_of_phenotypes = 2, randomize = FALSE, sample_start_id = 7)
+            number_of_samples = 10, number_of_phenotypes = 2, randomize = FALSE, y_as_matrix = T, sample_start_id = 7)
     local_mocked_bindings(
         load_genotype_data = function(...) geno_data,
-        load_covariate_data = function(...) covar_data,
-        load_phenotype_data = function(...) pheno_data
+        load_covariate_data = function(...) list(covar_data),
+        load_phenotype_data = function(...) list(pheno_data)
     )
     res <- load_regional_association_data(
         "dummy_geno.bed.gz",
@@ -452,7 +497,7 @@ test_that("Test load_regional_association_data slight overlap across geno, pheno
     expect_equal(ncol(res$Y[[1]]), 2)
     expect_equal(
         res$Y[[1]][order(as.numeric(gsub("Sample_", "", rownames(res$Y[[1]])))), , drop = FALSE],
-        pheno_data[1:4,])
+        pheno_data[4:7,])
     expect_equal(nrow(res$covar[[1]]), 4)
     expect_equal(ncol(res$covar[[1]]), 5)
     expect_equal(
@@ -467,11 +512,11 @@ test_that("Test load_regional_association_data no overlap",{
     covar_data <- dummy_covar_data(
             number_of_samples = 10, number_of_covars = 5, row_na = FALSE, randomize = FALSE, sample_start_id = 11)
     pheno_data <- dummy_pheno_data(
-            number_of_samples = 10, number_of_phenotypes = 2, randomize = FALSE, sample_start_id = 21)
+            number_of_samples = 10, number_of_phenotypes = 2, randomize = FALSE, y_as_matrix = T, sample_start_id = 21)
     local_mocked_bindings(
         load_genotype_data = function(...) geno_data,
-        load_covariate_data = function(...) covar_data,
-        load_phenotype_data = function(...) pheno_data
+        load_covariate_data = function(...) list(covar_data),
+        load_phenotype_data = function(...) list(pheno_data)
     )
     expect_error(
         load_regional_association_data(
@@ -496,11 +541,11 @@ test_that("Test load_regional_association_data unordered samples",{
     covar_data <- dummy_covar_data(
             number_of_samples = 10, number_of_covars = 5, row_na = FALSE, randomize = TRUE, sample_start_id = 1)
     pheno_data <- dummy_pheno_data(
-            number_of_samples = 10, number_of_phenotypes = 2, randomize = TRUE, sample_start_id = 1)
+            number_of_samples = 10, number_of_phenotypes = 2, randomize = TRUE, y_as_matrix = T, sample_start_id = 1)
     local_mocked_bindings(
         load_genotype_data = function(...) geno_data,
-        load_covariate_data = function(...) covar_data,
-        load_phenotype_data = function(...) pheno_data
+        load_covariate_data = function(...) list(covar_data),
+        load_phenotype_data = function(...) list(pheno_data)
     )
     res <- load_regional_association_data(
         "dummy_geno.bed.gz",
@@ -521,7 +566,7 @@ test_that("Test load_regional_association_data unordered samples",{
     expect_equal(ncol(res$Y[[1]]), 2)
     expect_equal(
         res$Y[[1]][order(as.numeric(gsub("Sample_", "", rownames(res$Y[[1]])))), , drop = FALSE],
-        pheno_data)
+        pheno_data[4:13,])
     expect_equal(nrow(res$covar[[1]]), 10)
     expect_equal(ncol(res$covar[[1]]), 5)
     expect_equal(
@@ -539,7 +584,7 @@ test_that("Test load_regional_univariate_data",{
             number_of_samples = 10, number_of_phenotypes = 1, randomize = FALSE, sample_start_id = 1)
     local_mocked_bindings(
         load_genotype_data = function(...) geno_data,
-        load_covariate_data = function(...) covar_data,
+        load_covariate_data = function(...) list(covar_data),
         load_phenotype_data = function(...) pheno_data
     )
     res <- load_regional_univariate_data(
@@ -566,11 +611,11 @@ test_that("Test load_regional_regression_data",{
     covar_data <- dummy_covar_data(
             number_of_samples = 10, number_of_covars = 5, row_na = FALSE, randomize = FALSE, sample_start_id = 1)
     pheno_data <- dummy_pheno_data(
-            number_of_samples = 10, number_of_phenotypes = 2, randomize = FALSE, sample_start_id = 1)
+            number_of_samples = 10, number_of_phenotypes = 2, randomize = FALSE, y_as_matrix = T, sample_start_id = 1)
     local_mocked_bindings(
         load_genotype_data = function(...) geno_data,
-        load_covariate_data = function(...) covar_data,
-        load_phenotype_data = function(...) pheno_data
+        load_covariate_data = function(...) list(covar_data),
+        load_phenotype_data = function(...) list(pheno_data)
     )
     res <- load_regional_regression_data(
         "dummy_geno.bed.gz",
@@ -591,7 +636,7 @@ test_that("Test load_regional_regression_data",{
     expect_equal(ncol(res$Y[[1]]), 2)
     expect_equal(
         res$Y[[1]][order(as.numeric(gsub("Sample_", "", rownames(res$Y[[1]])))), , drop = FALSE],
-        pheno_data)
+        pheno_data[4:13,])
     expect_equal(nrow(res$covar[[1]]), 10)
     expect_equal(ncol(res$covar[[1]]), 5)
     expect_equal(res$covar[[1]][order(as.numeric(gsub("Sample_", "", rownames(res$covar[[1]])))), , drop = FALSE], covar_data)

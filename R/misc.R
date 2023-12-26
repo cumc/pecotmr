@@ -77,20 +77,12 @@ load_genotype_data <- function(genotype, keep_indel = TRUE) {
   return(geno_bed)
 }
 
-load_covariate_data <- function(covariate) {
-  # Load covariates and transpose
-  covar <- map(
-    covariate, ~read_delim(.x,"\t")%>%select(-1)%>%na.omit%>%t())
-  return(covar)
+load_covariate_data <- function(covariate_path) {
+  return(map(covariate_path, ~ read_delim(.x, "\t", col_types = cols()) %>% select(-1) %>% t()))
 }
 
-load_phenotype_data <- function(phenotype, covar, region) {
-  # Load phenotype data
-  Y <- map2(phenotype,covar, ~{
-    y_data <- tabix_region(.x, region)%>%select(-4)%>% select(rownames(.y))%>%t()%>%as.matrix
-    return(y_data)
-  })
-  return(Y)
+load_phenotype_data <- function(phenotype_path, region) {
+  return(map(phenotype_path, ~ tabix_region(.x, region) %>% select(-4) %>% t() %>% as.matrix()))
 }
 
 filter_by_common_samples <- function(dat, common_samples) {
@@ -100,8 +92,8 @@ filter_by_common_samples <- function(dat, common_samples) {
 #' @importFrom readr read_delim cols
 prepare_data_list <- function(geno_bed, phenotype, covariate, imiss_cutoff, maf_cutoff, mac_cutoff, xvar_cutoff, keep_samples = NULL) {
   data_list <- tibble(
-    covar = list(covariate),
-    Y = list(phenotype)) %>%
+    covar = covariate,
+    Y = phenotype) %>%
     mutate(
       # Determine common complete samples across Y, covar, and geno_bed, considering missing values
       common_complete_samples = map2(covar, Y, ~ {
@@ -317,104 +309,4 @@ load_regional_multivariate_data <- function(matrix_y_min_complete = NULL, # when
         chrom = dat$chrom,
         grange = dat$grange
         ))
-}
-
-#' Load, Validate, and Consolidate TWAS Weights from Multiple RDS Files
-#'
-#' This function loads TWAS weight data from multiple RDS files, checks for the presence
-#' of specified region and condition. If variable_name_obj is provided, it aligns and
-#' consolidates weight matrices based on the object's variant names, filling missing data
-#' with zeros. If variable_name_obj is NULL, it checks that all files have the same row
-#' numbers for the condition and consolidates weights accordingly.
-#'
-#' @param weight_db_files Vector of file paths for RDS files containing TWAS weights.
-#' @param condition The specific condition to be checked and consolidated across all files.
-#' @param region The specific region to be checked and consolidated across all files.
-#' @param variable_name_obj The name of the variable/object to fetch from each file, if not NULL.
-#' @return A consolidated matrix of weights for the specified condition.
-#' @examples
-#' # Example usage (replace with actual file paths, condition, region, and variable_name_obj):
-#' weight_db_files <- c("path/to/file1.rds", "path/to/file2.rds")
-#' condition <- "example_condition"
-#' region <- "example_region"
-#' variable_name_obj <- "example_variable" # or NULL for standard processing
-#' consolidated_weights <- load_twas_weights(weight_db_files, condition, region, variable_name_obj)
-#' print(consolidated_weights)
-#' @import dplyr
-#' @export
-load_twas_weights <- function(weight_db_files, condition, region, 
-                              variable_name_obj = NULL,
-                              twas_weights_table = "twas_weights") {
-  ## Internal function to load and validate data from RDS files
-  load_and_validate_data <- function(weight_db_files, condition, region) {
-    all_data <- lapply(weight_db_files, readRDS)
-
-    ## Check if the specified region and condition are available in all files
-    for (data in all_data) {
-      if (!(region %in% names(data)) || !(condition %in% names(data[[region]]))) {
-        stop("The specified region and/or condition is not available in all RDS files.")
-      }
-      if (!is.null(variable_name_obj) && !(variable_name_obj %in% names(data[[region]][[condition]]))) {
-        stop("The specified variable_name_obj is not available in all RDS files.")
-      }
-    }
-
-    return(all_data)
-  }
-
-  ## Internal function to align and merge weight matrices
-  align_and_merge <- function(weights_list, variable_objs) {
-    # Get the complete list of variant names across all files
-    all_variants <- unique(unlist(lapply(variable_objs, names)))
-    
-    # Initialize the consolidated matrix with zeros
-    consolidated_matrix <- matrix(0, nrow = length(all_variants), ncol = 0)
-    existing_colnames <- character(0)
-
-    # Fill the matrix with weights, aligning by variant names
-    for (i in seq_along(weights_list)) {
-      temp_matrix <- matrix(0, nrow = length(all_variants), ncol = ncol(weights_list[[i]]))
-      rownames(temp_matrix) <- all_variants
-      idx <- match(names(variable_objs[[i]]), all_variants)
-      temp_matrix[idx, ] <- weights_list[[i]]
-
-      # Ensure no duplicate column names
-      new_colnames <- colnames(weights_list[[i]])
-      if (any(duplicated(c(existing_colnames, new_colnames)))) {
-        stop("Duplicate column names detected during merging process.")
-      }
-      existing_colnames <- c(existing_colnames, new_colnames)
-
-      consolidated_matrix <- cbind(consolidated_matrix, temp_matrix)
-    }
-
-    colnames(consolidated_matrix) <- existing_colnames
-    return(consolidated_matrix)
-  }
-
-  ## Internal function to consolidate weights for a given condition and region
-  consolidate_weights <- function(all_data, condition, region, variable_name_obj) {
-    if (is.null(variable_name_obj)) {
-      # Standard processing: Check for identical row numbers and consolidate
-      row_numbers <- sapply(all_data, function(data) nrow(data[[region]][[condition]][[twas_weights_table]]))
-      if (length(unique(row_numbers)) > 1) {
-        stop("Not all files have the same number of rows for the specified condition.")
-      }
-      weights_list <- lapply(all_data, function(data) data[[region]][[condition]][[twas_weights_table]])
-    } else {
-      # Processing with variable_name_obj: Align and merge data, fill missing with zeros
-      variable_objs <- lapply(all_data, function(data) data[[region]][[condition]][[variable_name_obj]])
-      weights_list <- lapply(all_data, function(data) data[[region]][[condition]][[twas_weights_table]])
-      weights_list <- align_and_merge(weights_list, variable_objs)
-    }
-
-    return(weights_list)
-  }
-
-  ## Load, validate, and consolidate data
-  try({
-    all_data <- load_and_validate_data(weight_db_files, condition, region)
-    consolidated_weights <- consolidate_weights(all_data, condition, region, variable_name_obj)
-    return(consolidated_weights)
-  }, silent = TRUE)
 }
