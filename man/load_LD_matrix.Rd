@@ -7,17 +7,18 @@
 load_LD_matrix(LD_meta_file, region, extract_coordinate = NULL)
 }
 \arguments{
-\item{LD_meta_file}{A data frame specifying the information of LD blocks with the olumns "chrom", "start", "end" and "path".
-"start" and "end" are the start and end positions of LD blocks, respectively. "path" is the path of each LD block.}
+\item{LD_meta_file}{A data frame specifying the information of LD blocks with the olumns "chrom",
+"start", "end" and "path", "bim_path"(optional). "start" and "end" are the start and end positions #' of LD blocks, respectively. "path" is the path of each LD block. "bim_path" is the bim.file path of #' each LD matrix.}
 
-\item{region}{A data frame specifying the regions of interest with the columns "chrom", "start" and "end".}
+\item{region}{A data frame specifying the regions of interest with the columns "chrom", "start" and #' "end".}
 
-\item{extract_coordinate}{A data frame with the columns "chr","pos" to be extracted (optional).}
+\item{extract_coordinate}{A data frame with the columns "chrom","pos" to be extracted (optional).}
 }
 \value{
 A list containing:
 \describe{
-\item{variants_df}{merge the variants_selected_df within each LD block to a data frame in the format of bim file with the columns "chr", "variants", 
+\item{variants_df}{merge the variants_selected_df within each LD block to a data frame in the 
+format of bim file with the columns "chrom", "variants", 
 "GD", "pos", "A1" and "A2".}
 \item{LD}{The linkage disequilibrium block matrix, the row and column names are identical to `variants_id_all`}.
 }

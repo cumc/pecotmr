@@ -47,12 +47,12 @@
 #' 
 #'
 #'
-#' @importFrom ctwas impute_expr_z ctwas_rss
-#' @importFrom biomaRt useMart getBM
-#' @importFrom RSQLite dbConnect dbDisconnect dbWriteTable
+# @importFrom ctwas impute_expr_z ctwas_rss
+# @importFrom biomaRt useMart getBM
+# @importFrom RSQLite dbConnect dbDisconnect dbWriteTable
 #' @importFrom readr fread read_delim
 #' @importFrom reshape2 melt 
-#' @importFrom foreach
+#' @importFrom foreach foreach
 
 # work in progress 
 # library("biomaRt")

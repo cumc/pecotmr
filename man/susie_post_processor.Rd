@@ -13,7 +13,8 @@ susie_post_processor(
   maf,
   secondary_coverage = c(0.5, 0.7),
   signal_cutoff = 0.1,
-  other_quantities = list()
+  other_quantities = list(),
+  prior_eff_tol = 0
 )
 }
 \arguments{
