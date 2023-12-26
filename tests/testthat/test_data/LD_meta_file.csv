@@ -1,6 +1,6 @@
 chrom,start,end,path
-chr1,1000,2000,/Users/travyseedwards/Documents/Research/PECOTMR/12-20-2023/tests/testthat/test_data/LD_block_1.chr1_1000_2000.float16.txt.xz
-chr1,3000,4000,/Users/travyseedwards/Documents/Research/PECOTMR/12-20-2023/tests/testthat/test_data/LD_block_2.chr1_3000_4000.float16.txt.xz
-chr1,5000,6000,/Users/travyseedwards/Documents/Research/PECOTMR/12-20-2023/tests/testthat/test_data/LD_block_3.chr1_5000_6000.float16.txt.xz
-chr1,7000,8000,/Users/travyseedwards/Documents/Research/PECOTMR/12-20-2023/tests/testthat/test_data/LD_block_4.chr1_7000_8000.float16.txt.xz
-chr1,9000,10000,/Users/travyseedwards/Documents/Research/PECOTMR/12-20-2023/tests/testthat/test_data/LD_block_5.chr1_9000_10000.float16.txt.xz
+chr1,1000,1200,./test_data/LD_block_1.chr1_1000_1200.float16.txt.xz
+chr1,1200,1400,./test_data/LD_block_2.chr1_1200_1400.float16.txt.xz
+chr1,1400,1600,./test_data/LD_block_3.chr1_1400_1600.float16.txt.xz
+chr1,1600,1800,./test_data/LD_block_4.chr1_1600_1800.float16.txt.xz
+chr1,1800,2000,./test_data/LD_block_5.chr1_1800_2000.float16.txt.xz

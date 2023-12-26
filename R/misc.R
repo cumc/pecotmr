@@ -48,6 +48,7 @@ filter_X <- function(X, missing_rate_thresh, maf_thresh, var_thresh=0) {
 filter_Y <- function(Y, n_nonmiss){
   rm_col <- which(apply(Y, 2, compute_non_missing_y) < n_nonmiss)
   if (length(rm_col)) Y <- Y[, -rm_col]
+  rm_rows <- NULL
   if(is.matrix(Y)){
     rm_rows <- which(apply(Y, 1, compute_all_missing_y))
     if (length(rm_rows)) Y <- Y[-rm_rows, ]  
@@ -76,25 +77,31 @@ load_genotype_data <- function(genotype, keep_indel = TRUE) {
   return(geno_bed)
 }
 
+load_covariate_data <- function(covariate_path) {
+  return(map(covariate_path, ~ read_delim(.x, "\t", col_types = cols()) %>% select(-1) %>% t()))
+}
+
+load_phenotype_data <- function(phenotype_path, region) {
+  return(map(phenotype_path, ~ tabix_region(.x, region) %>% select(-4) %>% t() %>% as.matrix()))
+}
+
 filter_by_common_samples <- function(dat, common_samples) {
   dat[common_samples, , drop = FALSE] %>% .[order(rownames(.)), ]
 }
 
 #' @importFrom readr read_delim cols
-prepare_data_list <- function(geno_bed, phenotype, covariate, region, imiss_cutoff, maf_cutoff, mac_cutoff, xvar_cutoff, keep_samples = NULL) {
+prepare_data_list <- function(geno_bed, phenotype, covariate, imiss_cutoff, maf_cutoff, mac_cutoff, xvar_cutoff, keep_samples = NULL) {
   data_list <- tibble(
-    covariate_path = covariate, 
-    phenotype_path = phenotype
-  ) %>%
+    covar = covariate,
+    Y = phenotype) %>%
     mutate(
-      # Load covariates and transpose
-      covar = map(covariate_path, ~ read_delim(.x, "\t", col_types = cols()) %>% select(-1) %>% t()),
-      # Load phenotype data
-      Y = map(phenotype_path, ~ tabix_region(.x, region) %>% select(-4) %>% t() %>% as.matrix()),
       # Determine common complete samples across Y, covar, and geno_bed, considering missing values
       common_complete_samples = map2(covar, Y, ~ {
         covar_non_na <- rownames(.x)[!apply(.x, 1, function(row) all(is.na(row)))]
         y_non_na <- rownames(.y)[!apply(.y, 1, function(row) all(is.na(row)))]
+        if (length(intersect(intersect(covar_non_na, y_non_na), rownames(geno_bed))) == 0) {
+          stop("No common complete samples between genotype and phenotype/covariate data")
+        } 
         intersect(intersect(covar_non_na, y_non_na), rownames(geno_bed))
       }),
       # Further intersect with keep_samples if provided
@@ -113,12 +120,12 @@ prepare_data_list <- function(geno_bed, phenotype, covariate, region, imiss_cuto
       # Apply filter_X on the geno_bed data filtered by common complete samples
       X = map(common_complete_samples, ~ {
         filtered_geno_bed <- filter_by_common_samples(geno_bed, .x)
-        maf_val <- max(maf_cutoff, mac_cutoff / (2 * nrow(filtered_geno_bed)))
-        filter_X(filtered_geno_bed, imiss_cutoff, maf_val, xvar_cutoff)
+        mac_val <- if (nrow(filtered_geno_bed) == 0) 0 else (mac_cutoff / (2 * nrow(filtered_geno_bed)))
+        maf_val <- max(maf_cutoff, mac_val)
+        filter_X(filtered_geno_bed, imiss_cutoff, maf_val, var_thresh = xvar_cutoff)
       })
     ) %>%
     select(covar, Y, X, dropped_samples_Y, dropped_samples_X, dropped_samples_covar)
-
   return(data_list)
 }
 
@@ -136,7 +143,6 @@ prepare_X_matrix <- function(geno_bed, data_list, imiss_cutoff, maf_cutoff, mac_
   print(paste0("Dimension of input genotype data is row: ", nrow(X_filtered), " column: ", ncol(X_filtered) ))
   return(X_filtered)
 }
-
 
 add_X_residuals <- function(data_list, scale_residuals = FALSE) {
   # Compute residuals for X and add them to data_list
@@ -187,7 +193,6 @@ add_Y_residuals <- function(data_list, conditions, y_as_matrix = FALSE, scale_re
   return(data_list)
 }
 
-
 #' @importFrom plink2R read_plink
 #' @import purrr dplyr tibble
 #' @importFrom utils read.table
@@ -209,8 +214,10 @@ load_regional_association_data <- function(genotype, # PLINK file
     ## Load genotype
     geno <- load_genotype_data(genotype, keep_indel)
     ## Load phenotype and covariates and perform some pre-processing
+    covar <- load_covariate_data(covariate)
+    pheno <- load_phenotype_data(phenotype, region)
     ### including Y ( cov ) and specific X and covar match, filter X variants based on the overlapped samples.
-    data_list <- prepare_data_list(geno, phenotype, covariate, region, imiss_cutoff,
+    data_list <- prepare_data_list(geno, pheno, covar, imiss_cutoff,
                                     maf_cutoff, mac_cutoff, xvar_cutoff)
     maf_list <- lapply(data_list$X, function(x) apply(x, 2, compute_maf))
     ## Get residue Y for each of condition and its mean and sd

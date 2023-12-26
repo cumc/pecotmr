@@ -90,7 +90,7 @@ bt_intersect <- function(df, region_strings) {
     # Get file paths between row_start and row_end
     file_paths <- df$path[which(df$chrom == rows$start_row$chrom & df$start >= rows$start_row$start & df$start <= rows$end_row$start)]
     # check if there exits bim_path, if the path is present, we use directly, else is NULL
-    if(!is.null(df$bim_path))
+    if(any(names(df) == 'bim_path'))
     {
        bim_file_paths <- df$bim_path[which(df$chrom == rows$start_row$chrom & df$start >= rows$start_row$start & df$start <= rows$end_row$start)]
 
@@ -128,7 +128,6 @@ bt_intersect <- function(df, region_strings) {
 #' @export
 # Function to load and process LD matrix
 load_LD_matrix <- function(LD_meta_file, region, extract_coordinate = NULL) {
-    
     # Intersect LD metadata file with the specified regions
     region_LD_files <- bt_intersect(LD_meta_file, region)
 
@@ -188,6 +187,7 @@ load_LD_matrix <- function(LD_meta_file, region, extract_coordinate = NULL) {
                LD_matrix_list = LD_matrix[LD_variants_region_selected$variants, LD_variants_region_selected$variants]
                variants_selected_df = LD_variants_region_selected
             }
+
            return(list(LD_matrix_list = LD_matrix_list,variants_selected_df = variants_selected_df))
 
        })
@@ -195,9 +195,10 @@ load_LD_matrix <- function(LD_meta_file, region, extract_coordinate = NULL) {
            # combine LD matrices and variant_selected_df from the LD_list
            LD_matrices <- lapply(LD_list, function(x) x$LD_matrix_list)
            variants_all_df <- do.call(rbind, lapply(LD_list, function(x) x$variants_selected_df))
-
+           
            # Create a block matrix with correct names
            LD_block <- as.matrix(bdiag(LD_matrices))
+
            # Check if the matrix is upper diagonal
            # We assume a matrix is upper diagonal if all elements below the main diagonal are zero
            is_upper_diagonal <- all(LD_block[lower.tri(LD_block)] == 0)
@@ -210,7 +211,6 @@ load_LD_matrix <- function(LD_meta_file, region, extract_coordinate = NULL) {
            LD_block[upper.tri(LD_block)] <- t(LD_block)[upper.tri(LD_block)]
            }                             
            rownames(LD_block) <- colnames(LD_block) <- variants_all_df$variants
-
            # Return a list containing the variants_all_df and the LD block matrix
            return(list("variants_df" = variants_all_df, "LD" = LD_block))
     })

@@ -8,16 +8,24 @@ context("LD")
 #   - LD_block_#.bim
 
 test_that("Check that we correctly retrieve the names from the matrix",{
-  region <- read_delim("test_data/region.csv", delim = ",")
-  meta <- read_delim("test_data/LD_meta_file.csv", delim = ",")
+  region <- read_delim("./test_data/region.csv", delim = ",")
+  meta <- read_delim("./test_data/LD_meta_file.csv", delim = ",")
   res <- load_LD_matrix(meta, region)
   variants <- unlist(
     c(
-      paste0("chr1:100", seq(0,4), ":A:G"),
-      paste0("chr1:300", seq(0,4), ":A:G"),
-      paste0("chr1:500", seq(0,4), ":A:G")
+      c("1:1000:A:G", "1:1040:A:G", "1:1080:A:G", "1:1120:A:G", "1:1160:A:G"),
+      c("1:1400:A:G", "1:1440:A:G", "1:1480:A:G", "1:1520:A:G", "1:1560:A:G"),
+      c("1:1800:A:G", "1:1840:A:G", "1:1880:A:G", "1:1920:A:G", "1:1960:A:G")
     ))
-  expect_identical(res$variants_df$variants, variants)
+  expect_identical(
+    unlist(res[[1]]$variants_df$variants),
+    variants[1:5])
+  expect_identical(
+    unlist(res[[2]]$variants_df$variants),
+    variants[7:10])
+  expect_identical(
+    unlist(res[[3]]$variants_df$variants),
+    variants[12:15])
 })
 
 test_that("Check that the LD block has the appropriate rownames and colnames",{
@@ -26,12 +34,16 @@ test_that("Check that the LD block has the appropriate rownames and colnames",{
   res <- load_LD_matrix(meta, region)
   variants <- unlist(
     c(
-      paste0("chr1:100", seq(0,4), ":A:G"),
-      paste0("chr1:300", seq(0,4), ":A:G"),
-      paste0("chr1:500", seq(0,4), ":A:G")
+      c("1:1000:A:G", "1:1040:A:G", "1:1080:A:G", "1:1120:A:G", "1:1160:A:G"),
+      c("1:1400:A:G", "1:1440:A:G", "1:1480:A:G", "1:1520:A:G", "1:1560:A:G"),
+      c("1:1800:A:G", "1:1840:A:G", "1:1880:A:G", "1:1920:A:G", "1:1960:A:G")
     ))
-  expect_identical(rownames(res$LD), variants)
-  expect_identical(colnames(res$LD), variants)
+  expect_identical(rownames(res[[1]]$LD), variants[1:5])
+  expect_identical(colnames(res[[1]]$LD), variants[1:5])
+  expect_identical(rownames(res[[2]]$LD), variants[7:10])
+  expect_identical(colnames(res[[2]]$LD), variants[7:10])
+  expect_identical(rownames(res[[3]]$LD), variants[12:15])
+  expect_identical(colnames(res[[3]]$LD), variants[12:15])
 })
 
 test_that("Check that the LD block contains the correct information",{
@@ -41,38 +53,32 @@ test_that("Check that the LD block contains the correct information",{
   # Variant names
   variants <- unlist(
     c(
-      paste0("chr1:100", seq(0,4), ":A:G"),
-      paste0("chr1:300", seq(0,4), ":A:G"),
-      paste0("chr1:500", seq(0,4), ":A:G")
+      c("1:1000:A:G", "1:1040:A:G", "1:1080:A:G", "1:1120:A:G", "1:1160:A:G"),
+      c("1:1400:A:G", "1:1440:A:G", "1:1480:A:G", "1:1520:A:G", "1:1560:A:G"),
+      c("1:1800:A:G", "1:1840:A:G", "1:1880:A:G", "1:1920:A:G", "1:1960:A:G")
     ))
   # Check LD Block 1
-  ld_block_one <- res$LD %>%
-    subset(., rownames(.) %in% variants[1:5]) %>%
-    subset(select=variants[1:5])
+  ld_block_one <- res[[1]]$LD
   ld_block_one_original <- as.matrix(
     read_delim(
-      "/Users/travyseedwards/Documents/Research/PECOTMR/12-20-2023/tests/testthat/test_data/LD_block_1.chr1_1000_2000.float16.txt.xz",
-      delim = "\t", col_names = T)[-1])
-  rownames(ld_block_one_original) <- colnames(ld_block_one_original) <- gsub("_", ":", colnames(ld_block_one_original))
+      "test_data/LD_block_1.chr1_1000_1200.float16.txt.xz",
+      delim = " ", col_names = F))
+  rownames(ld_block_one_original) <- colnames(ld_block_one_original) <- variants[1:5]
   expect_equal(ld_block_one, ld_block_one_original)
   # Check LD Block 2
-  ld_block_two <- res$LD %>%
-    subset(., rownames(.) %in% variants[6:10]) %>%
-    subset(select=variants[6:10])
+  ld_block_two <- res[[2]]$LD
   ld_block_two_original <- as.matrix(
     read_delim(
-      "/Users/travyseedwards/Documents/Research/PECOTMR/12-20-2023/tests/testthat/test_data/LD_block_2.chr1_3000_4000.float16.txt.xz",
-      delim = "\t", col_names = T)[-1])
-  rownames(ld_block_two_original) <- colnames(ld_block_two_original) <- gsub("_", ":", colnames(ld_block_two_original))
+      "test_data/LD_block_3.chr1_1400_1600.float16.txt.xz",
+      delim = " ", col_names = F))[2:5,2:5]
+  rownames(ld_block_two_original) <- colnames(ld_block_two_original) <- variants[7:10]
   expect_equal(ld_block_two, ld_block_two_original)
   # Check LD Block 3
-  ld_block_three <- res$LD %>%
-    subset(., rownames(.) %in% variants[11:15]) %>%
-    subset(select=variants[11:15])
+  ld_block_three <- res[[3]]$LD
   ld_block_three_original <- as.matrix(
     read_delim(
-      "/Users/travyseedwards/Documents/Research/PECOTMR/12-20-2023/tests/testthat/test_data/LD_block_3.chr1_5000_6000.float16.txt.xz",
-      delim = "\t", col_names = T)[-1])
-  rownames(ld_block_three_original) <- colnames(ld_block_three_original) <- gsub("_", ":", colnames(ld_block_three_original))
+      "test_data/LD_block_5.chr1_1800_2000.float16.txt.xz",
+      delim = " ", col_names = F))[2:5,2:5]
+  rownames(ld_block_three_original) <- colnames(ld_block_three_original) <- variants[12:15]
   expect_equal(ld_block_three, ld_block_three_original)
 })
