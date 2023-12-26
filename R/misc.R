@@ -218,7 +218,7 @@ load_regional_association_data <- function(genotype, # PLINK file
     pheno <- load_phenotype_data(phenotype, region)
     ### including Y ( cov ) and specific X and covar match, filter X variants based on the overlapped samples.
     data_list <- prepare_data_list(geno, pheno, covar, imiss_cutoff,
-                                    maf_cutoff, mac_cutoff, xvar_cutoff)
+                                    maf_cutoff, mac_cutoff, xvar_cutoff, keep_samples)
     maf_list <- lapply(data_list$X, function(x) apply(x, 2, compute_maf))
     ## Get residue Y for each of condition and its mean and sd
     data_list <- add_Y_residuals(data_list, conditions, y_as_matrix, scale_residuals)
