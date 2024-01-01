@@ -36,13 +36,16 @@ raiss <- function(ref_panel, known_zscores, LD_matrix, lamb = 0.01, rcond = 0.01
   sig_i_t <- LD_matrix[unknowns, knowns]
 
   # Call raiss_model
-  imp_results <- raiss_model(zt, sig_t, sig_i_t, lamb, rcond)
+  results <- raiss_model(zt, sig_t, sig_i_t, lamb, rcond)
 
   # Format the results
-  formatted_results <- format_raiss_df(imp_results, ref_panel, unknowns)
+  results <- format_raiss_df(results, ref_panel, unknowns)
+
+  # Filter output
+  results <- filter_raiss_output(results, R2_threshold, minimum_ld)
 
   # Merge with known z-scores
-  merged_results <- merge_raiss_df(formatted_results, known_zscores, R2_threshold, minimum_ld)
+  results <- merge_raiss_df(results, known_zscores)
 
   return(merged_results)
 }
