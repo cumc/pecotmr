@@ -176,7 +176,7 @@ twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_
         # Compute rsq, adj rsq, p-value, RMSE, and MAE for each method
         metrics_table <- matrix(NA, nrow = length(weight_methods), ncol = 5)
         rownames(metrics_table) <- names(Y_pred)
-        colnames(metrics_table) <- c("corr", "adj_rsq", "pval", "RMSE", "MAE")
+        colnames(metrics_table) <- c("corr", "adj_rsq", "adj_rsq_pval", "RMSE", "MAE")
 
         for (r in 1:ncol(Y)) {
             for (m in 1:length(weight_methods)) {

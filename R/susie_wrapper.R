@@ -1,3 +1,44 @@
+#' Convert Log Bayes Factors to Single Effects PIP
+#'
+#' This function converts log Bayes factors (LBF) to alpha values, optionally
+#' using prior weights. It handles numerical stability by adjusting with the
+#' maximum LBF value.
+#'
+#' @param lbf Numeric vector of log Bayes factors.
+#' @param prior_weights Optional numeric vector of prior weights for each element in lbf.
+#' @return A named numeric vector of alpha values corresponding to the input LBF.
+#' @examples
+#' lbf <- c(-0.5, 1.2, 0.3)
+#' alpha <- lbf_to_alpha_vector(lbf)
+#' print(alpha)
+lbf_to_alpha_vector = function(lbf, prior_weights = NULL) {
+      if (is.null(prior_weights)) prior_weights = rep(1/length(lbf), length(lbf))
+      maxlbf = max(lbf)
+      # If maxlbf is 0, return a vector of zeros
+      if (maxlbf == 0) {
+        return(setNames(rep(0, length(lbf)), names(lbf)))
+      }
+      # w is proportional to BF, subtract max for numerical stability.
+      w = exp(lbf - maxlbf)
+      # Posterior prob for each SNP.
+      w_weighted = w * prior_weights
+      weighted_sum_w = sum(w_weighted)
+      alpha = w_weighted / weighted_sum_w
+      return(alpha)
+}
+
+#' Applies the 'lbf_to_alpha_vector' function row-wise to a matrix of log Bayes factors
+#' to convert them to Single Effect PIP values.
+#'
+#' @param lbf Matrix of log Bayes factors.
+#' @return A matrix of alpha values with the same dimensions as the input LBF matrix.
+#' @examples
+#' lbf_matrix <- matrix(c(-0.5, 1.2, 0.3, 0.7, -1.1, 0.4), nrow = 2)
+#' alpha_matrix <- lbf_to_alpha(lbf_matrix)
+#' print(alpha_matrix)
+#' @export
+lbf_to_alpha = function(lbf) t(apply(lbf, 1, lbf_to_alpha_vector))
+
 #' @importFrom susieR susie
 #' @export 
 susie_wrapper = function(X, y, init_L = 10, max_L = 30, coverage = 0.95, max_iter=500, l_step = 5) {
