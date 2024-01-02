@@ -79,7 +79,8 @@ compute_qtl_enrichment <- function(gwas_pip, susie_qtl_regions,
   if (pi_gwas == 0) stop("Cannot perform enrichment analysis because there is no association signal from GWAS")
   if (pi_qtl == 0) stop("Cannot perform enrichment analysis because there is no QTL associated with molecular phenotype")
 
-  # FIXME: need to check SNP name overlapping here? Need enough SNP names to overlap
+  # Here we don't check if SNP names match between GWAS and xQTL. 
+  # We will report the overlapping status in the Rcpp code to stdout about the proportion of xQTL that are missing in GWAS.
 
   en <- qtl_enrichment_rcpp(r_gwas_pip = gwas_pip$pip, 
                          r_qtl_susie_fit = susie_qtl_regions,

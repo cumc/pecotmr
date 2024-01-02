@@ -23,7 +23,6 @@
 
 class SuSiEFit {
 public:
-std::vector<double> pip;
 std::vector<std::string> variable_names;
 arma::mat alpha;
 std::vector<double> prior_variance;
@@ -32,7 +31,7 @@ SuSiEFit(SEXP r_susie_fit) {
 	Rcpp::List susie_fit(r_susie_fit);
 
 	Rcpp::NumericVector pip_vec = Rcpp::as<Rcpp::NumericVector>(susie_fit["pip"]);
-	pip = Rcpp::as<std::vector<double> >(pip_vec);
+	// std::vector<double> pip = Rcpp::as<std::vector<double> >(pip_vec);
 	variable_names = Rcpp::as<std::vector<std::string> >(pip_vec.names());
 	alpha = Rcpp::as<arma::mat>(susie_fit["alpha"]);
 	prior_variance = Rcpp::as<std::vector<double> >(susie_fit["prior_variance"]);
@@ -208,15 +207,26 @@ std::map<std::string, double> qtl_enrichment_workhorse(
 
 		// Use QTL to annotate GWAS variants
 		std::vector<int> annotation_vector(gwas_pip.size(), 0);
+		int missing_qtl_count = 0; // Counter for xQTL not in gwas_variant_index
+		int total_qtl_count = 0;
 
 		for (size_t i = 0; i < qtl_susie_fits.size(); i++) {
 			std::vector<std::string> variants = qtl_susie_fits[i].impute_qtn(r);
 			for (const auto &variant : variants) {
-				annotation_vector[gwas_variant_index[variant]] = 1;
+				auto it = gwas_variant_index.find(variant);
+				if (it != gwas_variant_index.end()) {
+					// Update annotation_vector only if variant is found
+					annotation_vector[it->second] = 1;
+				} else {
+					++missing_qtl_count;
+				}
 			}
+			total_qtl_count += variants.size();
 		}
 		gsl_rng_free(r);
 
+		// Calculate the proportion of missing variants
+		double missing_variant_proportion = static_cast<double>(missing_qtl_count) / total_qtl_count;
 		std::vector<double> rst = run_EM(gwas_pip, annotation_vector, pi_gwas, pi_qtl, total_snp);
 
 	#pragma omp critical
@@ -225,6 +235,7 @@ std::map<std::string, double> qtl_enrichment_workhorse(
 			a1_vec[k] = rst[1];
 			v0_vec[k] = rst[2];
 			v1_vec[k] = rst[3];
+			Rcpp::Rcout << "Proportion of xQTL missing from GWAS variants: " << missing_variant_proportion << " in MI round " << k << std::endl;
 		}
 	}
 
