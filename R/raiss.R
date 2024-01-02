@@ -47,7 +47,7 @@ raiss <- function(ref_panel, known_zscores, LD_matrix, lamb = 0.01, rcond = 0.01
   # Merge with known z-scores
   results <- merge_raiss_df(results, known_zscores)
 
-  return(merged_results)
+  return(results)
 }
 
 #' @param zt Vector of known Z scores.
@@ -62,7 +62,7 @@ raiss <- function(ref_panel, known_zscores, LD_matrix, lamb = 0.01, rcond = 0.01
 #'         condition number 'condition_number', and correctness of inversion
 #'         'correct_inversion'.
 raiss_model <- function(zt, sig_t, sig_i_t, lamb=0.01, rcond=0.01, batch=TRUE, report_condition_number=FALSE) {
-  sig_t_inv <- invert_sig_t(sig_t, lamb, rcond)
+  sig_t_inv <- invert_mat_recursive(sig_t, lamb, rcond)
 
   if (batch) {
     
@@ -161,7 +161,6 @@ filter_raiss_output <- function(zscores, R2_threshold = 0.6, minimum_ld = 5) {
   return(zscores)
 }
 
-
 compute_mu <- function(sig_i_t, sig_t_inv, zt) {
   return(sig_i_t %*% (sig_t_inv %*% zt))
 }
@@ -187,30 +186,41 @@ var_in_boundaries <- function(var, lamb) {
   return(var)
 }
 
-invert_sig_t <- function(sig_t, lamb, rcond) {
+invert_mat <- function(mat, lamb, rcond) {
   tryCatch({
-    # Modify the diagonal elements of sig_t
-    diag(sig_t) <- 1 + lamb
+    # Modify the diagonal elements of mat
+    diag(mat) <- 1 + lamb
     # Compute the pseudo-inverse
-    sig_t_inv <- MASS::ginv(sig_t, tol = rcond)
-    return(sig_t_inv)
+    mat_inv <- MASS::ginv(mat, tol = rcond)
+    return(mat_inv)
   }, error = function(e) {
     # Second attempt with updated lamb and rcond in case of an error
-    diag(sig_t) <- 1 + lamb * 1.1
-    sig_t_inv <- MASS::ginv(sig_t, tol = rcond * 1.1)
-    return(sig_t_inv)
+    diag(mat) <- 1 + lamb * 1.1
+    mat_inv <- MASS::ginv(mat, tol = rcond * 1.1)
+    return(mat_inv)
   })
 }
 
-invert_sig_t_recursive <- function(sig_t, lamb, rcond) {
+invert_mat_recursive <- function(mat, lamb, rcond) {
   tryCatch({
-    # Modify the diagonal elements of sig_t
-    diag(sig_t) <- 1 + lamb
+    # Modify the diagonal elements of mat
+    diag(mat) <- 1 + lamb
     # Compute the pseudo-inverse
-    sig_t_inv <- MASS::ginv(sig_t, tol = rcond)
-    return(sig_t_inv)
+    mat_inv <- MASS::ginv(mat, tol = rcond)
+    return(mat_inv)
   }, error = function(e) {
     # Recursive call with updated lamb and rcond in case of an error
-    invert_sig_t(sig_t, lamb * 1.1, rcond * 1.1)
+    invert_mat(mat, lamb * 1.1, rcond * 1.1)
   })
+}
+
+invert_mat_eigen <- function(mat, tol = 1e-3){
+    
+    eigen_mat <- eigen(mat)
+    L <- which(cumsum(eigen_mat$values) / sum(eigen_mat$values) > 1-tol)[1]
+    mat_inv <- eigen_mat$vectors[,1:L] %*% 
+        diag(1/eigen_mat$values[1:L]) %*% 
+        t(eigen_mat$vectors[,1:L])
+    
+    return(mat_inv)
 }
