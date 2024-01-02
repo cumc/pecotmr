@@ -12,9 +12,6 @@ manhattan_plot(twas_results, gene_data)
 
 \item{gene_data}{a data frame with columns "chr", "start", "end", and "ID", "chr" is the chromosome of gene, "start" and "end" are the position, "ID" is the gene name.}
 }
-\value{
-
-}
 \description{
 Manhattan plot
 }
