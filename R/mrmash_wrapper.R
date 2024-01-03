@@ -94,8 +94,8 @@
 #' res <- mrmash_wrapper(X=X, Y=Y, prior_data_driven_matrices=prior_data_driven_matrices, prior_grid=prior_grid)
 #' 
 #' 
-#' @importFrom mr.mash.alpha compute_canonical_covs mr.mash expand_covs
-#' 
+#' @importFrom mr.mash.alpha compute_canonical_covs mr.mash expand_covs compute_univariate_sumstats
+#' @importFrom foreach foreach %do%
 #' @export
 #'
 
@@ -103,9 +103,9 @@ mrmash_wrapper <- function(X,
                            Y, 
                            prior_data_driven_matrices, 
                            prior_grid=NULL, 
-                           nthreads=2,
                            bhat = NULL, 
                            sbhat= NULL,
+                           nthreads=2,
                            prior_canonical_matrices = FALSE,
                            standardize=FALSE, 
                            update_w0 = TRUE,
@@ -117,7 +117,6 @@ mrmash_wrapper <- function(X,
                            tol = 0.01, 
                            verbose = FALSE){
 
-
   if (is.null(prior_data_driven_matrices) && !isTRUE(prior_canonical_matrices)) {
     stop("Please provide prior_data_driven_matrices or set prior_canonical_matrices=TRUE.")
   }  
@@ -126,21 +125,14 @@ mrmash_wrapper <- function(X,
   Y_has_missing <- any(is.na(Y))
     
   if(Y_has_missing && B_init_method=="glasso"){
-        stop("B_init_method=glasso can only be used without missing values in Y")
+      stop("B_init_method=glasso can only be used without missing values in Y")
   }
-  
     
-  if (is.null(prior_grid)){
-      if(is.null(bhat) || is.null(sbhat)){
-          stop("Please provide either prior_grid or bhat and sbhat")
-      } else {
-            if (ncol(Y) > 0 && (ncol(bhat) != ncol(Y) || ncol(sbhat) != ncol(Y))) {
-                  stop(paste("provided sbhat or bhat has ", ncol(dat$Bhat), "columns, different from required ", ncol(Y), " columns in Y. "))
-              } else {
-                  prior_grid <- compute_grid(bhat=bhat, sbhat=sbhat)
-              }
-      }
-  } 
+    
+  # Compute summary statistics and prior_grids
+  # in the case of cross validation, X input becomes Xtrain, Y becomes Ytrain
+  sumstats <- compute_univariate_sumstats(X, Y, standardize=standardize, standardize.response=FALSE, mc.cores=nthreads)
+  prior_grid <- compute_grid(bhat=sumstats$Bhat, sbhat=sumstats$Shat)
 
     
   ### Compute canonical matrices, if requested
@@ -157,19 +149,18 @@ mrmash_wrapper <- function(X,
   } else {
     S0_raw <- filter_datadriven_mats(Y, prior_data_driven_matrices)
   }
+ 
     
-    
-  ### Compute prior covariance
+  ### Compute prior covariance 
   S0 <- expand_covs(S0_raw, prior_grid, zeromat=TRUE)
   time1 <- proc.time()
     
-    
+
   if (B_init_method == "enet") {
       out <- compute_coefficients_univ_glmnet(X, Y, alpha=0.5, standardize=standardize, nthreads=nthreads, Xnew=NULL)
   } else if (B_init_method == "glasso") {
       out <- compute_coefficients_glasso(X, Y, standardize=standardize, nthreads=nthreads, Xnew=NULL)
   }
-
     
   B_init <- out$Bhat
   w0 <- compute_w0(B_init, length(S0))
@@ -181,11 +172,13 @@ mrmash_wrapper <- function(X,
                         standardize=standardize, verbose=verbose, update_V=update_V, update_V_method=update_V_method,
                         w0_threshold = w0_threshold, nthreads=nthreads, mu1_init=B_init)
 
+    
   time2 <- proc.time()
   elapsed_time <- time2["elapsed"] - time1["elapsed"]
   fit_mrmash$analysis_time <- elapsed_time
 
   return(fit_mrmash)
+      
     
 }
 
@@ -357,3 +350,4 @@ autoselect_mixsd <- function(gmin, gmax, mult=2){
     return(mult^((-npoint):0) * gmax)
   }
 }
+
