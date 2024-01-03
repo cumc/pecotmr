@@ -218,15 +218,15 @@ twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_
             for (r in colnames(Y)){
                 method_predictions <- Y_pred[[gsub("_weights", "_predicted", m)]][, r]
                 actual_values <- Y[, r]
-
+                # Remove missing values in the first place
+                na_indx <- which(is.na(actual_values))
+                if (length(na_indx)!=0) {
+                        method_predictions <- method_predictions[-na_indx] 
+                        actual_values <- actual_values[-na_indx] 
+                }
                 if ( !is.na(sd(method_predictions)) && sd(method_predictions) != 0 ) {
-                    lm_fit <- lm(actual_values ~ method_predictions, na.action=na.omit)
-                    indx <- which(is.na(actual_values))
-                    
-                    if (length(indx)!=0){
-                        method_predictions <- method_predictions[-indx] 
-                        actual_values <- actual_values[-indx] 
-                    }
+
+                    lm_fit <- lm(actual_values ~ method_predictions)
                     
                     # Calculate raw correlation and and adjusted R-squared
                     metrics_table[[m]][r, "corr"] <- cor(actual_values, method_predictions)
