@@ -11,7 +11,8 @@ twas_weights_cv(
   sample_partitions = NULL,
   weight_methods = NULL,
   seed = NULL,
-  num_threads = 1
+  num_threads = 1,
+  ...
 )
 }
 \arguments{

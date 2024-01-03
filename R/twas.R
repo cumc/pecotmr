@@ -65,17 +65,20 @@ twas_z <- function(weights, z, R=NULL, X=NULL) {
 #' @importFrom foreach %dopar%
 #' @importFrom doParallel registerDoParallel
 #' @export
-twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_methods = NULL, seed = NULL, num_threads = 1) {
+twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_methods = NULL, seed = NULL, num_threads = 1, ...) {
     # Validation checks
-    if (is.null(fold) || !is.numeric(fold) || fold <= 0) {
+    if (!is.null(fold) && (!is.numeric(fold) || fold <= 0)) {
         stop("Invalid value for 'fold'. It must be a positive integer.")
     }
+    
     if (!is.matrix(X) || (!is.matrix(Y) && !is.vector(Y))) {
         stop("X must be a matrix and Y must be a matrix or a vector.")
     }
+    
     if (is.vector(Y)) {
         Y <- matrix(Y, ncol = 1)
     }
+    
     if (nrow(X) != nrow(Y)) {
         stop("The number of rows in X and Y must be the same.")
     }
@@ -88,22 +91,38 @@ twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_
     } else {
         sample_names <- 1:nrow(X)
     }
-
+    
+    arg <-list(...)
+    
     # Create or use provided folds
     if (!is.null(fold)) {
         if (!is.null(seed)) set.seed(seed)
-        sample_indices <- sample(nrow(X))
-        folds <- cut(seq(1, nrow(X)), breaks = fold, labels = FALSE)
-        sample_partition <- data.frame(Sample = sample_names[sample_indices], Fold = folds, stringsAsFactors = FALSE)
+        
+        if (!is.null(sample_partitions)) {
+            if(fold!= length(unique(sample_partition$Fold))){
+                message(paste0("fold number provided does not match with sample partition, performing ", length(unique(sample_partition$Fold)),
+                       " fold cross validation based on provided sample partition. "))
+                }
+            
+            folds <- sample_partitions$Fold
+            sample_partition <- sample_partitions
+            
+        } else {
+            sample_indices <- sample(nrow(X))
+            folds <- cut(seq(1, nrow(X)), breaks = fold, labels = FALSE)
+            sample_partition <- data.frame(Sample = sample_names[sample_indices], Fold = folds, stringsAsFactors = FALSE)
+        }
     } else if (!is.null(sample_partitions)) {
         if (!all(sample_partitions$Sample %in% sample_names)) {
             stop("Some samples in 'sample_partitions' do not match the samples in 'X' and 'Y'.")
         }
         folds <- sample_partitions$Fold
         sample_partition <- sample_partitions
+        fold <- length(unique(sample_partition$Fold))
     } else {
         stop("Either 'fold' or 'sample_partitions' must be provided.")
     }
+
 
     st = proc.time()
     if (is.null(weight_methods)) {
@@ -114,13 +133,14 @@ twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_
 
         # Determine the number of cores to use
         num_cores <- ifelse(num_threads == -1, detectCores(), num_threads)
+        
         # Perform CV with parallel processing
-        process_method <- function(j) {
-            fold_indices <- which(folds == j)
-            training_indices <- setdiff(1:nrow(X), fold_indices)
-            X_train <- X[training_indices, ]
-            Y_train <- Y[training_indices, ,drop=F]
-            X_test <- X[fold_indices, ]
+        process_method <- function(j){          
+            dat_split <- split_data(X, Y, sample_partition=sample_partition, fold=j)
+            X_train <- dat_split$Xtrain
+            Y_train <- dat_split$Ytrain
+            X_test <- dat_split$Xtest
+            Y_test <- dat_split$Ytest
 
             # Remove columns with zero standard error
             valid_columns <- apply(X_train, 2, function(col) sd(col) != 0)
@@ -130,13 +150,18 @@ twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_
                 args <- weight_methods[[method]]
                 if (method %in% multivariate_weight_methods) {
                     # Apply multivariate method to entire Y for this fold
-                    weights_matrix <- do.call(method, c(list(X = X_train, Y = Y_train), args))
+                    
+                    prior_matrices <- arg$mrmash_weights_prior_matrices
+                    prior_matrices <- prior_matrices[[paste0("fold_", j)]]
+                    
+                    weights_matrix <- do.call(method, c(list(X = X_train, Y = Y_train, prior_data_driven_matrices=prior_matrices, args)))
                     # Adjust the weights matrix to include zeros for invalid columns
                     full_weights_matrix <- matrix(0, nrow = ncol(X), ncol = ncol(Y))
                     rownames(full_weights_matrix) <- rownames(weights_matrix)
                     colnames(full_weights_matrix) <- colnames(weights_matrix)
                     full_weights_matrix[valid_columns, ] <- weights_matrix[valid_columns, ]
                     return(X_test %*% full_weights_matrix)
+                    
                 } else {
                     sapply(1:ncol(Y_train), function(k) {
                         
@@ -158,49 +183,70 @@ twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_
                 process_method(j)
             }
             stopCluster(cl)
-        } else {
+        } else { 
+            fold <- length(unique(sample_partition$Fold))
             fold_results <- lapply(1:fold, process_method)
         }
+                                   
         # Reorganize into Y_pred
         # After cross validation, each sample should have been in
         # test set at some point, and therefore has predicted value.
         # The prediction matrix is therefore exactly the same dimension as input Y
         Y_pred <- setNames(lapply(weight_methods, function(x) matrix(NA, nrow = nrow(Y), ncol = ncol(Y))), names(weight_methods))
         for (j in 1:length(fold_results)) {
-            fold_indices <- which(folds == j)
+            fold_sample <- sample_partition$Sample[sample_partition$Fold==j] 
             for (method in names(weight_methods)) {
-                Y_pred[[method]][fold_indices, ] <- fold_results[[j]][[method]]
+                rownames(Y_pred[[method]]) <- rownames(Y)
+                colnames(Y_pred[[method]]) <- colnames(Y) 
+                Y_pred[[method]][fold_sample, ] <- fold_results[[j]][[method]]
             }
         }
+                                  
         names(Y_pred) <- gsub("_weights", "_predicted", names(Y_pred))
+                   
+                                  
         # Compute rsq, adj rsq, p-value, RMSE, and MAE for each method
-        metrics_table <- matrix(NA, nrow = length(weight_methods), ncol = 5)
-        rownames(metrics_table) <- names(Y_pred)
-        colnames(metrics_table) <- c("corr", "adj_rsq", "adj_rsq_pval", "RMSE", "MAE")
-
-        for (r in 1:ncol(Y)) {
-            for (m in 1:length(weight_methods)) {
-                method_predictions <- Y_pred[[m]][, r]
+        # metrics_table <- matrix(NA, nrow = length(weight_methods), ncol = 5)
+        metrics_table <- list()
+                                  
+        for (m in names(weight_methods)){
+            
+            metrics_table[[m]] <-  matrix(NA, nrow = ncol(Y), ncol = 5)
+            colnames(metrics_table[[m]]) <- c("corr", "adj_rsq", "adj_rsq_pval", "RMSE", "MAE")
+            rownames(metrics_table[[m]]) <- colnames(Y)
+            
+            for (r in colnames(Y)){
+                method_predictions <- Y_pred[[gsub("_weights", "_predicted", m)]][, r]
                 actual_values <- Y[, r]
 
                 if ( !is.na(sd(method_predictions)) && sd(method_predictions) != 0 ) {
-                    lm_fit <- lm(actual_values ~ method_predictions)
-
+                    lm_fit <- lm(actual_values ~ method_predictions, na.action=na.omit)
+                    indx <- which(is.na(actual_values))
+                    
+                    if (length(indx)!=0){
+                        method_predictions <- method_predictions[-indx] 
+                        actual_values <- actual_values[-indx] 
+                    }
+                    
                     # Calculate raw correlation and and adjusted R-squared
-                    metrics_table[m, 1] <- cor(actual_values, method_predictions)
-                    metrics_table[m, 2] <- summary(lm_fit)$adj.r.squared
+                    metrics_table[[m]][r, "corr"] <- cor(actual_values, method_predictions)
+
+                    
+                    metrics_table[[m]][r, "adj_rsq"] <- summary(lm_fit)$adj.r.squared
 
                     # Calculate p-value
-                    metrics_table[m, 3] <- summary(lm_fit)$coefficients[2, 4]
+                    metrics_table[[m]][r, "adj_rsq_pval"] <- summary(lm_fit)$coefficients[2, 4]
 
                     # Calculate RMSE
                     residuals <- actual_values - method_predictions
-                    metrics_table[m, 4] <- sqrt(mean(residuals^2))
+                    metrics_table[[m]][r, "RMSE"] <- sqrt(mean(residuals^2))
 
                     # Calculate MAE
-                    metrics_table[m, 5] <- mean(abs(residuals))
+                    metrics_table[[m]][r, "MAE"] <- mean(abs(residuals))
                 } else {
-                    metrics_table[m, 1:5] <- NA
+                    metrics_table[[m]][r, ] <- NA
+                    message(paste0("Predicted values for ", r , " condition with ", m , 
+                                   " is.na(sd(method_predictions)) || sd(method_predictions) == 0, filling NAs"))
                 }
             }
         }
@@ -450,4 +496,14 @@ twas_joint_z <- function(ld, Bhat, gwas_z){
     gbj <- GBJ(test_stats=z[,1], cor_mat=sig)
     rs <- list("Z" =z, "GBJ"=gbj)
     return(rs)
+}
+
+           
+split_data <- function(X, Y, sample_partition, fold){
+  test_ids <- sample_partition[which(sample_partition$Fold == fold), "Sample"]
+  Xtrain <- X[!(rownames(X) %in% test_ids), ]
+  Ytrain <- Y[!(rownames(Y) %in% test_ids), ]
+  Xtest <- X[rownames(X) %in% test_ids, ]
+  Ytest <- Y[rownames(Y) %in% test_ids, ]
+  return(list(Xtrain=Xtrain, Ytrain=Ytrain, Xtest=Xtest, Ytest=Ytest))
 }

@@ -15,11 +15,12 @@ knitr::opts_chunk$set(collapse = TRUE,comment = "#",fig.width = 5,
                       fig.cap = "&nbsp;",dpi = 120)
 ```
 
-This vignette demonstrates how we use `pecotmr` package to implement mr.mash to compute weights 
-matrices for performing TWAS analysis. We use simulated data of a gene ($Y$) with expression 
-level in multi-conditions in $N \approx 400$ individuals. We want to first identify imputable 
-genotype matrix $X_{N\times P}$ ($P\approx3000$) for gene expression level using cross validation, 
-then compute weight matrix for TWAS analysis input.  
+This vignette demonstrates how we use `pecotmr` package to implement `mr.mash` to compute 
+weights matrices for performing TWAS analysis. We use simulated data of a gene ($Y$) 
+with expression level in multi-conditions in $N \approx 400$ individuals. We want to first 
+determine the imputability of a genotype matrix $X_{N\times P}$ ($P\approx3000$) for gene 
+expression level using cross-validation, then compute the weight matrix for TWAS analysis 
+input.  
 
 
 ## Set up your environment
@@ -27,7 +28,7 @@ then compute weight matrix for TWAS analysis input.
 Load the `pecotmr` package.
 
 ```{r load-pkgs}
-devtools::load_all("~/githubrepo/pecotmr")
+library("pecotmr")
 ```
 
 
@@ -39,11 +40,8 @@ attach(multitrait_data)
 ```
 
 
-The genotype matrix $X$ is centered and standardized and filtered with MAF threshold of 
-0.05, missing rate threshold of 0.05
+X and Y matrices are simulated based on real-world eQTL data sets. 
 
-The expression matrix $Y$ is quantile normalized, and filtered out conditions with subject
-less than 100. 
 
 ```{r}
 dim(X)
@@ -53,12 +51,10 @@ dim(X)
 dim(Y)
 ```
 
-The mrmash_data includes mixture prior matrices and prior grids for the scenario of 
-cross validation and without cross validation. `prior_matrices_cv` and
-`prior_grid_cv` contains list of data for each fold. In this example, we have prepared 
-the data for five-fold cross validation on the partition of the subjects. 
-The `prior grid` can be computed internally if `sumstat` univariate regression results 
-are provided.
+The `multitrait_data` includes mixture prior matrices for the scenario of cross-validation 
+and without cross-validation. `prior_matrices_cv` contains a list of data for each fold. 
+In this example, we have prepared the data for five-fold cross-validation on the partition 
+of the subjects. 
 
 
 ```{r}
@@ -69,62 +65,92 @@ names(multitrait_data)
 str(prior_matrices)
 ```
 
-```{r}
-str(prior_grid)
-```
 
-```{r}
-str(sumstat)
-```
+## Cross-Validation to Select Imputable Genes 
 
-## Cross validation to determine imputability of the unit
+A sample partition need to be provided if intend to perform cross-validation. We will first 
+partition samples for 5 fold cross validation, which will be later used to compute univariate 
+summary statistics and prior grids, then to fit mr.mash for weight matrix computation. 
+This step computes `sumstats`, `prior_grid`, and prior weights matrices on the fly to fit
+*`mr.mash`*. Additionally, we fit mr.mash with pre-computed mixture prior matrices to compute 
+weight matrices. 
 
+A simple sample partition can be obtained as below: 
 ```{r}
 set.seed(999)
 ```
+```{r}
+sampleid <- rownames(X)
+k_fold <- 5
+Fold <-sample(rep(1:k_fold, length.out=length(sampleid)))
+sample_partition <- data.frame(Sample=sampleid, Fold=Fold)
+```
 
-## Compute Weight Matrix using mr.mash method 
 
-We fit mr.mash with pre-computed mixture prior matrices and grid to compute weight matrix. 
-In the example below, we subset 200 SNPs for shorter runtime.
+To perform cross-validation, either `fold` or `sample_partitions` must be provided. If 
+both `fold` and `sample_partitions` are provided, we will partition samples by the provided 
+`sample_partitions`. Via cross-validation, we evaluate prediction accuracy to select genes 
+that are imputable of the gene expression. We will then use these selected to perform TWAS 
+analysis.  
 
 
 ```{r}
-X <- X[, 1:200]
+methods <- list(mrmash_weights = list())
+weight <- twas_weights_cv(X=X,Y=Y,fold=5, mrmash_weights_prior_matrices=prior_matrices_cv, 
+                            weight_methods=methods)
+```
 
+In the case of providing `sample_partitions`. 
+
+```{r}
+methods <- list(mrmash_weights = list())
+weight_cv <- twas_weights_cv(X=X,Y=Y, mrmash_weights_prior_matrices=prior_matrices_cv, 
+                          sample_partition=sample_partition, weight_methods=methods)
+
+str(weight_cv)
+```
+
+
+The wrapper function returns a list of results, including `sample_partition` and `prediction` which 
+is predicted Y matrices, as well as cross-validation evaluation metrics for each method across 
+conditions, including corr, adj_rsq, adj_rsq_pval, RMSE, MAE, and the `time_elapsed` which is 
+the time spent on computing weights and performance evaluation on the prediction accuracy with 
+5 fold cross-validation. 
+
+Imputable genes were selected based on the prediction accuracy threshold of p-values determined 
+by Bonferroni correction and selected RMSE cut-off values.
+
+```{r}
+weight_cv$performance
+
+```
+
+We will then compute weights for these selected genes for TWAS analysis.
+
+
+
+
+
+
+## Compute Weights for Imputable Genes
+Here we compute weight for imputable genes without cross-validation. 
+
+```{r}
 weight_methods <- list(
     mrmash_weights = list(
-    prior_data_driven_matrices=prior_matrices,
-    prior_grid=prior_grid)
+    prior_data_driven_matrices=prior_matrices
     )
+  )
     
 weight <- twas_weights(X=X,Y=Y,weight_methods=weight_methods)
+ 
+head(weight[["mrmash_weights"]])
 ```
 
-```{r}
-str(weight)
-```
 
-When `prior_grid` is not available, summary statistics should to be provided. 
-
-```{r}
-bhat <- sumstat$Bhat
-sbhat <- sumstat$Shat
-
-weight_methods <- list(
-    mrmash_weights = list(
-    prior_data_driven_matrices=prior_matrices,
-    bhat=bhat,
-    sbhat = sbhat)
-    )
-    
-weight <- twas_weights(X=X,Y=Y,weight_methods=weight_methods)
-
-str(weight)
-```
 
 ```{r}
 detach(multitrait_data)
-rm(X, multitrait_data)
+rm(multitrait_data)
 ```
 
