@@ -7,8 +7,8 @@
 coloc_wrapper(
   xqtl_file,
   gwas_files,
-  gwas_finemapping_table = "susie_fit",
-  xqtl_finemapping_table = "susie_fit"
+  gwas_finemapping_obj = "susie_fit",
+  xqtl_finemapping_obj = "susie_fit"
 )
 }
 \arguments{
@@ -16,12 +16,12 @@ coloc_wrapper(
 
 \item{gwas_files}{Vector of paths to GWAS RDS files.}
 
-\item{gwas_finemapping_table}{Optional table name in GWAS RDS files (default 'susie_fit').}
+\item{gwas_finemapping_obj}{Optional table name in GWAS RDS files (default 'susie_fit').}
 
-\item{xqtl_finemapping_table}{Optional table name in xQTL RDS files (default 'susie_fit').}
+\item{xqtl_finemapping_obj}{Optional table name in xQTL RDS files (default 'susie_fit').}
 }
 \value{
-A list containing the processed xQTL and GWAS data matrices for colocalization analysis.
+A list containing the processed xQTL and GWAS logBF matrices for colocalization analysis.
 }
 \description{
 This function processes xQTL and multiple GWAS finemapped data files for colocalization analysis.

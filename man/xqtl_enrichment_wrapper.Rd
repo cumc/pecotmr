@@ -7,8 +7,8 @@
 xqtl_enrichment_wrapper(
   gwas_finemapped_data,
   xqtl_finemapped_data,
-  gwas_finemapping_table = "susie_fit",
-  xqtl_finemapping_table = "susie_fit",
+  gwas_finemapping_obj = "susie_fit",
+  xqtl_finemapping_obj = "susie_fit",
   pi_gwas = NULL,
   pi_qtl = NULL,
   lambda = 1,
@@ -21,9 +21,9 @@ xqtl_enrichment_wrapper(
 
 \item{xqtl_finemapped_data}{Vector of xQTL RDS file paths.}
 
-\item{gwas_finemapping_table}{Optional table name in GWAS RDS files (default 'susie_fit').}
+\item{gwas_finemapping_obj}{Optional table name in GWAS RDS files (default 'susie_fit').}
 
-\item{xqtl_finemapping_table}{Optional table name in xQTL RDS files (default 'susie_fit').}
+\item{xqtl_finemapping_obj}{Optional table name in xQTL RDS files (default 'susie_fit').}
 
 \item{pi_gwas}{Optional parameter for GWAS enrichment estimation (see `compute_qtl_enrichment`).}
 
