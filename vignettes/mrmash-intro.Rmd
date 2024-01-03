@@ -1,5 +1,6 @@
 ---
 title: "Intro to mr.mash"
+author: "Chunming Liu and Anqi Wang"
 date: "`r Sys.Date()`"
 output: rmarkdown::html_vignette
 vignette: >
@@ -147,6 +148,7 @@ weight <- twas_weights(X=X,Y=Y,weight_methods=weight_methods)
 head(weight[["mrmash_weights"]])
 ```
 
+FIXME: Anqi, please add some visualization and comparison with univariate results
 
 
 ```{r}

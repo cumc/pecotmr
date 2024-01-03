@@ -221,10 +221,10 @@ twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_
                 # Remove missing values in the first place
                 na_indx <- which(is.na(actual_values))
                 if (length(na_indx)!=0) {
-                        method_predictions <- method_predictions[-na_indx] 
-                        actual_values <- actual_values[-na_indx] 
+                    method_predictions <- method_predictions[-na_indx] 
+                    actual_values <- actual_values[-na_indx] 
                 }
-                if ( !is.na(sd(method_predictions)) && sd(method_predictions) != 0 ) {
+                if ( sd(method_predictions) != 0 ) {
 
                     lm_fit <- lm(actual_values ~ method_predictions)
                     
