@@ -90,7 +90,7 @@ sample_partition <- data.frame(Sample=sampleid, Fold=Fold)
 To perform cross-validation, either `fold` or `sample_partitions` must be provided. If 
 both `fold` and `sample_partitions` are provided, we will partition samples by the provided 
 `sample_partitions`. Via cross-validation, we evaluate prediction accuracy to select genes 
-that are imputable of the gene expression. We will then use these selected to perform TWAS 
+that are imputable of the gene expression. We will then use these selected genes to perform TWAS 
 analysis.  
 
 
