@@ -84,6 +84,7 @@ parse_region <- function(region) {
   return(list(chrom = chrom, grange = grange))
 }
 
+#' @importFrom snpStats read.plink
 load_genotype_data_snpStat <- function(genotype, region = NULL, keep_indel = TRUE) {
   # Get SNP IDs from bim file
   snp_ids <- if (!is.null(region)) read_delim(paste0(genotype, ".bim"), delim = "\t", col_names = F) %>% 

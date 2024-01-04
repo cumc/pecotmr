@@ -184,6 +184,24 @@ test_that("Test load_genotype_data_snpStat",{
   expect_equal(rownames(res), sample_ids)
 })
 
+test_that("Test load_genotype_data_snpStat no indels",{
+  res <- load_genotype_data_snpStat(
+    "test_data/protocol_example.genotype.chr21_22.ENSG00000186716_P11274", keep_indel = F)
+  bim_file <- read_delim(
+    "test_data/protocol_example.genotype.chr21_22.ENSG00000186716_P11274.bim", delim = "\t", col_names = F
+  )
+  sample_ids <- read_delim(
+    "test_data/protocol_example.genotype.chr21_22.ENSG00000186716_P11274.fam", delim = "\t", col_names = F
+  ) %>% pull(X1)
+  expect_equal(nrow(res), length(sample_ids))
+  expect_equal(rownames(res), sample_ids)
+  indels <- with(bim_file, grepl("[^ATCG]", X5) | grepl("[^ATCG]", X6) | nchar(X5) > 1 | nchar(X6) > 1)
+  expect_equal(
+    nrow(bim_file[!indels, ]),
+    ncol(res)
+  )
+})
+
 test_that("Test load_genotype_data_snpStat with region",{
   res <- load_genotype_data_snpStat(
     "test_data/protocol_example.genotype.chr21_22.ENSG00000186716_P11274",
@@ -198,6 +216,25 @@ test_that("Test load_genotype_data_snpStat with region",{
   expect_equal(rownames(res), sample_ids)
   expect_equal(ncol(res), 45)
   expect_equal(colnames(res), snp_ids[1:45])
+})
+
+test_that("Test load_genotype_data_snpStat with region and no indels",{
+  res <- load_genotype_data_snpStat(
+    "test_data/protocol_example.genotype.chr21_22.ENSG00000186716_P11274",
+    region = "chr22:20680006-20682056", keep_indel = F)
+  bim_file <- read_delim(
+    "test_data/protocol_example.genotype.chr21_22.ENSG00000186716_P11274.bim", delim = "\t", col_names = F
+  )[1:85, ]
+  sample_ids <- read_delim(
+    "test_data/protocol_example.genotype.chr21_22.ENSG00000186716_P11274.fam", delim = "\t", col_names = F
+  ) %>% pull(X1)
+  expect_equal(nrow(res), length(sample_ids))
+  expect_equal(rownames(res), sample_ids)
+  indels <- with(bim_file, grepl("[^ATCG]", X5) | grepl("[^ATCG]", X6) | nchar(X5) > 1 | nchar(X6) > 1)
+  expect_equal(
+    nrow(bim_file[!indels, ]),
+    ncol(res))
+  expect_equal(colnames(res), bim_file[!indels, ]$X2)
 })
 
 test_that("Test load_genotype_data_snpStat equals load_genotype_data",{
