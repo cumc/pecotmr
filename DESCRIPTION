@@ -24,16 +24,15 @@ Imports:
     qvalue,
     Matrix,
     matrixStats,
-    plink2R,
     readr,
     glmnet,
     purrr,
     tidyr,
-    pgenlibr,
     Rfast,
     doMC,
     doParallel,
     foreach,
+    snpStats,
     vctrs
 Suggests: 
     testthat,
@@ -46,6 +45,8 @@ Suggests:
     ggnewscale,
     harmonicmeanp,
     GBJ,
+    pgenlibr,
+    plink2R,
     rmarkdown
 LinkingTo: 
     Rcpp,
