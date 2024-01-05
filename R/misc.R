@@ -77,6 +77,35 @@ load_genotype_data <- function(genotype, keep_indel = TRUE) {
   return(geno_bed)
 }
 
+parse_region <- function(region) {
+  region <- unlist(strsplit(region, ":", fixed = TRUE))
+  chrom <- region[1]
+  grange <- unlist(strsplit(region[2], "-", fixed = TRUE))
+  return(list(chrom = chrom, grange = grange))
+}
+
+#' @importFrom snpStats read.plink
+load_genotype_data_snpStat <- function(genotype, region = NULL, keep_indel = TRUE) {
+  # Get SNP IDs from bim file
+  snp_ids <- if (!is.null(region)) read_delim(paste0(genotype, ".bim"), delim = "\t", col_names = F) %>% 
+    filter(X1 == parse_region(region)$chrom) %>%
+    filter(parse_region(region)$grange[1] <= X4 & X4 <= parse_region(region)$grange[2]) %>%
+    pull(X2) else NULL
+
+  # Read genotype data using snpStats read.plink
+  geno <- read.plink(genotype, select.snps = snp_ids)
+
+  # Remove indels if specified
+  if (!keep_indel) {
+    is_indel <- with(geno$map, grepl("[^ATCG]", allele.1) | grepl("[^ATCG]", allele.2) | nchar(allele.1) > 1 | nchar(allele.2) > 1)
+    geno_bed <- geno$genotypes[, !is_indel]
+  } else {
+    geno_bed <- geno$genotypes
+  }
+  return(2 - as(geno_bed, "numeric"))
+}
+
+
 load_covariate_data <- function(covariate_path) {
   return(map(covariate_path, ~ read_delim(.x, "\t", col_types = cols()) %>% select(-1) %>% t()))
 }
