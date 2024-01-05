@@ -85,7 +85,7 @@ parse_region <- function(region) {
 }
 
 #' @importFrom snpStats read.plink
-load_genotype_data_snpStat <- function(genotype, region = NULL, keep_indel = TRUE) {
+load_genotype_region <- function(genotype, region = NULL, keep_indel = TRUE) {
   # Get SNP IDs from bim file
   snp_ids <- if (!is.null(region)) read_delim(paste0(genotype, ".bim"), delim = "\t", col_names = F) %>% 
     filter(X1 == parse_region(region)$chrom) %>%
@@ -241,7 +241,7 @@ load_regional_association_data <- function(genotype, # PLINK file
                                            keep_samples = NULL,
                                            scale_residuals = FALSE) {
     ## Load genotype
-    geno <- load_genotype_data(genotype, keep_indel)
+    geno <- load_genotype_region(genotype, region, keep_indel)
     ## Load phenotype and covariates and perform some pre-processing
     covar <- load_covariate_data(covariate)
     pheno <- load_phenotype_data(phenotype, region)
