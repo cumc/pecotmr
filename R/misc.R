@@ -78,20 +78,49 @@ load_genotype_data <- function(genotype, keep_indel = TRUE) {
 }
 
 parse_region <- function(region) {
-  region <- unlist(strsplit(region, ":", fixed = TRUE))
-  chrom <- region[1]
-  grange <- unlist(strsplit(region[2], "-", fixed = TRUE))
+  region_split <- unlist(strsplit(region, ":", fixed = TRUE))
+  chrom <- gsub("^chr", "", region_split[1])  # Remove 'chr' prefix if present
+  grange <- as.numeric(unlist(strsplit(region_split[2], "-", fixed = TRUE)))
   return(list(chrom = chrom, grange = grange))
 }
 
-#' @importFrom snpStats read.plink
-load_genotype_region <- function(genotype, region = NULL, keep_indel = TRUE) {
-  # Get SNP IDs from bim file
-  snp_ids <- if (!is.null(region)) read_delim(paste0(genotype, ".bim"), delim = "\t", col_names = F) %>% 
-    filter(X1 == parse_region(region)$chrom) %>%
-    filter(parse_region(region)$grange[1] <= X4 & X4 <= parse_region(region)$grange[2]) %>%
-    pull(X2) else NULL
+NoSNPsError <- function(message) {
+  structure(list(message = message), class = c("NoSNPsError", "error", "condition"))
+}
 
+#' Load genotype data for a specific region using data.table for efficiency
+#' 
+#' @param genotype Path to the genotype data file (without extension).
+#' @param region The target region in the format "chr:start-end".
+#' @param keep_indel Whether to keep indel SNPs.
+#' @return A vector of SNP IDs in the specified region.
+#' @importFrom snpStats read.plink
+#' @importFrom data.table fread
+#' @export
+load_genotype_region <- function(genotype, region = NULL, keep_indel = TRUE) {
+  if (!is.null(region)) {
+    # Get SNP IDs from bim file
+    parsed_region <- parse_region(region)
+    chrom <- parsed_region$chrom
+    start <- parsed_region$grange[1]
+    end <- parsed_region$grange[2]
+    # 6 columns for bim file
+    col_types <- c("character", "character", "NULL", "integer", "NULL", "NULL")
+    # Read a few lines of the bim file to check for 'chr' prefix
+    bim_sample <- fread(paste0(genotype, ".bim"), nrows = 5, header = FALSE, colClasses = col_types)
+    chr_prefix_present <- any(grepl("^chr", bim_sample$V1))
+    # Read the bim file and remove 'chr' prefix if present
+    bim_data <- fread(paste0(genotype, ".bim"), header = FALSE, colClasses = col_types)
+    if (chr_prefix_present) {
+      bim_data[, V1 := gsub("^chr", "", V1)]
+    }
+    snp_ids <- bim_data[V1 == chrom & start <= V4 & V4 <= end, V2]
+    if (length(snp_ids) == 0) {
+      stop(NoSNPsError(paste("No SNPs found in the specified region", region)))
+    }
+  } else {
+    snp_ids <- NULL
+  }
   # Read genotype data using snpStats read.plink
   geno <- read.plink(genotype, select.snps = snp_ids)
 
@@ -102,9 +131,14 @@ load_genotype_region <- function(genotype, region = NULL, keep_indel = TRUE) {
   } else {
     geno_bed <- geno$genotypes
   }
+  # By default, plink usage dosage of the *major* allele, since allele A1 is
+  # usually the minor allele and the code "1" refers to the second allele A2,
+  # so that "11" is A2/A2 or major/major.
+ 
+  # We always use minor allele dosage, to be consistent with the output from
+  # plink --recodeA which used minor allele dosage by default.
   return(2 - as(geno_bed, "numeric"))
 }
-
 
 load_covariate_data <- function(covariate_path) {
   return(map(covariate_path, ~ read_delim(.x, "\t", col_types = cols()) %>% select(-1) %>% t()))
@@ -169,7 +203,7 @@ prepare_X_matrix <- function(geno_bed, data_list, imiss_cutoff, maf_cutoff, mac_
   maf_val = max(maf_cutoff, mac_cutoff / (2 * length(common_samples)))
   # Apply further filtering on X
   X_filtered = filter_X(X_filtered, imiss_cutoff, maf_val, xvar_cutoff)
-  print(paste0("Dimension of input genotype data is row: ", nrow(X_filtered), " column: ", ncol(X_filtered) ))
+  message(paste0("Dimension of input genotype data is row: ", nrow(X_filtered), " column: ", ncol(X_filtered) ))
   return(X_filtered)
 }
 
