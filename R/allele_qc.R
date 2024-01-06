@@ -21,6 +21,8 @@
 allele_qc = function(sumstats,info_snp,match.min.prop,remove_dups,flip,remove) {
   sumstats  =  as.data.frame(sumstats)
   info_snp  =  as.data.frame(info_snp)
+
+  sumstats <- sumstats %>% mutate(chrom = ifelse(grepl("^chr", chrom), as.integer(sub("^chr", "", chrom)), chrom))
   
   matched <- merge(as.data.table(sumstats), as.data.table(info_snp),
                    by = c("chrom","pos"), all = FALSE, suffixes = c(".sumstats", ".ref"))
@@ -60,6 +62,9 @@ allele_qc = function(sumstats,info_snp,match.min.prop,remove_dups,flip,remove) {
             mutate(sign_flip= snp[["sign_flip"]])%>%
             mutate(strand_flip=snp[["strand_flip"]])
   if(flip) {
+    if(!is.null(matched$beta)) {
+    matched$beta[matched$sign_flip] = -1 * matched$beta[matched$sign_flip]
+    }
     matched$beta[matched$sign_flip] = -1 * matched$beta[matched$sign_flip]
     matched$z[matched$sign_flip] = -1 * matched$z[matched$sign_flip]
     matched$A1.sumstats[matched$sign_flip] = matched$A1.ref[matched$sign_flip]
