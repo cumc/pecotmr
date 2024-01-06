@@ -1,7 +1,6 @@
 #' Function to Check if Regions are in increasing order and remove duplicated rows
 #' @importFrom dplyr arrange
 check_consecutive_regions <- function(df) {
-    
   # Ensure that 'chrom' values are integers
   df$chrom <- ifelse(grepl("^chr", df$chrom), 
                      as.integer(sub("^chr", "", df$chrom)), # Remove 'chr' and convert to integer
@@ -61,7 +60,8 @@ validate_selected_region <- function(start_row, end_row, region_start, region_en
 #' \describe{
 #' \item{df}{the regions of df are in incresing order and without duplicated rows.}
 #' \item{region_strings}{the regions of input region_strings are in increasing order and without duplicated rows.}
-#' \item{result_list}{A list of length equal to the number of rows in `region_strings`. Each element of this list is itself a list containing:
+#' \item{result_list}{A list of length equal to the number of rows in `region_strings`. Each element of this list is itself a list 
+#' containing:
 #' \describe{
 #' \item{row_start}{The index/row number in df where the intersection starts for each region.}
 #' \item{row_end}{The index/row number in df where the intersection ends.}
@@ -71,10 +71,18 @@ validate_selected_region <- function(start_row, end_row, region_start, region_en
 #' }
 #' @export
 bt_intersect <- function(df, region_strings) {
+
+  #set the column names of df and region_strings
+  names(df)[1:4] <- c("chrom", "start", "end", "path")
+  names(region_strings)[1:3] <- c("chrom", "start", "end")
   # Check if the regions in df and region_strings are in increasing order
   df = check_consecutive_regions(df)
-  
   region_strings = check_consecutive_regions(region_strings)
+  file_paths <- df$path %>%
+                  str_split(",", simplify = TRUE) %>%
+                  data.frame() %>%
+                  `colnames<-`(if(ncol(.) == 2) c("LD_path", "bim_path") else c("LD_path"))
+  df <- cbind(df, file_paths)%>%select(-path)
   # Process each row in region_strings using lapply (if we use variants to merge, the region_strings will be a dataframe)
   result_list <- lapply(seq_len(nrow(region_strings)), function(i) {
     region_chrom <- region_strings$chrom[i]
@@ -88,7 +96,7 @@ bt_intersect <- function(df, region_strings) {
     validate_selected_region(rows$start_row, rows$end_row, region_start, region_end)
 
     # Get file paths between row_start and row_end
-    file_paths <- df$path[which(df$chrom == rows$start_row$chrom & df$start >= rows$start_row$start & df$start <= rows$end_row$start)]
+    LD_file_paths <- df$LD_path[which(df$chrom == rows$start_row$chrom & df$start >= rows$start_row$start & df$start <= rows$end_row$start)]
     # check if there exits bim_path, if the path is present, we use directly, else is NULL
     if(any(names(df) == 'bim_path'))
     {
@@ -99,7 +107,7 @@ bt_intersect <- function(df, region_strings) {
     }
     list(row_start = which(df$chrom == rows$start_row$chrom & df$start == rows$start_row$start),
          row_end = which(df$chrom == rows$end_row$chrom & df$start == rows$end_row$start),
-         file_paths = file_paths,
+         LD_file_paths = LD_file_paths,
          bim_file_paths = bim_file_paths)
   })
   return(list(result_list = result_list, df = df, region_strings= region_strings))
@@ -109,8 +117,9 @@ bt_intersect <- function(df, region_strings) {
 #' Function to load and process LD matrix
 #'
 #' @param LD_meta_file A data frame specifying the information of LD blocks with the olumns "chrom",
-#' "start", "end" and "path", "bim_path"(optional). "start" and "end" are the start and end positions #' of LD blocks, respectively. "path" is the path of each LD block. "bim_path" is the bim.file path of #' each LD matrix.
-#' @param region A data frame specifying the regions of interest with the columns "chrom", "start" and #' "end".
+#' "start", "end" and "path" (contains LD_path and bim_path (optional), comma-separated). "start" and "end" are the start and end, 
+#' positions  of LD blocks, respectively. "path" is the path of each LD block. "bim_path" is the bim.file path of each LD matrix.
+#' @param region A data frame specifying the regions of interest with the columns "chrom", "start" and "end".
 #' @param extract_coordinate A data frame with the columns "chrom","pos" to be extracted (optional).
 #'
 #' @return A list containing:
@@ -134,26 +143,24 @@ load_LD_matrix <- function(LD_meta_file, region, extract_coordinate = NULL) {
     # Process each region in LD.files
     LD_all_list <- lapply(seq_along(region_LD_files$result_list), function(i) {
         # Extract file paths for each LD block
-        region_LD_file_paths <- region_LD_files$result_list[[i]]$file_paths
+        region_LD_file_paths <- region_LD_files$result_list[[i]]$LD_file_paths
         region_bim_file_paths <- region_LD_files$result_list[[i]]$bim_file_paths
 
         # Process each region
         LD_list <- lapply(seq_along(region_LD_file_paths), function(j) {
 
            # Read the LD matrix from the file
-           LD_matrix <- as.matrix(read_delim(region_LD_file_paths[j], col_names = FALSE, delim = " "))
- 
+           LD_matrix <- scan(xzfile(region_LD_file_paths[j]))
+           LD_matrix <- matrix(LD_matrix, ncol = sqrt(length(LD_matrix)), byrow = TRUE)
            # Determine the .bim file to use
             bim_file_name <- if (!is.null(region_bim_file_paths[j])) {
                 region_bim_file_paths[j]
             } else {
                 # Construct .bim filename if bim_file_paths are not available
-                sub("\\D*$", "", region_LD_file_paths[j]) %>%
-                paste(., collapse = ".") %>%
-                paste0(., ".bim")
+                paste0(region_LD_file_paths[j], ".bim",sep="")
             }
            # Process variant names from file paths
-           LD_variants <- bim_file_name%>%
+           LD_variants <- bim_file_name %>%
               read.table(.) %>%
               setNames(c("chrom","variants","GD","pos","A2","A1"))%>%
               mutate(chrom = ifelse(grepl("^chr[0-9]+", chrom), sub("^chr", "", chrom), chrom)) %>%
@@ -172,8 +179,8 @@ load_LD_matrix <- function(LD_meta_file, region, extract_coordinate = NULL) {
             if (!is.null(extract_coordinate)) {
                # Preprocess 'extract_coordinate' to ensure 'chrom' is numeric and without 'chr'
                extract_coordinate <- extract_coordinate %>%
-                          mutate(chrom = ifelse(grepl("^chr", chrom), as.integer(sub("^chr", "", chrom)), chrom))
-
+                          mutate(chrom = ifelse(grepl("^chr", chrom), as.integer(sub("^chr", "", chrom)), chrom))%>%
+                          select(chrom, pos)
                # Now merge with 'LD_variants_region_selected'
                variants_selected_df <- LD_variants_region_selected %>%
                       # Ensure that 'chrom' values in 'LD_variants_region_selected' are numeric, remove 'chr' if present
