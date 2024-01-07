@@ -36,7 +36,7 @@ twas_scan <- function(weights_path, region, GWAS_data, LD_meta_file) {
     LD.matrix <- load_LD_matrix(LD_meta_file, region)
     
     # Generate the twas_z format input
-    twas_z_format <- data.frame(LD.matrix$variants_id_all) %>% 
+    twas_z_format <- data.frame(LD.files.variants = LD.matrix$variants_id_all) %>% 
       mutate(gene_name = gene_name) %>% 
       mutate(chr = region$chr) %>% 
       mutate(outcome_QC[match(LD.matrix$variants_id_all, outcome_QC$variant_allele_flip), ] %>% 

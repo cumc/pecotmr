@@ -17,5 +17,9 @@ load_genotype_region(genotype, region = NULL, keep_indel = TRUE)
 A vector of SNP IDs in the specified region.
 }
 \description{
-Load genotype data for a specific region using data.table for efficiency
+By default, plink usage dosage of the *major* allele, since allele A1 is
+usually the minor allele and the code "1" refers to the second allele A2,
+so that "11" is A2/A2 or major/major. We always use minor allele dosage, to
+be consistent with the output from plink --recodeA which used minor allele
+dosage by default.
 }

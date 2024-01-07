@@ -1,4 +1,5 @@
 context("allele_qc")
+library(data.table)
 
 create_allele_data <- function(seed, n=100, match_min_prop=0.8, ambiguous=FALSE, non_actg=FALSE, edge_cases=FALSE) {
   set.seed(seed)
