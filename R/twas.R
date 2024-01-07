@@ -66,15 +66,26 @@ twas_z <- function(weights, z, R=NULL, X=NULL) {
 #' @importFrom doParallel registerDoParallel
 #' @export
 twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_methods = NULL, seed = NULL, num_threads = 1, ...) {
-    
     split_data <- function(X, Y, sample_partition, fold){
-        test_ids <- sample_partition[which(sample_partition$Fold == fold), "Sample"]
-        Xtrain <- X[!(rownames(X) %in% test_ids), ,drop=F]
-        Ytrain <- Y[!(rownames(Y) %in% test_ids), ,drop=F]
-        Xtest <- X[rownames(X) %in% test_ids, ,drop=F]
-        Ytest <- Y[rownames(Y) %in% test_ids, ,drop=F]
-        return(list(Xtrain=Xtrain, Ytrain=Ytrain, Xtest=Xtest, Ytest=Ytest))
+      if (is.null(rownames(X))) {
+        warning("Row names in X are missing. Using row indices.")
+        rownames(X) <- 1:nrow(X)
+      }
+      if (is.null(rownames(Y))) {
+        warning("Row names in Y are missing. Using row indices.")
+        rownames(Y) <- 1:nrow(Y)
+      }
+      test_ids <- sample_partition[which(sample_partition$Fold == fold), "Sample"]
+      Xtrain <- X[!(rownames(X) %in% test_ids), ,drop=FALSE]
+      Ytrain <- Y[!(rownames(Y) %in% test_ids), ,drop=FALSE]
+      Xtest <- X[rownames(X) %in% test_ids, ,drop=FALSE]
+      Ytest <- Y[rownames(Y) %in% test_ids, ,drop=FALSE]
+      if (nrow(Xtrain) == 0 || nrow(Ytrain) == 0 || nrow(Xtest) == 0 || nrow(Ytest) == 0) {
+        stop("Error: One of the datasets (train or test) has zero rows.")
+      }
+      return(list(Xtrain=Xtrain, Ytrain=Ytrain, Xtest=Xtest, Ytest=Ytest))
     }
+
     # Validation checks
     if (!is.null(fold) && (!is.numeric(fold) || fold <= 0)) {
         stop("Invalid value for 'fold'. It must be a positive integer.")
@@ -222,7 +233,7 @@ twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_
             colnames(metrics_table[[m]]) <- c("corr", "adj_rsq", "adj_rsq_pval", "RMSE", "MAE")
             rownames(metrics_table[[m]]) <- colnames(Y)
             
-            for (r in colnames(Y)){
+            for (r in 1:ncol(Y)){
                 method_predictions <- Y_pred[[gsub("_weights", "_predicted", m)]][, r]
                 actual_values <- Y[, r]
                 # Remove missing values in the first place
@@ -232,7 +243,6 @@ twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_
                     actual_values <- actual_values[-na_indx] 
                 }
                 if ( sd(method_predictions) != 0 ) {
-
                     lm_fit <- lm(actual_values ~ method_predictions)
                     
                     # Calculate raw correlation and and adjusted R-squared
@@ -257,6 +267,7 @@ twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_
                 }
             }
         }
+        names(metrics_table) <- gsub("_weights", "_performance", names(metrics_table))
         return(list(sample_partition = sample_partition, prediction = Y_pred, performance = metrics_table, time_elapsed = proc.time() - st))
     }
 } 
