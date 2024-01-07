@@ -262,8 +262,8 @@ twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_
                     metrics_table[[m]][r, "MAE"] <- mean(abs(residuals))
                 } else {
                     metrics_table[[m]][r, ] <- NA
-                    message(paste0("Predicted values for ", r , " condition with ", m , 
-                                   " is.na(sd(method_predictions)) || sd(method_predictions) == 0, filling NAs"))
+                    message(paste0("Predicted values for condition ", r , " using ", m , 
+                                   "have zero variance. Filling performance metric with NAs"))
                 }
             }
         }
