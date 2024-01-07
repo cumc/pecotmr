@@ -150,7 +150,9 @@ load_LD_matrix <- function(LD_meta_file, region, extract_coordinate = NULL) {
         LD_list <- lapply(seq_along(region_LD_file_paths), function(j) {
 
            # Read the LD matrix from the file
-           LD_matrix <- scan(xzfile(region_LD_file_paths[j]))
+           LD_file_con <- xzfile(region_LD_file_paths[j])
+           LD_matrix <- scan(LD_file_con, quiet=TRUE)
+           close(LD_file_con)
            LD_matrix <- matrix(LD_matrix, ncol = sqrt(length(LD_matrix)), byrow = TRUE)
            # Determine the .bim file to use
             bim_file_name <- if (!is.null(region_bim_file_paths[j])) {
