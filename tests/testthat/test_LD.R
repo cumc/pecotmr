@@ -1,15 +1,30 @@
 context("LD")
+library(tidyverse)
 
-# Use input data that was generated using ChatGPT 4
-# Generated:
-#   - LD_meta_file.csv
-#   - region.csv
-#   - LD_block_#.chr1_#_#.float16.txt.gz
-#   - LD_block_#.bim
+generate_dummy_data <- function() {
+  region <- data.frame(
+    chrom = "chr1",
+    start = c(1000, 1401, 1801),
+    end = c(1190, 1597, 1999)
+  )
+  meta_df <- data.frame(
+    chrom = "chr1",
+    start = c(1000, 1200, 1400, 1600, 1800),
+    end = c(1200, 1400, 1600, 1800, 2000),
+    path = c(
+      "./test_data/LD_block_1.chr1_1000_1200.float16.txt.xz,./test_data/LD_block_1.chr1_1000_1200.float16.bim",
+      "./test_data/LD_block_2.chr1_1200_1400.float16.txt.xz,./test_data/LD_block_2.chr1_1200_1400.float16.bim",
+      "./test_data/LD_block_3.chr1_1400_1600.float16.txt.xz,./test_data/LD_block_3.chr1_1400_1600.float16.bim",
+      "./test_data/LD_block_4.chr1_1600_1800.float16.txt.xz,./test_data/LD_block_4.chr1_1600_1800.float16.bim",
+      "./test_data/LD_block_5.chr1_1800_2000.float16.txt.xz,./test_data/LD_block_5.chr1_1800_2000.float16.bim"
+    ))
+  return(list(region = region, meta = meta_df))
+}
 
 test_that("Check that we correctly retrieve the names from the matrix",{
-  region <- read_delim("./test_data/region.csv", delim = ",")
-  meta <- read_delim("./test_data/LD_meta_file.csv", delim = ",")
+  data <- generate_dummy_data()
+  region <- data$region
+  meta <- data$meta
   res <- load_LD_matrix(meta, region)
   variants <- unlist(
     c(
@@ -29,8 +44,9 @@ test_that("Check that we correctly retrieve the names from the matrix",{
 })
 
 test_that("Check that the LD block has the appropriate rownames and colnames",{
-  region <- read_delim("test_data/region.csv", delim = ",")
-  meta <- read_delim("test_data/LD_meta_file.csv", delim = ",")
+  data <- generate_dummy_data()
+  region <- data$region
+  meta <- data$meta
   res <- load_LD_matrix(meta, region)
   variants <- unlist(
     c(
@@ -47,8 +63,9 @@ test_that("Check that the LD block has the appropriate rownames and colnames",{
 })
 
 test_that("Check that the LD block contains the correct information",{
-  region <- read_delim("test_data/region.csv", delim = ",")
-  meta <- read_delim("test_data/LD_meta_file.csv", delim = ",")
+  data <- generate_dummy_data()
+  region <- data$region
+  meta <- data$meta
   res <- load_LD_matrix(meta, region)
   # Variant names
   variants <- unlist(

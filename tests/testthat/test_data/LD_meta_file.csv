@@ -1,6 +1,0 @@
-chrom,start,end,path
-chr1,1000,1200,./test_data/LD_block_1.chr1_1000_1200.float16.txt.xz
-chr1,1200,1400,./test_data/LD_block_2.chr1_1200_1400.float16.txt.xz
-chr1,1400,1600,./test_data/LD_block_3.chr1_1400_1600.float16.txt.xz
-chr1,1600,1800,./test_data/LD_block_4.chr1_1600_1800.float16.txt.xz
-chr1,1800,2000,./test_data/LD_block_5.chr1_1800_2000.float16.txt.xz

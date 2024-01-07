@@ -90,6 +90,12 @@ NoSNPsError <- function(message) {
 
 #' Load genotype data for a specific region using data.table for efficiency
 #' 
+#' By default, plink usage dosage of the *major* allele, since allele A1 is
+#' usually the minor allele and the code "1" refers to the second allele A2,
+#' so that "11" is A2/A2 or major/major. We always use minor allele dosage, to
+#' be consistent with the output from plink --recodeA which used minor allele
+#' dosage by default.
+#' 
 #' @param genotype Path to the genotype data file (without extension).
 #' @param region The target region in the format "chr:start-end".
 #' @param keep_indel Whether to keep indel SNPs.
