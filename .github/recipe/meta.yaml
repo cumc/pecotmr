@@ -45,6 +45,7 @@ requirements:
     - r-mr.mash.alpha
     - r-pgenlibr
     - r-plink2r
+    - bioconductor-snpstats
     - r-purrr
     - r-rcpp
     - r-readr
@@ -79,6 +80,7 @@ requirements:
     - r-mr.mash.alpha
     - r-pgenlibr
     - r-plink2r
+    - bioconductor-snpstats
     - r-purrr
     - r-rcpp
     - r-readr
