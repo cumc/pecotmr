@@ -183,7 +183,7 @@ twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_
                     
                 } else {
                     sapply(1:ncol(Y_train), function(k) {
-                        
+                        if (!is.null(seed)) set.seed(seed)
                         weights <- do.call(method, c(list(X = X_train, y = Y_train[, k]), args))
                         full_weights <- rep(0, ncol(X))
                         full_weights[valid_columns] <- weights
@@ -198,7 +198,7 @@ twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_
         if (num_cores >= 2) {
             cl <- makeCluster(num_cores)
             registerDoParallel(cl)
-            fold_results <- foreach(j = 1:fold, .combine = 'c') %dopar% {
+            fold_results <- foreach(j = 1:fold) %dopar% {
                 process_method(j)
             }
             stopCluster(cl)
@@ -295,7 +295,7 @@ twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_
 #' @importFrom foreach %dopar%
 #' @importFrom doParallel registerDoParallel
 #' @export
-twas_weights <- function(X, Y, weight_methods, num_threads = 1) {
+twas_weights <- function(X, Y, weight_methods, num_threads = 1, seed = NULL) {
     if (!is.matrix(X) || (!is.matrix(Y) && !is.vector(Y))) {
         stop("X must be a matrix and Y must be a matrix or a vector.")
     }
@@ -331,6 +331,7 @@ twas_weights <- function(X, Y, weight_methods, num_threads = 1) {
         } else {
             # Apply univariate method to each column of Y
             # Initialize it with zeros to avoid NA
+            if(!is.null(seed)) set.seed(seed)
             weights_matrix <- matrix(0, nrow = ncol(X_filtered), ncol = ncol(Y))
             for (k in 1:ncol(Y)) {
                 weights_vector <- do.call(method_name, c(list(X = X_filtered, y = Y[, k]), args))
@@ -344,7 +345,7 @@ twas_weights <- function(X, Y, weight_methods, num_threads = 1) {
         # Set up parallel backend to use multiple cores
         cl <- makeCluster(num_cores)
         registerDoParallel(cl)
-        weights_list <- foreach(method_name = names(weight_methods), .combine = 'c') %dopar% {
+        weights_list <- foreach(method_name = names(weight_methods)) %dopar% {
             process_method(method_name)
         }
         stopCluster(cl)
@@ -438,7 +439,7 @@ mrash_weights <- function(X, y, init_prior_sd=TRUE, ...) {
 
 pval_acat <- function(pvals) {
     if (length(pvals) == 1) {
-        return(pvals[0])
+        return(pvals[1])
     }
     stat <- 0.00
     pval_min <- 1.00
@@ -466,7 +467,7 @@ pval_global <- function(pvals, comb_method = "HMP", naive=FALSE) {
     # assuming sstats has tissues as columns and rows as pvals
     min_pval <- min(pvals)
     n_total_tests <- pvals %>% unique() %>% length() # There should be one unique pval per tissue
-    global_pval <- if (comb_method == "HMP") pval_HMP(pvals) else pval_ACAT(pvals) # pval vector
+    global_pval <- if (comb_method == "HMP") pval_hmp(pvals) else pval_acat(pvals) # pval vector
     naive_pval <- min(n_total_tests*min_pval, 1.0)
     return(if (naive) naive_pval else global_pval) # global_pval and naive_pval
 }
