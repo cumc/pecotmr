@@ -264,18 +264,19 @@ add_Y_residuals <- function(data_list, conditions, y_as_matrix = FALSE, scale_re
 load_regional_association_data <- function(genotype, # PLINK file
                                            phenotype, # a vector of phenotype file names 
                                            covariate, # a vector of covariate file names corresponding to the phenotype file vector
-                                           region, # a string of chr:start-end
+                                           region, # a string of chr:start-end for phenotype region
                                            conditions, # a vector of strings
                                            maf_cutoff = 0,
                                            mac_cutoff = 0,
                                            xvar_cutoff = 0,
                                            imiss_cutoff = 0,
+                                           cis_window = NULL, #  a string of chr:start-end for cis-window. If not provided all genotype data will be loaded
                                            y_as_matrix = FALSE,
                                            keep_indel = TRUE,
                                            keep_samples = NULL,
                                            scale_residuals = FALSE) {
     ## Load genotype
-    geno <- load_genotype_region(genotype, region, keep_indel)
+    geno <- load_genotype_region(genotype, cis_window, keep_indel)
     ## Load phenotype and covariates and perform some pre-processing
     covar <- load_covariate_data(covariate)
     pheno <- load_phenotype_data(phenotype, region)
