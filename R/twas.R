@@ -66,6 +66,15 @@ twas_z <- function(weights, z, R=NULL, X=NULL) {
 #' @importFrom doParallel registerDoParallel
 #' @export
 twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_methods = NULL, seed = NULL, num_threads = 1, ...) {
+    
+    split_data <- function(X, Y, sample_partition, fold){
+        test_ids <- sample_partition[which(sample_partition$Fold == fold), "Sample"]
+        Xtrain <- X[!(rownames(X) %in% test_ids), ,drop=F]
+        Ytrain <- Y[!(rownames(Y) %in% test_ids), ,drop=F]
+        Xtest <- X[rownames(X) %in% test_ids, ,drop=F]
+        Ytest <- Y[rownames(Y) %in% test_ids, ,drop=F]
+        return(list(Xtrain=Xtrain, Ytrain=Ytrain, Xtest=Xtest, Ytest=Ytest))
+    }
     # Validation checks
     if (!is.null(fold) && (!is.numeric(fold) || fold <= 0)) {
         stop("Invalid value for 'fold'. It must be a positive integer.")
@@ -116,7 +125,6 @@ twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_
         if (!all(sample_partitions$Sample %in% sample_names)) {
             stop("Some samples in 'sample_partitions' do not match the samples in 'X' and 'Y'.")
         }
-        folds <- sample_partitions$Fold
         sample_partition <- sample_partitions
         fold <- length(unique(sample_partition$Fold))
     } else {
@@ -184,7 +192,6 @@ twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_
             }
             stopCluster(cl)
         } else { 
-            fold <- length(unique(sample_partition$Fold))
             fold_results <- lapply(1:fold, process_method)
         }
                                    
@@ -453,10 +460,8 @@ pval_global <- function(pvals, comb_method = "HMP", naive=FALSE) {
     return(if (naive) naive_pval else global_pval) # global_pval and naive_pval
 }
            
-
-           
-## TWAS with UTMOST framework
-## the utmost paper assumes X are not standardized, in the formula below - the input of X is assumed to be standardized 
+## Multi-condition TWAS joint test
+## the UTMOST paper assumes X are not standardized, in the formula below - the input of X is assumed to be standardized 
 #' @importFrom GBJ GBJ
 #' @export
            
@@ -496,14 +501,4 @@ twas_joint_z <- function(ld, Bhat, gwas_z){
     gbj <- GBJ(test_stats=z[,1], cor_mat=sig)
     rs <- list("Z" =z, "GBJ"=gbj)
     return(rs)
-}
-
-           
-split_data <- function(X, Y, sample_partition, fold){
-  test_ids <- sample_partition[which(sample_partition$Fold == fold), "Sample"]
-  Xtrain <- X[!(rownames(X) %in% test_ids), ]
-  Ytrain <- Y[!(rownames(Y) %in% test_ids), ]
-  Xtest <- X[rownames(X) %in% test_ids, ]
-  Ytest <- Y[rownames(Y) %in% test_ids, ]
-  return(list(Xtrain=Xtrain, Ytrain=Ytrain, Xtest=Xtest, Ytest=Ytest))
-}
+} 
