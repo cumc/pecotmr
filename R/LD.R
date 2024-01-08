@@ -69,6 +69,7 @@ validate_selected_region <- function(start_row, end_row, region_start, region_en
 #' \item{bim_file_paths}{A vector of bim.file paths from df corresponding to the intersected 
 #' regions.}}}
 #' }
+#' @importFrom stringr str_split
 #' @export
 bt_intersect <- function(df, region_strings) {
 
@@ -113,7 +114,6 @@ bt_intersect <- function(df, region_strings) {
   return(list(result_list = result_list, df = df, region_strings= region_strings))
 }
 
-
 #' Function to load and process LD matrix
 #'
 #' @param LD_meta_file A data frame specifying the information of LD blocks with the olumns "chrom",
@@ -130,8 +130,6 @@ bt_intersect <- function(df, region_strings) {
 #' \item{LD}{The linkage disequilibrium block matrix, the row and column names are identical to `variants_id_all`}.
 #' }
 #' @importFrom Matrix bdiag
-#' @importFrom data.table fread
-#' @importFrom stringr str_split
 #' @import dplyr
 #' 
 #' @export
@@ -201,27 +199,27 @@ load_LD_matrix <- function(LD_meta_file, region, extract_coordinate = NULL) {
 
        })
 
-           # combine LD matrices and variant_selected_df from the LD_list
-           LD_matrices <- lapply(LD_list, function(x) x$LD_matrix_list)
-           variants_all_df <- do.call(rbind, lapply(LD_list, function(x) x$variants_selected_df))
-           
-           # Create a block matrix with correct names
-           LD_block <- as.matrix(bdiag(LD_matrices))
+       # combine LD matrices and variant_selected_df from the LD_list
+       LD_matrices <- lapply(LD_list, function(x) x$LD_matrix_list)
+       variants_all_df <- do.call(rbind, lapply(LD_list, function(x) x$variants_selected_df))
+         
+       # Create a block matrix with correct names
+       LD_block <- as.matrix(bdiag(LD_matrices))
 
-           # Check if the matrix is upper diagonal
-           # We assume a matrix is upper diagonal if all elements below the main diagonal are zero
-           is_upper_diagonal <- all(LD_block[lower.tri(LD_block)] == 0)
+       # Check if the matrix is upper diagonal
+       # We assume a matrix is upper diagonal if all elements below the main diagonal are zero
+       is_upper_diagonal <- all(LD_block[lower.tri(LD_block)] == 0)
 
-           if (is_upper_diagonal) {
-           # If the matrix is upper diagonal, transpose the upper triangle to the lower triangle
-           LD_block[lower.tri(LD_block)] <- t(LD_block)[lower.tri(LD_block)]
-           } else {
-           # If the matrix is lower diagonal, transpose the lower triangle to the upper triangle
-           LD_block[upper.tri(LD_block)] <- t(LD_block)[upper.tri(LD_block)]
-           }                             
-           rownames(LD_block) <- colnames(LD_block) <- variants_all_df$variants
-           # Return a list containing the variants_all_df and the LD block matrix
-           return(list("variants_df" = variants_all_df, "LD" = LD_block))
+       if (is_upper_diagonal) {
+        # If the matrix is upper diagonal, transpose the upper triangle to the lower triangle
+        LD_block[lower.tri(LD_block)] <- t(LD_block)[lower.tri(LD_block)]
+       } else {
+        # If the matrix is lower diagonal, transpose the lower triangle to the upper triangle
+        LD_block[upper.tri(LD_block)] <- t(LD_block)[upper.tri(LD_block)]
+       }                             
+       rownames(LD_block) <- colnames(LD_block) <- variants_all_df$variants
+       # Return a list containing the variants_all_df and the LD block matrix
+       return(list("variants_df" = variants_all_df, "LD" = LD_block))
     })
     return(LD_all_list = LD_all_list)
 }
