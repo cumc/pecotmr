@@ -44,8 +44,8 @@ Suggests:
     ggrepel,
     ggnewscale,
     harmonicmeanp,
-    GBJ,
     pgenlibr,
+    GBJ,
     plink2R,
     rmarkdown
 LinkingTo: 
