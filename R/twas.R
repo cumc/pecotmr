@@ -424,19 +424,6 @@ mrash_weights <- function(X, y, init_prior_sd=TRUE, ...) {
     predict(fit.mr.ash, type = "coefficients")[-1]
 }
 
-#' @examples 
-#' wgt.lasso = glmnet_weights(X, y, alpha=1)
-#' wgt.mr.ash = mrash_weights(eqtl$X, eqtl$y_res, beta.init=wgt.lasso)
-#' @importFrom mr.ash.alpha mr.ash
-#' @importFrom stats predict
-#' @export
-mrash_weights <- function(X, y, init_prior_sd=TRUE, ...) {
-    sa2 = NULL
-    if (init_prior_sd) sa2 = init_prior_sd(X,y)^2
-    fit.mr.ash = mr.ash(X, y, sa2=sa2, ...)
-    predict(fit.mr.ash, type = "coefficients")[-1]
-}
-
 pval_acat <- function(pvals) {
     if (length(pvals) == 1) {
         return(pvals[1])
