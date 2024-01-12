@@ -1,14 +1,14 @@
 #' Function to Check if Regions are in increasing order and remove duplicated rows
 #' @importFrom dplyr arrange
 check_consecutive_regions <- function(df) {
-  # Ensure that 'chrom' values are integers, df can be genomic_data or regions_of_interest
+  # Ensure that 'chrom' values are integers, df can be genomic_data or region
   df$chrom <- ifelse(grepl("^chr", df$chrom), 
                      as.integer(sub("^chr", "", df$chrom)), # Remove 'chr' and convert to integer
                      as.integer(df$chrom)) # Convert to integer if not already
   # Remove duplicated rows based on 'chrom' and 'start' columns
   df <- distinct(df, chrom, start, .keep_all = TRUE)
 
-  # Arrange the genomic regions by 'chrom' and 'start' columns
+  # Arrange the genomic_data or region by 'chrom' and 'start' columns
   df <- df %>%
     arrange(chrom, start)
 
