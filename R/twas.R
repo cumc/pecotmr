@@ -373,6 +373,71 @@ susie_weights <- function(X=NULL, y=NULL, susie_fit=NULL, ...) {
         return(rep(0, length(susie_fit$pip)))
     }
 }
+                               
+#convert lbf to alpha
+lbf_to_alpha_vector = function(lbf, prior_weights = NULL) {
+      if (is.null(prior_weights)) prior_weights = rep(1/length(lbf), length(lbf))
+      
+      maxlbf = max(lbf)
+      
+      # If maxlbf is 0, return a vector of zeros
+      if (maxlbf == 0) {
+        return(setNames(rep(0, length(lbf)), names(lbf)))
+      }
+      
+      # w is proportional to BF, subtract max for numerical stability.
+      w = exp(lbf - maxlbf)
+      
+      # Posterior prob for each SNP.
+      w_weighted = w * prior_weights
+      weighted_sum_w = sum(w_weighted)
+      alpha = w_weighted / weighted_sum_w
+      
+      return(alpha)
+    }
+lbf_to_alpha = function(lbf) t(apply(lbf, 1, lbf_to_alpha_vector))
+#' Adjust SuSiE Weights
+#'
+#' This function adjusts the SuSiE weights based on a set of intersected variants.
+#' It subsets various components like lbf_matrix, mu, and scale factors based on these variants.
+#'
+#' @param susie_fit The fitted SuSiE model object.
+#' @param weights the output of `load_twas_weights function`, matrix of twas weights.
+#' @param region Optional; specific genomic region. If NULL, uses the first region in xqtl_data.
+#' @param condition Optional; specific condition. If NULL, uses the first condition in xqtl_data.
+#' @param keep_variants Vector of variant names to keep.
+#' @return Adjusted xQTL coefficients.
+#' @export
+adjust_susie_weights <- function(susie_fit, twas_weights, region = NULL, condition = NULL, keep_variants) {
+  # Intersect the rownames of weights with keep_variants
+  intersected_variants <- intersect(rownames(twas_weights), keep_variants)
+
+  # Read xQTL data
+  xqtl_data <- readRDS(susie_fit)
+
+  # Determine region and condition, defaulting to the first in xqtl_data if not provided
+  region <- ifelse(is.null(region), names(xqtl_data)[1], region)
+  condition <- ifelse(is.null(condition), names(xqtl_data[[region]])[1], condition)
+
+  # Reformat intersected_variants to chrX:pos_ref_alt
+  intersected_variants <- gsub(":", "_", gsub("^([0-9]+):", "chr\\1:", intersected_variants), perl = TRUE)
+  intersected_variants <- sub("_", ":", intersected_variants)
+
+  # Subset lbf_matrix, mu, and x_column_scale_factors
+  lbf_matrix <- xqtl_data[[region]][[condition]]$susie_result_trimmed$lbf_variable
+  mu <- xqtl_data[[region]][[condition]]$susie_result_trimmed$mu
+  x_column_scal_factors <- xqtl_data[[region]][[condition]]$susie_result_trimmed$X_column_scale_factors
+
+  lbf_matrix_subset <- lbf_matrix[, intersected_variants]
+  mu_subset <- mu[, intersected_variants]
+  x_column_scal_factors_subset <- x_column_scal_factors[intersected_variants]
+
+  # Convert lbf_matrix to alpha and calculate adjusted xQTL coefficients
+  adjusted_xqtl_alpha <- lbf_to_alpha(lbf_matrix_subset)
+  adjusted_xqtl_coef <- colSums(adjusted_xqtl_alpha * mu_subset) / x_column_scal_factors_subset
+
+  return(adjusted_xqtl_coef)
+}
 
 #' @importFrom mr.mash.alpha coef.mr.mash
 #' @export
