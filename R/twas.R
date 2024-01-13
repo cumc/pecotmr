@@ -374,28 +374,6 @@ susie_weights <- function(X=NULL, y=NULL, susie_fit=NULL, ...) {
     }
 }
                                
-#convert lbf to alpha
-lbf_to_alpha_vector = function(lbf, prior_weights = NULL) {
-      if (is.null(prior_weights)) prior_weights = rep(1/length(lbf), length(lbf))
-      
-      maxlbf = max(lbf)
-      
-      # If maxlbf is 0, return a vector of zeros
-      if (maxlbf == 0) {
-        return(setNames(rep(0, length(lbf)), names(lbf)))
-      }
-      
-      # w is proportional to BF, subtract max for numerical stability.
-      w = exp(lbf - maxlbf)
-      
-      # Posterior prob for each SNP.
-      w_weighted = w * prior_weights
-      weighted_sum_w = sum(w_weighted)
-      alpha = w_weighted / weighted_sum_w
-      
-      return(alpha)
-    }
-lbf_to_alpha = function(lbf) t(apply(lbf, 1, lbf_to_alpha_vector))
 #' Adjust SuSiE Weights
 #'
 #' This function adjusts the SuSiE weights based on a set of intersected variants.
@@ -408,25 +386,26 @@ lbf_to_alpha = function(lbf) t(apply(lbf, 1, lbf_to_alpha_vector))
 #' @param keep_variants Vector of variant names to keep.
 #' @return Adjusted xQTL coefficients.
 #' @export
+
 adjust_susie_weights <- function(susie_fit, twas_weights, region = NULL, condition = NULL, keep_variants) {
   # Intersect the rownames of weights with keep_variants
   intersected_variants <- intersect(rownames(twas_weights), keep_variants)
+  if (length(intersected_variants) == 0) {
+    stop("Error: No intersected variants found. Please check 'twas_weights' and 'keep_variants' inputs to make sure there are variants left to use.")
+  }
 
-  # Read xQTL data
-  xqtl_data <- readRDS(susie_fit)
-
-  # Determine region and condition, defaulting to the first in xqtl_data if not provided
-  region <- ifelse(is.null(region), names(xqtl_data)[1], region)
-  condition <- ifelse(is.null(condition), names(xqtl_data[[region]])[1], condition)
+  # Determine region and condition, defaulting to the first in susie_fit object if not provided
+  region <- ifelse(is.null(region), names(susie_fit)[1], region)
+  condition <- ifelse(is.null(condition), names(susie_fit[[region]])[1], condition)
 
   # Reformat intersected_variants to chrX:pos_ref_alt
   intersected_variants <- gsub(":", "_", gsub("^([0-9]+):", "chr\\1:", intersected_variants), perl = TRUE)
   intersected_variants <- sub("_", ":", intersected_variants)
 
   # Subset lbf_matrix, mu, and x_column_scale_factors
-  lbf_matrix <- xqtl_data[[region]][[condition]]$susie_result_trimmed$lbf_variable
-  mu <- xqtl_data[[region]][[condition]]$susie_result_trimmed$mu
-  x_column_scal_factors <- xqtl_data[[region]][[condition]]$susie_result_trimmed$X_column_scale_factors
+  lbf_matrix <- susie_fit[[region]][[condition]]$susie_result_trimmed$lbf_variable
+  mu <- susie_fit[[region]][[condition]]$susie_result_trimmed$mu
+  x_column_scal_factors <- susie_fit[[region]][[condition]]$susie_result_trimmed$X_column_scale_factors
 
   lbf_matrix_subset <- lbf_matrix[, intersected_variants]
   mu_subset <- mu[, intersected_variants]
