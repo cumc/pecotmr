@@ -156,12 +156,12 @@ susie_post_processor <- function(susie_output, X_data, y_data, X_scalar, y_scala
         y_scalar <- if (is.null(y_scalar) || all(y_scalar == 1)) 1 else y_scalar[top_loci$variant_idx]
         X_scalar <- if (is.null(X_scalar) || all(X_scalar == 1)) 1 else X_scalar[top_loci$variant_idx]
         top_loci_cols <- c("variant_id", if (!is.null(maf)) "maf", "bhat", "sbhat", "pip", colnames(top_loci)[-1])
-        susie_output$top_loci <- cbind(data.frame(variants, maf = if (!is.null(maf)) maf[top_loci$variant_idx] else NULL, 
+        res$top_loci <- cbind(data.frame(variants, maf = if (!is.null(maf)) maf[top_loci$variant_idx] else NULL, 
                                     res$sumstats$betahat[top_loci$variant_idx] * y_scalar / X_scalar, 
                                     res$sumstats$sebetahat[top_loci$variant_idx] * y_scalar / X_scalar, 
                                     pip, stringsAsFactors = FALSE), top_loci[,-1])
-        colnames(susie_output$top_loci) <- top_loci_cols
-        rownames(susie_output$top_loci) <- NULL
+        colnames(res$top_loci) <- top_loci_cols
+        rownames(res$top_loci) <- NULL
         names(susie_output$pip) <- NULL
         res$susie_result_trimmed <- list(
             pip = susie_output$pip,

@@ -373,6 +373,50 @@ susie_weights <- function(X=NULL, y=NULL, susie_fit=NULL, ...) {
         return(rep(0, length(susie_fit$pip)))
     }
 }
+                               
+#' Adjust SuSiE Weights
+#'
+#' This function adjusts the SuSiE weights based on a set of intersected variants.
+#' It subsets various components like lbf_matrix, mu, and scale factors based on these variants.
+#'
+#' @param susie_fit The fitted SuSiE model object.
+#' @param weights the output of `load_twas_weights function`, matrix of twas weights.
+#' @param region Optional; specific genomic region. If NULL, uses the first region in xqtl_data.
+#' @param condition Optional; specific condition. If NULL, uses the first condition in xqtl_data.
+#' @param keep_variants Vector of variant names to keep.
+#' @return Adjusted xQTL coefficients.
+#' @export
+
+adjust_susie_weights <- function(susie_fit, twas_weights, region = NULL, condition = NULL, keep_variants) {
+  # Intersect the rownames of weights with keep_variants
+  intersected_variants <- intersect(rownames(twas_weights), keep_variants)
+  if (length(intersected_variants) == 0) {
+    stop("Error: No intersected variants found. Please check 'twas_weights' and 'keep_variants' inputs to make sure there are variants left to use.")
+  }
+
+  # Determine region and condition, defaulting to the first in susie_fit object if not provided
+  region <- ifelse(is.null(region), names(susie_fit)[1], region)
+  condition <- ifelse(is.null(condition), names(susie_fit[[region]])[1], condition)
+
+  # Reformat intersected_variants to chrX:pos_ref_alt
+  intersected_variants <- gsub(":", "_", gsub("^([0-9]+):", "chr\\1:", intersected_variants), perl = TRUE)
+  intersected_variants <- sub("_", ":", intersected_variants)
+
+  # Subset lbf_matrix, mu, and x_column_scale_factors
+  lbf_matrix <- susie_fit[[region]][[condition]]$susie_result_trimmed$lbf_variable
+  mu <- susie_fit[[region]][[condition]]$susie_result_trimmed$mu
+  x_column_scal_factors <- susie_fit[[region]][[condition]]$susie_result_trimmed$X_column_scale_factors
+
+  lbf_matrix_subset <- lbf_matrix[, intersected_variants]
+  mu_subset <- mu[, intersected_variants]
+  x_column_scal_factors_subset <- x_column_scal_factors[intersected_variants]
+
+  # Convert lbf_matrix to alpha and calculate adjusted xQTL coefficients
+  adjusted_xqtl_alpha <- lbf_to_alpha(lbf_matrix_subset)
+  adjusted_xqtl_coef <- colSums(adjusted_xqtl_alpha * mu_subset) / x_column_scal_factors_subset
+
+  return(adjusted_xqtl_coef)
+}
 
 #' @importFrom mr.mash.alpha coef.mr.mash
 #' @export
@@ -421,19 +465,6 @@ mrash_weights <- function(X, y, init_prior_sd=TRUE, ...) {
         args_list$beta.init <- lasso_weights(X, y)
     }
     fit.mr.ash <- do.call("mr.ash", c(list(X = X, y = y, sa2 = ifelse(init_prior_sd, init_prior_sd(X, y)^2, NULL)), args_list))
-    predict(fit.mr.ash, type = "coefficients")[-1]
-}
-
-#' @examples 
-#' wgt.lasso = glmnet_weights(X, y, alpha=1)
-#' wgt.mr.ash = mrash_weights(eqtl$X, eqtl$y_res, beta.init=wgt.lasso)
-#' @importFrom mr.ash.alpha mr.ash
-#' @importFrom stats predict
-#' @export
-mrash_weights <- function(X, y, init_prior_sd=TRUE, ...) {
-    sa2 = NULL
-    if (init_prior_sd) sa2 = init_prior_sd(X,y)^2
-    fit.mr.ash = mr.ash(X, y, sa2=sa2, ...)
     predict(fit.mr.ash, type = "coefficients")[-1]
 }
 
