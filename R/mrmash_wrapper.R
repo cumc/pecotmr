@@ -101,10 +101,8 @@
 
 mrmash_wrapper <- function(X, 
                            Y, 
-                           prior_data_driven_matrices, 
+                           prior_data_driven_matrices=NULL, 
                            prior_grid=NULL, 
-                           bhat = NULL, 
-                           sbhat= NULL,
                            nthreads=2,
                            prior_canonical_matrices = FALSE,
                            standardize=FALSE, 
@@ -162,7 +160,7 @@ mrmash_wrapper <- function(X,
       out <- compute_coefficients_glasso(X, Y, standardize=standardize, nthreads=nthreads, Xnew=NULL)
   }
     
-  B_init <- out$Bhat
+  B_init <- as.matrix(out$Bhat)
   w0 <- compute_w0(B_init, length(S0))
 
 
