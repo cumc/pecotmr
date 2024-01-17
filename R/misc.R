@@ -154,12 +154,10 @@ load_phenotype_data <- function(phenotype_path, region) {
   return(map(phenotype_path, ~ tabix_region(.x, region) %>% select(-4) %>% t() %>% as.matrix()))
 }
 			 
-## Retain the phenotype pos information (first three col for each element in the list) from the pheno object before discarding them, In reality we only need the second column but I think it is best to keep all of them in case those were used in the future.
-load_phenotype_pos <- function(phenotype_list){ 
+## extract phenotype coordiate information (first three col for each element in the list) 
+extract_phenotype_coordinates <- function(phenotype_list){ 
 		return(map(phenotype_list,~t(.x[1:3,])%>%as_tibble%>%mutate(start = as.numeric(start),end = as.numeric(end))  )) 
- 	}
-			 
-
+}
 			 
 filter_by_common_samples <- function(dat, common_samples) {
   dat[common_samples, , drop = FALSE] %>% .[order(rownames(.)), ]
@@ -293,7 +291,7 @@ load_regional_association_data <- function(genotype, # PLINK file
     ## Load phenotype and covariates and perform some pre-processing
     covar <- load_covariate_data(covariate)
     pheno <- load_phenotype_data(phenotype, region)
-	pheno_pos_list =  load_phenotype_pos(pheno)
+  	pheno_coordinates <-  extract_phenotype_coordinates(pheno)
     ### including Y ( cov ) and specific X and covar match, filter X variants based on the overlapped samples.
     data_list <- prepare_data_list(geno, pheno, covar, imiss_cutoff,
                                     maf_cutoff, mac_cutoff, xvar_cutoff, keep_samples)
@@ -321,7 +319,7 @@ load_regional_association_data <- function(genotype, # PLINK file
       maf = maf_list,
       chrom = region[1],
       grange = unlist(strsplit(region[2], "-", fixed = TRUE)),
-	  pheno_pos_list = pheno_pos_list # each element is the cood for each element of residual_Y, or each col of residual_Y if residual_Y is a matrix.
+	    Y_coordinates = pheno_coordinates # each element is the cood for each element of residual_Y, or each col of residual_Y if residual_Y is a matrix.
     ))
 }
 
