@@ -153,7 +153,12 @@ load_covariate_data <- function(covariate_path) {
 load_phenotype_data <- function(phenotype_path, region) {
   return(map(phenotype_path, ~ tabix_region(.x, region) %>% select(-4) %>% t() %>% as.matrix()))
 }
-
+			 
+## extract phenotype coordiate information (first three col for each element in the list) 
+extract_phenotype_coordinates <- function(phenotype_list){ 
+		return(map(phenotype_list,~t(.x[1:3,])%>%as_tibble%>%mutate(start = as.numeric(start),end = as.numeric(end))  )) 
+}
+			 
 filter_by_common_samples <- function(dat, common_samples) {
   dat[common_samples, , drop = FALSE] %>% .[order(rownames(.)), ]
 }
@@ -288,6 +293,7 @@ load_regional_association_data <- function(genotype, # PLINK file
     ## Load phenotype and covariates and perform some pre-processing
     covar <- load_covariate_data(covariate)
     pheno <- load_phenotype_data(phenotype, region)
+  	pheno_coordinates <-  extract_phenotype_coordinates(pheno)
     ### including Y ( cov ) and specific X and covar match, filter X variants based on the overlapped samples.
     data_list <- prepare_data_list(geno, pheno, covar, imiss_cutoff,
                                     maf_cutoff, mac_cutoff, xvar_cutoff, keep_samples)
@@ -314,7 +320,8 @@ load_regional_association_data <- function(genotype, # PLINK file
       X = X,
       maf = maf_list,
       chrom = region[1],
-      grange = unlist(strsplit(region[2], "-", fixed = TRUE))
+      grange = unlist(strsplit(region[2], "-", fixed = TRUE)),
+	    Y_coordinates = pheno_coordinates # each element is the cood for each element of residual_Y, or each col of residual_Y if residual_Y is a matrix.
     ))
 }
 
@@ -383,6 +390,15 @@ load_regional_multivariate_data <- function(matrix_y_min_complete = NULL, # when
         ))
 }
 
+#' @return A list
+#' @export
+load_regional_functional_data <- function(...) {
+  dat <- load_regional_association_data(...)
+  return (dat)
+}
+
+
+					   
 #' Load, Validate, and Consolidate TWAS Weights from Multiple RDS Files
 #'
 #' This function loads TWAS weight data from multiple RDS files, checks for the presence
