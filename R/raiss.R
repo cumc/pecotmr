@@ -6,7 +6,7 @@
 #' Noah Zaitlen, et al., titled "Fast and accurate imputation of summary
 #' statistics enhances evidence of functional enrichment", published in
 #' Bioinformatics in 2014.
-#' @param ref_panel A data frame containing 'chr', 'pos', 'variant_id', 'ref', and 'alt'.
+#' @param ref_panel A data frame containing 'chr', 'pos', 'variant_id', 'A0', and 'A1'.
 #' @param known_zscores A data frame containing 'chr', 'pos', 'variant_id', 'A0', 'A1', and 'Z' values.
 #' @param LD_matrix A square matrix of dimension equal to the number of rows in ref_panel.
 #' @param lamb Regularization term added to the diagonal of the LD_matrix in the RAImputation model.
@@ -15,6 +15,8 @@
 #' @param minimum_ld Minimum LD score threshold for SNP filtering.
 #'
 #' @return A data frame that is the result of merging the imputed SNP data with known z-scores.
+#' @importFrom dplyr is.unsorted
+#' @importFrom dplyr arrange
 #' @export
 #'
 #' @examples
@@ -22,14 +24,17 @@
 #' # result <- raiss(ref_panel, known_zscores, LD_matrix, lamb = 0.01, rcond = 0.01, R2_threshold = 0.6, minimum_ld = 5)
 raiss <- function(ref_panel, known_zscores, LD_matrix, lamb = 0.01, rcond = 0.01, R2_threshold = 0.6, minimum_ld = 5) {
   # Check that ref_panel and known_zscores are both increasing in terms of pos
-  if (!is.ordered(ref_panel$pos) || !is.ordered(known_zscores$pos)) {
+  if (is.unsorted(known_zscore$pos)|| is.unsorted(known_zscore$pos)) {
     stop("ref_panel and known_zscores must be in increasing order of pos.")
   }
 
   # Define knowns and unknowns
-  knowns <- match(known_zscores$variant_id, ref_panel$variant_id)
-  unknowns <- setdiff(seq_len(nrow(ref_panel)), knowns)
-
+    knowns_id = intersect(known_zscores$variant_id, ref_panel$variant_id)
+    knowns =which(ref_panel$variant_id %in% knowns_id)
+    unknowns = which(!ref_panel$variant_id %in% knowns_id)
+    if(is.data.frame(LD_matrix)){
+        LD_matrix = as.matrix(LD_matrix)
+    }
   # Extract zt, sig_t, and sig_i_t
   zt <- known_zscores$Z
   sig_t <- LD_matrix[knowns, knowns]
@@ -92,9 +97,9 @@ format_raiss_df <- function(imp, ref_panel, unknowns) {
   result_df <- data.frame(
     chr = ref_panel[unknowns, 'chr'],
     pos = ref_panel[unknowns, 'pos'],
-    id = ref_panel[unknowns, 'variant_id'],
-    A0 = ref_panel[unknowns, 'ref'],
-    A1 = ref_panel[unknowns, 'alt'],
+    variant_id = ref_panel[unknowns, 'variant_id'],
+    A0 = ref_panel[unknowns, 'A0'],
+    A1 = ref_panel[unknowns, 'A1'],
     Z = imp$mu,
     Var = imp$var,
     ld_score = imp$ld_score,
@@ -103,7 +108,7 @@ format_raiss_df <- function(imp, ref_panel, unknowns) {
   )
 
   # Specify the column order
-  column_order <- c('chr', 'pos', 'variant_id', 'A0', 'A1', 'Z', 'Var', 'ld_score', 'condition_number', 
+  column_order <- c('chr', 'pos', 'variant_id', "A0", "A1", 'Z', 'Var', 'ld_score', 'condition_number', 
                     'correct_inversion')
 
   # Reorder the columns
@@ -113,7 +118,7 @@ format_raiss_df <- function(imp, ref_panel, unknowns) {
 
 merge_raiss_df <- function(raiss_df, known_zscores) {
   # Merge the data frames
-  merged_df <- merge(raiss_df, known_zscores, by = c("chr", "pos", "variant_id"), all = TRUE)
+  merged_df <- merge(raiss_df, known_zscores, by = c("chr", "pos", "variant_id", "A0", "A1"), all = TRUE)
 
   # Identify rows that came from known_zscores
   from_known <- !is.na(merged_df$Z.y) & is.na(merged_df$Z.x)
@@ -128,14 +133,14 @@ merge_raiss_df <- function(raiss_df, known_zscores) {
 
   # Remove the extra columns resulted from the merge (e.g., Z.x, Z.y)
   merged_df <- merged_df[, !colnames(merged_df) %in% c("Z.x", "Z.y")]
-
+  merged_df = arrange(merged_df, pos)
   return(merged_df)
 }
 
 
 filter_raiss_output <- function(zscores, R2_threshold = 0.6, minimum_ld = 5) {
   # Reset the index and subset the data frame
-  zscores <- zscores[, c('variant_id', 'A0', 'A1', 'Z', 'Var', 'ld_score')]
+  zscores <- zscores[, c('chr', 'pos', 'variant_id', 'A0', 'A1', 'Z', 'Var', 'ld_score')]
   zscores$imputation_R2 <- 1 - zscores$Var
 
   # Count statistics before filtering
