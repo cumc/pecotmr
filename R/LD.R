@@ -204,7 +204,7 @@ create_combined_LD_matrix <- function(LD_matrices, variants) {
 #' @export
 load_LD_matrix <- function(LD_metadata, region, extract_coordinates = NULL) {
     # Intersect LD metadata with specified regions using updated function
-    intersected_LD_files <- intersect_genomic_regions(LD_metadata, region)
+    intersected_LD_files <- intersect_genomic_region(LD_metadata, region)
 
     # Extract file paths for LD and bim files
     LD_file_paths <- intersected_LD_files$intersections$LD_file_paths
