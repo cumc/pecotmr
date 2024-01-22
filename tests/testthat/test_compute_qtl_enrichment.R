@@ -29,20 +29,24 @@ generate_mock_data <- function(seed=1, num_pips = 1000, num_susie_fits = 2) {
 }
 
 test_that("compute_qtl_enrichment dummy data single-threaded works",{
-  input_data <- generate_mock_data(seed=1)
+  local_mocked_bindings(
+      qtl_enrichment_rcpp = function(...) TRUE)
+  input_data <- generate_mock_data(seed=1, num_pips=10)
   expect_warning(
-    compute_qtl_enrichment(input_data$gwas_fit, input_data$susie_fits, lambda = 1, ImpN = 10, num_threads = 1),
+    compute_qtl_enrichment(input_data$gwas_fit$pip, input_data$susie_fits, lambda = 1, ImpN = 10, num_threads = 1),
     "Using data to estimate pi_gwas. This will be problematic if your input gwas_pip does not contain genome-wide variants.")
   expect_warning(
-    compute_qtl_enrichment(input_data$gwas_fit, input_data$susie_fits, lambda = 1, ImpN = 10, num_threads = 1),
+    compute_qtl_enrichment(input_data$gwas_fit$pip, input_data$susie_fits, lambda = 1, ImpN = 10, num_threads = 1),
     "Using data to estimate pi_qtl. This will be problematic if either 1) your input susie_qtl_regions is not genome-wide, or 2) your single effects only includes variables inside of credible sets or signal clusters.")
-  res <- compute_qtl_enrichment(input_data$gwas_fit, input_data$susie_fits, pi_gwas=0.5141, pi_qtl=0.49819, lambda = 1, ImpN = 10, num_threads = 1)
+  res <- compute_qtl_enrichment(input_data$gwas_fit$pip, input_data$susie_fits, pi_gwas=0.5141, pi_qtl=0.49819, lambda = 1, ImpN = 10, num_threads = 1)
   expect_true(length(res) > 0)
 })
 
 test_that("compute_qtl_enrichment dummy data single thread and multi-threaded are equivalent",{
-  input_data <- generate_mock_data(seed=1)
-  res_single <- compute_qtl_enrichment(input_data$gwas_fit, input_data$susie_fits, pi_gwas=0.5141, pi_qtl=0.49819, lambda = 1, ImpN = 10, num_threads = 1)
-  res_multi <- compute_qtl_enrichment(input_data$gwas_fit, input_data$susie_fits, pi_gwas=0.5141, pi_qtl=0.49819, lambda = 1, ImpN = 10, num_threads = 2)
+  local_mocked_bindings(
+      qtl_enrichment_rcpp = function(...) TRUE)
+  input_data <- generate_mock_data(seed=1, num_pips=10)
+  res_single <- compute_qtl_enrichment(input_data$gwas_fit$pip, input_data$susie_fits, pi_gwas=0.5141, pi_qtl=0.49819, lambda = 1, ImpN = 10, num_threads = 1)
+  res_multi <- compute_qtl_enrichment(input_data$gwas_fit$pip, input_data$susie_fits, pi_gwas=0.5141, pi_qtl=0.49819, lambda = 1, ImpN = 10, num_threads = 2)
   expect_equal(res_single, res_multi)
 })

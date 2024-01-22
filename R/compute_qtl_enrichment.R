@@ -62,7 +62,7 @@ compute_qtl_enrichment <- function(gwas_pip, susie_qtl_regions,
                            num_threads = 1) {
   if (is.null(pi_gwas)) {
     warning("Using data to estimate pi_gwas. This will be problematic if your input gwas_pip does not contain genome-wide variants.")
-    pi_gwas = sum(gwas_pip$pip) / length(gwas_pip$pip)
+    pi_gwas = sum(gwas_pip) / length(gwas_pip)
     cat(paste("Estimated pi_gwas is:", round(pi_gwas, 5), "\n"))
   }
   if (is.null(pi_qtl)) {
@@ -82,7 +82,7 @@ compute_qtl_enrichment <- function(gwas_pip, susie_qtl_regions,
   # Here we don't check if SNP names match between GWAS and xQTL. 
   # We will report the overlapping status in the Rcpp code to stdout about the proportion of xQTL that are missing in GWAS.
 
-  en <- qtl_enrichment_rcpp(r_gwas_pip = gwas_pip$pip, 
+  en <- qtl_enrichment_rcpp(r_gwas_pip = gwas_pip, 
                          r_qtl_susie_fit = susie_qtl_regions,
                          pi_gwas = pi_gwas,
                          pi_qtl = pi_qtl,
