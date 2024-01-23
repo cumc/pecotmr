@@ -78,7 +78,7 @@ xqtl_enrichment_wrapper <- function(gwas_finemapped_data, xqtl_finemapped_data,
 #' @param xqtl_finemapping_obj Optional table name in xQTL RDS files (default 'susie_fit').
 #' @param enrich_res enirchment results from xqtl_enrichment_wrapper.
 
-#' @return A list containing the processed xQTL and GWAS logBF matrices for colocalization analysis, coloc results, output from the compute_qtl_enrichment function and num_dropped_cols
+#' @return A list containing the processed xQTL and GWAS logBF matrices for colocalization analysis, coloc results, output from the compute_qtl_enrichment function
 #' @examples
 #' xqtl_file <- "xqtl_file.rds"
 #' gwas_files <- c("gwas_file1.rds", "gwas_file2.rds")
@@ -133,11 +133,11 @@ coloc_wrapper <- function(xqtl_file, gwas_files,
 
     # Report the number of dropped columns from xQTL matrix
     num_dropped_cols <- length(setdiff(colnames(xqtl_lbf_matrix), common_colnames))
-
+    message("Number of columns dropped from xQTL matrix: ", num_dropped_cols)
 
     # Return the processed data for now
     # FIXME: do we only keep trimmed lbf_matrix or not 
     # COLOC function 
     coloc_res <- coloc::coloc.bf_bf(xqtl_lbf_matrix, combined_gwas_lbf_matrix, p1 = enrich_res$`Alternative (coloc) p1`, p2 = enrich_res$`Alternative (coloc) p2`, p12 = enrich_res$`Alternative (coloc) p12`)
-    return(list(xqtl_lbf_matrix_trim = xqtl_lbf_matrix, combined_gwas_lbf_matrix_trim = combined_gwas_lbf_matrix, coloc = coloc_res, enrichment = enrich_res, num_dropped_cols = num_dropped_cols))
+    return(list(xqtl_lbf_matrix_trim = xqtl_lbf_matrix, combined_gwas_lbf_matrix_trim = combined_gwas_lbf_matrix, coloc = coloc_res, enrichment = enrich_res))
 }
