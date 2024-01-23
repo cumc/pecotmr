@@ -6,9 +6,9 @@
 \usage{
 load_twas_weights(
   weight_db_files,
-  condition,
-  region,
-  variable_name_obj = NULL,
+  condition = NULL,
+  region = NULL,
+  variable_name_obj = "variant_names",
   twas_weights_table = "twas_weights"
 )
 }

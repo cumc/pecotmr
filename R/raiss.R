@@ -15,7 +15,6 @@
 #' @param minimum_ld Minimum LD score threshold for SNP filtering.
 #'
 #' @return A data frame that is the result of merging the imputed SNP data with known z-scores.
-#' @importFrom dplyr is.unsorted
 #' @importFrom dplyr arrange
 #' @export
 #'
@@ -68,7 +67,9 @@ raiss <- function(ref_panel, known_zscores, LD_matrix, lamb = 0.01, rcond = 0.01
 #'         'correct_inversion'.
 raiss_model <- function(zt, sig_t, sig_i_t, lamb=0.01, rcond=0.01, batch=TRUE, report_condition_number=FALSE) {
   sig_t_inv <- invert_mat_recursive(sig_t, lamb, rcond)
-
+  if (!is.numeric(zt) || !is.numeric(sig_t) || !is.numeric(sig_i_t)) {
+    stop("zt, sig_t, and sig_i_t must be numeric.")
+  }
   if (batch) {
     
     condition_number <- if(report_condition_number) rep(kappa(sig_t, exact=T, norm="2"), nrow(sig_i_t)) else NA
@@ -136,7 +137,6 @@ merge_raiss_df <- function(raiss_df, known_zscores) {
   merged_df = arrange(merged_df, pos)
   return(merged_df)
 }
-
 
 filter_raiss_output <- function(zscores, R2_threshold = 0.6, minimum_ld = 5) {
   # Reset the index and subset the data frame
@@ -219,10 +219,14 @@ invert_mat_recursive <- function(mat, lamb, rcond) {
   })
 }
 
-invert_mat_eigen <- function(mat, tol = 1e-3){
+invert_mat_eigen <- function(mat, tol = 1e-3) {
     
     eigen_mat <- eigen(mat)
     L <- which(cumsum(eigen_mat$values) / sum(eigen_mat$values) > 1-tol)[1]
+    if (is.na(L)) {
+      # all eigen values are extremely small
+      stop("Cannot invert the input matrix because all its eigen values are negative or close to zero")
+    }
     mat_inv <- eigen_mat$vectors[,1:L] %*% 
         diag(1/eigen_mat$values[1:L]) %*% 
         t(eigen_mat$vectors[,1:L])

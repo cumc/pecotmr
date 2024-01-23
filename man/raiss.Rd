@@ -15,7 +15,7 @@ raiss(
 )
 }
 \arguments{
-\item{ref_panel}{A data frame containing 'chr', 'pos', 'variant_id', 'ref', and 'alt'.}
+\item{ref_panel}{A data frame containing 'chr', 'pos', 'variant_id', 'A0', and 'A1'.}
 
 \item{known_zscores}{A data frame containing 'chr', 'pos', 'variant_id', 'A0', 'A1', and 'Z' values.}
 

@@ -357,6 +357,11 @@ twas_weights <- function(X, Y, weight_methods, num_threads = 1, seed = NULL) {
     return(weights_list)
 }
 
+#' @export
+twas_predict <- function(X, weights_list) {
+   setNames(lapply(weights_list, function(w) X %*% w), names(weights_list))
+}
+
 #' @importFrom susieR coef.susie
 #' @export
 susie_weights <- function(X=NULL, y=NULL, susie_fit=NULL, ...) {

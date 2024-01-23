@@ -67,6 +67,13 @@ xqtl_enrichment_wrapper <- function(gwas_finemapped_data, xqtl_finemapped_data,
                                 num_threads = num_threads))
 } 
 
+# xqtl_enrichment_wrapper:: Notes
+## gwas_data$pip is a collection of numeric elements. 
+## gwas_pip is a list that collects each collection of pips per finemapping object.
+## So gwas_pip is a c(list(...), list(...), list(...)).
+## Then gwas_pip is collapsed so c(list(...), list(...), list(...)) => c(...)
+## That gets assigned to gwas_pip pased to compute_qtl_enrichment, but that function expects an object with 
+## $pip present
 
 #' Colocalization Analysis Wrapper
 #'

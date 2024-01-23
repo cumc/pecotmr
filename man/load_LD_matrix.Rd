@@ -2,28 +2,27 @@
 % Please edit documentation in R/LD.R
 \name{load_LD_matrix}
 \alias{load_LD_matrix}
-\title{Function to load and process LD matrix}
+\title{Load and Process Linkage Disequilibrium (LD) Matrix}
 \usage{
-load_LD_matrix(LD_meta_file, region, extract_coordinate = NULL)
+load_LD_matrix(LD_metadata, region, extract_coordinates = NULL)
 }
 \arguments{
-\item{LD_meta_file}{A data frame specifying the information of LD blocks with the olumns "chrom",
-"start", "end" and "path" (contains LD_path and bim_path (optional), comma-separated). "start" and "end" are the start and end, 
-positions  of LD blocks, respectively. "path" is the path of each LD block. "bim_path" is the bim.file path of each LD matrix.}
+\item{LD_metadata}{A data frame specifying LD blocks with columns "chrom", "start", "end", and "path".
+"start" and "end" denote the positions of LD blocks. "path" is the path of each LD block, optionally including bim file paths.}
 
-\item{region}{A data frame specifying the regions of interest with the columns "chrom", "start" and "end".}
+\item{region}{A data frame specifying region of interest with columns "chrom", "start", and "end".}
 
-\item{extract_coordinate}{A data frame with the columns "chrom","pos" to be extracted (optional).}
+\item{extract_coordinates}{Optional data frame with columns "chrom" and "pos" for specific coordinates extraction.}
 }
 \value{
-A list containing:
+A list of processed LD matrices and associated variant data frames for region of interest.
+Each element of the list contains:
 \describe{
-\item{variants_df}{merge the variants_selected_df within each LD block to a data frame in the 
-format of bim file with the columns "chrom", "variants", 
-"GD", "pos", "A1" and "A2".}
-\item{LD}{The linkage disequilibrium block matrix, the row and column names are identical to `variants_id_all`}.
+\item{combined_LD_variants}{A data frame merging selected variants within each LD block in bim file format with columns "chrom", "variants", 
+"GD", "pos", "A1", and "A2".}
+\item{combined_LD_matrix}{The LD matrix for each region, with row and column names matching variant identifiers.}
 }
 }
 \description{
-Function to load and process LD matrix
+Load and Process Linkage Disequilibrium (LD) Matrix
 }
