@@ -15,7 +15,6 @@
 #' @param minimum_ld Minimum LD score threshold for SNP filtering.
 #'
 #' @return A data frame that is the result of merging the imputed SNP data with known z-scores.
-#' @importFrom dplyr is.unsorted
 #' @importFrom dplyr arrange
 #' @export
 #'
@@ -24,7 +23,7 @@
 #' # result <- raiss(ref_panel, known_zscores, LD_matrix, lamb = 0.01, rcond = 0.01, R2_threshold = 0.6, minimum_ld = 5)
 raiss <- function(ref_panel, known_zscores, LD_matrix, lamb = 0.01, rcond = 0.01, R2_threshold = 0.6, minimum_ld = 5) {
   # Check that ref_panel and known_zscores are both increasing in terms of pos
-  if (is.unsorted(known_zscores$pos)|| is.unsorted(known_zscores$pos)) {
+  if (is.unsorted(ref_panel$pos)|| is.unsorted(known_zscores$pos)) {
     stop("ref_panel and known_zscores must be in increasing order of pos.")
   }
 
@@ -220,13 +219,17 @@ invert_mat_recursive <- function(mat, lamb, rcond) {
   })
 }
 
-invert_mat_eigen <- function(mat, tol = 1e-3){
+invert_mat_eigen <- function(mat, tol = 1e-3) {
     
     eigen_mat <- eigen(mat)
     L <- which(cumsum(eigen_mat$values) / sum(eigen_mat$values) > 1-tol)[1]
-    mat_inv <- if(!is.na(L)) eigen_mat$vectors[,1:L] %*% 
+    if (is.na(L)) {
+      # all eigen values are extremely small
+      stop("Cannot invert the input matrix because all its eigen values are negative or close to zero")
+    }
+    mat_inv <- eigen_mat$vectors[,1:L] %*% 
         diag(1/eigen_mat$values[1:L]) %*% 
-        t(eigen_mat$vectors[,1:L]) else mat
+        t(eigen_mat$vectors[,1:L])
     
     return(mat_inv)
 }
