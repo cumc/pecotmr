@@ -1,10 +1,10 @@
 #' Match alleles between summary statistics and SNP information.
 #' 
-#' Match by ("chr", "A1", "A2" and "pos"), accounting for possible
+#' Match by ("chrom", "A1", "A2" and "pos"), accounting for possible
 #' strand flips and major/minor allele flips (opposite effects and zscores).
 #' 
-#' @param sumstats A data frame with columns "chr", "pos", "A1", "A2", "beta" and "z". 
-#' @param info_snp A data frame with columns "chr", "pos", "A1" and "A2".
+#' @param sumstats A data frame with columns "chrom", "pos", "A1", "A2", "beta" and "z". 
+#' @param info_snp A data frame with columns "chrom", "pos", "A1" and "A2".
 #' @param match.min.prop  Minimum proportion of variants in the smallest data
 #' to be matched, otherwise stops with an error. Default is 20\%.
 #' @param remove_dups Whether to remove duplicates, default is True.
