@@ -24,7 +24,7 @@
 #' # result <- raiss(ref_panel, known_zscores, LD_matrix, lamb = 0.01, rcond = 0.01, R2_threshold = 0.6, minimum_ld = 5)
 raiss <- function(ref_panel, known_zscores, LD_matrix, lamb = 0.01, rcond = 0.01, R2_threshold = 0.6, minimum_ld = 5) {
   # Check that ref_panel and known_zscores are both increasing in terms of pos
-  if (is.unsorted(known_zscore$pos)|| is.unsorted(known_zscore$pos)) {
+  if (is.unsorted(ref_panel$pos)|| is.unsorted(known_zscores$pos)) {
     stop("ref_panel and known_zscores must be in increasing order of pos.")
   }
 
