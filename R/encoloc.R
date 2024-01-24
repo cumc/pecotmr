@@ -66,8 +66,6 @@ xqtl_enrichment_wrapper <- function(xqtl_files, gwas_files,
             prior_variance = xqtl_data$V)
     })
     
-    alpha_combined <- do.call(rbind, lapply(xqtl_data, function(data) data$alpha))
-
     # Return results as a list
     return(list(gwas_pip = gwas_pip, xqtl_data = xqtl_data))
   } 
