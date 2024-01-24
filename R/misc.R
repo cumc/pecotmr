@@ -154,8 +154,11 @@ NoPhenotypeError <- function(message) {
   structure(list(message = message), class = c("NoPhenotypeError", "error", "condition"))
 }
 
+#' @importFrom purrr map compact
+#' @noRd 
 load_phenotype_data <- function(phenotype_path, region) {
-  phenotype_data <- map(phenotype_path, ~ {
+  # `compact` should remove all NULL elements
+  phenotype_data <- compact(map(phenotype_path, ~ {
     tabix_data <- tabix_region(.x, region)
     if (nrow(tabix_data) == 0) { # Check if tabix_region returns empty
       message("Phenotype file ", .x, " is empty for the specified region.")
@@ -166,10 +169,10 @@ load_phenotype_data <- function(phenotype_path, region) {
       select(-4) %>%
       t() %>%
       as.matrix()
-  })
+  }))
 
   # Check if all phenotype files are empty
-  if (all(is.null(phenotype_data))) {
+  if (length(phenotype_data) == 0) {
     stop(NoPhenotypeError("All phenotype files are empty for the specified region."))
   }
 
@@ -313,7 +316,7 @@ load_regional_association_data <- function(genotype, # PLINK file
     ## Load phenotype and covariates and perform some pre-processing
     covar <- load_covariate_data(covariate)
     pheno <- load_phenotype_data(phenotype, region)
-  	pheno_coordinates <- extract_phenotype_coordinates(pheno)
+    pheno_coordinates <- extract_phenotype_coordinates(pheno)
     ### including Y ( cov ) and specific X and covar match, filter X variants based on the overlapped samples.
     data_list <- prepare_data_list(geno, pheno, covar, imiss_cutoff,
                                     maf_cutoff, mac_cutoff, xvar_cutoff, keep_samples)
