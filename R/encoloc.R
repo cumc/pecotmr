@@ -65,6 +65,8 @@ xqtl_enrichment_wrapper <- function(xqtl_files, gwas_files,
         list(alpha = xqtl_data$alpha, pip = setNames(xqtl_data$pip, get_nested_element(raw_data, xqtl_varname_obj)), 
             prior_variance = xqtl_data$V)
     })
+    
+    alpha_combined <- do.call(rbind, lapply(xqtl_data, function(data) data$alpha))
 
     # Return results as a list
     return(list(gwas_pip = gwas_pip, xqtl_data = xqtl_data))
@@ -125,7 +127,7 @@ coloc_wrapper <- function(xqtl_file, gwas_files,
 
 
     # Process xQTL data
-    raw_data <- readRDS(file)
+    raw_data <- readRDS(xqtl_file)
     xqtl_data <- if (!is.null(xqtl_finemapping_obj)) get_nested_element(raw_data, xqtl_finemapping_obj) else raw_data
     xqtl_lbf_matrix <- as.data.frame(xqtl_data$lbf_variable)
     xqtl_lbf_matrix <- xqtl_lbf_matrix[xqtl_data$V > 0,]
