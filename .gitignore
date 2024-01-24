@@ -5,3 +5,4 @@ src/Makevars
 **/.ipynb_checkpoints
 .Rproj.user
 **/.DS_Store
+.Rhistory
