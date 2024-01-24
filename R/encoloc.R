@@ -31,9 +31,9 @@ xqtl_enrichment_wrapper <- function(gwas_finemapped_data, xqtl_finemapped_data,
     # Process GWAS data
     gwas_pip <- list()
     for (file in gwas_finemapped_data) {
-        gwas_data <- readRDS(file)[[gwas_finemapping_obj]]
+        gwas_data <- if (!is.null(gwas_finemapping_obj)) readRDS(file)[[gwas_finemapping_obj]] else readRDS(file)
         pip <- gwas_data$pip
-        names(pip) <- gwas_data$variant_names
+        if (!is.null(gwas_data$variant_names)) names(pip) <- gwas_data$variant_names
         gwas_pip <- c(gwas_pip, list(pip))
     }
 
@@ -46,11 +46,12 @@ xqtl_enrichment_wrapper <- function(gwas_finemapped_data, xqtl_finemapped_data,
 
     # Process xQTL data
     xqtl_data <- lapply(xqtl_finemapped_data, function(file) {
-        xqtl_data <- readRDS(file)[[xqtl_finemapping_obj]]
-        list(alpha = xqtl_data$alpha,
-             pip = setNames(xqtl_data$pip, xqtl_data$variant_names),
-             prior_variance = xqtl_data$prior_variance)
-    })
+            xqtl_data <- if (!is.null(xqtl_finemapping_obj)) 
+                readRDS(file)[[1]][[xqtl_finemapping_obj]]
+            else readRDS(file)[[1]]
+            list(alpha = xqtl_data$susie_result_trimmed$alpha, pip = setNames(xqtl_data$susie_result_trimmed$pip, 
+                xqtl_data$variant_names), prior_variance = xqtl_data$susie_result_trimmed$V) ##FIXME: V should be prior_variance?
+        })
 
     # Return results as a list
     return(list(gwas_pip = gwas_pip, xqtl_data = xqtl_data))
@@ -59,7 +60,6 @@ xqtl_enrichment_wrapper <- function(gwas_finemapped_data, xqtl_finemapped_data,
   # Load data
   dat <- process_finemapped_data(gwas_finemapped_data, xqtl_finemapped_data,
                                                  gwas_finemapping_obj, xqtl_finemapping_obj)
-
   # Compute QTL enrichment
   return(compute_qtl_enrichment(gwas_pip = dat$gwas_pip, susie_qtl_regions = dat$xqtl_data,
                                 pi_gwas = pi_gwas, pi_qtl = pi_qtl,
@@ -67,13 +67,6 @@ xqtl_enrichment_wrapper <- function(gwas_finemapped_data, xqtl_finemapped_data,
                                 num_threads = num_threads))
 } 
 
-# xqtl_enrichment_wrapper:: Notes
-## gwas_data$pip is a collection of numeric elements. 
-## gwas_pip is a list that collects each collection of pips per finemapping object.
-## So gwas_pip is a c(list(...), list(...), list(...)).
-## Then gwas_pip is collapsed so c(list(...), list(...), list(...)) => c(...)
-## That gets assigned to gwas_pip pased to compute_qtl_enrichment, but that function expects an object with 
-## $pip present
 
 #' Colocalization Analysis Wrapper
 #'
@@ -83,22 +76,27 @@ xqtl_enrichment_wrapper <- function(gwas_finemapped_data, xqtl_finemapped_data,
 #' @param gwas_files Vector of paths to GWAS RDS files.
 #' @param gwas_finemapping_obj Optional table name in GWAS RDS files (default 'susie_fit').
 #' @param xqtl_finemapping_obj Optional table name in xQTL RDS files (default 'susie_fit').
-#' @return A list containing the processed xQTL and GWAS logBF matrices for colocalization analysis.
+#' @param p1, p2, and p12 are results from xqtl_enrichment_wrapper (default 'p1=1e-4, p2=1e-4, p12=5e-6', same as coloc.bf_bf)
+
+#' @return A list containing the processed xQTL and GWAS logBF matrices for colocalization analysis, coloc results, output from the compute_qtl_enrichment function
 #' @examples
 #' xqtl_file <- "xqtl_file.rds"
 #' gwas_files <- c("gwas_file1.rds", "gwas_file2.rds")
 #' result <- coloc_wrapper(xqtl_file, gwas_files)
 #' @importFrom dplyr bind_rows
 #' @importFrom tidyr replace_na
+#' @importFrom coloc coloc.bf_bf
 #' @export
 coloc_wrapper <- function(xqtl_file, gwas_files, 
                           gwas_finemapping_obj = "susie_fit", 
-                          xqtl_finemapping_obj = "susie_fit") {
+                          xqtl_finemapping_obj = "susie_fit",
+                          p1=1e-4, p2=1e-4, p12=5e-6, ...) {
     # Load and process GWAS data
-    gwas_lbf_matrices <- lapply(gwas_files, function(file_path) {
-        gwas_data <- readRDS(file_path)[[gwas_finemapping_obj]]
+    gwas_lbf_matrices <- lapply(gwas_files, function(file) {
+        gwas_data <- if (!is.null(gwas_finemapping_obj)) readRDS(file)[[gwas_finemapping_obj]] else readRDS(file)
         gwas_lbf_matrix <- as.data.frame(gwas_data$lbf_variable)
-        colnames(gwas_lbf_matrix) <- gwas_data$variant_names
+        gwas_lbf_matrix <- gwas_lbf_matrix[gwas_data$V > 0,]
+        if (!is.null(gwas_data$variant_names)) names(pip) <- gwas_data$variant_names
         return(gwas_lbf_matrix)
     })
 
@@ -112,21 +110,34 @@ coloc_wrapper <- function(xqtl_file, gwas_files,
     combined_gwas_lbf_matrix <- bind_rows(gwas_lbf_matrices) %>%
                                 mutate(across(everything(), ~replace_na(., 0)))
 
+
     # Process xQTL data
-    xqtl_data <- readRDS(xqtl_file)[[xqtl_finemapping_obj]]
-    xqtl_lbf_matrix <- as.data.frame(xqtl_data$lbf_variable)
+    xqtl_data <- if (!is.null(xqtl_finemapping_obj)) readRDS(xqtl_file)[[1]][[xqtl_finemapping_obj]] else readRDS(xqtl_file)[[1]]
+    xqtl_lbf_matrix <- as.data.frame(xqtl_data$susie_result_trimmed$lbf_variable)
+    xqtl_lbf_matrix <- xqtl_lbf_matrix[xqtl_data$susie_result_trimmed$V > 0,]
     colnames(xqtl_lbf_matrix) <- xqtl_data$variant_names
+
+    #add 'chr' in colnames 
+    add_chr_prefix <- function(df) {
+      colnames(df) <- ifelse(grepl("chr", colnames(df)), colnames(df), paste0("chr", colnames(df)))
+      return(df)
+    }
+
+    combined_gwas_lbf_matrix <- add_chr_prefix(combined_gwas_lbf_matrix)
+    xqtl_lbf_matrix <- add_chr_prefix(xqtl_lbf_matrix)
+    
 
     # Match column names and reorder matrices
     common_colnames <- intersect(colnames(xqtl_lbf_matrix), colnames(combined_gwas_lbf_matrix))
-    xqtl_lbf_matrix <- xqtl_lbf_matrix[, common_colnames, drop = FALSE]
-    combined_gwas_lbf_matrix <- combined_gwas_lbf_matrix[, common_colnames, drop = FALSE]
+    xqtl_lbf_matrix <- xqtl_lbf_matrix[, common_colnames, drop = FALSE] %>% as.matrix
+    combined_gwas_lbf_matrix <- combined_gwas_lbf_matrix[, common_colnames, drop = FALSE] %>% as.matrix
 
     # Report the number of dropped columns from xQTL matrix
     num_dropped_cols <- length(setdiff(colnames(xqtl_lbf_matrix), common_colnames))
     message("Number of columns dropped from xQTL matrix: ", num_dropped_cols)
 
     # Return the processed data for now
-    # FIXME: To complete this, we need to apply colocalization analysis on these single effect logBF and the enrichment analysis results computed by `xqtl_enrichment_wrapper`
-    return(list(xqtl_lbf_matrix = xqtl_lbf_matrix, combined_gwas_lbf_matrix = combined_gwas_lbf_matrix))
+    # COLOC function 
+    coloc_res <- coloc.bf_bf(xqtl_lbf_matrix, combined_gwas_lbf_matrix, p1 = p1, p2 = p2, p12 = p12, ...)
+    return(coloc_res)
 }
