@@ -4,10 +4,10 @@
 #' For details on the parameters `pi_gwas`, `pi_qtl`, `lambda`, `ImpN`, and `num_threads`,
 #' refer to the documentation of the `compute_qtl_enrichment` function.
 #'
-#' @param gwas_finemapped_data Vector of GWAS RDS file paths.
-#' @param xqtl_finemapped_data Vector of xQTL RDS file paths.
-#' @param gwas_finemapping_obj Optional table name in GWAS RDS files (default 'susie_fit').
+#' @param xqtl_files Vector of xQTL RDS file paths.
+#' @param gwas_files Vector of GWAS RDS file paths.
 #' @param xqtl_finemapping_obj Optional table name in xQTL RDS files (default 'susie_fit').
+#' @param gwas_finemapping_obj Optional table name in GWAS RDS files (default 'susie_fit').
 #' @param pi_gwas Optional parameter for GWAS enrichment estimation (see `compute_qtl_enrichment`).
 #' @param pi_qtl Optional parameter for xQTL enrichment estimation (see `compute_qtl_enrichment`).
 #' @param lambda Shrinkage parameter for enrichment computation (see `compute_qtl_enrichment`).
@@ -19,21 +19,35 @@
 #' xqtl_files <- c("xqtl_file1.rds", "xqtl_file2.rds")
 #' result <- xqtl_enrichment_wrapper(gwas_files, xqtl_files)
 #' @export
-xqtl_enrichment_wrapper <- function(gwas_finemapped_data, xqtl_finemapped_data,
-                                    gwas_finemapping_obj = "susie_fit",
-                                    xqtl_finemapping_obj = "susie_fit",
+xqtl_enrichment_wrapper <- function(xqtl_files, gwas_files, 
+                                    gwas_finemapping_obj = NULL, xqtl_finemapping_obj = NULL,
+                                    gwas_varname_obj = NULL, xqtl_varname_obj = NULL,
                                     pi_gwas = NULL, pi_qtl = NULL, 
                                     lambda = 1.0, ImpN = 25,
                                     num_threads = 1) {
-  process_finemapped_data <- function(gwas_finemapped_data, xqtl_finemapped_data,
-                                    gwas_finemapping_obj = "susie_fit",
-                                    xqtl_finemapping_obj = "susie_fit") {
+
+  get_nested_element <- function(nested_list, name_vector) {
+    if (is.null(name_vector)) return (NULL)
+    current_element <- nested_list
+    for (name in name_vector) {
+      if (is.null(current_element[[name]])) {
+        stop("Element not found in the list")
+      }
+      current_element <- current_element[[name]]
+    }
+    return(current_element)
+  }
+
+  process_finemapped_data <- function(xqtl_files, gwas_files,
+                                    gwas_finemapping_obj = NULL, xqtl_finemapping_obj = NULL,
+                                    gwas_varname_obj = NULL, xqtl_varname_obj = NULL) {
     # Process GWAS data
     gwas_pip <- list()
-    for (file in gwas_finemapped_data) {
-        gwas_data <- if (!is.null(gwas_finemapping_obj)) readRDS(file)[[gwas_finemapping_obj]] else readRDS(file)
+    for (file in gwas_files) {
+        raw_data <- readRDS(file)
+        gwas_data <- if (!is.null(gwas_finemapping_obj)) get_nested_element(raw_data, gwas_finemapping_obj) else raw_data 
         pip <- gwas_data$pip
-        if (!is.null(gwas_data$variant_names)) names(pip) <- gwas_data$variant_names
+        if (!is.null(gwas_varname_obj)) names(pip) <- get_nested_element(raw_data, gwas_varname_obj)
         gwas_pip <- c(gwas_pip, list(pip))
     }
 
@@ -45,21 +59,19 @@ xqtl_enrichment_wrapper <- function(gwas_finemapped_data, xqtl_finemapped_data,
     gwas_pip <- unlist(gwas_pip)
 
     # Process xQTL data
-    xqtl_data <- lapply(xqtl_finemapped_data, function(file) {
-            xqtl_data <- if (!is.null(xqtl_finemapping_obj)) 
-                readRDS(file)[[1]][[xqtl_finemapping_obj]]
-            else readRDS(file)[[1]]
-            list(alpha = xqtl_data$susie_result_trimmed$alpha, pip = setNames(xqtl_data$susie_result_trimmed$pip, 
-                xqtl_data$variant_names), prior_variance = xqtl_data$susie_result_trimmed$V) ##FIXME: V should be prior_variance?
-        })
+    xqtl_data <- lapply(xqtl_files, function(file) {
+        raw_data <- readRDS(file)
+        xqtl_data <- if (!is.null(xqtl_finemapping_obj)) get_nested_element(raw_data, xqtl_finemapping_obj) else raw_data
+        list(alpha = xqtl_data$alpha, pip = setNames(xqtl_data$pip, get_nested_element(raw_data, xqtl_varname_obj)), 
+            prior_variance = xqtl_data$V)
+    })
 
     # Return results as a list
     return(list(gwas_pip = gwas_pip, xqtl_data = xqtl_data))
   } 
   
   # Load data
-  dat <- process_finemapped_data(gwas_finemapped_data, xqtl_finemapped_data,
-                                                 gwas_finemapping_obj, xqtl_finemapping_obj)
+  dat <- process_finemapped_data(xqtl_files, gwas_files, gwas_finemapping_obj, xqtl_finemapping_obj, gwas_varname_obj, xqtl_varname_obj)
   # Compute QTL enrichment
   return(compute_qtl_enrichment(gwas_pip = dat$gwas_pip, susie_qtl_regions = dat$xqtl_data,
                                 pi_gwas = pi_gwas, pi_qtl = pi_qtl,
@@ -88,15 +100,16 @@ xqtl_enrichment_wrapper <- function(gwas_finemapped_data, xqtl_finemapped_data,
 #' @importFrom coloc coloc.bf_bf
 #' @export
 coloc_wrapper <- function(xqtl_file, gwas_files, 
-                          gwas_finemapping_obj = "susie_fit", 
-                          xqtl_finemapping_obj = "susie_fit",
+                          gwas_finemapping_obj = NULL, xqtl_finemapping_obj = NULL,
+                          gwas_varname_obj = NULL, xqtl_varname_obj = NULL,
                           p1=1e-4, p2=1e-4, p12=5e-6, ...) {
     # Load and process GWAS data
     gwas_lbf_matrices <- lapply(gwas_files, function(file) {
-        gwas_data <- if (!is.null(gwas_finemapping_obj)) readRDS(file)[[gwas_finemapping_obj]] else readRDS(file)
+        raw_data <- readRDS(file)
+        gwas_data <- if (!is.null(gwas_finemapping_obj)) get_nested_element(raw_data, gwas_finemapping_obj) else raw_data 
         gwas_lbf_matrix <- as.data.frame(gwas_data$lbf_variable)
         gwas_lbf_matrix <- gwas_lbf_matrix[gwas_data$V > 0,]
-        if (!is.null(gwas_data$variant_names)) names(pip) <- gwas_data$variant_names
+        if (!is.null(gwas_varname_obj)) names(pip) <- get_nested_element(raw_data, gwas_varname_obj)
         return(gwas_lbf_matrix)
     })
 
@@ -112,10 +125,11 @@ coloc_wrapper <- function(xqtl_file, gwas_files,
 
 
     # Process xQTL data
-    xqtl_data <- if (!is.null(xqtl_finemapping_obj)) readRDS(xqtl_file)[[1]][[xqtl_finemapping_obj]] else readRDS(xqtl_file)[[1]]
-    xqtl_lbf_matrix <- as.data.frame(xqtl_data$susie_result_trimmed$lbf_variable)
-    xqtl_lbf_matrix <- xqtl_lbf_matrix[xqtl_data$susie_result_trimmed$V > 0,]
-    colnames(xqtl_lbf_matrix) <- xqtl_data$variant_names
+    raw_data <- readRDS(file)
+    xqtl_data <- if (!is.null(xqtl_finemapping_obj)) get_nested_element(raw_data, xqtl_finemapping_obj) else raw_data
+    xqtl_lbf_matrix <- as.data.frame(xqtl_data$lbf_variable)
+    xqtl_lbf_matrix <- xqtl_lbf_matrix[xqtl_data$V > 0,]
+    if (!is.null(xqtl_varname_obj)) colnames(xqtl_lbf_matrix) <- get_nested_element(raw_data, xqtl_varname_obj)
 
     #add 'chr' in colnames 
     add_chr_prefix <- function(df) {
@@ -136,7 +150,6 @@ coloc_wrapper <- function(xqtl_file, gwas_files,
     num_dropped_cols <- length(setdiff(colnames(xqtl_lbf_matrix), common_colnames))
     message("Number of columns dropped from xQTL matrix: ", num_dropped_cols)
 
-    # Return the processed data for now
     # COLOC function 
     coloc_res <- coloc.bf_bf(xqtl_lbf_matrix, combined_gwas_lbf_matrix, p1 = p1, p2 = p2, p12 = p12, ...)
     return(coloc_res)

@@ -7,7 +7,7 @@
 filter_genotype_by_ld_reference(X, ld_reference_meta_file)
 }
 \arguments{
-\item{X}{A genotype matrix with row names as variant names in the format chr:pos_ref_alt or chr:pos:ref:alt.}
+\item{X}{A genotype matrix with col names as variant names in the format chr:pos_ref_alt or chr:pos:ref:alt.}
 
 \item{ld_reference_meta_file}{A data frame similar to 'genomic_data' in intersect_genomic_region function.}
 }
