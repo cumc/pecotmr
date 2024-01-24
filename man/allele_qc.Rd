@@ -7,9 +7,9 @@
 allele_qc(sumstats, info_snp, match.min.prop, remove_dups, flip, remove)
 }
 \arguments{
-\item{sumstats}{A data frame with columns "chr", "pos", "A1", "A2", "beta" and "z".}
+\item{sumstats}{A data frame with columns "chrom", "pos", "A1", "A2", "beta" and "z".}
 
-\item{info_snp}{A data frame with columns "chr", "pos", "A1" and "A2".}
+\item{info_snp}{A data frame with columns "chrom", "pos", "A1" and "A2".}
 
 \item{match.min.prop}{Minimum proportion of variants in the smallest data
 to be matched, otherwise stops with an error. Default is 20\%.}
@@ -26,6 +26,6 @@ A single data frame with matched variants. Values in columns "beta" and "z"
   are multiplied by -1 for variants with alleles reversed
 }
 \description{
-Match by ("chr", "A1", "A2" and "pos"), accounting for possible
+Match by ("chrom", "A1", "A2" and "pos"), accounting for possible
 strand flips and major/minor allele flips (opposite effects and zscores).
 }
