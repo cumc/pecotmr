@@ -1,0 +1,48 @@
+name: Continuous Integration
+
+on:
+  pull_request:
+    paths-ignore:
+      - .github
+      - .gitignore
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout pull request branch
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Create YAML from recipe
+        run: |
+          cp .github/environment/environment.yaml /tmp/environment.yaml
+          grep -v '{%' < .github/recipe/meta.yaml | yq .requirements.host | sed 's/^/  /' >> /tmp/environment.yaml
+
+      - name: Setup micromamba
+        uses: mamba-org/setup-micromamba@v1
+        with:
+          environment-file: /tmp/environment.yaml
+          generate-run-shell: true
+
+      - name: Run unit tests
+        shell: micromamba-shell {0}
+        run: R -e "devtools::test()"
+
+      - name: Check unit test code coverage
+        shell: micromamba-shell {0}
+        run: R -e "covr::package_coverage()"
+
+      - name: Run R CMD CHECK
+        shell: micromamba-shell {0}
+        run: R -e "rmdcheck::rcmdcheck()"
+
+      - name: Run BiocCheckGitClone
+        shell: micromamba-shell {0}
+        run: R -e "BiocCheck::BiocCheckGitClone()"
+
+      - name: Run BiocCheck
+        shell: micromamba-shell {0}
+        run: R -e "BiocCheck::BiocCheck()"
