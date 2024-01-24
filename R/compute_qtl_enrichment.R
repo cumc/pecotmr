@@ -81,7 +81,6 @@ compute_qtl_enrichment <- function(gwas_pip, susie_qtl_regions,
 
   # Here we don't check if SNP names match between GWAS and xQTL. 
   # We will report the overlapping status in the Rcpp code to stdout about the proportion of xQTL that are missing in GWAS.
-  message("Begin to start RCPP")
   en <- qtl_enrichment_rcpp(r_gwas_pip = gwas_pip, 
                          r_qtl_susie_fit = susie_qtl_regions,
                          pi_gwas = pi_gwas,
