@@ -255,7 +255,7 @@ load_LD_matrix <- function(LD_metadata, region, extract_coordinates = NULL) {
 
 #' Filter Genotype Matrix by LD Reference
 #'
-#' @param X A genotype matrix with row names as variant names in the format chr:pos_ref_alt or chr:pos:ref:alt.
+#' @param X A genotype matrix with col names as variant names in the format chr:pos_ref_alt or chr:pos:ref:alt.
 #' @param ld_reference_meta_file A data frame similar to 'genomic_data' in intersect_genomic_region function.
 #' @return A subset of the genotype matrix X, filtered based on LD reference data.
 #' @importFrom stringr str_split
@@ -263,7 +263,7 @@ load_LD_matrix <- function(LD_metadata, region, extract_coordinates = NULL) {
 #' @export
 filter_genotype_by_ld_reference <- function(X, ld_reference_meta_file) {
   # Step 1: Process variant IDs into a data frame and filter out non-standard nucleotides
-  variant_ids <- rownames(X)
+  variant_ids <- colnames(X)
   variants_df <- data.frame(
     chrom = gsub("^(chr[^:]+):.*", "\\1", variant_ids),
     pos = as.integer(gsub("^chr[^:]+:(\\d+).*", "\\1", variant_ids)),
@@ -271,6 +271,9 @@ filter_genotype_by_ld_reference <- function(X, ld_reference_meta_file) {
     alt = gsub("^chr[^:]+:\\d+[:_].[:_](.)", "\\1", variant_ids),
     stringsAsFactors = FALSE
   )
+  variants_df$chrom <- ifelse(grepl("^chr", variants_df$chrom), 
+                     as.integer(sub("^chr", "", variants_df$chrom)), # Remove 'chr' and convert to integer
+                     as.integer(variants_df$chrom))
 
   valid_nucleotides <- c("A", "T", "C", "G")
   variants_df <- variants_df[variants_df$ref %in% valid_nucleotides & variants_df$alt %in% valid_nucleotides,]
@@ -295,7 +298,7 @@ filter_genotype_by_ld_reference <- function(X, ld_reference_meta_file) {
 
   # Step 6: Subset X and report the number of variants dropped
   valid_indices <- !is.na(overlap_indices)
-  X_filtered <- X[valid_indices, ]
+  X_filtered <- X[,valid_indices]
 
   message("Number of variants dropped: ", sum(!valid_indices), 
           " out of ", nrow(X), " total rows.")
