@@ -68,12 +68,12 @@ cal_purity <- function(l_cs, X, method = "min") {
 #' @export
 
 
-create_set.susiF = function(susiF.obj,X ,requested_coverage = 0.95) {
+create_set_susiF = function(susiF.obj, X ,requested_coverage = 0.95) {
   # Create 'cs' set with names
   cs_named <- setNames(object = susiF.obj$cs, nm = paste0("L", seq_along(susiF.obj$cs)))
   
   # Create 'purity' data frame without dplyr
-  purity_df <- do.call(rbind, lapply(cal_purity(susiF.obj$cs,X,"susie"), function(x) as.data.frame(t(x))))
+  purity_df <- do.call(rbind, lapply(cal_purity(susiF.obj$cs,X = X,method = "susie"), function(x) as.data.frame(t(x))))
   rownames(purity_df) <- names(cs_named)
   colnames(purity_df) <- c("min.abs.corr","mean.abs.corr",	"median.abs.corr")
 
@@ -119,25 +119,24 @@ create_set.susiF = function(susiF.obj,X ,requested_coverage = 0.95) {
 #' @param ... Additional arguments passed to the fsusie function.
 #' @return A modified fsusie object with the susie sets list, correlations for cs,
 #'         and without the dummy cs that do not meet the minimum purity requirement.
-#' @importFrom fsusie cal_cor_cs susiF
+#' @importFrom susiF.alpha cal_cor_cs susiF
 #' @export
 fsusie_wrapper <- function(X, Y, pos, L, prior, max_SNP_EM, cov_lev, min.purity,max_scale, ...) {
   # Run fsusie
-  susif.obj <- susif(X = X, Y = Y, pos = pos, L = L, prior = prior,
+  susif.obj <- susiF(X = X, Y = Y, pos = pos, L = L, prior = prior,
                        max_SNP_EM = max_SNP_EM, cov_lev = cov_lev,
                        min.purity = min.purity,max_scale = max_scale, ...)
 
   # Remove dummy cs based on purity threshold
   if (all(abs(as.numeric(susiF.obj$purity)) < min.purity)) {
-    susiF.obj$cs <- list()
-    susiF.obj$sets <- list(cs = list(), requested_coverage = cov_lev)
+    susiF.obj$cs <- list(NULL)
+    susiF.obj$sets <- list(cs = list(NULL), requested_coverage = cov_lev)
     susiF.obj$cs_corr <- NULL  # Set cs correlations to NULL if no credible sets meet purity criteria
   } else {
     # Create sets and add correlation for CS if purity criteria are met
-    susiF.obj$sets <- susiF_create_set(susiF.obj, requested_coverage = cov_lev)
+    susiF.obj$sets <- create_set_susiF(susiF.obj,X, requested_coverage = cov_lev)
     susiF.obj$cs_corr <- cal_cor_cs(susiF.obj, X)
   }
 
   return(susiF.obj)
 }
-
