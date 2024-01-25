@@ -159,7 +159,7 @@ NoPhenotypeError <- function(message) {
 load_phenotype_data <- function(phenotype_path, region) {
   # `compact` should remove all NULL elements
   phenotype_data <- compact(map(phenotype_path, ~ {
-    tabix_data <- tabix_region(.x, region)
+    tabix_data <- if (!is.null(region)) tabix_region(.x, region) else read_delim(.x, "\t", col_types = cols())
     if (nrow(tabix_data) == 0) { # Check if tabix_region returns empty
       message("Phenotype file ", .x, " is empty for the specified region.")
       return(NULL) # Exclude empty results and report
@@ -297,6 +297,7 @@ add_Y_residuals <- function(data_list, conditions, y_as_matrix = FALSE, scale_re
 #' @importFrom utils read.table
 #' @importFrom tidyr unnest
 #' @importFrom stringr str_split
+#' @export
 load_regional_association_data <- function(genotype, # PLINK file
                                            phenotype, # a vector of phenotype file names 
                                            covariate, # a vector of covariate file names corresponding to the phenotype file vector
