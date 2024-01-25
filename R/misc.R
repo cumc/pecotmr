@@ -180,7 +180,7 @@ load_phenotype_data <- function(phenotype_path, region) {
 
 ## extract phenotype coordiate information (first three col for each element in the list) 
 extract_phenotype_coordinates <- function(phenotype_list){ 
-		return(map(phenotype_list,~t(.x[1:3,])%>%as_tibble%>%mutate(start = as.numeric(start),end = as.numeric(end)))) 
+	return(map(phenotype_list,~t(.x[1:3,])%>%as_tibble%>%mutate(start = as.numeric(start),end = as.numeric(end)))) 
 }
 			 
 filter_by_common_samples <- function(dat, common_samples) {
