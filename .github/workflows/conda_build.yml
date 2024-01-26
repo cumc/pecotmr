@@ -83,6 +83,11 @@ jobs:
           environment-name: boa
           create-args: boa conda-verify anaconda-client sed coreutils
           generate-run-shell: true
+          condarc: |
+            channels:
+              - dnachun
+              - conda-forge
+              - bioconda
 
       - name: Create recipe from template
         shell: micromamba-shell {0}
@@ -97,14 +102,6 @@ jobs:
           sed -i "s/VERSION_PLACEHOLDER/${version}/g" /tmp/recipe/meta.yaml
           sed -i "s/SHA256SUM_PLACEHOLDER/${sha256sum}/g" /tmp/recipe/meta.yaml
           sed -i "s/BUILD_PLACEHOLDER/${build}/g" /tmp/recipe/meta.yaml
-
-      - name: Set up channels
-        shell: micromamba-shell {0}
-        run: |
-          conda config --file /Users/runner/micromamba-bin/.condarc --append channels bioconda
-          conda config --file /Users/runner/micromamba-bin/.condarc --append channels nodefaults
-          xargs -I % conda config --file /Users/runner/micromamba-bin/.condarc --prepend channels % < .custom_channels
-          conda config --show-sources
 
       - name: Build conda package
         shell: micromamba-shell {0}
