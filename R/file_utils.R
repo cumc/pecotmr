@@ -87,7 +87,7 @@ load_script <- function() {
 tabix_region <- function(file, region){
   # Execute tabix command and capture the output
   cmd_output <- tryCatch(
-    fread(cmd = paste0("tabix -h ", file, " ", region), sep="auto", header = FALSE),
+    {fread(cmd = paste0("tabix -h ", file, " ", region), sep="auto", header = FALSE)},
     error = function(e) NULL
   )
 
