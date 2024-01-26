@@ -139,7 +139,7 @@ f#' @title Wrapper for fsusie Function with Automatic Post-Processing
 #'        Set 10 true by default.
 #' @param min.purity Minimum purity threshold for credible sets to be retained.
 #' @param ... Additional arguments passed to the fsusie function.
-#' @return A modified fsusie object with the susie sets list, correlations for cs,
+#' @return A modified fsusie object with the susie sets list, correlations for cs, alpha as df like susie,
 #'         and without the dummy cs that do not meet the minimum purity requirement.
 #' @importFrom susiF.alpha cal_cor_cs susiF
 #' @export
