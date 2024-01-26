@@ -86,10 +86,10 @@ load_script <- function() {
 #' importFrom data.table fread 
 tabix_region <- function(file, region){
   # Execute tabix command and capture the output
-  cmd_output <- tryCatch({
-    fread(cmd = paste0("tabix -h ", file, " ", region), sep="auto", header = FALSE),
+  cmd_output <- tryCatch(
+    {fread(cmd = paste0("tabix -h ", file, " ", region), sep="auto", header = FALSE)},
     error = function(e) NULL
-  })
+  )
 
   # Check if the output is empty and return an empty tibble if so
   if (is.null(cmd_output) || nrow(cmd_output) == 0) {
