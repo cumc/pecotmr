@@ -117,28 +117,6 @@ create_set_susiF = function(susiF.obj, X ,requested_coverage = 0.95) {
 #'        Set 10 true by default.
 #' @param min.purity Minimum purity threshold for credible sets to be retained.
 #' @param ... Additional arguments passed to the fsusie function.
-#' @return A modified fsusie object with the susie sets list, correlations for cs,
-#'         and without the dummy cs that do not meet the minimum purity requirement.
-#' @importFrom susiF.alpha cal_cor_cs susiF
-#' @export
-f#' @title Wrapper for fsusie Function with Automatic Post-Processing
-#'
-#' This function serves as a wrapper for the fsusie function, facilitating
-#' automatic post-processing such as removing dummy credible sets (cs) that don't meet
-#' the minimum purity threshold and calculating correlations for the remaining cs.
-#' The function parameters are identical to those of the susiF function.
-#'
-#' @param X Residual genotype matrix.
-#' @param Y Response phenotype matrix.
-#' @param pos Genomics position of phenotypes, used for specifying the wavelet model.
-#' @param L The maximum number of the credible set.
-#' @param prior method to generate the prior.
-#' @param max_SNP_EM maximum number of SNP used for learning the prior.
-#' @param cov_lev Coverage level for the credible sets.
-#' @param max_scale numeric, define the maximum of wavelet coefficients used in the analysis (2^max_scale).
-#'        Set 10 true by default.
-#' @param min.purity Minimum purity threshold for credible sets to be retained.
-#' @param ... Additional arguments passed to the fsusie function.
 #' @return A modified fsusie object with the susie sets list, correlations for cs, alpha as df like susie,
 #'         and without the dummy cs that do not meet the minimum purity requirement.
 #' @importFrom susiF.alpha cal_cor_cs susiF
