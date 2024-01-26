@@ -83,7 +83,7 @@ load_script <- function() {
                 readChar(fileName,file.info(fileName)$size),""))
 }
 
-#' importFrom data.table fread 
+#' @importFrom data.table fread dplyr
 tabix_region <- function(file, region){
   # Execute tabix command and capture the output
   cmd_output <- tryCatch(
@@ -101,4 +101,42 @@ tabix_region <- function(file, region){
         !!names(.)[1] := as.character(.[[1]]),
         !!names(.)[2] := as.numeric(.[[2]])
         ) 
+}
+#' Find Valid File Path
+find_valid_file_path <- function(primary_file_path, fallback_file_path) {
+  # Check if the primary file path exits
+  try_primary <- function() {
+    if (file.exists(primary_file_path)) {
+      return(primary_file_path)
+    } else {
+      return(NULL)
+    }
+  }
+ # Check if the fallback file path exists
+  try_fallback <- function() {
+      if (file.exists(fallback_file_path)) {
+      return(fallback_file_path)
+    } else {
+      #If not, construct a new fallback path by combining the directory of the primary file path with the fallback file path
+     fallback_full_path <- file.path(dirname(primary_file_path), fallback_file_path)
+      if (file.exists(fallback_full_path)) {
+      return(fallback_full_path)
+      } else {
+      return(NULL)
+      }
+    }
+  }
+    
+  fallback_result <- try_fallback()
+  if (!is.null(fallback_result)) {
+    return(fallback_result)
+  }
+
+  primary_result <- try_primary()
+  if (!is.null(primary_result)) {
+    return(primary_result)
+  }
+    
+  stop(sprintf("Both primary and fallback file paths do not work. Tried paths: '%s' and '%s'", 
+               primary_file_path, file.path(dirname(primary_file_path), fallback_file_path)))
 }

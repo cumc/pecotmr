@@ -1,23 +1,29 @@
 #' Function to Check if Regions are in increasing order and remove duplicated rows
 #' @importFrom dplyr arrange
 check_consecutive_regions <- function(df) {
-  # Ensure that 'chrom' values are integers, df can be genomic_data or region
+  # Ensure that 'chrom' values are integers, df can be genomic_data or regions_of_interest
   df$chrom <- ifelse(grepl("^chr", df$chrom), 
                      as.integer(sub("^chr", "", df$chrom)), # Remove 'chr' and convert to integer
                      as.integer(df$chrom)) # Convert to integer if not already
   # Remove duplicated rows based on 'chrom' and 'start' columns
   df <- distinct(df, chrom, start, .keep_all = TRUE)
 
-  # Arrange the genomic_data or region by 'chrom' and 'start' columns
+  # Arrange the genomic regions by 'chrom' and 'start' columns
   df <- df %>%
     arrange(chrom, start)
+    
+  # Group by chromosome and check if start positions are in ascending order
+  start_ordered_check <- df %>% 
+    group_by(chrom) %>% 
+    mutate(start_order = start >= lag(start, default = first(start))) %>% 
+    ungroup()
 
-  # Check if the input regions are in increasing order based on 'chr' and 'start'
-  if (!all(df$start[-1] >= df$start[-nrow(df)])) {
-    stop("The input list of regions is not in increasing order.")
+  if (any(!start_ordered_check$start_order, na.rm = TRUE)) {
+    stop("The input list of regions is not in increasing order within each chromosome.")
   }
   return(df)
 }
+
 
 #' Function to Find Start and End Rows of Genomic Data for Region of Interest
 #' @import dplyr
@@ -62,23 +68,6 @@ extract_file_paths <- function(genomic_data, intersection_rows, column_to_extrac
 
   # Return the extracted paths
   return(extracted_paths)
-}
-
-parse_region <- function(region) {
-  if (!is.character(region) || length(region) != 1) {
-    return(region)
-  }
-
-  if (!grepl("^chr[0-9XY]+:[0-9]+-[0-9]+$", region)) { 
-    stop("Input string format must be 'chr:start-end'.")
-  }
-
-  parts <- strsplit(region, "[:-]")[[1]] 
-  df <- data.frame(chr = parts[1], 
-                   start = as.integer(parts[2]), 
-                   end = as.integer(parts[3]))
-
-  return(df)
 }
 
 #' Intersect Genomic Data with Regions of Interest
@@ -136,7 +125,10 @@ intersect_genomic_region <- function(genomic_data, region) {
 }
 
 # Process an LD matrix from a file path
-process_LD_matrix <- function(LD_file_path, bim_file_path) {
+process_LD_matrix <- function(LD_meta_file_path, LD_file_path, bim_file_path) {
+    # Check whether the LD_file_path and bim_file_path exist or not
+    LD_file_path <- find_valid_file_path(LD_meta_file_path, LD_file_path)
+    bim_file_path <- find_valid_file_path(LD_meta_file_path, bim_file_path)
     # Read the LD matrix
     LD_file_con <- xzfile(LD_file_path)
     LD_matrix <- scan(LD_file_con, quiet = TRUE)
@@ -161,6 +153,7 @@ process_LD_matrix <- function(LD_file_path, bim_file_path) {
     colnames(LD_matrix) <- rownames(LD_matrix) <- LD_variants$variants
     list(LD_matrix = LD_matrix, LD_variants = LD_variants)
 }
+
 
 # Extract LD matrix and variants for a specific region
 extract_LD_for_region <- function(LD_matrix, variants, region, extract_coordinates) {
@@ -206,8 +199,9 @@ create_combined_LD_matrix <- function(LD_matrices, variants) {
 
 #' Load and Process Linkage Disequilibrium (LD) Matrix
 #'
-#' @param LD_metadata A data frame specifying LD blocks with columns "chrom", "start", "end", and "path".
-#' "start" and "end" denote the positions of LD blocks. "path" is the path of each LD block, optionally including bim file paths.
+#' @param LD_meta_file_path path of LD_metadata, LD_metadata is a data frame specifying LD blocks with 
+#' columns "chrom", "start", "end", and "path". "start" and "end" denote the positions of LD blocks. 
+#' "path" is the path of each LD block, optionally including bim file paths.
 #' @param region A data frame specifying region of interest with columns "chrom", "start", and "end".
 #' @param extract_coordinates Optional data frame with columns "chrom" and "pos" for specific coordinates extraction.
 #'
@@ -221,7 +215,9 @@ create_combined_LD_matrix <- function(LD_matrices, variants) {
 #' @importFrom Matrix bdiag
 #' @import dplyr
 #' @export
-load_LD_matrix <- function(LD_metadata, region, extract_coordinates = NULL) {
+load_LD_matrix <- function(LD_meta_file_path, region, extract_coordinates = NULL) {
+    # Load LD_meta_file
+    LD_metadata <- fread(LD_meta_file_path)
     # Intersect LD metadata with specified regions using updated function
     intersected_LD_files <- intersect_genomic_region(LD_metadata, region)
 

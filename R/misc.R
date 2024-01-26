@@ -77,11 +77,22 @@ load_genotype_data <- function(genotype, keep_indel = TRUE) {
   return(geno_bed)
 }
 
-parse_region <- function(region) {
-  region_split <- unlist(strsplit(region, ":", fixed = TRUE))
-  chrom <- gsub("^chr", "", region_split[1])  # Remove 'chr' prefix if present
-  grange <- as.numeric(unlist(strsplit(region_split[2], "-", fixed = TRUE)))
-  return(list(chrom = chrom, grange = grange))
+#' @importFrom stringr str_split
+#' @export
+parse_genomic_region <- function(region) {
+  if (!is.character(region) || length(region) != 1) {
+    return(region)
+  }
+
+  if (!grepl("^chr[0-9XY]+:[0-9]+-[0-9]+$", region)) { 
+    stop("Input string format must be 'chr:start-end'.")
+  }
+  parts <- str_split(region, "[:-]")[[1]] 
+  df <- data.frame(chrom = gsub("^chr", "", parts[1]), 
+                   start = as.integer(parts[2]), 
+                   end = as.integer(parts[3]))
+
+  return(df)
 }
 
 NoSNPsError <- function(message) {
@@ -108,8 +119,8 @@ load_genotype_region <- function(genotype, region = NULL, keep_indel = TRUE) {
     # Get SNP IDs from bim file
     parsed_region <- parse_region(region)
     chrom <- parsed_region$chrom
-    start <- parsed_region$grange[1]
-    end <- parsed_region$grange[2]
+    start <- parsed_region$start
+    end <- parsed_region$end
     # 6 columns for bim file
     col_types <- c("character", "character", "NULL", "integer", "NULL", "NULL")
     # Read a few lines of the bim file to check for 'chr' prefix
