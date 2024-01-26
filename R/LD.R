@@ -199,8 +199,9 @@ create_combined_LD_matrix <- function(LD_matrices, variants) {
 
 #' Load and Process Linkage Disequilibrium (LD) Matrix
 #'
-#' @param LD_metadata A data frame specifying LD blocks with columns "chrom", "start", "end", and "path".
-#' "start" and "end" denote the positions of LD blocks. "path" is the path of each LD block, optionally including bim file paths.
+#' @param LD_meta_file_path path of LD_metadata, LD_metadata is a data frame specifying LD blocks with 
+#' columns "chrom", "start", "end", and "path". "start" and "end" denote the positions of LD blocks. 
+#' "path" is the path of each LD block, optionally including bim file paths.
 #' @param region A data frame specifying region of interest with columns "chrom", "start", and "end".
 #' @param extract_coordinates Optional data frame with columns "chrom" and "pos" for specific coordinates extraction.
 #'
