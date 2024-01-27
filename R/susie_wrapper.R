@@ -70,7 +70,7 @@ susie_wrapper = function(X, y, init_L = 10, max_L = 30, coverage = 0.95, max_ite
 }
 
 # must use allele_flipped result df as input
-susie_rss_wrapper = function(df, R, n, L = 10, QC = TRUE, impute = TRUE, rcond, R2_threshold){
+susie_rss_wrapper = function(df, R, n, L = 10, QC = TRUE, impute = TRUE, rcond, R2_threshold, max_L = 10, l_step = 5){
     # if include QC step, then correct_zR_discrepancy = TRUE
     if(QC){
 
@@ -106,28 +106,36 @@ susie_rss_wrapper = function(df, R, n, L = 10, QC = TRUE, impute = TRUE, rcond, 
                 LD_extract_filtered = as.matrix(R)
 
             }
-            ## repeat step: get same sample size, if n = 0, run without n parameter
-            if(n > 0){
-            impute_rss_fit = susie_rss(z = imputation_result$Z, R = LD_extract_filtered, 
-                               n = n,
-                               L = L, correct_zR_discrepancy = FALSE,
-                               track_fit = FALSE)
-            }else{
-            impute_rss_fit = susie_rss(z = imputation_result$Z, R = LD_extract_filtered, 
-                               L = L, correct_zR_discrepancy = FALSE,
-                               track_fit = FALSE)        
+            while(TRUE){
+                L = 5
+                ## repeat step: get same sample size, if n = 0, run without n parameter
+                if(n > 0){
+                impute_rss_fit = susie_rss(z = imputation_result$Z, R = LD_extract_filtered, 
+                                   n = n,
+                                   L = L, correct_zR_discrepancy = FALSE,
+                                   track_fit = FALSE)
+                }else{
+                impute_rss_fit = susie_rss(z = imputation_result$Z, R = LD_extract_filtered, 
+                                   L = init_L, correct_zR_discrepancy = FALSE,
+                                   track_fit = FALSE)        
+                }
+                result = impute_rss_fit
+                result$z = imputation_result$Z
+                if (!is.null(result$sets$cs)) {
+                    if (length(result$sets$cs)>=L && L<=max_L) {
+                      L = L + l_step
+                    } else {
+                      break
+                    }
+                } else {
+                  break
+                   }
+                }
             }
-            result = impute_rss_fit
-            result$z = imputation_result$Z
-        }
-
-
 
       }else{
         ## no imputation
              result = susie_rss_result
-  
-  
           }
       }else{
         ## no QC
