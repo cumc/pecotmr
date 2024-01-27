@@ -151,6 +151,7 @@ susie_rss_wrapper = function(df, R, n, L = 10, QC = TRUE, impute = TRUE, rcond, 
           }
           
       }
+    return(result)
 
 }
 
