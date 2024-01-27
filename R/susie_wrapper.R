@@ -69,6 +69,83 @@ susie_wrapper = function(X, y, init_L = 10, max_L = 30, coverage = 0.95, max_ite
         return(res)
 }
 
+susie_rss_wrapper = function(df, R, n, L = 10, QC = TRUE, impute = TRUE, rcond, R2_threshold){
+    # if include QC step, then correct_zR_discrepancy = TRUE
+    if(QC){
+
+      if( n > 0){
+      susie_rss_result = susie_rss(bhat = df$beta, shat = df$se,
+                              R = R, n = n, L = L,
+                              correct_zR_discrepancy = TRUE, track_fit = FALSE)
+      }else{
+      # run without n
+      susie_rss_result = susie_rss(bhat = df$beta, shat = df$se,
+                              R = R, L = L,
+                              correct_zR_discrepancy = TRUE, track_fit = FALSE)
+      }
+
+      if(impute){
+        outlier = susie_rss_result$zR_outliers
+        if(length(outlier) == 0){
+            # no outliers, no need to imputation directly report fit result
+            result = susie_rss_result
+        }else{
+            # with outliers, raiss imputation
+            ref_panel = df %>% select("chrom", "pos", "variant_allele_flip", "A1.ref", "A2.ref")
+            colnames(ref_panel) = c("chr", "pos", "variant_id", "A0", "A1") 
+            known_zscore =  df %>% select("chrom", "pos", "variant_allele_flip", "A1.ref", "A2.ref", "z")
+            colnames(known_zscore) = c("chr", "pos", "variant_id", "A0", "A1", "Z")
+            known_zscores = known_zscore[-outlier, ] %>% arrange(pos)
+            imputation_result = raiss(ref_panel, known_zscores, R, rcond = rcond, R2_threshold = R2_threshold)
+            filtered_out_variant = setdiff(df$variant_allele_flip, imputation_result$variant_id)
+            filtered_out_id = which(df$variant_allele_flip %in% filtered_out_variant)
+            if(length(filtered_out_id) != 0){
+                LD_extract_filtered = as.matrix(R)[-filtered_out_id,-filtered_out_id]
+            }else{
+                LD_extract_filtered = as.matrix(R)
+
+            }
+            ## repeat step: get same sample size, if n = 0, run without n parameter
+            if(n > 0){
+            impute_rss_fit = susie_rss(z = imputation_result$Z, R = LD_extract_filtered, 
+                               n = n,
+                               L = L, correct_zR_discrepancy = FALSE,
+                               track_fit = FALSE)
+            }else{
+            impute_rss_fit = susie_rss(z = imputation_result$Z, R = LD_extract_filtered, 
+                               L = L, correct_zR_discrepancy = FALSE,
+                               track_fit = FALSE)        
+            }
+            result = impute_rss_fit
+            result$z = imputation_result$Z
+        }
+
+
+
+      }else{
+        ## no imputation
+             result = susie_rss_result
+  
+  
+          }
+      }else{
+        ## no QC
+        if( n > 0){
+          result = susie_rss(bhat = df$beta, shat = df$se,
+                                  R = R, n = n, L = L,
+                                  correct_zR_discrepancy = FALSE, track_fit = FALSE)
+          }else{
+          # run without n
+          result = susie_rss(bhat = df$beta, shat = df$se,
+                                  R = R, L = L,
+                                  correct_zR_discrepancy = FALSE, track_fit = FALSE)
+          }
+          
+      }
+
+}
+
+
 #' Post-process SuSiE or SuSiE_rss Analysis Results
 #'
 #' This function processes the results from SuSiE or SuSiE_rss (Sum of Single Effects) genetic analysis.
