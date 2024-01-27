@@ -69,6 +69,7 @@ susie_wrapper = function(X, y, init_L = 10, max_L = 30, coverage = 0.95, max_ite
         return(res)
 }
 
+# must use allele_flipped result df as input
 susie_rss_wrapper = function(df, R, n, L = 10, QC = TRUE, impute = TRUE, rcond, R2_threshold){
     # if include QC step, then correct_zR_discrepancy = TRUE
     if(QC){
