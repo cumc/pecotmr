@@ -26,18 +26,6 @@ xqtl_enrichment_wrapper <- function(xqtl_files, gwas_files,
                                     lambda = 1.0, ImpN = 25,
                                     num_threads = 1) {
 
-  get_nested_element <- function(nested_list, name_vector) {
-    if (is.null(name_vector)) return (NULL)
-    current_element <- nested_list
-    for (name in name_vector) {
-      if (is.null(current_element[[name]])) {
-        stop("Element not found in the list")
-      }
-      current_element <- current_element[[name]]
-    }
-    return(current_element)
-  }
-
   process_finemapped_data <- function(xqtl_files, gwas_files,
                                     gwas_finemapping_obj = NULL, xqtl_finemapping_obj = NULL,
                                     gwas_varname_obj = NULL, xqtl_varname_obj = NULL) {
