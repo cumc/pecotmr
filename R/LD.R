@@ -300,4 +300,4 @@ filter_genotype_by_ld_reference <- function(X, ld_reference_meta_file) {
           " out of ", ncol(X), " total columns.")
 
   return(X_filtered)
-}
+}                                          
