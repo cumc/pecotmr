@@ -89,7 +89,7 @@ susie_wrapper = function(X, y, init_L = 10, max_L = 30, coverage = 0.95, max_ite
 #' @return SuSiE RSS fit object after dynamic L adjustment
 #' @importFrom susieR susie_rss
 #' @export
-susie_rss_wrapper <- function(z, R, bhat, shat, n, var_y, L = 10, max_L = 30, l_step = 5, 
+susie_rss_wrapper <- function(z, R, bhat, shat, n = NULL, var_y = NULL, L = 10, max_L = 30, l_step = 5, 
                               zR_discrepancy_correction = FALSE, ...) {
   if (L = 1) {
     return(susie_rss(z = z, R = R, bhat = bhat, shat = shat, var_y = var_y, n = n, 
