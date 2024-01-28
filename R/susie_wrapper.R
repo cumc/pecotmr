@@ -69,90 +69,139 @@ susie_wrapper = function(X, y, init_L = 10, max_L = 30, coverage = 0.95, max_ite
         return(res)
 }
 
-# must use allele_flipped result df as input
-susie_rss_wrapper = function(df, R, n, L = 10, QC = TRUE, impute = TRUE, rcond, R2_threshold, max_L = 10, l_step = 5){
-    # if include QC step, then correct_zR_discrepancy = TRUE
-    if(QC){
-
-      if( n > 0){
-      susie_rss_result = susie_rss(bhat = df$beta, shat = df$se,
-                              R = R, n = n, L = L,
-                              correct_zR_discrepancy = TRUE, track_fit = FALSE)
-      }else{
-      # run without n
-      susie_rss_result = susie_rss(bhat = df$beta, shat = df$se,
-                              R = R, L = L,
-                              correct_zR_discrepancy = TRUE, track_fit = FALSE)
+#' Wrapper Function for SuSiE RSS with Dynamic L Adjustment
+#'
+#' This function performs SuSiE RSS analysis, dynamically adjusting the number of causal configurations (L)
+#' and applying quality control and imputation as necessary. It includes the total phenotypic variance `var_y`
+#' as one of its parameters to align with the `susie_rss` function's interface.
+#'
+#' @param z Z score vector.
+#' @param R LD matrix.
+#' @param bhat Vector of effect size estimates.
+#' @param shat Vector of standard errors for effect size estimates.
+#' @param var_y Total phenotypic variance.
+#' @param n Sample size; if NULL, certain functionalities that require sample size will be skipped.
+#' @param L Initial number of causal configurations to consider.
+#' @param max_L Maximum number of causal configurations to consider.
+#' @param l_step Step size for increasing L when the limit is reached.
+#' @param zR_discrepancy_correction Logical indicating if z-score and R matrix discrepancy correction should be performed.
+#' @param ... Extra parameters to pass to the susie_rss function.
+#' @return SuSiE RSS fit object after dynamic L adjustment
+#' @importFrom susieR susie_rss
+#' @export
+susie_rss_wrapper <- function(z, R, bhat, shat, n = NULL, var_y = NULL, L = 10, max_L = 30, l_step = 5, 
+                              zR_discrepancy_correction = FALSE, ...) {
+  if (L = 1) {
+    return(susie_rss(z = z, R = R, bhat = bhat, shat = shat, var_y = var_y, n = n, 
+                    L = 1, max_iter = 1, correct_zR_discrepancy = FALSE, ...))
+  }
+  result <- NULL
+  while (TRUE) {
+      susie_rss_result <- susie_rss(z = z, R = R, bhat = bhat, shat = shat, var_y = var_y, n = n, L = L,
+                                    correct_zR_discrepancy = zR_discrepancy_correction, ...)
+    # Check for convergence and adjust L if necessary
+    if (!is.null(susie_rss_result$sets$cs)) {
+      if (length(susie_rss_result$sets$cs) >= L && L <= max_L) {
+        L <- L + l_step  # Increase L for the next iteration
+      } else {
+        result <- susie_rss_result  # Converged successfully
+        break
       }
+    } else {
+      break  # Break the loop if no credible sets are found
+    }
+  }
 
-      if(impute){
-        outlier = susie_rss_result$zR_outliers
-        if(length(outlier) == 0){
-            # no outliers, no need to imputation directly report fit result
-            result = susie_rss_result
-        }else{
-            # with outliers, raiss imputation
-            ref_panel = df %>% select("chrom", "pos", "variant_allele_flip", "A1.ref", "A2.ref")
-            colnames(ref_panel) = c("chr", "pos", "variant_id", "A0", "A1") 
-            known_zscore =  df %>% select("chrom", "pos", "variant_allele_flip", "A1.ref", "A2.ref", "z")
-            colnames(known_zscore) = c("chr", "pos", "variant_id", "A0", "A1", "Z")
-            known_zscores = known_zscore[-outlier, ] %>% arrange(pos)
-            imputation_result = raiss(ref_panel, known_zscores, R, rcond = rcond, R2_threshold = R2_threshold)
-            filtered_out_variant = setdiff(df$variant_allele_flip, imputation_result$variant_id)
-            filtered_out_id = which(df$variant_allele_flip %in% filtered_out_variant)
-            if(length(filtered_out_id) != 0){
-                LD_extract_filtered = as.matrix(R)[-filtered_out_id,-filtered_out_id]
-            }else{
-                LD_extract_filtered = as.matrix(R)
+  # Error handling if the model fails to converge
+  if (is.null(result)) {
+    stop("Failed to converge: unable to fit the model with given parameters.")
+  }
 
-            }
-            while(TRUE){
-                L = 5
-                ## repeat step: get same sample size, if n = 0, run without n parameter
-                if(n > 0){
-                impute_rss_fit = susie_rss(z = imputation_result$Z, R = LD_extract_filtered, 
-                                   n = n,
-                                   L = L, correct_zR_discrepancy = FALSE,
-                                   track_fit = FALSE)
-                }else{
-                impute_rss_fit = susie_rss(z = imputation_result$Z, R = LD_extract_filtered, 
-                                   L = init_L, correct_zR_discrepancy = FALSE,
-                                   track_fit = FALSE)        
-                }
-                result = impute_rss_fit
-                result$z = imputation_result$Z
-                if (!is.null(result$sets$cs)) {
-                    if (length(result$sets$cs)>=L && L<=max_L) {
-                      L = L + l_step
-                    } else {
-                      break
-                    }
-                } else {
-                  break
-                   }
-                }
-            }
+  return(result)
+}
 
-      }else{
-        ## no imputation
-             result = susie_rss_result
-          }
-      }else{
-        ## no QC
-        if( n > 0){
-          result = susie_rss(bhat = df$beta, shat = df$se,
-                                  R = R, n = n, L = L,
-                                  correct_zR_discrepancy = FALSE, track_fit = FALSE)
-          }else{
-          # run without n
-          result = susie_rss(bhat = df$beta, shat = df$se,
-                                  R = R, L = L,
-                                  correct_zR_discrepancy = FALSE, track_fit = FALSE)
-          }
-          
-      }
+#' SuSiE RSS Analysis with Quality Control and Imputation
+#'
+#' Performs SuSiE RSS analysis with optional quality control steps that include
+#' z-score and LD matrix discrepancy correction and imputation for outliers. It leverages
+#' the `susie_rss` function for the core analysis and provides additional functionality
+#' for handling data discrepancies and missing values.
+#'
+#' @param z Numeric vector of z-scores corresponding to the effect size estimates, with names matching the reference panel's variant IDs.
+#' @param R Numeric matrix representing the LD (linkage disequilibrium) matrix.
+#' @param ref_panel Data frame with at least 'variant_id' column that matches the names of z.
+#' @param bhat Optional numeric vector of effect size estimates.
+#' @param shat Optional numeric vector of standard errors associated with the effect size estimates.
+#' @param var_y Optional numeric value representing the total phenotypic variance.
+#' @param n Optional numeric value representing the sample size used in the analysis. 
+#' @param L Initial number of causal configurations to consider in the analysis.
+#' @param max_L Maximum number of causal configurations to consider when dynamically adjusting L.
+#' @param l_step Step size for increasing L when the limit is reached during dynamic adjustment.
+#' @param lamb Regularization parameter for the RAiSS imputation method.
+#' @param rcond Condition number for the RAiSS imputation method.
+#' @param R2_threshold R-squared threshold for the RAiSS imputation method.
+#' @param minimum_ld Minimum number of LD values for the RAiSS imputation method.
+#' @param impute Logical; if TRUE, performs imputation for outliers identified in the analysis.
+#' @param output_qc Logical; if TRUE, includes QC-only results in the output.
+#' @return A list containing the results of the SuSiE RSS analysis after applying quality control measures and optional imputation.
+#' @importFrom susieR susie_rss
+#' @export
+susie_rss_qc <- function(z, R, ref_panel, bhat=NULL, shat=NULL, var_y=NULL, n = NULL, L = 10, max_L = 20, l_step = 5, 
+                        lamb = 0.01, rcond = 0.01, R2_threshold = 0.6, minimum_ld = 5, impute = TRUE, output_qc = TRUE, ...) {
+  
+  ## Input validation for z-scores and reference panel
+  if (length(z) != nrow(ref_panel)) {
+    stop("The length of z-scores does not match the number of rows in the reference panel.")
+  }
+  
+  if (is.null(names(z))) {
+    warning("Z-score names are NULL. Assuming names match reference panel variant_id.")
+  } else if (!all(names(z) %in% ref_panel$variant_id)) {
+    stop("Names of z-scores do not match the reference panel variant_id.")
+  }
+
+  ## Perform initial SuSiE RSS analysis with discrepancy correction
+  result <- susie_rss(z=z, R=R, bhat=bhat, shat=shat, var_y=var_y, n=n, L=max_L,  
+                     correct_zR_discrepancy=TRUE, track_fit = TRUE, ...)
+
+  ## Initialize result_final
+  result_final <- NULL
+
+  ## Imputation for outliers if enabled and required
+  if (impute && !is.null(result$zR_outliers) && length(result$zR_outliers) > 0) {
+    ## Extracting known z-scores excluding outliers
+    valid_variants <- !ref_panel$variant_id %in% result$zR_outliers
+    known_zscores <- cbind(ref_panel[valid_variants, ], z[valid_variants])
+    
+    ## Imputation logic using RAiSS or other methods
+    imputation_result <- raiss(ref_panel, known_zscores, R, lamb = lamb, rcond = rcond, 
+                               R2_threshold = R2_threshold, minimum_ld = minimum_ld)
+    
+    ## Filter out variants not included in the imputation result
+    filtered_out_variant <- setdiff(ref_panel$variant_id, imputation_result$variant_id)
+    
+    ## Update the LD matrix excluding filtered variants
+    LD_extract_filtered <- if (length(filtered_out_variant) > 0) {
+      filtered_out_id <- match(filtered_out_variant, ref_panel$variant_id)
+      as.matrix(R)[-filtered_out_id, -filtered_out_id]
+    } else {
+      as.matrix(R)
+    }
+
+    ## Re-run SuSiE RSS with imputed z-scores and updated LD matrix
+    result_final <- susie_rss_wrapper(z=imputation_result$Z, R=LD_extract_filtered, bhat=bhat, shat=shat, var_y=var_y, 
+                                      n=n, L=L, max_L=max_L, l_step=l_step, zR_discrepancy_correction=FALSE, ...)
+  }
+  
+  ## Determine which result to return
+  if (is.null(result_final)) {
     return(result)
-
+  } else {
+    if (output_qc) {
+      result_final$qc_only_result <- result
+    }
+    return(result_final)
+  }
 }
 
 
