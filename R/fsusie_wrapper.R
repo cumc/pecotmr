@@ -17,7 +17,6 @@
 #'         (for other methods and multi-element sets).
 #' @export
 
-
 cal_purity <- function(l_cs, X, method = "min") {
   tt <- list()
   
@@ -121,6 +120,7 @@ create_set_susiF = function(susiF.obj, X ,requested_coverage = 0.95) {
 #'         and without the dummy cs that do not meet the minimum purity requirement.
 #' @importFrom susiF.alpha cal_cor_cs susiF
 #' @export
+									 
 fsusie_wrapper <- function(X, Y, pos, L, prior, max_SNP_EM, cov_lev, min.purity,max_scale, ...) {
   # Run fsusie
   susiF.obj <- susiF(X = X, Y = Y, pos = pos, L = L, prior = prior,
