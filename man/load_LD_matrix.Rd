@@ -4,11 +4,12 @@
 \alias{load_LD_matrix}
 \title{Load and Process Linkage Disequilibrium (LD) Matrix}
 \usage{
-load_LD_matrix(LD_metadata, region, extract_coordinates = NULL)
+load_LD_matrix(LD_meta_file_path, region, extract_coordinates = NULL)
 }
 \arguments{
-\item{LD_metadata}{A data frame specifying LD blocks with columns "chrom", "start", "end", and "path".
-"start" and "end" denote the positions of LD blocks. "path" is the path of each LD block, optionally including bim file paths.}
+\item{LD_meta_file_path}{path of LD_metadata, LD_metadata is a data frame specifying LD blocks with 
+columns "chrom", "start", "end", and "path". "start" and "end" denote the positions of LD blocks. 
+"path" is the path of each LD block, optionally including bim file paths.}
 
 \item{region}{A data frame specifying region of interest with columns "chrom", "start", and "end".}
 
