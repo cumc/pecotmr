@@ -79,7 +79,7 @@ load_genotype_data <- function(genotype, keep_indel = TRUE) {
 
 #' @importFrom stringr str_split
 #' @export
-parse_genomic_region <- function(region) {
+parse_region <- function(region) {
   if (!is.character(region) || length(region) != 1) {
     return(region)
   }
@@ -460,11 +460,11 @@ load_regional_functional_data <- function(...) {
 #' with zeros. If variable_name_obj is NULL, it checks that all files have the same row
 #' numbers for the condition and consolidates weights accordingly.
 #'
-#' @param weight_db_file A RDS file containing TWAS weights. 
+#' @param weight_db_file weight_db_files Vector of file paths for RDS files containing TWAS weights.. 
 #' Each element organized as region/condition/weights
 #' @param condition The specific condition to be checked and consolidated across all files.
 #' @param variable_name_obj The name of the variable/object to fetch from each file, if not NULL.
-#' @return A consolidated matrix of weights for the specified condition.
+#' @return A consolidated list of weights for the specified condition.
 #' @examples
 #' # Example usage (replace with actual file paths, condition, region, and variable_name_obj):
 #' weight_db_files <- c("path/to/file1.rds", "path/to/file2.rds")
@@ -475,39 +475,93 @@ load_regional_functional_data <- function(...) {
 #' print(consolidated_weights)
 #' @import dplyr
 #' @export
-load_twas_weights <- function(weight_db_file, condition, 
+load_twas_weights <- function(weight_db_files, conditions = NULL,
                               variable_name_obj = "variant_names",
                               twas_weights_table = "twas_weights") {
   ## Internal function to load and validate data from RDS files
-  validate_data <- function(weight_db_file, condition, variable_name_obj) {
-    ## Check if the specified region and condition are available in all files
-    if (!(condition %in% names(weight_db_file[[1]]))) {
-        stop("The specified condition is not available in weight RDS file.")
+  load_and_validate_data <- function(weight_db_files, conditions, variable_name_obj) {
+    all_data <- lapply(weight_db_files, readRDS)
+    unique_regions <- unique(unlist(lapply(all_data,function(data) names(data))))
+    # Check if region from all RDS files are the same
+    if (length(unique_regions) != 1) {
+      stop("The RDS files do not refer to the same region.")
+    } else {
+    # Assuming all data refer to the same region, now combine data by conditions
+      combined_all_data <- do.call("c", lapply(all_data, function(data) data[[1]]))
     }
-    if (!is.null(variable_name_obj) && !(variable_name_obj %in% names(weight_db_file[[1]][[condition]]))) {
-        stop("The specified variable_name_obj is not available in weight RDS file.")
+    # Set default for 'conditions' if they are not specified
+    if (is.null(conditions)) {
+    conditions <- names(combined_all_data)
+    }                                           
+    ## Check if the specified condition and variable_name_obj are available in all files
+    if (!all(conditions %in% names(combined_all_data))) {
+        stop("The specified condition is not available in all RDS files.")
+      }
+    for (data in seq_along(combined_all_data))                                       
+    {
+        if (!is.null(variable_name_obj) && !(variable_name_obj %in% names(combined_all_data[[data]]))) {
+            stop("The specified variable_name_obj is not available in all RDS files.")
+        }
     }
-    return(weight_db_file)
+    return(combined_all_data)
   }
-  ## Internal function to consolidate weights for a given condition
-  consolidate_weights <- function(weight_db_file, condition, variable_name_obj) {
-    # Set default for 'condition' if it is not specified
-    weights <- sapply(get_nested_element(weight_db_file[[1]],c(condition,twas_weights_table)), cbind)
-    variable_name_obj <- ifelse(is.null(variable_name_obj),"variant_names",variable_name_obj)
-    # Processing with variable_name_obj:  E=extract the specific variable object
-    variable_objs <- get_nested_element(weight_db_file[[1]],c(condition,variable_name_obj))
-    # Check and reformat variable_objs if necessary
-    variable_objs <- ifelse(grepl("^chr[0-9]+:", variable_objs), 
-                             gsub("^chr", "", variable_objs), # Remove 'chr' and convert to integer
-                             variable_objs)
-    rownames(weights) <- variable_objs
+  # Internal function to align and merge weight matrices
+  align_and_merge <- function(weights_list, variable_objs) {
+    # Get the complete list of variant names across all files
+    all_variants <- unique(unlist(variable_objs))
+    consolidated_list = list()
+    # Fill the matrix with weights, aligning by variant names
+    for (i in seq_along(weights_list)) {
+      # Initialize the temp matrix with zeros
+      existing_colnames <- character(0)
+      temp_matrix <- matrix(0, nrow = length(all_variants), ncol = ncol(weights_list[[i]]))
+      rownames(temp_matrix) <- all_variants
+      idx <- match(variable_objs[[i]], all_variants)
+      temp_matrix[idx, ] <- weights_list[[i]]
+      # Ensure no duplicate column names
+      new_colnames <- colnames(weights_list[[i]])
+      if (any(duplicated(c(existing_colnames, new_colnames)))) {
+        stop("Duplicate column names detected during merging process.")
+      }
+      existing_colnames <- c(existing_colnames, new_colnames)
+
+      consolidated_list[[i]] <- temp_matrix
+      colnames(consolidated_list[[i]]) <- existing_colnames
+    }
+    return(consolidated_list)
+  }
+
+  # Internal function to consolidate weights for given condition
+  consolidate_weights_list <- function(combined_all_data, conditions, variable_name_obj,twas_weights_table) {
+    # Set default for 'conditions' if they are not specified
+    if (is.null(conditions)) {
+    conditions <- names(combined_all_data)
+    }
+    combined_weights_by_condition <- lapply(conditions, function(condition) {                                         
+    sapply(get_nested_element(combined_all_data,c(condition,twas_weights_table)), cbind)
+    })
+    names(combined_weights_by_condition) <- conditions
+    if (is.null(variable_name_obj)) {
+      # Standard processing: Check for identical row numbers and consolidate
+      row_numbers <- sapply(combined_weights_by_condition, function(data) nrow(data))
+      if (length(unique(row_numbers)) > 1) {
+        stop("Not all files have the same number of rows for the specified condition.")
+      }
+      weights <- combined_weights_by_condition
+    } else {
+      # Processing with variable_name_obj: Align and merge data, fill missing with zeros
+      variable_objs <- lapply(conditions, function(condition) {
+      get_nested_element(combined_all_data,c(condition,variable_name_obj))})
+      weights <- align_and_merge(combined_weights_by_condition, variable_objs)
+    }
+    names(weights) <- conditions                        
     return(weights)
   }
 
   ## Load, validate, and consolidate data
   try({
-    weight_db_file <- validate_data(weight_db_file, condition, variable_name_obj)
-    consolidated_weights <- consolidate_weights(weight_db_file, condition, variable_name_obj)
-    return(consolidated_weights)
+    combined_all_data <- load_and_validate_data(weight_db_files, conditions, variable_name_obj)
+    weights <- consolidate_weights_list(combined_all_data, conditions, variable_name_obj,twas_weights_table)
+    return(list(combined_all_data = combined_all_data, weights = weights))
   }, silent = TRUE)
 }

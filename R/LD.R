@@ -227,7 +227,7 @@ load_LD_matrix <- function(LD_meta_file_path, region, extract_coordinates = NULL
 
     LD_matrices_list <- lapply(seq_along(LD_file_paths), function(j) {
     # Read and process the LD matrix
-    LD_matrix_processed <- process_LD_matrix(LD_file_paths[j], bim_file_paths[j])
+    LD_matrix_processed <- process_LD_matrix(LD_meta_file_path, LD_file_paths[j], bim_file_paths[j])
 
     # Extract LD for the region
     region_info <- intersected_LD_files$region
