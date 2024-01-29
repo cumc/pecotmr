@@ -24,20 +24,6 @@ twas_z <- function(weights, z, R=NULL, X=NULL) {
     pval <- pchisq(zscore * zscore, 1, lower.tail = FALSE)
     return(list(z=zscore, pval=pval))
 }
-#' Load and validate weight db file
-load_and_validate_weight_db_file <- function(weight_db_file_path,condition) {
-  # Load the weight database file from the RDS file
-  weight_db_file <- readRDS(weight_db_file_path)
-  gene_name <- strsplit(names(weight_db_file), "@")[[1]][1]
-  # Iterate over the list to check 'susie_result_trimmed' in each element
-  if (is.null(get_nested_element(weight_db_file[[1]],c(condition,"susie_result_trimmed")))) {
-      # If 'susie_result_trimmed' is NULL in weight_db_file for specific condition, return NULL
-      return(NULL)
-  }else{
-  # If 'susie_result_trimmed' is NOT NULL in weight_db_file for specific condition, return the weight_db_file
-  return(list(weight_db_file = weight_db_file,gene_name = gene_name))
-  }
-}
 
 #' Cross-Validation for Transcriptome-Wide Association Studies (TWAS)
 #'
