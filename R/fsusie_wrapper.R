@@ -15,10 +15,8 @@
 #' @return A list where each element corresponds to a credible set and contains either a single
 #'         purity value (for 'min' method and single-element sets) or a vector of purity metrics
 #'         (for other methods and multi-element sets).
-<<<<<<< HEAD
 #' @export
-=======
-#' @export             
+
 
 >>>>>>> c770445358f22e0b2f2fae7869ed6c1f66bd4db6
 
