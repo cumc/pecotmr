@@ -167,16 +167,16 @@ NoPhenotypeError <- function(message) {
 
 #' @importFrom purrr map compact
 #' @noRd 
-load_phenotype_data <- function(phenotype_path, region) {
+load_phenotype_data <- function(phenotype_path, region,tabix_header = FALSE) {
   # `compact` should remove all NULL elements
   phenotype_data <- compact(map(phenotype_path, ~ {
-    tabix_data <- if (!is.null(region)) tabix_region(.x, region) else read_delim(.x, "\t", col_types = cols())
+    tabix_data <- if (!is.null(region)) tabix_region(.x, region,tabix_header = tabix_header) else read_delim(.x, "\t", col_types = cols())
     if (nrow(tabix_data) == 0) { # Check if tabix_region returns empty
       message("Phenotype file ", .x, " is empty for the specified region.")
       return(NULL) # Exclude empty results and report
     }
     # Process non-empty data
-    tabix_data %>%`colnames<-`(as.character(tabix_data[1,])) %>%
+    tabix_data %>%
       t() %>%
       as.matrix()
   }))
@@ -327,12 +327,12 @@ load_regional_association_data <- function(genotype, # PLINK file
                                            keep_indel = TRUE,
                                            keep_samples = NULL,
                                            phenotype_header = 4, # skip first 4 rows of transposed phenotype for chr, start, end and ID 
-                                           scale_residuals = FALSE) {
+                                           scale_residuals = FALSE,tabix_header = FALSE) {
     ## Load genotype
     geno <- load_genotype_region(genotype, cis_window, keep_indel)
     ## Load phenotype and covariates and perform some pre-processing
     covar <- load_covariate_data(covariate)
-    pheno <- load_phenotype_data(phenotype, region)
+    pheno <- load_phenotype_data(phenotype, region,tabix_header = tabix_header )
     ### including Y ( cov ) and specific X and covar match, filter X variants based on the overlapped samples.
     data_list <- prepare_data_list(geno, pheno, covar, imiss_cutoff,
                                     maf_cutoff, mac_cutoff, xvar_cutoff, 
