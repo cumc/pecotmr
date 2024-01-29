@@ -17,9 +17,6 @@
 #'         (for other methods and multi-element sets).
 #' @export
 
-
->>>>>>> c770445358f22e0b2f2fae7869ed6c1f66bd4db6
-
 cal_purity <- function(l_cs, X, method = "min") {
   tt <- list()
   
