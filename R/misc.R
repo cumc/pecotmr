@@ -176,7 +176,7 @@ load_phenotype_data <- function(phenotype_path, region) {
       return(NULL) # Exclude empty results and report
     }
     # Process non-empty data
-    tabix_data %>%`colnames<-`(as.character(tabix_data[1,])) %>%
+    tabix_data[-1,] %>%`colnames<-`(as.character(tabix_data[1,])) %>%
       t() %>%
       as.matrix()
   }))
