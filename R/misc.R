@@ -79,7 +79,7 @@ load_genotype_data <- function(genotype, keep_indel = TRUE) {
 
 #' @importFrom stringr str_split
 #' @export
-parse_genomic_region <- function(region) {
+parse_region <- function(region) {
   if (!is.character(region) || length(region) != 1) {
     return(region)
   }
