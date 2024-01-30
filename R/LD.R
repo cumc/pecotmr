@@ -217,7 +217,7 @@ create_combined_LD_matrix <- function(LD_matrices, variants) {
 #' @export
 load_LD_matrix <- function(LD_meta_file_path, region, extract_coordinates = NULL) {
     # Load LD_meta_file
-    LD_metadata <- fread(LD_meta_file_path, header = T)
+    LD_metadata <- fread(LD_meta_file_path, header = "auto")
     # Intersect LD metadata with specified regions using updated function
     intersected_LD_files <- intersect_genomic_region(LD_metadata, region)
 

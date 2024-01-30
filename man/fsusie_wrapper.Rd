@@ -7,7 +7,7 @@
 This function serves as a wrapper for the fsusie function, facilitating
 automatic post-processing such as removing dummy credible sets (cs) that don't meet
 the minimum purity threshold and calculating correlations for the remaining cs.
-The function parameters are identical to those of the susiF function.}
+The function parameters are identical to those of the fSuSiE function.}
 \usage{
 fsusie_wrapper(
   X,
@@ -54,5 +54,5 @@ Wrapper for fsusie Function with Automatic Post-Processing
 This function serves as a wrapper for the fsusie function, facilitating
 automatic post-processing such as removing dummy credible sets (cs) that don't meet
 the minimum purity threshold and calculating correlations for the remaining cs.
-The function parameters are identical to those of the susiF function.
+The function parameters are identical to those of the fSuSiE function.
 }

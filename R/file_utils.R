@@ -83,11 +83,14 @@ load_script <- function() {
                 readChar(fileName,file.info(fileName)$size),""))
 }
 
-#' @importFrom data.table fread dplyr
-tabix_region <- function(file, region,tabix_header = FALSE ){
+#' @importFrom data.table fread
+#' @import dplyr
+tabix_region <- function(file, region, tabix_header = FALSE ){
   # Execute tabix command and capture the output
   cmd_output <- tryCatch(
-    {fread(cmd = paste0("tabix -h ", file, " ", region), sep="auto", header = tabix_header)},
+    {
+      fread(cmd = paste0("tabix -h ", file, " ", region), sep="auto", header = tabix_header)
+    },
     error = function(e) NULL
   )
 
