@@ -5,7 +5,7 @@
 #' @return A data frame with columns "chrom", "pos", "A1", "A2", where 'chrom' 
 #'   and 'pos' are integers, and 'A1' and 'A2' are allele identifiers.
 #' @import stats
-#' @export
+#' @noRd
 convert_to_dataframe <- function(variant_id) {
   # Check if target_variants is already a data.frame with the required columns
   if (is.data.frame(variant_id)){
@@ -56,7 +56,7 @@ convert_to_dataframe <- function(variant_id) {
 #'
 #' @param target_variants A data frame with columns "chrom", "pos", "A1", "A2" or strings in the format of "chr:pos:A1:A2"/"chr:pos_A1_A2".
 #' @param ref_variants A data frame with columns "chrom", "pos", "A1", "A2" or strings in the format of "chr:pos:A1:A2"/"chr:pos_A1_A2".
-#' @param target_data A data frame on which QC procedures will be applied.
+#' @param target_data A data frame on which QC procedures will be applied..
 #' @param col_to_flip The name of the column in target_data where flips are to be applied.
 #' @param match_min_prop Minimum proportion of variants in the smallest data
 #'   to be matched, otherwise stops with an error. Default is 20%.
@@ -65,18 +65,21 @@ convert_to_dataframe <- function(variant_id) {
 #'   corresponding `col_to_flip` are multiplied by -1. Default is `TRUE`.
 #' @param remove Whether to remove strand SNPs (if any). Default is `TRUE`.
 #' @return A single data frame with matched variants.
-#' @importFrom dplyr mutate filter
+#' @import dplyr
 #' @importFrom vctrs vec_duplicate_detect
 #' @export
-allele_qc = function(target_variants, ref_variants, target_data, col_to_flip, match.min.prop, remove_dups,flip,remove){
+allele_qc = function(target_variants, ref_variants, target_data, col_to_flip, match.min.prop=0.2, remove_dups=TRUE,flip=TRUE,remove=TRUE){
 
     target_variants = convert_to_dataframe(target_variants)
     ref_variants = convert_to_dataframe(ref_variants)
     
     matched <- as.data.frame(merge(target_variants, ref_variants,
-                   by = c("chrom","pos"), all = FALSE, suffixes = c(".target", ".ref")))
-    target_data_merged <- as.data.frame(target_data)[target_variants$chrom %in% matched$chrom & target_variants$pos %in% matched$pos,]
-
+                   by = c("chrom","pos"), all = FALSE, suffixes = c(".target", ".ref")))%>%
+                   mutate(variants_id_qced = paste(chrom,pos,A1.ref,A2.ref,sep=":"))
+    target_data_qced <- as.data.frame(target_data)[target_variants$chrom %in% matched$chrom & target_variants$pos %in% matched$pos,]
+    # Align the rownames to the target_data_qced
+    rownames(target_data_qced) <- matched$variants_id_qced
+    
     a1 = toupper(matched$A1.target)
     a2 = toupper(matched$A2.target)
     ref1 = toupper(matched$A1.ref)
@@ -111,15 +114,14 @@ allele_qc = function(target_variants, ref_variants, target_data, col_to_flip, ma
  	snp[["keep"]][!(exact_match | snp[["sign_flip"]] | snp[["strand_flip"]])] = F
 
     # Add the 'keep', 'sign_flip', and 'strand_flip' flags to the matched data
-    matched = matched%>%
+    qc_summary = matched%>%
             mutate(keep = snp[["keep"]])%>%
             mutate(sign_flip= snp[["sign_flip"]])%>%
             mutate(strand_flip=snp[["strand_flip"]])
-    
     # Apply allele flip if required
     if(flip) {
-      if(!is.null(target_data_merged[,col_to_flip])){
-         target_data_merged[matched$sign_flip,col_to_flip] = -1*target_data_merged[matched$sign_flip,col_to_flip]
+      if(!is.null(target_data_qced[,col_to_flip])){
+         target_data_qced[qc_summary$sign_flip,col_to_flip] = -1*target_data_qced[qc_summary$sign_flip,col_to_flip]
       } else {
          stop("Column '", col_to_flip, "' not found in target_data.")
       }
@@ -127,22 +129,23 @@ allele_qc = function(target_variants, ref_variants, target_data, col_to_flip, ma
     
     # Keep SNPs based on the 'keep' flag
     if(remove) {
-       target_data_merged = target_data_merged[matched$keep,]
+       target_data_qced = target_data_qced[qc_summary$keep,]
     }
 
     # Remove duplicates if specified
     if (remove_dups) {
-       dups <- vec_duplicate_detect(matched[, c("chrom", "pos","A1.target","A2.target")])
+       dups <- vec_duplicate_detect(qc_summary[, c("chrom", "pos","A1.target","A2.target")])
        if (any(dups)) {
-          target_data_merged <- target_data_merged[!dups, ]
+          target_data_qced <- target_data_qced[!dups, ]
           message2("Some duplicates were removed.")
         }
      }
 
     # Check if the minimum proportion of variants is matched
     min_match <- match.min.prop * min(nrow(target_variants), nrow(ref_variants))
-    if (nrow(target_data_merged) < min_match){
+    if (nrow(target_data_qced) < min_match){
        stop("Not enough variants have been matched.")
      }
-     return(target_data_merged)
-}
+    
+    return(list(target_data_qced = target_data_qced, qc_summary = qc_summary))
+  }
