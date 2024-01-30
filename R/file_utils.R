@@ -83,12 +83,65 @@ load_script <- function() {
                 readChar(fileName,file.info(fileName)$size),""))
 }
 
-#' importFrom data.table fread 
-tabix_region <- function(file, region){
-    fread(cmd = paste0("tabix -h ", file, " ", region)) %>%
-     as_tibble() %>%
-     mutate(
+#' @importFrom data.table fread
+#' @import dplyr
+tabix_region <- function(file, region, tabix_header = "auto"){
+  # Execute tabix command and capture the output
+  cmd_output <- tryCatch(
+    {
+      fread(cmd = paste0("tabix -h ", file, " ", region), sep="auto", header = tabix_header)
+    },
+    error = function(e) NULL
+  )
+
+  # Check if the output is empty and return an empty tibble if so
+  if (is.null(cmd_output) || nrow(cmd_output) == 0) {
+    return(tibble())
+  }
+  cmd_output %>%
+    as_tibble() %>%
+    mutate(
         !!names(.)[1] := as.character(.[[1]]),
         !!names(.)[2] := as.numeric(.[[2]])
-    ) 
+        ) 
 }
+#' Find Valid File Path
+find_valid_file_path <- function(reference_file_path, target_file_path) {
+  # Check if the reference file path exits
+  try_reference <- function() {
+    if (file.exists(reference_file_path)) {
+      return(reference_file_path)
+    } else {
+      return(NULL)
+    }
+  }
+ # Check if the target file path exists
+  try_target <- function() {
+      if (file.exists(target_file_path)) {
+      return(target_file_path)
+    } else {
+      #If not, construct a new target path by combining the directory of the reference file path with the target file path
+     target_full_path <- file.path(dirname(reference_file_path), target_file_path)
+      if (file.exists(target_full_path)) {
+      return(target_full_path)
+      } else {
+      return(NULL)
+      }
+    }
+  }
+    
+  target_result <- try_target()
+  if (!is.null(target_result)) {
+    return(target_result)
+  }
+
+  reference_result <- try_reference()
+  if (!is.null(reference_result)) {
+    return(reference_result)
+  }
+    
+  stop(sprintf("Both reference and target file paths do not work. Tried paths: '%s' and '%s'", 
+               reference_file_path, file.path(dirname(reference_file_path), target_file_path)))
+}
+
+find_valid_file_paths <- function(reference_file_path, target_file_paths) sapply(target_file_paths, function(x) find_valid_file_path(reference_file_path, x))

@@ -263,7 +263,7 @@ twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_
                 } else {
                     metrics_table[[m]][r, ] <- NA
                     message(paste0("Predicted values for condition ", r , " using ", m , 
-                                   "have zero variance. Filling performance metric with NAs"))
+                                   " have zero variance. Filling performance metric with NAs"))
                 }
             }
         }
@@ -357,6 +357,11 @@ twas_weights <- function(X, Y, weight_methods, num_threads = 1, seed = NULL) {
     return(weights_list)
 }
 
+#' @export
+twas_predict <- function(X, weights_list) {
+   setNames(lapply(weights_list, function(w) X %*% w), names(weights_list))
+}
+
 #' @importFrom susieR coef.susie
 #' @export
 susie_weights <- function(X=NULL, y=NULL, susie_fit=NULL, ...) {
@@ -379,43 +384,40 @@ susie_weights <- function(X=NULL, y=NULL, susie_fit=NULL, ...) {
 #' This function adjusts the SuSiE weights based on a set of intersected variants.
 #' It subsets various components like lbf_matrix, mu, and scale factors based on these variants.
 #'
-#' @param susie_fit The fitted SuSiE model object.
+#' @param weight_db_file A RDS file containing TWAS weights..
 #' @param weights the output of `load_twas_weights function`, matrix of twas weights.
-#' @param region Optional; specific genomic region. If NULL, uses the first region in xqtl_data.
 #' @param condition Optional; specific condition. If NULL, uses the first condition in xqtl_data.
 #' @param keep_variants Vector of variant names to keep.
 #' @return Adjusted xQTL coefficients.
 #' @export
 
-adjust_susie_weights <- function(susie_fit, twas_weights, region = NULL, condition = NULL, keep_variants) {
+adjust_susie_weights <- function(weight_db_file, twas_weights, condition, keep_variants) {
   # Intersect the rownames of weights with keep_variants
   intersected_variants <- intersect(rownames(twas_weights), keep_variants)
   if (length(intersected_variants) == 0) {
     stop("Error: No intersected variants found. Please check 'twas_weights' and 'keep_variants' inputs to make sure there are variants left to use.")
   }
 
-  # Determine region and condition, defaulting to the first in susie_fit object if not provided
-  region <- ifelse(is.null(region), names(susie_fit)[1], region)
-  condition <- ifelse(is.null(condition), names(susie_fit[[region]])[1], condition)
-
   # Reformat intersected_variants to chrX:pos_ref_alt
-  intersected_variants <- gsub(":", "_", gsub("^([0-9]+):", "chr\\1:", intersected_variants), perl = TRUE)
-  intersected_variants <- sub("_", ":", intersected_variants)
+  formatted_intersected_variants <- gsub(":", "_", gsub("^([0-9]+):", "chr\\1:", intersected_variants), perl = TRUE)
+  formatted_intersected_variants <- sub("_", ":", formatted_intersected_variants)
 
   # Subset lbf_matrix, mu, and x_column_scale_factors
-  lbf_matrix <- susie_fit[[region]][[condition]]$susie_result_trimmed$lbf_variable
-  mu <- susie_fit[[region]][[condition]]$susie_result_trimmed$mu
-  x_column_scal_factors <- susie_fit[[region]][[condition]]$susie_result_trimmed$X_column_scale_factors
+  lbf_matrix <- get_nested_element(weight_db_file[[1]],c(condition,"susie_result_trimmed","lbf_variable"))
+  mu <- get_nested_element(weight_db_file[[1]],c(condition,"susie_result_trimmed","mu"))
+  x_column_scal_factors <- get_nested_element(weight_db_file[[1]],c(condition,"susie_result_trimmed","X_column_scale_factors"))
 
-  lbf_matrix_subset <- lbf_matrix[, intersected_variants]
-  mu_subset <- mu[, intersected_variants]
-  x_column_scal_factors_subset <- x_column_scal_factors[intersected_variants]
+  lbf_matrix_subset <- lbf_matrix[, formatted_intersected_variants]
+  mu_subset <- mu[, formatted_intersected_variants]
+  x_column_scal_factors_subset <- x_column_scal_factors[formatted_intersected_variants]
 
   # Convert lbf_matrix to alpha and calculate adjusted xQTL coefficients
   adjusted_xqtl_alpha <- lbf_to_alpha(lbf_matrix_subset)
   adjusted_xqtl_coef <- colSums(adjusted_xqtl_alpha * mu_subset) / x_column_scal_factors_subset
 
-  return(adjusted_xqtl_coef)
+  # Convert names of adjusted susie weights to the format X:pos:ref:alt, which is consistent with gwas summary stats
+  names(adjusted_xqtl_coef) <- gsub("chr([0-9]+):([0-9]+)_([A-Z])_([A-Z])", "\\1:\\2:\\3:\\4", names(adjusted_xqtl_coef))
+  return(list(adjusted_susie_weights = adjusted_xqtl_coef,remained_variants_names = names(adjusted_xqtl_coef)))
 }
 
 #' @importFrom mr.mash.alpha coef.mr.mash

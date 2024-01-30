@@ -1,26 +1,33 @@
 #' Function to Check if Regions are in increasing order and remove duplicated rows
 #' @importFrom dplyr arrange
 check_consecutive_regions <- function(df) {
-  # Ensure that 'chrom' values are integers, df can be genomic_data or region
+  # Ensure that 'chrom' values are integers, df can be genomic_data or regions_of_interest
   df$chrom <- ifelse(grepl("^chr", df$chrom), 
                      as.integer(sub("^chr", "", df$chrom)), # Remove 'chr' and convert to integer
                      as.integer(df$chrom)) # Convert to integer if not already
   # Remove duplicated rows based on 'chrom' and 'start' columns
   df <- distinct(df, chrom, start, .keep_all = TRUE)
 
-  # Arrange the genomic_data or region by 'chrom' and 'start' columns
+  # Arrange the genomic regions by 'chrom' and 'start' columns
   df <- df %>%
     arrange(chrom, start)
+    
+  # Group by chromosome and check if start positions are in ascending order
+  start_ordered_check <- df %>% 
+    group_by(chrom) %>% 
+    mutate(start_order = start >= lag(start, default = first(start))) %>% 
+    ungroup()
 
-  # Check if the input regions are in increasing order based on 'chr' and 'start'
-  if (!all(df$start[-1] >= df$start[-nrow(df)])) {
-    stop("The input list of regions is not in increasing order.")
+  if (any(!start_ordered_check$start_order, na.rm = TRUE)) {
+    stop("The input list of regions is not in increasing order within each chromosome.")
   }
   return(df)
 }
 
+
 #' Function to Find Start and End Rows of Genomic Data for Region of Interest
 #' @import dplyr
+#' @noRd
 find_intersection_rows <- function(genomic_data, region_chrom, region_start, region_end) {
   start_row <- genomic_data %>%
     filter(chrom == region_chrom, start <= region_start, end >= region_start) %>%
@@ -46,6 +53,7 @@ validate_selected_region <- function(start_row, end_row, region_start, region_en
 }
 
 #' Extract File Paths Based on Intersection Criteria
+#' @noRd
 extract_file_paths <- function(genomic_data, intersection_rows, column_to_extract) {
   # Ensure the file_path_column exists in genomic_data
   if (!column_to_extract %in% names(genomic_data)) {
@@ -62,12 +70,12 @@ extract_file_paths <- function(genomic_data, intersection_rows, column_to_extrac
   return(extracted_paths)
 }
 
-#' Intersect Genomic Data with Regions of Interest
+#' Intersect LD reference with Regions of Interest
 #'
-#' @param genomic_data A data frame with columns "chrom", "start", "end", and "path" representing genomic regions.
+#' @param ld_reference_meta_file A file of data frame with columns "chrom", "start", "end", and "path" representing genomic regions.
 #' "chrom" is the chromosome, "start" and "end" are the positions of the LD block, and "path" is the file path for the LD block.
-#' @param regions_of_interest A data frame with columns "chrom", "start", and "end" specifying regions of interest.
-#' "start" and "end" are the positions of these regions.
+#' @param region A data frame with columns "chrom", "start", and "end" specifying regions of interest.
+#' "start" and "end" are the positions of these regions. Or it can take the form of `chr:start-end`
 #'
 #' @return A list containing processed genomic data, region of interest, and a detailed result list.
 #' The result list contains, for each region:
@@ -75,9 +83,10 @@ extract_file_paths <- function(genomic_data, intersection_rows, column_to_extrac
 #' - File paths from the genomic data corresponding to intersected regions
 #' - Optionally, bim file paths if available
 #' @importFrom stringr str_split
-#' @export
-intersect_genomic_region <- function(genomic_data, region) {
-
+#' @noRd
+get_regional_ld_meta <- function(ld_reference_meta_file, region) {
+  genomic_data <- fread(ld_reference_meta_file, header = "auto")
+  region <- parse_region(region) 
   # Set column names
   names(genomic_data) <- c("chrom", "start", "end", "path")
   names(region) <- c("chrom", "start", "end")
@@ -101,9 +110,9 @@ intersect_genomic_region <- function(genomic_data, region) {
   validate_selected_region(intersection_rows$start_row, intersection_rows$end_row, region$start, region$end)
 
   # Extract file paths
-  LD_paths <- extract_file_paths(genomic_data, intersection_rows, "LD_file_path")
+  LD_paths <- find_valid_file_paths(ld_reference_meta_file, extract_file_paths(genomic_data, intersection_rows, "LD_file_path"))
   bim_paths <- if ("bim_file_path" %in% names(genomic_data)) {
-               extract_file_paths(genomic_data, intersection_rows, "bim_file_path")
+               find_valid_file_paths(ld_reference_meta_file, extract_file_paths(genomic_data, intersection_rows, "bim_file_path"))
              } else {
                NULL
              }
@@ -112,12 +121,15 @@ intersect_genomic_region <- function(genomic_data, region) {
                              end_index = intersection_rows$end_index,
                              LD_file_paths = LD_paths,
                              bim_file_paths = bim_paths), 
-              genomic_data = genomic_data, 
+              ld_meta_data = genomic_data, 
               region = region))
 }
 
 # Process an LD matrix from a file path
-process_LD_matrix <- function(LD_file_path, bim_file_path) {
+process_LD_matrix <- function(LD_meta_file_path, LD_file_path, bim_file_path) {
+    # Check whether the LD_file_path and bim_file_path exist or not
+    LD_file_path <- find_valid_file_path(LD_meta_file_path, LD_file_path)
+    bim_file_path <- find_valid_file_path(LD_meta_file_path, bim_file_path)
     # Read the LD matrix
     LD_file_con <- xzfile(LD_file_path)
     LD_matrix <- scan(LD_file_con, quiet = TRUE)
@@ -142,6 +154,7 @@ process_LD_matrix <- function(LD_file_path, bim_file_path) {
     colnames(LD_matrix) <- rownames(LD_matrix) <- LD_variants$variants
     list(LD_matrix = LD_matrix, LD_variants = LD_variants)
 }
+
 
 # Extract LD matrix and variants for a specific region
 extract_LD_for_region <- function(LD_matrix, variants, region, extract_coordinates) {
@@ -187,8 +200,9 @@ create_combined_LD_matrix <- function(LD_matrices, variants) {
 
 #' Load and Process Linkage Disequilibrium (LD) Matrix
 #'
-#' @param LD_metadata A data frame specifying LD blocks with columns "chrom", "start", "end", and "path".
-#' "start" and "end" denote the positions of LD blocks. "path" is the path of each LD block, optionally including bim file paths.
+#' @param LD_meta_file_path path of LD_metadata, LD_metadata is a data frame specifying LD blocks with 
+#' columns "chrom", "start", "end", and "path". "start" and "end" denote the positions of LD blocks. 
+#' "path" is the path of each LD block, optionally including bim file paths.
 #' @param region A data frame specifying region of interest with columns "chrom", "start", and "end".
 #' @param extract_coordinates Optional data frame with columns "chrom" and "pos" for specific coordinates extraction.
 #'
@@ -202,9 +216,9 @@ create_combined_LD_matrix <- function(LD_matrices, variants) {
 #' @importFrom Matrix bdiag
 #' @import dplyr
 #' @export
-load_LD_matrix <- function(LD_metadata, region, extract_coordinates = NULL) {
+load_LD_matrix <- function(LD_meta_file_path, region, extract_coordinates = NULL) {
     # Intersect LD metadata with specified regions using updated function
-    intersected_LD_files <- intersect_genomic_regions(LD_metadata, region)
+    intersected_LD_files <- get_regional_ld_meta(LD_meta_file_path, region)
 
     # Extract file paths for LD and bim files
     LD_file_paths <- intersected_LD_files$intersections$LD_file_paths
@@ -212,7 +226,7 @@ load_LD_matrix <- function(LD_metadata, region, extract_coordinates = NULL) {
 
     LD_matrices_list <- lapply(seq_along(LD_file_paths), function(j) {
     # Read and process the LD matrix
-    LD_matrix_processed <- process_LD_matrix(LD_file_paths[j], bim_file_paths[j])
+    LD_matrix_processed <- process_LD_matrix(LD_meta_file_path, LD_file_paths[j], bim_file_paths[j])
 
     # Extract LD for the region
     region_info <- intersected_LD_files$region
@@ -232,4 +246,53 @@ load_LD_matrix <- function(LD_metadata, region, extract_coordinates = NULL) {
     combined_LD_list <- list(combined_LD_variants = combined_LD_variants, combined_LD_matrix = combined_LD_matrix)
 
     return(combined_LD_list)
+}
+
+#' Filter Genotype Matrix by LD Reference
+#'
+#' @param X A genotype matrix with col names as variant names in the format chr:pos_ref_alt or chr:pos:ref:alt.
+#' @param ld_reference_meta_file A data frame similar to 'genomic_data' in get_regional_ld_meta function.
+#' @return A subset of the genotype matrix X, filtered based on LD reference data.
+#' @importFrom stringr str_split
+#' @importFrom dplyr select
+#' @export
+filter_genotype_by_ld_reference <- function(X, ld_reference_meta_file) {
+  # Step 1: Process variant IDs into a data frame and filter out non-standard nucleotides
+  variant_ids <- colnames(X)
+  variants_df <- data.frame(
+    chrom = gsub("^(chr[^:]+):.*", "\\1", variant_ids),
+    pos = as.integer(gsub("^chr[^:]+:(\\d+).*", "\\1", variant_ids)),
+    ref = gsub("^chr[^:]+:\\d+[:_](.)[:_].*", "\\1", variant_ids),
+    alt = gsub("^chr[^:]+:\\d+[:_].[:_](.)", "\\1", variant_ids),
+    stringsAsFactors = FALSE
+  )
+  variants_df$chrom <- ifelse(grepl("^chr", variants_df$chrom), 
+                     as.integer(sub("^chr", "", variants_df$chrom)), # Remove 'chr' and convert to integer
+                     as.integer(variants_df$chrom))
+
+  valid_nucleotides <- c("A", "T", "C", "G")
+  variants_df <- variants_df[variants_df$ref %in% valid_nucleotides & variants_df$alt %in% valid_nucleotides,]
+
+  # Step 2: Derive region information from the variants data frame
+  region_df <- variants_df %>%
+               group_by(chrom) %>%
+               summarise(start = min(pos), end = max(pos))
+  # Step 3: Call get_regional_ld_meta to get bim_file_paths
+  bim_file_paths <- get_regional_ld_meta(ld_reference_meta_file, region_df)$intersections$bim_file_paths
+
+  # Step 4: Load bim files and consolidate into a single data frame
+  bim_data <- lapply(bim_file_paths, function(path) {
+               bim_df <- read.table(path, header = FALSE, stringsAsFactors = FALSE)
+               data.frame(chrom = bim_df$V1, pos = bim_df$V4, stringsAsFactors = FALSE)
+             }) %>%
+             do.call("rbind", .)
+
+  # Step 5: Overlap the variants data frame with bim_data
+  keep_indices <- which(paste(variants_df$chrom, variants_df$pos) %in% paste(bim_data$chrom, bim_data$pos))
+  X_filtered <- X[,keep_indices,drop=F]
+
+  message("Number of variants dropped: ", ncol(X) - length(keep_indices), 
+          " out of ", ncol(X), " total columns.")
+
+  return(list(data=X_filtered, idx=keep_indices))
 }

@@ -2,30 +2,42 @@
 % Please edit documentation in R/allele_qc.R
 \name{allele_qc}
 \alias{allele_qc}
-\title{Match alleles between summary statistics and SNP information.}
+\title{Match alleles between target_variants and ref_variants}
 \usage{
-allele_qc(sumstats, info_snp, match.min.prop, remove_dups, flip, remove)
+allele_qc(
+  target_variants,
+  ref_variants,
+  target_data,
+  col_to_flip,
+  match.min.prop,
+  remove_dups,
+  flip,
+  remove
+)
 }
 \arguments{
-\item{sumstats}{A data frame with columns "chr", "pos", "A1", "A2", "beta" and "z".}
+\item{target_variants}{A data frame with columns "chrom", "pos", "A1", "A2" or strings in the format of "chr:pos:A1:A2"/"chr:pos_A1_A2".}
 
-\item{info_snp}{A data frame with columns "chr", "pos", "A1" and "A2".}
+\item{ref_variants}{A data frame with columns "chrom", "pos", "A1", "A2" or strings in the format of "chr:pos:A1:A2"/"chr:pos_A1_A2".}
 
-\item{match.min.prop}{Minimum proportion of variants in the smallest data
-to be matched, otherwise stops with an error. Default is 20\%.}
+\item{target_data}{A data frame on which QC procedures will be applied.}
 
-\item{remove_dups}{Whether to remove duplicates, default is True.}
+\item{col_to_flip}{The name of the column in target_data where flips are to be applied.}
 
-\item{flip}{Whether the alleles must be flipped: A <--> T & C <--> G, in which case corresponding `$beta` and `$z` are multiplied by -1
-Default is `TRUE`.}
+\item{remove_dups}{Whether to remove duplicates, default is TRUE.}
 
-\item{remove}{Whether to remove strand SNPs (if any)}
+\item{flip}{Whether the alleles must be flipped: A <--> T & C <--> G, in which case 
+corresponding `col_to_flip` are multiplied by -1. Default is `TRUE`.}
+
+\item{remove}{Whether to remove strand SNPs (if any). Default is `TRUE`.}
+
+\item{match_min_prop}{Minimum proportion of variants in the smallest data
+to be matched, otherwise stops with an error. Default is 20%.}
 }
 \value{
-A single data frame with matched variants. Values in columns "beta" and "z"
-  are multiplied by -1 for variants with alleles reversed
+A single data frame with matched variants.
 }
 \description{
-Match by ("chr", "A1", "A2" and "pos"), accounting for possible
+Match by ("chrom", "A1", "A2" and "pos"), accounting for possible
 strand flips and major/minor allele flips (opposite effects and zscores).
 }

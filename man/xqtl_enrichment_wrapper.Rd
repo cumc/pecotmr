@@ -5,10 +5,12 @@
 \title{xQTL GWAS Enrichment Analysis}
 \usage{
 xqtl_enrichment_wrapper(
-  gwas_finemapped_data,
-  xqtl_finemapped_data,
-  gwas_finemapping_obj = "susie_fit",
-  xqtl_finemapping_obj = "susie_fit",
+  xqtl_files,
+  gwas_files,
+  gwas_finemapping_obj = NULL,
+  xqtl_finemapping_obj = NULL,
+  gwas_varname_obj = NULL,
+  xqtl_varname_obj = NULL,
   pi_gwas = NULL,
   pi_qtl = NULL,
   lambda = 1,
@@ -17,9 +19,9 @@ xqtl_enrichment_wrapper(
 )
 }
 \arguments{
-\item{gwas_finemapped_data}{Vector of GWAS RDS file paths.}
+\item{xqtl_files}{Vector of xQTL RDS file paths.}
 
-\item{xqtl_finemapped_data}{Vector of xQTL RDS file paths.}
+\item{gwas_files}{Vector of GWAS RDS file paths.}
 
 \item{gwas_finemapping_obj}{Optional table name in GWAS RDS files (default 'susie_fit').}
 
