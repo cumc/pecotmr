@@ -42,18 +42,16 @@ read_fam <- function(bed) {
 }
 
 # open pgen/pvar PLINK 2 data format
-#' @importFrom pgenlibr NewPgen
 open_pgen <- function(pgenf){
     return(NewPgen(pgenf))
 } 
 
-# open bed/bim/fam: A PLINK 1 .bed is a valid .pgen
-#' @importFrom pgenlibr NewPgen 
+# open bed/bim/fam: A PLINK 1 .bed is a valid .pgen 
 open_bed <- function(bed){
     raw_s_ct <- nrow(read_fam(bed))
     return(NewPgen(bed, raw_sample_ct = raw_s_ct))
 }
-#' @importFrom pgenlibr GetVariantCt ReadList
+
 read_pgen <- function(pgen, variantidx = NULL, meanimpute = F ) {
   if (is.null(variantidx)){
     variantidx <- 1:GetVariantCt(pgen)}

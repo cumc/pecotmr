@@ -44,7 +44,6 @@ Suggests:
     ggrepel,
     ggnewscale,
     harmonicmeanp,
-    pgenlibr,
     GBJ,
     plink2R,
     rmarkdown

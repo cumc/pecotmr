@@ -117,8 +117,8 @@ get_regional_ld_meta <- function(ld_reference_meta_file, region) {
                NULL
              }
 
-  return(list(intersections = list(start_index = intersection_rows$start_index,
-                             end_index = intersection_rows$end_index,
+  return(list(intersections = list(start_index = intersection_rows$start_row,
+                             end_index = intersection_rows$end_row,
                              LD_file_paths = LD_paths,
                              bim_file_paths = bim_paths), 
               ld_meta_data = genomic_data, 
@@ -182,8 +182,24 @@ extract_LD_for_region <- function(LD_matrix, variants, region, extract_coordinat
 
 # Create a combined LD matrix from multiple matrices
 create_combined_LD_matrix <- function(LD_matrices, variants) {
-    # Create a block matrix with correct names
-    combined_LD_matrix <- as.matrix(do.call(bdiag, LD_matrices))
+    # Extract unique variant names from the list of variants
+    unique_variants <- unique(variants$variants)
+    # Initialize an empty combined LD matrix with the unique variants
+    combined_LD_matrix <- matrix(0, nrow = length(unique_variants), ncol = length(unique_variants))
+    rownames(combined_LD_matrix) <- unique_variants
+    colnames(combined_LD_matrix) <- unique_variants
+    # Define a function to align the values from each LD matrix to the combined matrix
+    align_matrix <- function(ld_matrix, combined_matrix, variant_names) {
+    # Find the indices of the variant names in the combined matrix
+    indices <- match(variant_names, rownames(combined_matrix))
+    # Fill in the values for both rows and columns
+    combined_matrix[indices, indices] <- ld_matrix
+    return(combined_matrix)
+    }
+    # Apply the fill_matrix function to each LD matrix and accumulate the results
+    combined_LD_matrix <- Reduce(function(x, y) align_matrix(y[[1]], x, y[[2]]), 
+                               Map(list, LD_matrices, lapply(LD_matrices, rownames)), 
+                               combined_LD_matrix)                                           
     # Check if the matrix is upper diagonal
     # We assume a matrix is upper diagonal if all elements below the main diagonal are zero
     is_upper_diagonal <- all(combined_LD_matrix[lower.tri(combined_LD_matrix)] == 0)
@@ -194,7 +210,6 @@ create_combined_LD_matrix <- function(LD_matrices, variants) {
     # If the matrix is lower diagonal, transpose the lower triangle to the upper triangle
     combined_LD_matrix[upper.tri(combined_LD_matrix)] <- t(combined_LD_matrix)[upper.tri(combined_LD_matrix)]
     }                             
-    rownames(combined_LD_matrix) <- colnames(combined_LD_matrix) <- variants$variants
     combined_LD_matrix
 }
 
@@ -241,6 +256,7 @@ load_LD_matrix <- function(LD_meta_file_path, region, extract_coordinates = NULL
 
     # Create a combined LD matrix
     combined_LD_matrix <- create_combined_LD_matrix(combined_LD_matrices, combined_LD_variants)
+    combined_LD_variants <- combined_LD_variants[match(rownames(combined_LD_matrix),combined_LD_variants$variants),]
 
     # LD list for region
     combined_LD_list <- list(combined_LD_variants = combined_LD_variants, combined_LD_matrix = combined_LD_matrix)
