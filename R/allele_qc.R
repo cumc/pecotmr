@@ -68,7 +68,7 @@ convert_to_dataframe <- function(variant_id) {
 #' @import dplyr
 #' @importFrom vctrs vec_duplicate_detect
 #' @export
-allele_qc = function(target_variants, ref_variants, target_data, col_to_flip, match.min.prop, remove_dups,flip,remove){
+allele_qc = function(target_variants, ref_variants, target_data, col_to_flip, match.min.prop=0.2, remove_dups=TRUE,flip=TRUE,remove=TRUE){
 
     target_variants = convert_to_dataframe(target_variants)
     ref_variants = convert_to_dataframe(ref_variants)
