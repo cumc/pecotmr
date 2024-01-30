@@ -63,89 +63,99 @@ convert_to_dataframe <- function(variant_id) {
 #' @param remove_dups Whether to remove duplicates, default is TRUE.
 #' @param flip Whether the alleles must be flipped: A <--> T & C <--> G, in which case 
 #'   corresponding `col_to_flip` are multiplied by -1. Default is `TRUE`.
-#' @param remove Whether to remove strand SNPs (if any). Default is `TRUE`.
+#' @param remove_strand_ambiguous Whether to remove strand SNPs (if any). Default is `TRUE`.
 #' @return A single data frame with matched variants.
 #' @import dplyr
 #' @importFrom vctrs vec_duplicate_detect
 #' @export
-allele_qc = function(target_variants, ref_variants, target_data, col_to_flip, match.min.prop=0.2, remove_dups=TRUE,flip=TRUE,remove=TRUE){
-
-    target_variants = convert_to_dataframe(target_variants)
-    ref_variants = convert_to_dataframe(ref_variants)
-    
-    matched <- as.data.frame(merge(target_variants, ref_variants,
-                   by = c("chrom","pos"), all = FALSE, suffixes = c(".target", ".ref")))%>%
-                   mutate(variants_id_qced = paste(chrom,pos,A1.ref,A2.ref,sep=":"))
-    target_data_qced <- as.data.frame(target_data)[target_variants$chrom %in% matched$chrom & target_variants$pos %in% matched$pos,]
-    # Align the rownames to the target_data_qced
-    rownames(target_data_qced) <- matched$variants_id_qced
-    
-    a1 = toupper(matched$A1.target)
-    a2 = toupper(matched$A2.target)
-    ref1 = toupper(matched$A1.ref)
-    ref2 = toupper(matched$A2.ref)
-    # Strand flip, to change the allele representation in the 2nd data-set
-	strand_flip = function(ref) {
-		flip = ref
-		flip[ref == "A"] = "T"
-		flip[ref == "T"] = "A"
-		flip[ref == "G"] = "C"
-		flip[ref == "C"] = "G"
-		return(flip)
-	}
-    flip1 = strand_flip(ref1)
-	flip2 = strand_flip(ref2)
-	snp = list()
-    
-	# Remove strand ambiguous SNPs (scenario 3)
- 	snp[["keep"]] = !((a1=="A" & a2=="T") | (a1=="T" & a2=="A") | (a1=="C" & a2=="G") | (a1=="G" & a2=="C"))
- 	# Remove non-ATCG coding
- 	snp[["keep"]][ a1 != "A" & a1 != "T" & a1 != "G" & a1 != "C" ] = F
- 	snp[["keep"]][ a2 != "A" & a2 != "T" & a2 != "G" & a2 != "C" ] = F
-    
- 	# as long as scenario 1 is involved, sign_flip will return TRUE
- 	snp[["sign_flip"]] = (a1 == ref2 & a2 == ref1) | (a1 == flip2 & a2 == flip1)
-    
- 	# as long as scenario 2 is involved, strand_flip will return TRUE
- 	snp[["strand_flip"]] = (a1 == flip1 & a2 == flip2) | (a1 == flip2 & a2 == flip1)
-    
- 	# remove other cases, eg, tri-allelic, one dataset is A C, the other is A G, for example.
- 	exact_match = (a1 == ref1 & a2 == ref2) 
- 	snp[["keep"]][!(exact_match | snp[["sign_flip"]] | snp[["strand_flip"]])] = F
-
-    # Add the 'keep', 'sign_flip', and 'strand_flip' flags to the matched data
-    qc_summary = matched%>%
-            mutate(keep = snp[["keep"]])%>%
-            mutate(sign_flip= snp[["sign_flip"]])%>%
-            mutate(strand_flip=snp[["strand_flip"]])
-    # Apply allele flip if required
-    if(flip) {
-      if(!is.null(target_data_qced[,col_to_flip])){
-         target_data_qced[qc_summary$sign_flip,col_to_flip] = -1*target_data_qced[qc_summary$sign_flip,col_to_flip]
-      } else {
-         stop("Column '", col_to_flip, "' not found in target_data.")
-      }
-    }
-    
-    # Keep SNPs based on the 'keep' flag
-    if(remove) {
-       target_data_qced = target_data_qced[qc_summary$keep,]
-    }
-
-    # Remove duplicates if specified
-    if (remove_dups) {
-       dups <- vec_duplicate_detect(qc_summary[, c("chrom", "pos","A1.target","A2.target")])
-       if (any(dups)) {
-          target_data_qced <- target_data_qced[!dups, ]
-          message2("Some duplicates were removed.")
-        }
-     }
-
-    # Check if the minimum proportion of variants is matched
-    min_match <- match.min.prop * min(nrow(target_variants), nrow(ref_variants))
-    if (nrow(target_data_qced) < min_match){
-       stop("Not enough variants have been matched.")
-     }
-    
-    return(list(target_data_qced = target_data_qced, qc_summary = qc_summary))
+allele_qc <- function(target_variants, ref_variants, target_data, col_to_flip, 
+                      match.min.prop = 0.2, remove_dups = TRUE, flip = TRUE, 
+                      remove_strand_ambiguous = TRUE) {
+  
+  target_variants <- convert_to_dataframe(target_variants)
+  ref_variants <- convert_to_dataframe(ref_variants)
+  
+  matched <- merge(target_variants, ref_variants, by = c("chrom", "pos"), all = FALSE, suffixes = c(".target", ".ref")) %>%
+    as.data.frame() %>%
+    mutate(variants_id_qced = paste(chrom, pos, A1.ref, A2.ref, sep = ":"))
+  
+  target_data_qced <- target_data[target_variants$chrom %in% matched$chrom & target_variants$pos %in% matched$pos, , drop = FALSE] %>%
+    as.data.frame()
+  
+  # Align the rownames to the target_data_qced
+  rownames(target_data_qced) <- matched$variants_id_qced
+  
+  a1 <- toupper(matched$A1.target)
+  a2 <- toupper(matched$A2.target)
+  ref1 <- toupper(matched$A1.ref)
+  ref2 <- toupper(matched$A2.ref)
+  
+  # Strand flip function
+  strand_flip <- function(ref) {
+    flip <- ref
+    flip[ref == "A"] <- "T"
+    flip[ref == "T"] <- "A"
+    flip[ref == "G"] <- "C"
+    flip[ref == "C"] <- "G"
+    return(flip)
   }
+  
+  flip1 <- strand_flip(ref1)
+  flip2 <- strand_flip(ref2)
+  
+  snp <- list()
+  if (remove_strand_ambiguous) {
+    strand_unambiguous <- !((a1 == "A" & a2 == "T") | (a1 == "T" & a2 == "A") | 
+                     (a1 == "C" & a2 == "G") | (a1 == "G" & a2 == "C"))
+  } else {
+    strand_unambiguous <- rep(TRUE, length(a1))
+  }
+  snp[["keep"]] <- strand_unambiguous
+  # Remove non-ATCG coding
+  non_ATCG <- !(a1 %in% c("A", "T", "G", "C") & a2 %in% c("A", "T", "G", "C"))
+  snp[["keep"]][non_ATCG] <- FALSE
+  snp[["sign_flip"]] <- (a1 == ref2 & a2 == ref1) | (a1 == flip2 & a2 == flip1)
+  snp[["strand_flip"]] <- (a1 == flip1 & a2 == flip2) | (a1 == flip2 & a2 == flip1)
+  
+  exact_match <- (a1 == ref1 & a2 == ref2)
+  snp[["keep"]][!(exact_match | snp[["sign_flip"]] | snp[["strand_flip"]])] <- FALSE
+
+  if (!any(snp[["strand_flip"]][which(strand_unambiguous)])) {
+    # we conclude that strand flip does not exists in the data at all
+    # so we can bring back those previous marked to drop because of strand ambiguous
+    snp[["keep"]][which(!strand_unambiguous)] <- TRUE
+  }
+
+  qc_summary <- matched %>%
+    mutate(keep = snp[["keep"]],
+           sign_flip = snp[["sign_flip"]],
+           strand_flip = snp[["strand_flip"]])
+  
+  # Apply allele flip if required
+  if (flip) {
+    if (!is.null(target_data_qced[, col_to_flip])) {
+      target_data_qced[qc_summary$sign_flip, col_to_flip] <- -1 * target_data_qced[qc_summary$sign_flip, col_to_flip]
+    } else {
+      stop("Column '", col_to_flip, "' not found in target_data.")
+    }
+  }
+ 
+  # Keep SNPs based on the 'keep' flag
+  target_data_qced <- target_data_qced[qc_summary$keep, ,drop=FALSE]
+  
+  # Remove duplicates if specified
+  if (remove_dups) {
+    dups <- vec_duplicate_detect(qc_summary[, c("chrom", "pos", "A1.target", "A2.target")])
+    if (any(dups)) {
+      target_data_qced <- target_data_qced[!dups, ,drop=FALSE]
+      message("Some duplicates were removed.")
+    }
+  }
+  
+  # Check if the minimum proportion of variants is matched
+  min_match <- match.min.prop * min(nrow(target_variants), nrow(ref_variants))
+  if (nrow(target_data_qced) < min_match) {
+    stop("Not enough variants have been matched.")
+  }
+  return(list(target_data_qced = target_data_qced, qc_summary = qc))
+}
