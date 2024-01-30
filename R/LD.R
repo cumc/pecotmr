@@ -294,5 +294,5 @@ filter_genotype_by_ld_reference <- function(X, ld_reference_meta_file) {
   message("Number of variants dropped: ", ncol(X) - length(keep_indices), 
           " out of ", ncol(X), " total columns.")
 
-  return(X_filtered)
+  return(list(data=X_filtered, idx=keep_indices))
 }

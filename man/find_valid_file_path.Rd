@@ -4,7 +4,7 @@
 \alias{find_valid_file_path}
 \title{Find Valid File Path}
 \usage{
-find_valid_file_path(primary_file_path, fallback_file_path)
+find_valid_file_path(reference_file_path, target_file_path)
 }
 \description{
 Find Valid File Path

@@ -263,7 +263,7 @@ twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_
                 } else {
                     metrics_table[[m]][r, ] <- NA
                     message(paste0("Predicted values for condition ", r , " using ", m , 
-                                   "have zero variance. Filling performance metric with NAs"))
+                                   " have zero variance. Filling performance metric with NAs"))
                 }
             }
         }

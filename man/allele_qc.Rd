@@ -20,7 +20,7 @@ allele_qc(
 
 \item{ref_variants}{A data frame with columns "chrom", "pos", "A1", "A2" or strings in the format of "chr:pos:A1:A2"/"chr:pos_A1_A2".}
 
-\item{target_data}{A data frame on which QC procedures will be applied..}
+\item{target_data}{A data frame on which QC procedures will be applied.}
 
 \item{col_to_flip}{The name of the column in target_data where flips are to be applied.}
 
