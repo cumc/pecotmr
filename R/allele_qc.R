@@ -48,6 +48,7 @@ convert_to_dataframe <- function(variant_id) {
   # If none of the conditions are met, stop and print an error
   stop("Input does not match any expected format. Please provide a valid data frame or a character vector in the specified formats.")
 }
+
 #' Match alleles between target_variants and ref_variants
 #'
 #' Match by ("chrom", "A1", "A2" and "pos"), accounting for possible
@@ -55,7 +56,7 @@ convert_to_dataframe <- function(variant_id) {
 #'
 #' @param target_variants A data frame with columns "chrom", "pos", "A1", "A2" or strings in the format of "chr:pos:A1:A2"/"chr:pos_A1_A2".
 #' @param ref_variants A data frame with columns "chrom", "pos", "A1", "A2" or strings in the format of "chr:pos:A1:A2"/"chr:pos_A1_A2".
-#' @param target_data A data frame on which QC procedures will be applied..
+#' @param target_data A data frame on which QC procedures will be applied.
 #' @param col_to_flip The name of the column in target_data where flips are to be applied.
 #' @param match_min_prop Minimum proportion of variants in the smallest data
 #'   to be matched, otherwise stops with an error. Default is 20%.

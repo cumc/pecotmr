@@ -94,8 +94,6 @@ fsusie_get_cs = function(fSuSiE.obj, X ,requested_coverage = 0.95) {
   return(sets)
 }
 
-
-
 #' @title Wrapper for fsusie Function with Automatic Post-Processing
 #'
 #' This function serves as a wrapper for the fsusie function, facilitating
