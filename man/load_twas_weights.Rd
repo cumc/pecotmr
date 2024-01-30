@@ -20,7 +20,7 @@ Each element organized as region/condition/weights}
 \item{condition}{The specific condition to be checked and consolidated across all files.}
 }
 \value{
-A consolidated list of weights for the specified condition.
+A consolidated list of weights for the specified condition and a list of susie_trimmed_results.
 }
 \description{
 This function loads TWAS weight data from multiple RDS files, checks for the presence

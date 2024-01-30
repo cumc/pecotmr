@@ -65,7 +65,7 @@ convert_to_dataframe <- function(variant_id) {
 #'   corresponding `col_to_flip` are multiplied by -1. Default is `TRUE`.
 #' @param remove Whether to remove strand SNPs (if any). Default is `TRUE`.
 #' @return A single data frame with matched variants.
-#' @importFrom dplyr mutate filter
+#' @import dplyr
 #' @importFrom vctrs vec_duplicate_detect
 #' @export
 allele_qc = function(target_variants, ref_variants, target_data, col_to_flip, match.min.prop, remove_dups,flip,remove){

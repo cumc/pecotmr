@@ -1,5 +1,6 @@
 #' Function to Check if Regions are in increasing order and remove duplicated rows
-#' @importFrom dplyr arrange
+#' @import dplyr
+#' @importFrom stats lag
 check_consecutive_regions <- function(df) {
   # Ensure that 'chrom' values are integers, df can be genomic_data or regions_of_interest
   df$chrom <- ifelse(grepl("^chr", df$chrom), 
@@ -26,7 +27,7 @@ check_consecutive_regions <- function(df) {
 
 
 #' Function to Find Start and End Rows of Genomic Data for Region of Interest
-#' @import dplyr
+#' @importFrom dplyr filter arrange slice
 #' @noRd
 find_intersection_rows <- function(genomic_data, region_chrom, region_start, region_end) {
   start_row <- genomic_data %>%
@@ -83,6 +84,8 @@ extract_file_paths <- function(genomic_data, intersection_rows, column_to_extrac
 #' - File paths from the genomic data corresponding to intersected regions
 #' - Optionally, bim file paths if available
 #' @importFrom stringr str_split
+#' @importFrom dplyr select
+#' @importFrom data.table fread
 #' @noRd
 get_regional_ld_meta <- function(ld_reference_meta_file, region) {
   genomic_data <- fread(ld_reference_meta_file, header = "auto")
@@ -125,11 +128,11 @@ get_regional_ld_meta <- function(ld_reference_meta_file, region) {
               region = region))
 }
 
+#' @importFrom dplyr mutate
+#' @importFrom utils read.table
+#' @importFrom stats setNames                            
 # Process an LD matrix from a file path
-process_LD_matrix <- function(LD_meta_file_path, LD_file_path, bim_file_path) {
-    # Check whether the LD_file_path and bim_file_path exist or not
-    LD_file_path <- find_valid_file_path(LD_meta_file_path, LD_file_path)
-    bim_file_path <- find_valid_file_path(LD_meta_file_path, bim_file_path)
+process_LD_matrix <- function(LD_file_path, bim_file_path) {
     # Read the LD matrix
     LD_file_con <- xzfile(LD_file_path)
     LD_matrix <- scan(LD_file_con, quiet = TRUE)
@@ -155,7 +158,7 @@ process_LD_matrix <- function(LD_meta_file_path, LD_file_path, bim_file_path) {
     list(LD_matrix = LD_matrix, LD_variants = LD_variants)
 }
 
-
+#' @import dplyr                            
 # Extract LD matrix and variants for a specific region
 extract_LD_for_region <- function(LD_matrix, variants, region, extract_coordinates) {
     # Filter variants based on region
@@ -182,8 +185,29 @@ extract_LD_for_region <- function(LD_matrix, variants, region, extract_coordinat
 
 # Create a combined LD matrix from multiple matrices
 create_combined_LD_matrix <- function(LD_matrices, variants) {
-    # Extract unique variant names from the list of variants
-    unique_variants <- unique(variants$variants)
+   # Extract unique variant names from the list of variants
+    mergeVariants <- function(LD_variants_list) {
+       # Initialize an empty vector to store the merged variants
+       mergedVariants <- character(0)
+    
+       # Loop over the list of LD matrices using sapply
+        sapply(LD_variants_list, function(LD_variants) {
+          # Extract the variants from the current LD matrix
+           currentVariants <- get_nested_element(LD_variants,  "variants")
+        
+          # Merge variants with the previously merged variants vector
+          # Checking if the last variant is the same as the first of the current, if so, skip the first
+          if (length(mergedVariants) > 0 && tail(mergedVariants, 1) == currentVariants[1]) {
+            mergedVariants <<- c(mergedVariants, currentVariants[-1])
+          } else {
+            mergedVariants <<- c(mergedVariants, currentVariants)
+          }
+       })
+    
+    # Return the merged vector of variants
+    return(mergedVariants)
+    }
+    unique_variants <- mergeVariants(variants)
     # Initialize an empty combined LD matrix with the unique variants
     combined_LD_matrix <- matrix(0, nrow = length(unique_variants), ncol = length(unique_variants))
     rownames(combined_LD_matrix) <- unique_variants
@@ -228,8 +252,6 @@ create_combined_LD_matrix <- function(LD_matrices, variants) {
 #' "GD", "pos", "A1", and "A2".}
 #' \item{combined_LD_matrix}{The LD matrix for each region, with row and column names matching variant identifiers.}
 #' }
-#' @importFrom Matrix bdiag
-#' @import dplyr
 #' @export
 load_LD_matrix <- function(LD_meta_file_path, region, extract_coordinates = NULL) {
     # Intersect LD metadata with specified regions using updated function
@@ -241,7 +263,7 @@ load_LD_matrix <- function(LD_meta_file_path, region, extract_coordinates = NULL
 
     LD_matrices_list <- lapply(seq_along(LD_file_paths), function(j) {
     # Read and process the LD matrix
-    LD_matrix_processed <- process_LD_matrix(LD_meta_file_path, LD_file_paths[j], bim_file_paths[j])
+    LD_matrix_processed <- process_LD_matrix(LD_file_paths[j], bim_file_paths[j])
 
     # Extract LD for the region
     region_info <- intersected_LD_files$region
@@ -251,15 +273,14 @@ load_LD_matrix <- function(LD_meta_file_path, region, extract_coordinates = NULL
     })
 
     # Combine LD matrices and variants data frames
-    combined_LD_matrices <- lapply(LD_matrices_list, function(x) x$extracted_LD_matrix)
-    combined_LD_variants <- do.call(rbind, lapply(LD_matrices_list, function(x) x$extracted_LD_variants))
+    extracted_LD_matrices_list <- lapply(LD_matrices_list, function(x) x$extracted_LD_matrix)
+    extracted_LD_variants_list <- lapply(LD_matrices_list, function(x) x$extracted_LD_variants)
 
     # Create a combined LD matrix
-    combined_LD_matrix <- create_combined_LD_matrix(combined_LD_matrices, combined_LD_variants)
-    combined_LD_variants <- combined_LD_variants[match(rownames(combined_LD_matrix),combined_LD_variants$variants),]
-
+    combined_LD_matrix <- create_combined_LD_matrix(extracted_LD_matrices_list, extracted_LD_variants_list)
+    
     # LD list for region
-    combined_LD_list <- list(combined_LD_variants = combined_LD_variants, combined_LD_matrix = combined_LD_matrix)
+    combined_LD_list <- list(combined_LD_variants = rownames(combined_LD_matrix), combined_LD_matrix = combined_LD_matrix)
 
     return(combined_LD_list)
 }

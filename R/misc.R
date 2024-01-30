@@ -456,7 +456,7 @@ load_regional_functional_data <- function(...) {
 #' Each element organized as region/condition/weights
 #' @param condition The specific condition to be checked and consolidated across all files.
 #' @param variable_name_obj The name of the variable/object to fetch from each file, if not NULL.
-#' @return A consolidated list of weights for the specified condition.
+#' @return A consolidated list of weights for the specified condition and a list of susie_trimmed_results.
 #' @examples
 #' # Example usage (replace with actual file paths, condition, region, and variable_name_obj):
 #' weight_db_files <- c("path/to/file1.rds", "path/to/file2.rds")
@@ -489,13 +489,18 @@ load_twas_weights <- function(weight_db_files, conditions = NULL,
     if (!all(conditions %in% names(combined_all_data))) {
         stop("The specified condition is not available in all RDS files.")
       }
-    for (data in seq_along(combined_all_data))                                       
-    {
-        if (!is.null(variable_name_obj) && !(variable_name_obj %in% names(combined_all_data[[data]]))) {
-            stop("The specified variable_name_obj is not available in all RDS files.")
-        }
-    }
-    return(combined_all_data)
+    return(combined_all_data)                                           
+  }                                             
+   # Only extract the variant_names and susie_result_trimmed                                            
+   extract_variants_and_susie_results <- function(combined_all_data, conditions){
+        combined_susie_result_trimmed <- lapply(conditions, function(condition) {
+        list(
+             variant_names = get_nested_element(combined_all_data,c(condition,"variant_names")),
+             susie_result_trimmed = get_nested_element(combined_all_data, c(condition,"susie_result_trimmed"))
+            )
+         })
+        names(combined_susie_result_trimmed) = conditions                                           
+        return(combined_susie_result_trimmed)
   }
   # Internal function to align and merge weight matrices
   align_and_merge <- function(weights_list, variable_objs) {
@@ -512,8 +517,10 @@ load_twas_weights <- function(weight_db_files, conditions = NULL,
       temp_matrix[idx, ] <- weights_list[[i]]
       # Ensure no duplicate column names
       new_colnames <- colnames(weights_list[[i]])
-      if (any(duplicated(c(existing_colnames, new_colnames)))) {
-        stop("Duplicate column names detected during merging process.")
+      dups <- duplicated(c(existing_colnames, new_colnames))
+      if (any(dups)) {
+          duplicated_names <- paste(c(existing_colnames, new_colnames)[dups], collapse = ", ")
+          stop("Duplicate column names detected during merging process: ", duplicated_names, ".")
       }
       existing_colnames <- c(existing_colnames, new_colnames)
 
@@ -524,7 +531,7 @@ load_twas_weights <- function(weight_db_files, conditions = NULL,
   }
 
   # Internal function to consolidate weights for given condition
-  consolidate_weights_list <- function(combined_all_data, conditions, variable_name_obj,twas_weights_table) {
+  consolidate_weights_list <- function(combined_all_data, conditions, variable_name_obj, twas_weights_table) {
     # Set default for 'conditions' if they are not specified
     if (is.null(conditions)) {
     conditions <- names(combined_all_data)
@@ -553,7 +560,8 @@ load_twas_weights <- function(weight_db_files, conditions = NULL,
   ## Load, validate, and consolidate data
   try({
     combined_all_data <- load_and_validate_data(weight_db_files, conditions, variable_name_obj)
+    combined_susie_result_trimmed <- extract_variants_and_susie_results(combined_all_data, conditions)
     weights <- consolidate_weights_list(combined_all_data, conditions, variable_name_obj,twas_weights_table)
-    return(list(combined_all_data = combined_all_data, weights = weights))
+    return(list(combined_susie_result_trimmed = combined_susie_result_trimmed, weights = weights))
   }, silent = TRUE)
 }
