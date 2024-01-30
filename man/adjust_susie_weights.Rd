@@ -4,18 +4,10 @@
 \alias{adjust_susie_weights}
 \title{Adjust SuSiE Weights}
 \usage{
-adjust_susie_weights(
-  susie_fit,
-  twas_weights,
-  region = NULL,
-  condition = NULL,
-  keep_variants
-)
+adjust_susie_weights(weight_db_file, twas_weights, condition, keep_variants)
 }
 \arguments{
-\item{susie_fit}{The fitted SuSiE model object.}
-
-\item{region}{Optional; specific genomic region. If NULL, uses the first region in xqtl_data.}
+\item{weight_db_file}{A RDS file containing TWAS weights..}
 
 \item{condition}{Optional; specific condition. If NULL, uses the first condition in xqtl_data.}
 

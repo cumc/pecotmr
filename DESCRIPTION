@@ -29,8 +29,9 @@ Imports:
     purrr,
     tidyr,
     Rfast,
-    doMC,
+    doMC, 
     doParallel,
+    pgenlibr,
     foreach,
     snpStats,
     vctrs
@@ -44,7 +45,6 @@ Suggests:
     ggrepel,
     ggnewscale,
     harmonicmeanp,
-    pgenlibr,
     GBJ,
     plink2R,
     rmarkdown

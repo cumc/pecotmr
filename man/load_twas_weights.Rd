@@ -6,24 +6,21 @@
 \usage{
 load_twas_weights(
   weight_db_files,
-  condition = NULL,
-  region = NULL,
+  conditions = NULL,
   variable_name_obj = "variant_names",
   twas_weights_table = "twas_weights"
 )
 }
 \arguments{
-\item{weight_db_files}{Vector of file paths for RDS files containing TWAS weights. 
+\item{variable_name_obj}{The name of the variable/object to fetch from each file, if not NULL.}
+
+\item{weight_db_file}{weight_db_files Vector of file paths for RDS files containing TWAS weights.. 
 Each element organized as region/condition/weights}
 
 \item{condition}{The specific condition to be checked and consolidated across all files.}
-
-\item{region}{The specific region to be checked and consolidated across all files.}
-
-\item{variable_name_obj}{The name of the variable/object to fetch from each file, if not NULL.}
 }
 \value{
-A consolidated matrix of weights for the specified condition.
+A consolidated list of weights for the specified condition and a list of susie_trimmed_results.
 }
 \description{
 This function loads TWAS weight data from multiple RDS files, checks for the presence

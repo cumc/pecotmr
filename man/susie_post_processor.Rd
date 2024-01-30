@@ -2,27 +2,28 @@
 % Please edit documentation in R/susie_wrapper.R
 \name{susie_post_processor}
 \alias{susie_post_processor}
-\title{Post-process SuSiE Analysis Results}
+\title{Post-process SuSiE or SuSiE_rss Analysis Results}
 \usage{
 susie_post_processor(
   susie_output,
-  X_data,
-  y_data,
+  data_x,
+  data_y,
   X_scalar,
   y_scalar,
   maf,
   secondary_coverage = c(0.5, 0.7),
   signal_cutoff = 0.1,
-  other_quantities = list(),
-  prior_eff_tol = 0
+  other_quantities = NULL,
+  prior_eff_tol = 0,
+  mode = c("susie", "susie_rss")
 )
 }
 \arguments{
-\item{susie_output}{Output from running susieR::susie() or susieR:susie_rss()}
+\item{susie_output}{Output from running susieR::susie() or susieR::susie_rss()}
 
-\item{X_data}{The genotype data matrix.}
+\item{data_x}{Genotype data matrix for 'susie' or Xcorr matrix for 'susie_rss'.}
 
-\item{y_data}{The phenotype data vector.}
+\item{data_y}{Phenotype data vector for 'susie' or summary stats object for 'susie_rss' (a list contain attribute betahat and sebetahat AND/OR z). i.e. data_y = list(betahat = ..., sebetahat = ...)}
 
 \item{X_scalar}{Scalar for the genotype data, used in residual scaling.}
 
@@ -32,20 +33,25 @@ susie_post_processor(
 
 \item{secondary_coverage}{Vector of coverage thresholds for secondary conditional analysis.}
 
-\item{signal_cutoff}{Cutoff value for signal identification in PIP values. Default is 0.1.}
+\item{signal_cutoff}{Cutoff value for signal identification in PIP values.}
 
 \item{other_quantities}{A list of other quantities to be added to the final object.}
+
+\item{prior_eff_tol}{Prior effective tolerance.}
+
+\item{mode}{Specify the analysis mode: 'susie' or 'susie_rss'.}
 }
 \value{
 A list containing modified SuSiE object along with additional post-processing information.
 }
 \description{
-This function processes the results from SuSiE (Sum of Single Effects) genetic analysis. 
+This function processes the results from SuSiE or SuSiE_rss (Sum of Single Effects) genetic analysis.
 It extracts and processes various statistics and indices based on the provided SuSiE object and other parameters.
-It has been updated to handle multiple secondary coverage values, performing secondary analysis for each and combining the top loci.
-Also, it tracks cs_secondary correlation for each coverage value and includes this information in the top_loci table.
+The function can operate in two modes: 'susie' and 'susie_rss', based on the method used for the SuSiE analysis.
 }
 \examples{
-# Example usage
-# susie_result <- susie_post_processor(susie_output, X_data, y_data, X_scalar, y_scalar, maf, c(0.5, 0.7))
+# Example usage for SuSiE
+# result <- combined_susie_post_processor(susie_output, X_data, y_data, maf, mode = "susie")
+# Example usage for SuSiE_rss
+# result <- combined_susie_post_processor(susie_output, Xcorr, z, maf, mode = "susie_rss")
 }

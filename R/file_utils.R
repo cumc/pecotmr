@@ -83,11 +83,14 @@ load_script <- function() {
                 readChar(fileName,file.info(fileName)$size),""))
 }
 
-#' @importFrom data.table fread dplyr
-tabix_region <- function(file, region){
+#' @importFrom data.table fread
+#' @import dplyr
+tabix_region <- function(file, region, tabix_header = "auto"){
   # Execute tabix command and capture the output
   cmd_output <- tryCatch(
-    {fread(cmd = paste0("tabix -h ", file, " ", region), sep="auto", header = FALSE)},
+    {
+      fread(cmd = paste0("tabix -h ", file, " ", region), sep="auto", header = tabix_header)
+    },
     error = function(e) NULL
   )
 
@@ -103,40 +106,42 @@ tabix_region <- function(file, region){
         ) 
 }
 #' Find Valid File Path
-find_valid_file_path <- function(primary_file_path, fallback_file_path) {
-  # Check if the primary file path exits
-  try_primary <- function() {
-    if (file.exists(primary_file_path)) {
-      return(primary_file_path)
+find_valid_file_path <- function(reference_file_path, target_file_path) {
+  # Check if the reference file path exits
+  try_reference <- function() {
+    if (file.exists(reference_file_path)) {
+      return(reference_file_path)
     } else {
       return(NULL)
     }
   }
- # Check if the fallback file path exists
-  try_fallback <- function() {
-      if (file.exists(fallback_file_path)) {
-      return(fallback_file_path)
+ # Check if the target file path exists
+  try_target <- function() {
+      if (file.exists(target_file_path)) {
+      return(target_file_path)
     } else {
-      #If not, construct a new fallback path by combining the directory of the primary file path with the fallback file path
-     fallback_full_path <- file.path(dirname(primary_file_path), fallback_file_path)
-      if (file.exists(fallback_full_path)) {
-      return(fallback_full_path)
+      #If not, construct a new target path by combining the directory of the reference file path with the target file path
+     target_full_path <- file.path(dirname(reference_file_path), target_file_path)
+      if (file.exists(target_full_path)) {
+      return(target_full_path)
       } else {
       return(NULL)
       }
     }
   }
     
-  fallback_result <- try_fallback()
-  if (!is.null(fallback_result)) {
-    return(fallback_result)
+  target_result <- try_target()
+  if (!is.null(target_result)) {
+    return(target_result)
   }
 
-  primary_result <- try_primary()
-  if (!is.null(primary_result)) {
-    return(primary_result)
+  reference_result <- try_reference()
+  if (!is.null(reference_result)) {
+    return(reference_result)
   }
     
-  stop(sprintf("Both primary and fallback file paths do not work. Tried paths: '%s' and '%s'", 
-               primary_file_path, file.path(dirname(primary_file_path), fallback_file_path)))
+  stop(sprintf("Both reference and target file paths do not work. Tried paths: '%s' and '%s'", 
+               reference_file_path, file.path(dirname(reference_file_path), target_file_path)))
 }
+
+find_valid_file_paths <- function(reference_file_path, target_file_paths) sapply(target_file_paths, function(x) find_valid_file_path(reference_file_path, x))

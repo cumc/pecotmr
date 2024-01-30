@@ -171,7 +171,7 @@ load_genotype_region <- function(genotype, region = NULL, keep_indel = TRUE) {
 }
 
 load_covariate_data <- function(covariate_path) {
-  return(map(covariate_path, ~ read_delim(.x, "\t", col_types = cols()) %>% select(-1) %>% t()))
+  return(map(covariate_path, ~ read_delim(.x, "\t", col_types = cols()) %>% select(-1) %>% mutate(across(everything(), as.numeric)) %>% t()))
 }
 
 NoPhenotypeError <- function(message) {
@@ -180,25 +180,22 @@ NoPhenotypeError <- function(message) {
 
 #' @importFrom purrr map compact
 #' @noRd 
-load_phenotype_data <- function(phenotype_path, region) {
+load_phenotype_data <- function(phenotype_path, region, tabix_header = TRUE) {
   # `compact` should remove all NULL elements
   phenotype_data <- compact(map(phenotype_path, ~ {
-    tabix_data <- if (!is.null(region)) tabix_region(.x, region) else read_delim(.x, "\t", col_types = cols())
+    tabix_data <- if (!is.null(region)) tabix_region(.x, region, tabix_header = tabix_header) else read_delim(.x, "\t", col_types = cols())
     if (nrow(tabix_data) == 0) { # Check if tabix_region returns empty
       message("Phenotype file ", .x, " is empty for the specified region.")
       return(NULL) # Exclude empty results and report
     }
     # Process non-empty data
-    tabix_data %>%
-      t() %>%
-      as.matrix()
+    tabix_data %>% t()
   }))
 
   # Check if all phenotype files are empty
   if (length(phenotype_data) == 0) {
     stop(NoPhenotypeError("All phenotype files are empty for the specified region."))
   }
-
   return(phenotype_data)
 }
 
@@ -206,20 +203,16 @@ load_phenotype_data <- function(phenotype_path, region) {
 extract_phenotype_coordinates <- function(phenotype_list){ 
 	return(map(phenotype_list,~t(.x[1:3,])%>%as_tibble%>%mutate(start = as.numeric(start),end = as.numeric(end)))) 
 }
-			 
+
 filter_by_common_samples <- function(dat, common_samples) {
   dat[common_samples, , drop = FALSE] %>% .[order(rownames(.)), ]
 }
 
 #' @importFrom readr read_delim cols
 prepare_data_list <- function(geno_bed, phenotype, covariate, imiss_cutoff, maf_cutoff, mac_cutoff, xvar_cutoff,  phenotype_header = 4, keep_samples = NULL) {
-  data_list <- tibble(
-    covar = lapply(phenotype, function(x) {
-              apply(x, c(1, 2), as.numeric)
-            }),
-    Y = lapply(phenotype, function(x) {
-          apply(x[-c(1:phenotype_header), ], c(1, 2), as.numeric)
-        }) 
+    data_list <- tibble(
+      covar = covariate,
+      Y = lapply(phenotype, function(x) apply(x[-c(1:phenotype_header), , drop=F], c(1,2), as.numeric))
     ) %>%
     mutate(
       # Determine common complete samples across Y, covar, and geno_bed, considering missing values
@@ -340,12 +333,13 @@ load_regional_association_data <- function(genotype, # PLINK file
                                            keep_indel = TRUE,
                                            keep_samples = NULL,
                                            phenotype_header = 4, # skip first 4 rows of transposed phenotype for chr, start, end and ID 
-                                           scale_residuals = FALSE) {
+                                           scale_residuals = FALSE,
+                                           tabix_header = TRUE) {
     ## Load genotype
     geno <- load_genotype_region(genotype, cis_window, keep_indel)
     ## Load phenotype and covariates and perform some pre-processing
     covar <- load_covariate_data(covariate)
-    pheno <- load_phenotype_data(phenotype, region)
+    pheno <- load_phenotype_data(phenotype, region, tabix_header = tabix_header)
     ### including Y ( cov ) and specific X and covar match, filter X variants based on the overlapped samples.
     data_list <- prepare_data_list(geno, pheno, covar, imiss_cutoff,
                                     maf_cutoff, mac_cutoff, xvar_cutoff, 
@@ -450,8 +444,6 @@ load_regional_functional_data <- function(...) {
   return (dat)
 }
 
-
-					   
 #' Load, Validate, and Consolidate TWAS Weights from Multiple RDS Files
 #'
 #' This function loads TWAS weight data from multiple RDS files, checks for the presence
@@ -464,7 +456,7 @@ load_regional_functional_data <- function(...) {
 #' Each element organized as region/condition/weights
 #' @param condition The specific condition to be checked and consolidated across all files.
 #' @param variable_name_obj The name of the variable/object to fetch from each file, if not NULL.
-#' @return A consolidated list of weights for the specified condition.
+#' @return A consolidated list of weights for the specified condition and a list of susie_trimmed_results.
 #' @examples
 #' # Example usage (replace with actual file paths, condition, region, and variable_name_obj):
 #' weight_db_files <- c("path/to/file1.rds", "path/to/file2.rds")
@@ -497,13 +489,18 @@ load_twas_weights <- function(weight_db_files, conditions = NULL,
     if (!all(conditions %in% names(combined_all_data))) {
         stop("The specified condition is not available in all RDS files.")
       }
-    for (data in seq_along(combined_all_data))                                       
-    {
-        if (!is.null(variable_name_obj) && !(variable_name_obj %in% names(combined_all_data[[data]]))) {
-            stop("The specified variable_name_obj is not available in all RDS files.")
-        }
-    }
-    return(combined_all_data)
+    return(combined_all_data)                                           
+  }                                             
+   # Only extract the variant_names and susie_result_trimmed                                            
+   extract_variants_and_susie_results <- function(combined_all_data, conditions){
+        combined_susie_result_trimmed <- lapply(conditions, function(condition) {
+        list(
+             variant_names = get_nested_element(combined_all_data,c(condition,"variant_names")),
+             susie_result_trimmed = get_nested_element(combined_all_data, c(condition,"susie_result_trimmed"))
+            )
+         })
+        names(combined_susie_result_trimmed) = conditions                                           
+        return(combined_susie_result_trimmed)
   }
   # Internal function to align and merge weight matrices
   align_and_merge <- function(weights_list, variable_objs) {
@@ -520,8 +517,10 @@ load_twas_weights <- function(weight_db_files, conditions = NULL,
       temp_matrix[idx, ] <- weights_list[[i]]
       # Ensure no duplicate column names
       new_colnames <- colnames(weights_list[[i]])
-      if (any(duplicated(c(existing_colnames, new_colnames)))) {
-        stop("Duplicate column names detected during merging process.")
+      dups <- duplicated(c(existing_colnames, new_colnames))
+      if (any(dups)) {
+          duplicated_names <- paste(c(existing_colnames, new_colnames)[dups], collapse = ", ")
+          stop("Duplicate column names detected during merging process: ", duplicated_names, ".")
       }
       existing_colnames <- c(existing_colnames, new_colnames)
 
@@ -532,7 +531,7 @@ load_twas_weights <- function(weight_db_files, conditions = NULL,
   }
 
   # Internal function to consolidate weights for given condition
-  consolidate_weights_list <- function(combined_all_data, conditions, variable_name_obj,twas_weights_table) {
+  consolidate_weights_list <- function(combined_all_data, conditions, variable_name_obj, twas_weights_table) {
     # Set default for 'conditions' if they are not specified
     if (is.null(conditions)) {
     conditions <- names(combined_all_data)
@@ -561,7 +560,8 @@ load_twas_weights <- function(weight_db_files, conditions = NULL,
   ## Load, validate, and consolidate data
   try({
     combined_all_data <- load_and_validate_data(weight_db_files, conditions, variable_name_obj)
+    combined_susie_result_trimmed <- extract_variants_and_susie_results(combined_all_data, conditions)
     weights <- consolidate_weights_list(combined_all_data, conditions, variable_name_obj,twas_weights_table)
-    return(list(combined_all_data = combined_all_data, weights = weights))
+    return(list(combined_susie_result_trimmed = combined_susie_result_trimmed, weights = weights))
   }, silent = TRUE)
 }
