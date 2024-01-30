@@ -70,9 +70,9 @@ extract_file_paths <- function(genomic_data, intersection_rows, column_to_extrac
   return(extracted_paths)
 }
 
-#' Intersect Genomic Data with Regions of Interest
+#' Intersect LD reference with Regions of Interest
 #'
-#' @param genomic_data A data frame with columns "chrom", "start", "end", and "path" representing genomic regions.
+#' @param ld_reference_meta_file A file of data frame with columns "chrom", "start", "end", and "path" representing genomic regions.
 #' "chrom" is the chromosome, "start" and "end" are the positions of the LD block, and "path" is the file path for the LD block.
 #' @param region A data frame with columns "chrom", "start", and "end" specifying regions of interest.
 #' "start" and "end" are the positions of these regions. Or it can take the form of `chr:start-end`
@@ -84,7 +84,8 @@ extract_file_paths <- function(genomic_data, intersection_rows, column_to_extrac
 #' - Optionally, bim file paths if available
 #' @importFrom stringr str_split
 #' @noRd
-intersect_genomic_region <- function(genomic_data, region) {
+get_regional_ld_meta <- function(ld_reference_meta_file, region) {
+  genomic_data <- fread(ld_reference_meta_file, header = "auto")
   region <- parse_region(region) 
   # Set column names
   names(genomic_data) <- c("chrom", "start", "end", "path")
@@ -109,9 +110,9 @@ intersect_genomic_region <- function(genomic_data, region) {
   validate_selected_region(intersection_rows$start_row, intersection_rows$end_row, region$start, region$end)
 
   # Extract file paths
-  LD_paths <- extract_file_paths(genomic_data, intersection_rows, "LD_file_path")
+  LD_paths <- find_valid_file_paths(ld_reference_meta_file, extract_file_paths(genomic_data, intersection_rows, "LD_file_path"))
   bim_paths <- if ("bim_file_path" %in% names(genomic_data)) {
-               extract_file_paths(genomic_data, intersection_rows, "bim_file_path")
+               find_valid_file_paths(ld_reference_meta_file, extract_file_paths(genomic_data, intersection_rows, "bim_file_path"))
              } else {
                NULL
              }
@@ -120,7 +121,7 @@ intersect_genomic_region <- function(genomic_data, region) {
                              end_index = intersection_rows$end_index,
                              LD_file_paths = LD_paths,
                              bim_file_paths = bim_paths), 
-              genomic_data = genomic_data, 
+              ld_meta_data = genomic_data, 
               region = region))
 }
 
@@ -216,10 +217,8 @@ create_combined_LD_matrix <- function(LD_matrices, variants) {
 #' @import dplyr
 #' @export
 load_LD_matrix <- function(LD_meta_file_path, region, extract_coordinates = NULL) {
-    # Load LD_meta_file
-    LD_metadata <- fread(LD_meta_file_path, header = "auto")
     # Intersect LD metadata with specified regions using updated function
-    intersected_LD_files <- intersect_genomic_region(LD_metadata, region)
+    intersected_LD_files <- get_regional_ld_meta(LD_meta_file_path, region)
 
     # Extract file paths for LD and bim files
     LD_file_paths <- intersected_LD_files$intersections$LD_file_paths
@@ -252,7 +251,7 @@ load_LD_matrix <- function(LD_meta_file_path, region, extract_coordinates = NULL
 #' Filter Genotype Matrix by LD Reference
 #'
 #' @param X A genotype matrix with col names as variant names in the format chr:pos_ref_alt or chr:pos:ref:alt.
-#' @param ld_reference_meta_file A data frame similar to 'genomic_data' in intersect_genomic_region function.
+#' @param ld_reference_meta_file A data frame similar to 'genomic_data' in get_regional_ld_meta function.
 #' @return A subset of the genotype matrix X, filtered based on LD reference data.
 #' @importFrom stringr str_split
 #' @importFrom dplyr select
@@ -278,9 +277,8 @@ filter_genotype_by_ld_reference <- function(X, ld_reference_meta_file) {
   region_df <- variants_df %>%
                group_by(chrom) %>%
                summarise(start = min(pos), end = max(pos))
-
-  # Step 3: Call intersect_genomic_region to get bim_file_paths
-  bim_file_paths <- intersect_genomic_region(ld_reference_meta_file, region_df)$intersections$bim_file_paths
+  # Step 3: Call get_regional_ld_meta to get bim_file_paths
+  bim_file_paths <- get_regional_ld_meta(ld_reference_meta_file, region_df)$intersections$bim_file_paths
 
   # Step 4: Load bim files and consolidate into a single data frame
   bim_data <- lapply(bim_file_paths, function(path) {
@@ -290,14 +288,11 @@ filter_genotype_by_ld_reference <- function(X, ld_reference_meta_file) {
              do.call("rbind", .)
 
   # Step 5: Overlap the variants data frame with bim_data
-  overlap_indices <- match(paste(variants_df$chrom, variants_df$pos), paste(bim_data$chrom, bim_data$pos))
+  keep_indices <- which(paste(variants_df$chrom, variants_df$pos) %in% paste(bim_data$chrom, bim_data$pos))
+  X_filtered <- X[,keep_indices,drop=F]
 
-  # Step 6: Subset X and report the number of variants dropped
-  valid_indices <- !is.na(overlap_indices)
-  X_filtered <- X[,valid_indices]
-
-  message("Number of variants dropped: ", sum(!valid_indices), 
+  message("Number of variants dropped: ", ncol(X) - length(keep_indices), 
           " out of ", ncol(X), " total columns.")
 
   return(X_filtered)
-}                                          
+}
