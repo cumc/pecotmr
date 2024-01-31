@@ -29,19 +29,31 @@ check_consecutive_regions <- function(df) {
 #' @importFrom dplyr filter arrange slice
 #' @noRd
 find_intersection_rows <- function(genomic_data, region_chrom, region_start, region_end) {
+  # Adjusting region_start if it's smaller than the smallest start position in genomic_data
+  min_start <- min(genomic_data %>% filter(chrom == region_chrom) %>% pull(start))
+  if (!is.na(min_start) && region_start < min_start) {
+    region_start <- min_start
+  }
+  
+  # Adjusting region_end if it's larger than the largest end position in genomic_data
+  max_end <- max(genomic_data %>% filter(chrom == region_chrom) %>% pull(end))
+  if (!is.na(max_end) && region_end > max_end) {
+    region_end <- max_end
+  }
+  
   start_row <- genomic_data %>%
     filter(chrom == region_chrom, start <= region_start, end >= region_start) %>%
     slice(1)
-
+  
   end_row <- genomic_data %>%
     filter(chrom == region_chrom, start <= region_end, end >= region_end) %>%
     arrange(desc(end)) %>%
     slice(1)
-
+  
   if (nrow(start_row) == 0 || nrow(end_row) == 0) {
     stop("Region of interest is not covered by any rows in the data frame.")
   }
-
+  
   list(start_row = start_row, end_row = end_row)
 }
 
