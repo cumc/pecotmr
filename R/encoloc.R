@@ -71,7 +71,8 @@ xqtl_enrichment_wrapper <- function(xqtl_files, gwas_files,
 
 #' Functions for  Colocalization Analysis Wrapper
 
-# Function to filter and order colocalization results
+#' Function to filter and order colocalization results
+
 filter_and_order_coloc_results <- function(coloc_results_fil) {
   # Ensure the input has more than one column
   if (ncol(coloc_results_fil) <= 1) {
@@ -90,12 +91,12 @@ filter_and_order_coloc_results <- function(coloc_results_fil) {
   return(ordered_results)
 }
 
-# Function to calculate cumulative sum
+#' Function to calculate cumulative sum
 calculate_cumsum <- function(coloc_results) {
   cumsum(coloc_results[, 2])
 }
 
-# Function to load and extract LD matrix
+#' Function to load and extract LD matrix
 load_and_extract_ld_matrix <- function(ld_meta_file_path, analysis_region, variants) {
   # This is a placeholder for loading LD matrix, adjust as per your actual function
   ld_ref <- load_LD_matrix(LD_meta_file_path = ld_meta_file_path, region = analysis_region)
@@ -103,8 +104,8 @@ load_and_extract_ld_matrix <- function(ld_meta_file_path, analysis_region, varia
   ext_ld
 }
 
-# Subsample and compute min, mean, median and max abs corr.
-#
+#' Subsample and compute min, mean, median and max abs corr.
+#' from gaow/susieR
 #' @importFrom stats median
 get_purity = function (pos, X, Xcorr, n = 100) {
   get_upper_tri = function (R) R[upper.tri(R)]
@@ -125,14 +126,20 @@ get_purity = function (pos, X, Xcorr, n = 100) {
   }
 }
 
-# Function to calculate purity
+#' Function to calculate purity
 calculate_purity <- function(variants, ext_ld, squared) {
   # This is a placeholder for calculating purity, adjust as per your actual function
   purity <- matrix(get_purity(variants, Xcorr = ext_ld, squared), 1, 3)
   purity
 }
 
-# Main processing function
+#' Main processing function
+#' This function is designed to summarize coloc results based on the following criteria:
+#' 1. Among the colocalized variant pairs, PPH4 has the highest value compared to PPH0-PPH3.
+#' 2. PPH4 exceeds threshold, default as 0.8.
+#' 3. We aggregate variants and cumulatively sum their PPH4 values to form a credible set until the threshold, default as 0.95.
+#' 4. The cs's purity is computed with the `get_purity` function from the `gaow/susieR` package, and the same purity criteria are employed to filter the credibility set.
+
 process_coloc_results <- function(coloc_result, LD_meta_file_path,analysis_script_obj, PPH4_thres = 0.8, coloc_pip_thres = 0.95, squared = FALSE, min_abs_corr = 0.5, null_index = 0, coloc_index = "PP.H4.abf", analysis_region, median_abs_corr = NULL) {
   # Extract PIP values from coloc_result summary
   coloc_summary <- as.data.frame(coloc_result$summary)
@@ -219,12 +226,11 @@ process_coloc_results <- function(coloc_result, LD_meta_file_path,analysis_scrip
 #' @param xqtl_finemapping_obj Optional table name in xQTL RDS files (default 'susie_fit').
 #' @param gwas_varname_obj Optional table name in GWAS RDS files (default 'susie_fit').
 #' @param xqtl_varname_obj Optional table name in xQTL RDS files (default 'susie_fit').
-#' @param xqtl_script_obj Optional table name in xQTL RDS files (default 'susie_fit').
 #' @param LD_meta_file_path Path to the metadata of LD reference.
 #' @param p1, p2, and p12 are results from xqtl_enrichment_wrapper (default 'p1=1e-4, p2=1e-4, p12=5e-6', same as coloc.bf_bf).
 #' @param prior_tol When the prior variance is estimated, compare the estimated value to \code{prior_tol} at the end of the computation, 
 #'   and exclude a single effect from PIP computation if the estimated prior variance is smaller than this tolerance value.
-#' @return A list containing the processed xQTL and GWAS logBF matrices for colocalization analysis, coloc results, output from the compute_qtl_enrichment function
+#' @return A list containing the coloc results and the summarized sets.
 #' @examples
 #' xqtl_file <- "xqtl_file.rds"
 #' gwas_files <- c("gwas_file1.rds", "gwas_file2.rds")
