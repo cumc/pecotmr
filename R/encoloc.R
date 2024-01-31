@@ -48,7 +48,7 @@ xqtl_enrichment_wrapper <- function(xqtl_files, gwas_files,
 
     # Process xQTL data
     xqtl_data <- lapply(xqtl_files, function(file) {
-        raw_data <- readRDS(file)
+        raw_data <- readRDS(file)[[1]]
         xqtl_data <- if (!is.null(xqtl_finemapping_obj)) get_nested_element(raw_data, xqtl_finemapping_obj) else raw_data
         list(alpha = xqtl_data$alpha, pip = setNames(xqtl_data$pip, get_nested_element(raw_data, xqtl_varname_obj)), 
             prior_variance = xqtl_data$V)
@@ -95,14 +95,6 @@ calculate_cumsum <- function(coloc_results) {
   cumsum(coloc_results[, 2])
 }
 
-# FIXME: better way to get analysis region?
-# Function to extract variants and analysis region
-extract_variants_and_region <- function(analysis_script_obj, variants) {
-  variants <- variants %>% gsub("chr", "", .)
-  analysis_region <- str_extract(analysis_script_obj, 'cis_window = "chr\\d+:[0-9]+-[0-9]+') %>% gsub('cis_window = "', '', .)
-  list(variants = variants, analysis_region = analysis_region)
-}
-
 # Function to load and extract LD matrix
 load_and_extract_ld_matrix <- function(ld_meta_file_path, analysis_region, variants) {
   # This is a placeholder for loading LD matrix, adjust as per your actual function
@@ -120,11 +112,11 @@ calculate_purity <- function(variants, ext_ld, squared) {
 }
 
 # Main processing function
-process_coloc_results <- function(coloc_results, LD_meta_file_path,analysis_script_obj, PPH4_thres = 0.8, coloc_pip_thres = 0.95, squared = FALSE, min_abs_corr = 0.5, null_index = 0, coloc_index = "PP.H4.abf") {
+process_coloc_results <- function(coloc_result, LD_meta_file_path,analysis_script_obj, PPH4_thres = 0.8, coloc_pip_thres = 0.95, squared = FALSE, min_abs_corr = 0.5, null_index = 0, coloc_index = "PP.H4.abf", analysis_region) {
   # Extract PIP values from coloc_result summary
   coloc_summary <- as.data.frame(coloc_result$summary)
   coloc_pip <- coloc_summary[, grepl("PP", colnames(coloc_summary))]
-
+  
   # Filter and extract relevant columns from coloc_result results
   # PP.H4 is highest and > 0.8
   coloc_results_df <- as.data.frame(coloc_result$results)
@@ -133,56 +125,60 @@ process_coloc_results <- function(coloc_results, LD_meta_file_path,analysis_scri
     max_value <- row[max_index]
     return(max_value > PPH4_thres && colnames(coloc_pip)[max_index] == coloc_index)
   })
-  coloc_results_fil <- coloc_results_df[, c(1, which(coloc_filter) + 1), drop = FALSE]
-  coloc_summary_fil <- coloc_summary[which(coloc_filter),, drop = FALSE]
-
-  #prepare to calculate purity
-  ordered_results <- filter_and_order_coloc_results(coloc_results_fil)
-  cs <- list()
-  purity <- NULL
-
-  for (n in 1:length(ordered_results)) {
-    tmp_coloc_results_fil <- ordered_results[[n]]
-    tmp_coloc_results_fil_csm <- calculate_cumsum(tmp_coloc_results_fil)
-    cs[[n]] <- tmp_coloc_results_fil[, 1][1:(which(tmp_coloc_results_fil_csm > coloc_pip_thres) %>% min)]
-
-    # Extract variants and analysis region
-    extraction_result <- extract_variants_and_region(analysis_script_obj, cs[[n]] )
-    variants <- extraction_result$variants
-    analysis_region <- extraction_result$analysis_region
-
-    # Load and extract LD matrix
-    ext_ld <- load_and_extract_ld_matrix(LD_meta_file_path, analysis_region, variants)
-
-    # Calculate purity
-    if (null_index > 0 && null_index %in% variants) {
-      purity <- rbind(purity, c(-9, -9, -9))
-    } else {
-      current_purity <- calculate_purity(variants, ext_ld, squared)
-      purity <- rbind(purity, current_purity)
-    }
-  }
-
-  # Process purity data
-  purity <- as.data.frame(purity)
-  if (squared) {
-    colnames(purity) <- c("min.sq.corr", "mean.sq.corr", "median.sq.corr")
-  } else {
-    colnames(purity) <- c("min.abs.corr", "mean.abs.corr", "median.abs.corr")
-  }
-
-  threshold <- ifelse(squared, min_abs_corr^2, min_abs_corr)
-  is_pure <- which(purity[, 1] >= threshold)
-
-  # Finalize the result
+  
   coloc_res <- list()
-  if (length(is_pure) > 0) {
-    cs <- cs[is_pure]
-    purity <- purity[is_pure, ]
-    true_summary <- coloc_summary_fil[is_pure, ]
-    coloc_res$sets <- list(cs = cs, purity = purity, true_summary = true_summary)
+  
+  if(sum(coloc_filter) > 0){
+    coloc_results_fil <- coloc_results_df[, c(1, which(coloc_filter) + 1), drop = FALSE]
+    coloc_summary_fil <- coloc_summary[which(coloc_filter),, drop = FALSE]
+    
+    #prepare to calculate purity
+    ordered_results <- filter_and_order_coloc_results(coloc_results_fil)
+    cs <- list()
+    purity <- NULL
+    
+    for (n in 1:length(ordered_results)) {
+      tmp_coloc_results_fil <- ordered_results[[n]]
+      tmp_coloc_results_fil_csm <- calculate_cumsum(tmp_coloc_results_fil)
+      cs[[n]] <- tmp_coloc_results_fil[, 1][1:(which(tmp_coloc_results_fil_csm > coloc_pip_thres) %>% min)]
+      variants <- cs[[n]]  %>% gsub("chr", "", .)
+      
+      # Load and extract LD matrix
+      ext_ld <- load_and_extract_ld_matrix(LD_meta_file_path, analysis_region, variants)
+      
+      # Calculate purity
+      if (null_index > 0 && null_index %in% variants) {
+        purity <- rbind(purity, c(-9, -9, -9))
+      } else {
+        current_purity <- calculate_purity(variants, ext_ld, squared)
+        purity <- rbind(purity, current_purity)
+      }
+    }
+    
+    # Process purity data
+    purity <- as.data.frame(purity)
+    if (squared) {
+      colnames(purity) <- c("min.sq.corr", "mean.sq.corr", "median.sq.corr")
+    } else {
+      colnames(purity) <- c("min.abs.corr", "mean.abs.corr", "median.abs.corr")
+    }
+    
+    threshold <- ifelse(squared, min_abs_corr^2, min_abs_corr)
+    is_pure <- which(purity[, 1] >= threshold)
+    
+    # Finalize the result
+    if (length(is_pure) > 0) {
+      cs <- cs[is_pure]
+      purity <- purity[is_pure, ]
+      true_summary <- coloc_summary_fil[is_pure, ]
+      coloc_res$sets <- list(cs = cs, purity = purity, true_summary = true_summary)
+    }
+  } else {
+    message("Coloc results did not find any variants that satisfy the condition of PP.H4 being the highest value and > ", PPH4_thres)
+    coloc_res$sets <- list(cs = NULL)
+    
   }
-
+  
   return(coloc_res)
 }
 
@@ -216,7 +212,6 @@ process_coloc_results <- function(coloc_results, LD_meta_file_path,analysis_scri
 coloc_wrapper <- function(xqtl_file, gwas_files, 
                           gwas_finemapping_obj = NULL, xqtl_finemapping_obj = NULL,
                           gwas_varname_obj = NULL, xqtl_varname_obj = NULL, 
-                          xqtl_script_obj = NULL, 
                           LD_meta_file_path, prior_tol = 1e-9,
                           p1=1e-4, p2=1e-4, p12=5e-6, ...) {
     # Load and process GWAS data
@@ -241,11 +236,11 @@ coloc_wrapper <- function(xqtl_file, gwas_files,
 
 
     # Process xQTL data
-    raw_data <- readRDS(xqtl_file)
-    xqtl_data <- if (!is.null(xqtl_finemapping_obj)) get_nested_element(raw_data, xqtl_finemapping_obj) else raw_data
+    xqtl_raw_data <- readRDS(xqtl_file)
+    xqtl_data <- if (!is.null(xqtl_finemapping_obj)) get_nested_element(xqtl_raw_data[[1]], xqtl_finemapping_obj) else xqtl_raw_data[[1]]
     xqtl_lbf_matrix <- as.data.frame(xqtl_data$lbf_variable)
     xqtl_lbf_matrix <- xqtl_lbf_matrix[xqtl_data$V > prior_tol,]
-    if (!is.null(xqtl_varname_obj)) colnames(xqtl_lbf_matrix) <- get_nested_element(raw_data, xqtl_varname_obj)
+    if (!is.null(xqtl_varname_obj)) colnames(xqtl_lbf_matrix) <- get_nested_element(xqtl_raw_data[[1]], xqtl_varname_obj)
 
     #add 'chr' in colnames 
     add_chr_prefix <- function(df) {
@@ -268,7 +263,7 @@ coloc_wrapper <- function(xqtl_file, gwas_files,
 
     # COLOC function 
     coloc_res <- coloc.bf_bf(xqtl_lbf_matrix, combined_gwas_lbf_matrix, p1 = p1, p2 = p2, p12 = p12, ...)
-    coloc_res <- c(coloc_res,process_coloc_results(coloc_result, LD_meta_file_path, get_nested_element(raw_data, xqtl_script_obj)))
+    coloc_res <- c(coloc_res,process_coloc_results(coloc_res, LD_meta_file_path, analysis_region = names(xqtl_raw_data) %>% str_extract(., 'chr\\d+:[0-9]+-[0-9]+') ))
     # post processing for coloc results
     return(coloc_res)
 }
