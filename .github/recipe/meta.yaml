@@ -43,6 +43,7 @@ requirements:
     - r-matrixstats
     - r-mr.ash.alpha
     - r-mr.mash.alpha
+    - r-fsusier
     - r-pgenlibr
     - r-plink2r
     - bioconductor-snpstats
@@ -78,6 +79,7 @@ requirements:
     - r-matrixstats
     - r-mr.ash.alpha
     - r-mr.mash.alpha
+    - r-fsusier
     - r-pgenlibr
     - r-plink2r
     - bioconductor-snpstats

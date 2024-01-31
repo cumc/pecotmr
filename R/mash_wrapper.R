@@ -80,28 +80,33 @@ load_multitrait_tensorqtl_sumstat <- function(sumstats_paths, region, trait_name
 }
 
 #' @export
-load_multitrait_R_sumstat <- function(rds_files, top_loci = FALSE, filter_file = NULL, remove_any_missing = TRUE, max_rows_selected = 300, nan_remove=TRUE) {
-  read_and_extract <- function(rds_file) {
-    dat <- readRDS(rds_file)
+load_multitrait_R_sumstat <- function(rds_files, top_loci = FALSE, filter_file = NULL, remove_any_missing = TRUE, max_rows_selected = 300, nan_remove=FALSE) {
   
+  read_and_extract <- function(rds_file) {
+    dat <- readRDS(rds_file)[[1]]
+    
     extract_data <- function(item) {
-      bhat <- as.data.table(cbind(item$variant_names, item$univariate_sumstats$bhat))
-      sbhat <- as.data.table(cbind(item$variant_names, item$univariate_sumstats$sbhat))
+      bhat <- as.data.table(cbind(item$variant_names, item$sumstats$betahat))
+      sbhat <- as.data.table(cbind(item$variant_names, item$sumstats$sebetahat))
+      setnames(bhat, c("variants", "bhat"))
+      setnames(sbhat, c("variants", "sbhat"))
+      bhat[, bhat := as.numeric(bhat)]
+      sbhat[, sbhat := as.numeric(sbhat)]
       list(
         bhat = bhat$bhat,
         sbhat = sbhat$sbhat,
         variants = bhat$variants,
-	top_variants = item$top_loci[, "variants"]
-     )
+        top_variants = item$top_loci[, "variant_id"]
+      )
     }
     lapply(dat, extract_data)
   }
-
+  
   split_variants_and_match <- function(variant, filter_file, max_rows_selected) {
     if (!file.exists(filter_file)) {
-         stop("Filter file does not exist.")
+      stop("Filter file does not exist.")
     }
-
+    
     # Split the variant vector into components
     variant_split <- strsplit(variant, ":")
     variant_df <- data.frame(
@@ -110,7 +115,7 @@ load_multitrait_R_sumstat <- function(rds_files, top_loci = FALSE, filter_file =
       stringsAsFactors = FALSE
     )
     variant_df$pos <- as.numeric(variant_df$pos)
-
+    
     # get the region of interest
     min_pos <- min(variant_df$pos)
     max_pos <- max(variant_df$pos)
@@ -120,67 +125,74 @@ load_multitrait_R_sumstat <- function(rds_files, top_loci = FALSE, filter_file =
     }
     region = paste0(chrom, ":", min_pos, "-", max_pos)
     ref_table <- tabix_region(filter_file, region)
-    if (!all(c("#CHROM", "POS") %in% colnames(filter_df))) {
-        stop("Filter file must contain columns: #CHROM, POS.")
+    if (is.null(ref_table)){
+      stop("No variants in the region.")
+    }
+    colnames(ref_table)[1:2] = c("#CHROM", "POS")
+    if (!all(c("#CHROM", "POS") %in% colnames(ref_table))) {
+      stop("Filter file must contain columns: #CHROM, POS.")
     }
     matched_indices <- which(variant_df$chr %in% ref_table$`#CHROM` & variant_df$pos %in% ref_table$POS)
     if (!is.null(max_rows_selected) && max_rows_selected > 0 && max_rows_selected < length(matched_indices)) {
-        selected_rows <- sample(length(matched_indices), max_rows_selected)
-        matched_indices <- matched_indices[selected_rows]
+      selected_rows <- sample(length(matched_indices), max_rows_selected)
+      matched_indices <- matched_indices[selected_rows]
     }
     return(matched_indices)
   }
-
-  merge_matrices <- function(matrix_list, value_column, id_column = "variants",  remove_any_missing = FALSE) {
-  	# Convert list items to data frames
-  	df_list <- lapply(matrix_list, function(item) {
-   	 data.frame(ID = item[[id_column]], Value = item[[value_column]], stringsAsFactors = FALSE)
-	})
-
-	# Function to merge two data frames based on the 'ID' column
-  	merge_two <- function(df1, df2) {
- 	 merged_df <- merge(df1, df2, by = "ID", all = !remove_any_missing)
-  	 rownames(merged_df) <- merged_df$ID  # Set row names
-   	 merged_df$ID <- NULL  # Drop the 'ID' column
-    	 return(merged_df)
-  	}
- 	# Merge all data frames
-  	merged_df <- Reduce(merge_two, df_list)
-  	return(merged_df)
+  
+  merge_matrices <- function(matrix_list, value_column, id_column = "variants", remove_any_missing = FALSE) {
+    # Convert matrices to data frames
+    df_list <- lapply(seq_along(matrix_list), function(i) {
+      df <- as.data.frame(matrix_list[[i]])
+      df2 <- df[, c(id_column, value_column)]
+      # Rename columns to avoid duplication
+      colnames(df2) <- c(id_column, paste0(value_column, "_", i))
+      return(df2)
+    })
+    
+    # Iteratively merge the data frames
+    merged_df <- Reduce(function(x, y) merge(x, y, by = id_column, all = TRUE), df_list)
+    
+    # Optionally, remove rows with any missing values
+    if (remove_any_missing) {
+      merged_df <- merged_df[complete.cases(merged_df), ]
+    }
+    return(merged_df)
   }
-
+  
   results <- lapply(rds_files, function(file) read_and_extract(file))
   results <- do.call("c", results)
   trait_names <- names(results)
-
-  out <- list(
-      bhat = merge_matrices(results, value_column="bhat", remove_any_missing),
-      sbhat = merge_matrices(results, value_column="sbhat", remove_any_missing)
-  )
+  
+  bhat = merge_matrices(results, value_column="bhat",  id_column = "variants", remove_any_missing)
+  sbhat = merge_matrices(results, value_column="sbhat", id_column = "variants", remove_any_missing)
+  out <- list(bhat = bhat, sbhat = sbhat)
+  
   # Check if variants are the same in both bhat and sbhat
   if (!identical(out$bhat$variants, out$sbhat$variants)) {
     stop("Error: Variants in bhat and sbhat are not the same.")
   }
-  var_idx = 1:nrows(out$bhat)
+  var_idx = 1:nrow(out$bhat)
   if (!is.null(filter_file)) {
+    variants = out$bhat$variants
     var_idx = split_variants_and_match(variants, filter_file, max_rows_selected)
   }
   if (top_loci) {
-    union_top_loci <- unique(unlist(lapply(results, function(item) item$top_loci)))
+    union_top_loci <- unique(unlist(lapply(results, function(item) item$top_variants)))
     var_idx <- which(variants %in% union_top_loci)
   }
   # Extract only subset of data
   variants <- out$bhat$variants[var_idx]
   out$bhat <- out$bhat[var_idx,]
   out$sbhat <- out$sbhat[var_idx,]
-
+  
   if (nan_remove) out <- handle_invalid_summary_stat(out)
   #out$z <- out$bhat / out$sbhat
   #rownames(out$bhat) <- rownames(out$sbhat) <- rownames(out$z) <- variants
   #colnames(out$bhat) <- colnames(out$sbhat) <- colnames(out$z) <- trait_names
   rownames(out$bhat) <- rownames(out$sbhat) <- variants
   colnames(out$bhat) <- colnames(out$sbhat) <- trait_names
-  dat$region = rds_files
+  out$region = rds_files
   return(out)
 }
 
