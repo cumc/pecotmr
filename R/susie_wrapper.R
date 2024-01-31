@@ -237,7 +237,7 @@ susie_rss_qc <- function(z, R, ref_panel, bhat=NULL, shat=NULL, var_y=NULL, n = 
 #' @export
 susie_post_processor <- function(susie_output, data_x, data_y, X_scalar, y_scalar, maf, 
                                 secondary_coverage = c(0.5, 0.7), signal_cutoff = 0.1, 
-                                other_quantities = NULL, prior_eff_tol = 0, 
+                                other_quantities = NULL, prior_eff_tol = 1e-9, 
                                 mode = c("susie", "susie_rss")) {
     mode <- match.arg(mode)
     get_cs_index <- function(snps_idx, susie_cs) {

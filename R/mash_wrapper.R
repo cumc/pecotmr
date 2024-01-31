@@ -1,10 +1,8 @@
-
-
 matxMax <- function(mtx) {
   return(arrayInd(which.max(mtx), dim(mtx)))
 }
 
-handle_nan_etc = function(x) {
+handle_invalid_summary_stat = function(x) {
     x$bhat[which(is.nan(x$bhat))] = 0
     x$sbhat[which(is.nan(x$sbhat) | is.infinite(x$sbhat))] = 1E3
     return(x)
