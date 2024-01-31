@@ -99,7 +99,8 @@ allele_qc <- function(target_variants, ref_variants, target_data, col_to_flip,
     flip[ref == "C"] <- "G"
     return(flip)
   }
-  
+
+  if (
   flip1 <- strand_flip(ref1)
   flip2 <- strand_flip(ref2)
   
@@ -124,6 +125,9 @@ allele_qc <- function(target_variants, ref_variants, target_data, col_to_flip,
     # we conclude that strand flip does not exists in the data at all
     # so we can bring back those previous marked to drop because of strand ambiguous
     snp[["keep"]][which(!strand_unambiguous)] <- TRUE
+    snp[["sign_flip"]][which(!strand_unambiguous)] <- (a1[which(!strand_unambiguous)] ==   ref2[which(!strand_unambiguous)] & a2[which(!strand_unambiguous)] == ref1[which(!strand_unambiguous)]) | 
+                                                      (a1[which(!strand_unambiguous)] == flip1[which(!strand_unambiguous)] & a2[which(!strand_unambiguous)] == flip2[which(!strand_unambiguous)])
+  
   }
 
   qc_summary <- matched %>%
@@ -157,5 +161,5 @@ allele_qc <- function(target_variants, ref_variants, target_data, col_to_flip,
   if (nrow(target_data_qced) < min_match) {
     stop("Not enough variants have been matched.")
   }
-  return(list(target_data_qced = target_data_qced, qc_summary = qc))
+  return(list(target_data_qced = target_data_qced, qc_summary = qc_summary))
 }
