@@ -99,11 +99,32 @@ calculate_cumsum <- function(coloc_results) {
 load_and_extract_ld_matrix <- function(ld_meta_file_path, analysis_region, variants) {
   # This is a placeholder for loading LD matrix, adjust as per your actual function
   ld_ref <- load_LD_matrix(LD_meta_file_path = ld_meta_file_path, region = analysis_region)
-  ext_ld <- ld_ref[[2]][variants, variants]
+  ext_ld <- ld_ref$combined_LD_matrix[variants, variants]
   ext_ld
 }
 
-#' @importFrom susieR get_purity
+# Subsample and compute min, mean, median and max abs corr.
+#
+#' @importFrom stats median
+get_purity = function (pos, X, Xcorr, n = 100) {
+  get_upper_tri = function (R) R[upper.tri(R)]
+  get_median    = stats::median
+  
+  if (length(pos) == 1)
+    return(c(1,1,1))
+  else {
+
+    # Subsample the columns if necessary.
+    if (length(pos) > n)
+      pos = sample(pos,n)
+
+    value = abs(get_upper_tri(Xcorr[pos,pos]))
+    return(c(min(value),
+             sum(value)/length(value),
+             get_median(value)))
+  }
+}
+
 # Function to calculate purity
 calculate_purity <- function(variants, ext_ld, squared) {
   # This is a placeholder for calculating purity, adjust as per your actual function
@@ -112,7 +133,7 @@ calculate_purity <- function(variants, ext_ld, squared) {
 }
 
 # Main processing function
-process_coloc_results <- function(coloc_result, LD_meta_file_path,analysis_script_obj, PPH4_thres = 0.8, coloc_pip_thres = 0.95, squared = FALSE, min_abs_corr = 0.5, null_index = 0, coloc_index = "PP.H4.abf", analysis_region) {
+process_coloc_results <- function(coloc_result, LD_meta_file_path,analysis_script_obj, PPH4_thres = 0.8, coloc_pip_thres = 0.95, squared = FALSE, min_abs_corr = 0.5, null_index = 0, coloc_index = "PP.H4.abf", analysis_region, median_abs_corr = NULL) {
   # Extract PIP values from coloc_result summary
   coloc_summary <- as.data.frame(coloc_result$summary)
   coloc_pip <- coloc_summary[, grepl("PP", colnames(coloc_summary))]
@@ -162,10 +183,13 @@ process_coloc_results <- function(coloc_result, LD_meta_file_path,analysis_scrip
     } else {
       colnames(purity) <- c("min.abs.corr", "mean.abs.corr", "median.abs.corr")
     }
-    
-    threshold <- ifelse(squared, min_abs_corr^2, min_abs_corr)
-    is_pure <- which(purity[, 1] >= threshold)
-    
+          
+    if (is.null(median_abs_corr)) 
+      is_pure = which(purity[,1] >= min_abs_corr)
+    else
+      is_pure = which(purity[,1] >= min_abs_corr | purity[,2] >= median_abs_corr)
+      
+      
     # Finalize the result
     if (length(is_pure) > 0) {
       cs <- cs[is_pure]
