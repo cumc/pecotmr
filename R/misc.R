@@ -260,7 +260,9 @@ prepare_X_matrix <- function(geno_bed, data_list, imiss_cutoff, maf_cutoff, mac_
   maf_val = max(maf_cutoff, mac_cutoff / (2 * length(common_samples)))
   # Apply further filtering on X
   X_filtered = filter_X(X_filtered, imiss_cutoff, maf_val, xvar_cutoff)
-  message(paste0("Dimension of input genotype data is row: ", nrow(X_filtered), " column: ", ncol(X_filtered) ))
+  # To keep a log message
+  variants <- bind_rows(lapply(colnames(X_filtered), parse_region))
+  message(paste0("Dimension of input genotype data is row: ", nrow(X_filtered), " column: ", ncol(X_filtered), " for genomic region of ", variants[1,1], ":", min(variants[,2]), "-", max(variants[,3])))
   return(X_filtered)
 }
 
