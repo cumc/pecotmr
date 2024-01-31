@@ -114,9 +114,8 @@ allele_qc <- function(target_variants, ref_variants, target_data, col_to_flip,
   # Remove non-ATCG coding
   non_ATCG <- !(a1 %in% c("A", "T", "G", "C") & a2 %in% c("A", "T", "G", "C"))
   snp[["keep"]][non_ATCG] <- FALSE
-  snp[["sign_flip"]] <- (a1 == ref2 & a2 == ref1) | (a1 == flip2 & a2 == flip1)
-  snp[["strand_flip"]] <- (a1 == flip1 & a2 == flip2) | (a1 == flip2 & a2 == flip1)
-  
+  snp[["sign_flip"]] <- ((a1 == ref2 & a2 == ref1) | (a1 == flip2 & a2 == flip1)) & (a1 != ref1 & a2 != ref2)
+  snp[["strand_flip"]] <- ((a1 == flip1 & a2 == flip2) | (a1 == flip2 & a2 == flip1)) & (a1 != ref1 & a2 != ref2)  
   exact_match <- (a1 == ref1 & a2 == ref2)
   snp[["keep"]][!(exact_match | snp[["sign_flip"]] | snp[["strand_flip"]])] <- FALSE
 
@@ -157,5 +156,6 @@ allele_qc <- function(target_variants, ref_variants, target_data, col_to_flip,
   if (nrow(target_data_qced) < min_match) {
     stop("Not enough variants have been matched.")
   }
-  return(list(target_data_qced = target_data_qced, qc_summary = qc))
+    
+  return(list(target_data_qced = target_data_qced, qc_summary = qc_summary))
 }
