@@ -179,7 +179,7 @@ extract_LD_for_region <- function(LD_matrix, variants, region, extract_coordinat
         
     }
     # Extract LD matrix 
-    extracted_LD_matrix = LD_matrix[extracted_LD_variants$variants, extracted_LD_variants$variants]
+    extracted_LD_matrix = LD_matrix[extracted_LD_variants$variants, extracted_LD_variants$variants, drop = FALSE]
     list(extracted_LD_matrix = extracted_LD_matrix, extracted_LD_variants = extracted_LD_variants)
 }
 
@@ -189,12 +189,13 @@ create_combined_LD_matrix <- function(LD_matrices, variants) {
     mergeVariants <- function(LD_variants_list) {
        # Initialize an empty vector to store the merged variants
        mergedVariants <- character(0)
-    
        # Loop over the list of LD matrices using sapply
         sapply(LD_variants_list, function(LD_variants) {
           # Extract the variants from the current LD matrix
-           currentVariants <- get_nested_element(LD_variants,  "variants")
-        
+          currentVariants <- get_nested_element(LD_variants,  "variants")
+          if (length(currentVariants) == 0){
+              return(NULL)         
+          }
           # Merge variants with the previously merged variants vector
           # Checking if the last variant is the same as the first of the current, if so, skip the first
           if (length(mergedVariants) > 0 && tail(mergedVariants, 1) == currentVariants[1]) {

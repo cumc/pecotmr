@@ -100,7 +100,7 @@ allele_qc <- function(target_variants, ref_variants, target_data, col_to_flip,
     return(flip)
   }
 
-  if (
+
   flip1 <- strand_flip(ref1)
   flip2 <- strand_flip(ref2)
   
