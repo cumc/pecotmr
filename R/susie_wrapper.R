@@ -171,10 +171,10 @@ susie_rss_qc <- function(z, R, ref_panel, bhat=NULL, shat=NULL, var_y=NULL, n = 
   ## Imputation for outliers if enabled and required
   if (impute && !is.null(result$zR_outliers) && length(result$zR_outliers) > 0) {
     ## Extracting known z-scores excluding outliers
-     ref_panel = allele_flip$target_data_qced %>% select("chrom", "pos", "variant", "A1", "A2")
+    ref_panel = ref_panel %>% select("chrom", "pos", "variant", "A1", "A2")
     colnames(ref_panel) = c("chr", "pos", "variant_id", "A0", "A1")
     outlier = result$zR_outliers
-    known_zscore =  allele_flip$target_data_qced %>% select("chrom", "pos", "variant", "A1", "A2", "z")
+    known_zscore =  ref_panel$target_data_qced %>% select("chrom", "pos", "variant", "A1", "A2", "z")
     colnames(known_zscore) = c("chr", "pos", "variant_id", "A0", "A1", "Z")
     known_zscores = known_zscore[-outlier, ] %>% arrange(pos)
     
