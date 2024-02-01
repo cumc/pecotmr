@@ -172,7 +172,7 @@ susie_rss_qc <- function(z, R, ref_panel, bhat=NULL, shat=NULL, var_y=NULL, n = 
   if (impute && !is.null(result$zR_outliers) && length(result$zR_outliers) > 0) {
     ## Extracting known z-scores excluding outliers
     outlier = result$zR_outliers
-    known_zscores = ref_panel[-outlier]
+    known_zscores = ref_panel[-outlier,]
     known_zscores$Z = z[-outlier]
     known_zscores = known_zscores %>% arrange(pos)
     
