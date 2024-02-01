@@ -174,7 +174,7 @@ susie_rss_qc <- function(z, R, ref_panel, bhat=NULL, shat=NULL, var_y=NULL, n = 
     outlier = result$zR_outliers
     known_zscores = ref_panel[-outlier]
     known_zscores$Z = z[-outlier]
-    known_zscores = known_zscore %>% arrange(pos)
+    known_zscores = known_zscores %>% arrange(pos)
     
     ## Imputation logic using RAiSS or other methods
     imputation_result <- raiss(ref_panel, known_zscores, R, lamb = lamb, rcond = rcond, 
