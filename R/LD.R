@@ -164,7 +164,7 @@ process_LD_matrix <- function(LD_file_path, bim_file_path) {
               read.table(.) %>%
               setNames(c("chrom","variants","GD","pos","A2","A1"))%>%
               mutate(chrom = ifelse(grepl("^chr[0-9]+", chrom), sub("^chr", "", chrom), chrom)) %>%
-              mutate(variants = gsub("[_]", ":", variants)) %>%
+              mutate(variants =format_variant_id(variants)) %>%
               mutate(variants = ifelse(grepl("^chr[0-9]+:", variants), gsub("^chr", "", variants), variants))
     # Set column and row names of the LD matrix
     colnames(LD_matrix) <- rownames(LD_matrix) <- LD_variants$variants
@@ -312,13 +312,10 @@ load_LD_matrix <- function(LD_meta_file_path, region, extract_coordinates = NULL
 filter_genotype_by_ld_reference <- function(X, ld_reference_meta_file) {
   # Step 1: Process variant IDs into a data frame and filter out non-standard nucleotides
   variant_ids <- colnames(X)
-  variants_df <- data.frame(
-    chrom = gsub("^(chr[^:]+):.*", "\\1", variant_ids),
-    pos = as.integer(gsub("^chr[^:]+:(\\d+).*", "\\1", variant_ids)),
-    ref = gsub("^chr[^:]+:\\d+[:_](.)[:_].*", "\\1", variant_ids),
-    alt = gsub("^chr[^:]+:\\d+[:_].[:_](.)", "\\1", variant_ids),
-    stringsAsFactors = FALSE
-  )
+  variants_df <- do.call(rbind, lapply(strsplit(variant_ids,":"), function(x) {
+       data.frame(chrom = x[1], pos = x[2], ref = x[3], alt = x[4])
+  }))
+
   variants_df$chrom <- ifelse(grepl("^chr", variants_df$chrom), 
                      as.integer(sub("^chr", "", variants_df$chrom)), # Remove 'chr' and convert to integer
                      as.integer(variants_df$chrom))
