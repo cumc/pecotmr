@@ -9,10 +9,10 @@ allele_qc(
   ref_variants,
   target_data,
   col_to_flip,
-  match.min.prop,
-  remove_dups,
-  flip,
-  remove
+  match.min.prop = 0.2,
+  remove_dups = TRUE,
+  flip = TRUE,
+  remove_strand_ambiguous = TRUE
 )
 }
 \arguments{
@@ -29,7 +29,7 @@ allele_qc(
 \item{flip}{Whether the alleles must be flipped: A <--> T & C <--> G, in which case 
 corresponding `col_to_flip` are multiplied by -1. Default is `TRUE`.}
 
-\item{remove}{Whether to remove strand SNPs (if any). Default is `TRUE`.}
+\item{remove_strand_ambiguous}{Whether to remove strand SNPs (if any). Default is `TRUE`.}
 
 \item{match_min_prop}{Minimum proportion of variants in the smallest data
 to be matched, otherwise stops with an error. Default is 20%.}
