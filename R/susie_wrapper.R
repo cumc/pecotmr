@@ -127,7 +127,7 @@ susie_rss_wrapper <- function(z, R, bhat, shat, n = NULL, var_y = NULL, L = 10, 
 #'
 #' @param z Numeric vector of z-scores corresponding to the effect size estimates, with names matching the reference panel's variant IDs.
 #' @param R Numeric matrix representing the LD (linkage disequilibrium) matrix.
-#' @param ref_panel Data frame with at least 'variant_id' column that matches the names of z.
+#' @param ref_panel Data frame with 'chrom', 'pos', 'variant', 'A1', 'A2' column that matches the names of z.
 #' @param bhat Optional numeric vector of effect size estimates.
 #' @param shat Optional numeric vector of standard errors associated with the effect size estimates.
 #' @param var_y Optional numeric value representing the total phenotypic variance.
@@ -171,12 +171,10 @@ susie_rss_qc <- function(z, R, ref_panel, bhat=NULL, shat=NULL, var_y=NULL, n = 
   ## Imputation for outliers if enabled and required
   if (impute && !is.null(result$zR_outliers) && length(result$zR_outliers) > 0) {
     ## Extracting known z-scores excluding outliers
-    ref_panel = ref_panel %>% select("chrom", "pos", "variant", "A1", "A2")
-    colnames(ref_panel) = c("chr", "pos", "variant_id", "A0", "A1")
     outlier = result$zR_outliers
-    known_zscore =  ref_panel %>% select("chrom", "pos", "variant", "A1", "A2", "z")
-    colnames(known_zscore) = c("chr", "pos", "variant_id", "A0", "A1", "Z")
-    known_zscores = known_zscore[-outlier, ] %>% arrange(pos)
+    known_zscores = ref_panel[-outlier]
+    known_zscorse$Z = z[-outlier]
+    known_zscores = known_zscore %>% arrange(pos)
     
     ## Imputation logic using RAiSS or other methods
     imputation_result <- raiss(ref_panel, known_zscores, R, lamb = lamb, rcond = rcond, 
