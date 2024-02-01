@@ -313,7 +313,7 @@ filter_genotype_by_ld_reference <- function(X, ld_reference_meta_file) {
   # Step 1: Process variant IDs into a data frame and filter out non-standard nucleotides
   variant_ids <- colnames(X)
   variants_df <- do.call(rbind, lapply(strsplit(variant_ids,":"), function(x) {
-       data.frame(chrom = x[1], pos = x[2], ref = x[3], alt = x[4])
+       data.frame(chrom = x[1], pos = as.integer(x[2]), ref = x[3], alt = x[4])
   }))
 
   variants_df$chrom <- ifelse(grepl("^chr", variants_df$chrom), 
