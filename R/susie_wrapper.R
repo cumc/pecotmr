@@ -196,6 +196,7 @@ susie_rss_qc <- function(z, R, ref_panel, bhat=NULL, shat=NULL, var_y=NULL, n = 
     ## Re-run SuSiE RSS with imputed z-scores and updated LD matrix
     result_final$qc_impute_result <- susie_rss_wrapper(z=imputation_result$Z, R=LD_extract_filtered, bhat=bhat, shat=shat, var_y=var_y, 
                                       n=n, L=L, max_L=max_L, l_step=l_step, zR_discrepancy_correction=FALSE, ...)
+    result_final$qc_impute_result$z = imputation_result$Z
   }
     if(output_qc){
     result_final$qc_only_result <- result
@@ -271,7 +272,7 @@ susie_post_processor <- function(susie_output, data_x, data_y, X_scalar, y_scala
     res <- list(other_quantities = other_quantities,
                 susie_result_trimmed = list(),
                 analysis_script = load_script(),
-                variant_names = names(susie_output$pip))
+                variant_names = format_variant_id(names(susie_output$pip)))
 
     # Mode-specific processing
     if (mode == "susie") {
