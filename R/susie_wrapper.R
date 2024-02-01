@@ -95,16 +95,16 @@ susie_rss_wrapper <- function(z, R, bhat, shat, n = NULL, var_y = NULL, L = 10, 
     return(susie_rss(z = z, R = R, bhat = bhat, shat = shat, var_y = var_y, n = n, 
                     L = 1, max_iter = 1, correct_zR_discrepancy = FALSE, ...))
   }
-  result <- NULL
   while (TRUE) {
+      st = proc.time()
       susie_rss_result <- susie_rss(z = z, R = R, bhat = bhat, shat = shat, var_y = var_y, n = n, L = L,
                                     correct_zR_discrepancy = zR_discrepancy_correction, ...)
+      susie_rss_result$time_elapsed <- proc.time() - st
     # Check for convergence and adjust L if necessary
     if (!is.null(susie_rss_result$sets$cs)) {
       if (length(susie_rss_result$sets$cs) >= L && L <= max_L) {
         L <- L + l_step  # Increase L for the next iteration
       } else {
-        result <- susie_rss_result  # Converged successfully
         break
       }
     } else {
@@ -113,11 +113,9 @@ susie_rss_wrapper <- function(z, R, bhat, shat, n = NULL, var_y = NULL, L = 10, 
   }
 
   # Error handling if the model fails to converge
-  if (is.null(result)) {
-    stop("Failed to converge: unable to fit the model with given parameters.")
-  }
 
-  return(result)
+
+  return(susie_rss_result)
 }
 
 #' SuSiE RSS Analysis with Quality Control and Imputation
@@ -129,7 +127,7 @@ susie_rss_wrapper <- function(z, R, bhat, shat, n = NULL, var_y = NULL, L = 10, 
 #'
 #' @param z Numeric vector of z-scores corresponding to the effect size estimates, with names matching the reference panel's variant IDs.
 #' @param R Numeric matrix representing the LD (linkage disequilibrium) matrix.
-#' @param ref_panel Data frame with at least 'variant_id' column that matches the names of z.
+#' @param ref_panel Data frame with 'chrom', 'pos', 'variant_id', 'A0', 'A1' column that matches the names of z.
 #' @param bhat Optional numeric vector of effect size estimates.
 #' @param shat Optional numeric vector of standard errors associated with the effect size estimates.
 #' @param var_y Optional numeric value representing the total phenotypic variance.
@@ -145,10 +143,13 @@ susie_rss_wrapper <- function(z, R, bhat, shat, n = NULL, var_y = NULL, L = 10, 
 #' @param output_qc Logical; if TRUE, includes QC-only results in the output.
 #' @return A list containing the results of the SuSiE RSS analysis after applying quality control measures and optional imputation.
 #' @importFrom susieR susie_rss
+#' @import dplyr
 #' @export
 susie_rss_qc <- function(z, R, ref_panel, bhat=NULL, shat=NULL, var_y=NULL, n = NULL, L = 10, max_L = 20, l_step = 5, 
                         lamb = 0.01, rcond = 0.01, R2_threshold = 0.6, minimum_ld = 5, impute = TRUE, output_qc = TRUE, ...) {
   
+    
+    
   ## Input validation for z-scores and reference panel
   if (length(z) != nrow(ref_panel)) {
     stop("The length of z-scores does not match the number of rows in the reference panel.")
@@ -170,8 +171,10 @@ susie_rss_qc <- function(z, R, ref_panel, bhat=NULL, shat=NULL, var_y=NULL, n = 
   ## Imputation for outliers if enabled and required
   if (impute && !is.null(result$zR_outliers) && length(result$zR_outliers) > 0) {
     ## Extracting known z-scores excluding outliers
-    valid_variants <- !ref_panel$variant_id %in% result$zR_outliers
-    known_zscores <- cbind(ref_panel[valid_variants, ], z[valid_variants])
+    outlier = result$zR_outliers
+    known_zscores = ref_panel[-outlier,]
+    known_zscores$Z = z[-outlier]
+    known_zscores = known_zscores %>% arrange(pos)
     
     ## Imputation logic using RAiSS or other methods
     imputation_result <- raiss(ref_panel, known_zscores, R, lamb = lamb, rcond = rcond, 
@@ -189,20 +192,16 @@ susie_rss_qc <- function(z, R, ref_panel, bhat=NULL, shat=NULL, var_y=NULL, n = 
     }
 
     ## Re-run SuSiE RSS with imputed z-scores and updated LD matrix
-    result_final <- susie_rss_wrapper(z=imputation_result$Z, R=LD_extract_filtered, bhat=bhat, shat=shat, var_y=var_y, 
+    result_final$qc_impute_result <- susie_rss_wrapper(z=imputation_result$Z, R=LD_extract_filtered, bhat=bhat, shat=shat, var_y=var_y, 
                                       n=n, L=L, max_L=max_L, l_step=l_step, zR_discrepancy_correction=FALSE, ...)
+    result_final$qc_impute_result$z = imputation_result$Z
   }
-  
-  ## Determine which result to return
-  if (is.null(result_final)) {
-    return(result)
-  } else {
-    if (output_qc) {
-      result_final$qc_only_result <- result
+    if(output_qc){
+    result_final$qc_only_result <- result
     }
     return(result_final)
-  }
 }
+
 
 
 #' Post-process SuSiE or SuSiE_rss Analysis Results
@@ -235,7 +234,7 @@ susie_rss_qc <- function(z, R, ref_panel, bhat=NULL, shat=NULL, var_y=NULL, n = 
 #' @export
 susie_post_processor <- function(susie_output, data_x, data_y, X_scalar, y_scalar, maf, 
                                 secondary_coverage = c(0.5, 0.7), signal_cutoff = 0.1, 
-                                other_quantities = NULL, prior_eff_tol = 0, 
+                                other_quantities = NULL, prior_eff_tol = 1e-9, 
                                 mode = c("susie", "susie_rss")) {
     mode <- match.arg(mode)
     get_cs_index <- function(snps_idx, susie_cs) {

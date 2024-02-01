@@ -25,24 +25,35 @@ check_consecutive_regions <- function(df) {
   return(df)
 }
 
-
 #' Function to Find Start and End Rows of Genomic Data for Region of Interest
 #' @importFrom dplyr filter arrange slice
 #' @noRd
 find_intersection_rows <- function(genomic_data, region_chrom, region_start, region_end) {
+  # Adjusting region_start if it's smaller than the smallest start position in genomic_data
+  min_start <- min(genomic_data %>% filter(chrom == region_chrom) %>% pull(start))
+  if (!is.na(min_start) && region_start < min_start) {
+    region_start <- min_start
+  }
+  
+  # Adjusting region_end if it's larger than the largest end position in genomic_data
+  max_end <- max(genomic_data %>% filter(chrom == region_chrom) %>% pull(end))
+  if (!is.na(max_end) && region_end > max_end) {
+    region_end <- max_end
+  }
+  
   start_row <- genomic_data %>%
     filter(chrom == region_chrom, start <= region_start, end >= region_start) %>%
     slice(1)
-
+  
   end_row <- genomic_data %>%
     filter(chrom == region_chrom, start <= region_end, end >= region_end) %>%
     arrange(desc(end)) %>%
     slice(1)
-
+  
   if (nrow(start_row) == 0 || nrow(end_row) == 0) {
     stop("Region of interest is not covered by any rows in the data frame.")
   }
-
+  
   list(start_row = start_row, end_row = end_row)
 }
 
@@ -87,7 +98,7 @@ extract_file_paths <- function(genomic_data, intersection_rows, column_to_extrac
 #' @importFrom dplyr select
 #' @importFrom data.table fread
 #' @noRd
-get_regional_ld_meta <- function(ld_reference_meta_file, region) {
+get_regional_ld_meta <- function(ld_reference_meta_file, region, complete_coverage_required=FALSE) {
   genomic_data <- fread(ld_reference_meta_file, header = "auto")
   region <- parse_region(region) 
   # Set column names
@@ -110,7 +121,9 @@ get_regional_ld_meta <- function(ld_reference_meta_file, region) {
   intersection_rows <- find_intersection_rows(genomic_data, region$chrom, region$start, region$end)
 
   # Validate region
-  validate_selected_region(intersection_rows$start_row, intersection_rows$end_row, region$start, region$end)
+  if (complete_coverage_required) {
+    validate_selected_region(intersection_rows$start_row, intersection_rows$end_row, region$start, region$end)
+  }
 
   # Extract file paths
   LD_paths <- find_valid_file_paths(ld_reference_meta_file, extract_file_paths(genomic_data, intersection_rows, "LD_file_path"))
@@ -151,7 +164,7 @@ process_LD_matrix <- function(LD_file_path, bim_file_path) {
               read.table(.) %>%
               setNames(c("chrom","variants","GD","pos","A2","A1"))%>%
               mutate(chrom = ifelse(grepl("^chr[0-9]+", chrom), sub("^chr", "", chrom), chrom)) %>%
-              mutate(variants = gsub("[_]", ":", variants)) %>%
+              mutate(variants =format_variant_id(variants)) %>%
               mutate(variants = ifelse(grepl("^chr[0-9]+:", variants), gsub("^chr", "", variants), variants))
     # Set column and row names of the LD matrix
     colnames(LD_matrix) <- rownames(LD_matrix) <- LD_variants$variants
@@ -179,7 +192,7 @@ extract_LD_for_region <- function(LD_matrix, variants, region, extract_coordinat
         
     }
     # Extract LD matrix 
-    extracted_LD_matrix = LD_matrix[extracted_LD_variants$variants, extracted_LD_variants$variants]
+    extracted_LD_matrix = LD_matrix[extracted_LD_variants$variants, extracted_LD_variants$variants, drop = FALSE]
     list(extracted_LD_matrix = extracted_LD_matrix, extracted_LD_variants = extracted_LD_variants)
 }
 
@@ -193,7 +206,10 @@ create_combined_LD_matrix <- function(LD_matrices, variants) {
        # Loop over the list of LD matrices using sapply
         sapply(LD_variants_list, function(LD_variants) {
           # Extract the variants from the current LD matrix
-           currentVariants <- get_nested_element(LD_variants,  "variants")
+          currentVariants <- get_nested_element(LD_variants,  "variants")
+          if (length(currentVariants) == 0) {
+            return(NULL)         
+          }
         
           # Merge variants with the previously merged variants vector
           # Checking if the last variant is the same as the first of the current, if so, skip the first
@@ -296,13 +312,10 @@ load_LD_matrix <- function(LD_meta_file_path, region, extract_coordinates = NULL
 filter_genotype_by_ld_reference <- function(X, ld_reference_meta_file) {
   # Step 1: Process variant IDs into a data frame and filter out non-standard nucleotides
   variant_ids <- colnames(X)
-  variants_df <- data.frame(
-    chrom = gsub("^(chr[^:]+):.*", "\\1", variant_ids),
-    pos = as.integer(gsub("^chr[^:]+:(\\d+).*", "\\1", variant_ids)),
-    ref = gsub("^chr[^:]+:\\d+[:_](.)[:_].*", "\\1", variant_ids),
-    alt = gsub("^chr[^:]+:\\d+[:_].[:_](.)", "\\1", variant_ids),
-    stringsAsFactors = FALSE
-  )
+  variants_df <- do.call(rbind, lapply(strsplit(variant_ids,":"), function(x) {
+       data.frame(chrom = x[1], pos = as.integer(x[2]), ref = x[3], alt = x[4])
+  }))
+
   variants_df$chrom <- ifelse(grepl("^chr", variants_df$chrom), 
                      as.integer(sub("^chr", "", variants_df$chrom)), # Remove 'chr' and convert to integer
                      as.integer(variants_df$chrom))

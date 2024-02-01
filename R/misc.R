@@ -237,12 +237,14 @@ prepare_data_list <- function(geno_bed, phenotype, covariate, imiss_cutoff, maf_
       # Filter data based on common complete samples
       Y = map2(Y, common_complete_samples, ~ filter_by_common_samples(.x, .y)),
       covar = map2(covar, common_complete_samples, ~ filter_by_common_samples(.x, .y)),
-      # Apply filter_X on the geno_bed data filtered by common complete samples
+      # Apply filter_X on the geno_bed data filtered by common complete samples and then format column names
       X = map(common_complete_samples, ~ {
         filtered_geno_bed <- filter_by_common_samples(geno_bed, .x)
         mac_val <- if (nrow(filtered_geno_bed) == 0) 0 else (mac_cutoff / (2 * nrow(filtered_geno_bed)))
         maf_val <- max(maf_cutoff, mac_val)
-        filter_X(filtered_geno_bed, imiss_cutoff, maf_val, var_thresh = xvar_cutoff)
+        filtered_data <- filter_X(filtered_geno_bed, imiss_cutoff, maf_val, var_thresh = xvar_cutoff)
+        colnames(filtered_data) <- format_variant_id(colnames(filtered_data)) # Format column names right after filtering
+        filtered_data
       })
     ) %>%
     select(covar, Y, X, dropped_samples_Y, dropped_samples_X, dropped_samples_covar)
@@ -260,7 +262,11 @@ prepare_X_matrix <- function(geno_bed, data_list, imiss_cutoff, maf_cutoff, mac_
   maf_val = max(maf_cutoff, mac_cutoff / (2 * length(common_samples)))
   # Apply further filtering on X
   X_filtered = filter_X(X_filtered, imiss_cutoff, maf_val, xvar_cutoff)
-  message(paste0("Dimension of input genotype data is row: ", nrow(X_filtered), " column: ", ncol(X_filtered) ))
+  colnames(X_filtered) = format_variant_id(colnames(X_filtered))
+
+  # To keep a log message
+  variants <- as.data.frame(do.call(rbind, lapply(format_variant_id(colnames(X_filtered)), function(x) strsplit(x, ":")[[1]][1:2])), stringsAsFactors = FALSE)
+  message(paste0("Dimension of input genotype data is row: ", nrow(X_filtered), " column: ", ncol(X_filtered), " for genomic region of ", variants[1,1], ":", min(as.integer(variants[,2])), "-", max(as.integer(variants[,2]))))
   return(X_filtered)
 }
 
