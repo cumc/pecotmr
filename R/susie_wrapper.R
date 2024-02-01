@@ -174,7 +174,7 @@ susie_rss_qc <- function(z, R, ref_panel, bhat=NULL, shat=NULL, var_y=NULL, n = 
     ref_panel = ref_panel %>% select("chrom", "pos", "variant", "A1", "A2")
     colnames(ref_panel) = c("chr", "pos", "variant_id", "A0", "A1")
     outlier = result$zR_outliers
-    known_zscore =  ref_panel$target_data_qced %>% select("chrom", "pos", "variant", "A1", "A2", "z")
+    known_zscore =  ref_panel %>% select("chrom", "pos", "variant", "A1", "A2", "z")
     colnames(known_zscore) = c("chr", "pos", "variant_id", "A0", "A1", "Z")
     known_zscores = known_zscore[-outlier, ] %>% arrange(pos)
     
