@@ -107,7 +107,7 @@ load_and_extract_ld_matrix <- function(ld_meta_file_path, analysis_region, varia
 #' Function to calculate purity
 calculate_purity <- function(variants, ext_ld, squared) {
   # This is a placeholder for calculating purity, adjust as per your actual function
-  purity <- matrix(get_purity(variants, Xcorr = ext_ld, squared), 1, 3)
+  purity <- matrix(susieR:::get_purity(variants, Xcorr = ext_ld, squared), 1, 3)
   purity
 }
 
@@ -117,7 +117,6 @@ calculate_purity <- function(variants, ext_ld, squared) {
 #' 2. PPH4 exceeds threshold, default as 0.8.
 #' 3. We aggregate variants and cumulatively sum their PPH4 values to form a credible set until the threshold, default as 0.95.
 #' 4. The cs's purity is computed with the `get_purity` function from the `gaow/susieR` package, and the same purity criteria are employed to filter the credibility set.
-#' @importFrom susieR get_purity
 process_coloc_results <- function(coloc_result, LD_meta_file_path,analysis_script_obj, PPH4_thres = 0.8, coloc_pip_thres = 0.95, squared = FALSE, min_abs_corr = 0.5, null_index = 0, coloc_index = "PP.H4.abf", analysis_region, median_abs_corr = NULL) {
   # Extract PIP values from coloc_result summary
   coloc_summary <- as.data.frame(coloc_result$summary)
