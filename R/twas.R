@@ -391,21 +391,21 @@ susie_weights <- function(X=NULL, y=NULL, susie_fit=NULL, ...) {
 #' @return Adjusted xQTL coefficients.
 #' @export
 
-adjust_susie_weights <- function(weight_db_file, twas_weights, condition, keep_variants) {
+adjust_susie_weights <- function(twas_weights_results, condition, keep_variants) {
   # Intersect the rownames of weights with keep_variants
-  intersected_variants <- intersect(rownames(twas_weights), keep_variants)
+  intersected_variants <- intersect(get_nested_element(twas_weights_results,c("susie_results",condition,"variant_names")),keep_variants)
   if (length(intersected_variants) == 0) {
     stop("Error: No intersected variants found. Please check 'twas_weights' and 'keep_variants' inputs to make sure there are variants left to use.")
   }
 
   # Reformat intersected_variants to chrX:pos_ref_alt
-  formatted_intersected_variants <- gsub(":", "_", gsub("^([0-9]+):", "chr\\1:", intersected_variants), perl = TRUE)
-  formatted_intersected_variants <- sub("_", ":", formatted_intersected_variants)
+  # formatted_intersected_variants <- gsub(":", "_", gsub("^([0-9]+):", "chr\\1:", intersected_variants), perl = TRUE)
+  # formatted_intersected_variants <- sub("_", ":", formatted_intersected_variants)
 
   # Subset lbf_matrix, mu, and x_column_scale_factors
-  lbf_matrix <- get_nested_element(weight_db_file[[1]],c(condition,"susie_result_trimmed","lbf_variable"))
-  mu <- get_nested_element(weight_db_file[[1]],c(condition,"susie_result_trimmed","mu"))
-  x_column_scal_factors <- get_nested_element(weight_db_file[[1]],c(condition,"susie_result_trimmed","X_column_scale_factors"))
+  lbf_matrix <- get_nested_element(twas_weights_results,c("susie_results",condtion,"susie_result_trimmed","lbf_variable"))
+  mu <- get_nested_element(twas_weights_results,c("susie_results",condtion,"susie_result_trimmed","susie_result_trimmed","mu"))
+  x_column_scal_factors <- get_nested_element(twas_weights_results,c("susie_results",condtion,"susie_result_trimmed","X_column_scale_factors"))
 
   lbf_matrix_subset <- lbf_matrix[, formatted_intersected_variants]
   mu_subset <- mu[, formatted_intersected_variants]
@@ -416,7 +416,7 @@ adjust_susie_weights <- function(weight_db_file, twas_weights, condition, keep_v
   adjusted_xqtl_coef <- colSums(adjusted_xqtl_alpha * mu_subset) / x_column_scal_factors_subset
 
   # Convert names of adjusted susie weights to the format X:pos:ref:alt, which is consistent with gwas summary stats
-  names(adjusted_xqtl_coef) <- gsub("chr([0-9]+):([0-9]+)_([A-Z])_([A-Z])", "\\1:\\2:\\3:\\4", names(adjusted_xqtl_coef))
+  #names(adjusted_xqtl_coef) <- gsub("chr([0-9]+):([0-9]+)_([A-Z])_([A-Z])", "\\1:\\2:\\3:\\4", names(adjusted_xqtl_coef))
   return(list(adjusted_susie_weights = adjusted_xqtl_coef,remained_variants_names = names(adjusted_xqtl_coef)))
 }
 

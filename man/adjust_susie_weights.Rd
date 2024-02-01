@@ -4,14 +4,14 @@
 \alias{adjust_susie_weights}
 \title{Adjust SuSiE Weights}
 \usage{
-adjust_susie_weights(weight_db_file, twas_weights, condition, keep_variants)
+adjust_susie_weights(twas_weights_results, condition, keep_variants)
 }
 \arguments{
-\item{weight_db_file}{A RDS file containing TWAS weights..}
-
 \item{condition}{Optional; specific condition. If NULL, uses the first condition in xqtl_data.}
 
 \item{keep_variants}{Vector of variant names to keep.}
+
+\item{weight_db_file}{A RDS file containing TWAS weights..}
 
 \item{weights}{the output of `load_twas_weights function`, matrix of twas weights.}
 }

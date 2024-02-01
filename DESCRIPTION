@@ -29,9 +29,9 @@ Imports:
     purrr,
     tidyr,
     Rfast,
-    doMC, 
-    doParallel,
+    doMC,
     pgenlibr,
+    doParallel,
     foreach,
     snpStats,
     vctrs

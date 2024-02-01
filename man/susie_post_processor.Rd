@@ -14,7 +14,7 @@ susie_post_processor(
   secondary_coverage = c(0.5, 0.7),
   signal_cutoff = 0.1,
   other_quantities = NULL,
-  prior_eff_tol = 0,
+  prior_eff_tol = 1e-09,
   mode = c("susie", "susie_rss")
 )
 }

@@ -11,6 +11,8 @@ coloc_wrapper(
   xqtl_finemapping_obj = NULL,
   gwas_varname_obj = NULL,
   xqtl_varname_obj = NULL,
+  LD_meta_file_path,
+  prior_tol = 1e-09,
   p1 = 1e-04,
   p2 = 1e-04,
   p12 = 5e-06,
@@ -26,10 +28,19 @@ coloc_wrapper(
 
 \item{xqtl_finemapping_obj}{Optional table name in xQTL RDS files (default 'susie_fit').}
 
-\item{p1, }{p2, and p12 are results from xqtl_enrichment_wrapper (default 'p1=1e-4, p2=1e-4, p12=5e-6', same as coloc.bf_bf)}
+\item{gwas_varname_obj}{Optional table name in GWAS RDS files (default 'susie_fit').}
+
+\item{xqtl_varname_obj}{Optional table name in xQTL RDS files (default 'susie_fit').}
+
+\item{LD_meta_file_path}{Path to the metadata of LD reference.}
+
+\item{prior_tol}{When the prior variance is estimated, compare the estimated value to \code{prior_tol} at the end of the computation, 
+and exclude a single effect from PIP computation if the estimated prior variance is smaller than this tolerance value.}
+
+\item{p1, }{p2, and p12 are results from xqtl_enrichment_wrapper (default 'p1=1e-4, p2=1e-4, p12=5e-6', same as coloc.bf_bf).}
 }
 \value{
-A list containing the processed xQTL and GWAS logBF matrices for colocalization analysis, coloc results, output from the compute_qtl_enrichment function
+A list containing the coloc results and the summarized sets.
 }
 \description{
 This function processes xQTL and multiple GWAS finemapped data files for colocalization analysis.
@@ -37,5 +48,5 @@ This function processes xQTL and multiple GWAS finemapped data files for colocal
 \examples{
 xqtl_file <- "xqtl_file.rds"
 gwas_files <- c("gwas_file1.rds", "gwas_file2.rds")
-result <- coloc_wrapper(xqtl_file, gwas_files)
+result <- coloc_wrapper(xqtl_file, gwas_files, LD_meta_file_path)
 }
