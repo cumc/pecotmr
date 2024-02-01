@@ -98,7 +98,7 @@ extract_file_paths <- function(genomic_data, intersection_rows, column_to_extrac
 #' @importFrom dplyr select
 #' @importFrom data.table fread
 #' @noRd
-get_regional_ld_meta <- function(ld_reference_meta_file, region) {
+get_regional_ld_meta <- function(ld_reference_meta_file, region, complete_coverage_required=FALSE) {
   genomic_data <- fread(ld_reference_meta_file, header = "auto")
   region <- parse_region(region) 
   # Set column names
@@ -121,7 +121,9 @@ get_regional_ld_meta <- function(ld_reference_meta_file, region) {
   intersection_rows <- find_intersection_rows(genomic_data, region$chrom, region$start, region$end)
 
   # Validate region
-  validate_selected_region(intersection_rows$start_row, intersection_rows$end_row, region$start, region$end)
+  if (complete_coverage_required) {
+    validate_selected_region(intersection_rows$start_row, intersection_rows$end_row, region$start, region$end)
+  }
 
   # Extract file paths
   LD_paths <- find_valid_file_paths(ld_reference_meta_file, extract_file_paths(genomic_data, intersection_rows, "LD_file_path"))
