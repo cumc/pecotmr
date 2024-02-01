@@ -66,6 +66,7 @@ convert_to_dataframe <- function(variant_id) {
 #' @param remove_strand_ambiguous Whether to remove strand SNPs (if any). Default is `TRUE`.
 #' @return A single data frame with matched variants.
 #' @import dplyr
+#' @import tidyr
 #' @importFrom vctrs vec_duplicate_detect
 #' @export
 allele_qc <- function(target_variants, ref_variants, target_data, col_to_flip, 
@@ -83,7 +84,7 @@ allele_qc <- function(target_variants, ref_variants, target_data, col_to_flip,
     as.data.frame()
   
   # Align the rownames to the target_data_qced
-  rownames(target_data_qced) <- matched$variants_id_qced
+  target_data_qced$variant = matched$variants_id_qced
   
   a1 <- toupper(matched$A1.target)
   a2 <- toupper(matched$A2.target)
@@ -156,6 +157,7 @@ allele_qc <- function(target_variants, ref_variants, target_data, col_to_flip,
   if (nrow(target_data_qced) < min_match) {
     stop("Not enough variants have been matched.")
   }
-    
+    # change A1 and A2 so that it can fit the reference, and rearrange the columns so that the four are at the very front
+    target_data_qced = target_data_qced %>% tidyr::separate(variant, into = c("chrom", "pos", "A1", "A2"), sep = ":", remove = FALSE) %>% select(chrom, pos, A1, A2, everything()) %>% mutate(chrom = as.integer(chrom), pos = as.integer(pos))
   return(list(target_data_qced = target_data_qced, qc_summary = qc_summary))
 }
