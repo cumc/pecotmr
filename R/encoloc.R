@@ -260,13 +260,12 @@ coloc_wrapper <- function(xqtl_file, gwas_files, xqtl_condition = NULL, gwas_con
 
     #add 'chr' in colnames 
     add_chr_prefix <- function(df) {
-      colnames(df) <- if (sum(grepl("chr", colnames(df))) > 0) colnames(df) else paste0("chr", colnames(df))
+      colnames(df) <- ifelse(grepl("chr", colnames(df)) > 0, colnames(df), paste0("chr", colnames(df)))
       return(df)
     }
 
     combined_gwas_lbf_matrix <- add_chr_prefix(combined_gwas_lbf_matrix)
     xqtl_lbf_matrix <- add_chr_prefix(xqtl_lbf_matrix)
-    
 
     # Match column names and reorder matrices
     common_colnames <- intersect(colnames(xqtl_lbf_matrix), colnames(combined_gwas_lbf_matrix))
