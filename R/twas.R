@@ -353,7 +353,7 @@ twas_weights <- function(X, Y, weight_methods, num_threads = 1, seed = NULL) {
         weights_list <- lapply(names(weight_methods), process_method)
     }
     names(weights_list) <- names(weight_methods)
-
+    if (!is.null(colnames(X))) weights_list$variant_names = colnames(X)
     return(weights_list)
 }
 
@@ -466,7 +466,7 @@ mrash_weights <- function(X, y, init_prior_sd=TRUE, ...) {
     if (!"beta.init" %in% names(args_list)) {
         args_list$beta.init <- lasso_weights(X, y)
     }
-    fit.mr.ash <- do.call("mr.ash", c(list(X = X, y = y, sa2 = ifelse(init_prior_sd, init_prior_sd(X, y)^2, NULL)), args_list))
+    fit.mr.ash <- do.call("mr.ash", c(list(X = X, y = y, sa2 = if (init_prior_sd) init_prior_sd(X, y)^2 else NULL), args_list))
     predict(fit.mr.ash, type = "coefficients")[-1]
 }
 
