@@ -353,7 +353,10 @@ twas_weights <- function(X, Y, weight_methods, num_threads = 1, seed = NULL) {
         weights_list <- lapply(names(weight_methods), process_method)
     }
     names(weights_list) <- names(weight_methods)
-    if (!is.null(colnames(X))) weights_list$variant_names = colnames(X)
+
+    if (!is.null(colnames(X))) {
+        weights_list <- lapply(weights_list, function(x) { rownames(x) <- colnames(X); return(x) })
+    }
     return(weights_list)
 }
 
