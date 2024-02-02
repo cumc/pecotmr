@@ -466,7 +466,7 @@ mrash_weights <- function(X, y, init_prior_sd=TRUE, ...) {
     if (!"beta.init" %in% names(args_list)) {
         args_list$beta.init <- lasso_weights(X, y)
     }
-    fit.mr.ash <- do.call("mr.ash", c(list(X = X, y = y, sa2 = ifelse(init_prior_sd, init_prior_sd(X, y)^2, NULL)), args_list))
+    fit.mr.ash <- do.call("mr.ash", c(list(X = X, y = y, sa2 = if (init_prior_sd) init_prior_sd(X, y)^2 else NULL), args_list))
     predict(fit.mr.ash, type = "coefficients")[-1]
 }
 
