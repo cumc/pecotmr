@@ -193,6 +193,7 @@ process_coloc_results <- function(coloc_result, LD_meta_file_path,analysis_scrip
 
 
 
+
 #' Colocalization Analysis Wrapper
 #'
 #' This function processes xQTL and multiple GWAS finemapped data files for colocalization analysis.
@@ -219,8 +220,7 @@ process_coloc_results <- function(coloc_result, LD_meta_file_path,analysis_scrip
 coloc_wrapper <- function(xqtl_file, gwas_files, 
                           gwas_finemapping_obj = NULL, xqtl_finemapping_obj = NULL,
                           gwas_varname_obj = NULL, xqtl_varname_obj = NULL, 
-                          LD_meta_file_path, prior_tol = 1e-9,
-                          p1=1e-4, p2=1e-4, p12=5e-6, ...) {
+                          prior_tol = 1e-9, p1=1e-4, p2=1e-4, p12=5e-6, ...) {
     # Load and process GWAS data
     gwas_lbf_matrices <- lapply(gwas_files, function(file) {
         raw_data <- readRDS(file)
@@ -243,11 +243,11 @@ coloc_wrapper <- function(xqtl_file, gwas_files,
 
 
     # Process xQTL data
-    xqtl_raw_data <- readRDS(xqtl_file)
-    xqtl_data <- if (!is.null(xqtl_finemapping_obj)) get_nested_element(xqtl_raw_data[[1]], xqtl_finemapping_obj) else xqtl_raw_data[[1]]
+    xqtl_raw_data <- readRDS(xqtl_file)[[1]]
+    xqtl_data <- if (!is.null(xqtl_finemapping_obj)) get_nested_element(xqtl_raw_data, xqtl_finemapping_obj) else xqtl_raw_data
     xqtl_lbf_matrix <- as.data.frame(xqtl_data$lbf_variable)
     xqtl_lbf_matrix <- xqtl_lbf_matrix[xqtl_data$V > prior_tol,]
-    if (!is.null(xqtl_varname_obj)) colnames(xqtl_lbf_matrix) <- get_nested_element(xqtl_raw_data[[1]], xqtl_varname_obj)
+    if (!is.null(xqtl_varname_obj)) colnames(xqtl_lbf_matrix) <- get_nested_element(xqtl_raw_data, xqtl_varname_obj)
 
     #add 'chr' in colnames 
     add_chr_prefix <- function(df) {
@@ -270,7 +270,27 @@ coloc_wrapper <- function(xqtl_file, gwas_files,
 
     # COLOC function 
     coloc_res <- coloc.bf_bf(xqtl_lbf_matrix, combined_gwas_lbf_matrix, p1 = p1, p2 = p2, p12 = p12, ...)
-    coloc_res <- c(coloc_res,process_coloc_results(coloc_res, LD_meta_file_path, analysis_region = names(xqtl_raw_data) %>% str_extract(., 'chr\\d+:[0-9]+-[0-9]+') ))
-    # post processing for coloc results
+    return(c(coloc_res, analysis_region = names(xqtl_raw_data) %>% str_extract(., 'chr\\d+:[0-9]+-[0-9]+') )))##FIXME: with new layer
+}
+
+
+# coloc_post_processor function
+coloc_post_processor <- function(coloc_res, LD_meta_file_path = NULL, analysis_region = NULL) {
+    if (!is.null(LD_meta_file_path)) {
+        if (is.null(analysis_region)) {
+            stop("LD_meta_file_path is provided but analysis_region is not provided. Please provide analysis_region for purity filter.")
+        }
+        # Perform purity filter using LD_meta_file_path and analysis_region
+        coloc_res <- c(coloc_res, process_coloc_results(coloc_res, LD_meta_file_path, analysis_region = analysis_region))
+    } else {
+        if (!is.null(analysis_region)) {
+            warning("Analysis_region is provided but will not be used as LD_meta_file_path is not provided.")
+        }
+        warning("LD_meta_file_path not provided. Purity filter cannot be applied.")
+    }
     return(coloc_res)
 }
+
+# In practice, analysis will contain two lines:
+# res <- coloc_wrapper(...)
+# post_processed_res <- coloc_post_processor
