@@ -130,7 +130,7 @@ merge_raiss_df <- function(raiss_df, known_zscores) {
 
   # If there are overlapping columns (e.g., Z.x and Z.y), resolve them
   # For example, use Z from known_zscores where available, otherwise use Z from raiss_df
-  merged_df$Z <- if (from_known) merged_df$Z.y else merged_df$Z.x
+  merged_df$Z <- ifelse(from_known, merged_df$Z.y, merged_df$Z.x)
 
   # Remove the extra columns resulted from the merge (e.g., Z.x, Z.y)
   merged_df <- merged_df[, !colnames(merged_df) %in% c("Z.x", "Z.y")]

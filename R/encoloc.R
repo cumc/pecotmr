@@ -260,7 +260,7 @@ coloc_wrapper <- function(xqtl_file, gwas_files, xqtl_condition = NULL, gwas_con
 
     #add 'chr' in colnames 
     add_chr_prefix <- function(df) {
-      colnames(df) <- ifelse(grepl("chr", colnames(df)) > 0, colnames(df), paste0("chr", colnames(df)))
+      colnames(df) <- ifelse(grepl("chr", colnames(df)), colnames(df), paste0("chr", colnames(df)))
       return(df)
     }
 
