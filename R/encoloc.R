@@ -19,16 +19,15 @@
 #' xqtl_files <- c("xqtl_file1.rds", "xqtl_file2.rds")
 #' result <- xqtl_enrichment_wrapper(gwas_files, xqtl_files)
 #' @export
-xqtl_enrichment_wrapper <- function(xqtl_files, gwas_files, 
-                                    gwas_finemapping_obj = NULL, xqtl_finemapping_obj = NULL,
-                                    gwas_varname_obj = NULL, xqtl_varname_obj = NULL,
+xqtl_enrichment_wrapper <- function(xqtl_files, gwas_files,xqtl_condition = NULL, gwas_condition = NULL, 
+                                    finemapping_obj = "susie_result_trimmed", varname_obj = "variant_names", 
                                     pi_gwas = NULL, pi_qtl = NULL, 
                                     lambda = 1.0, ImpN = 25,
                                     num_threads = 1) {
 
   process_finemapped_data <- function(xqtl_files, gwas_files,
-                                    gwas_finemapping_obj = NULL, xqtl_finemapping_obj = NULL,
-                                    gwas_varname_obj = NULL, xqtl_varname_obj = NULL) {
+                                    xqtl_condition = NULL, gwas_condition = NULL, 
+                                    finemapping_obj = "susie_result_trimmed", varname_obj = "variant_names") {
     # Process GWAS data
     gwas_pip <- list()
     for (file in gwas_files) {
@@ -109,6 +108,12 @@ calculate_purity <- function(variants, ext_ld, squared) {
   # This is a placeholder for calculating purity, adjust as per your actual function
   purity <- matrix(susieR:::get_purity(variants, Xcorr = ext_ld, squared), 1, 3)
   purity
+}
+
+#' Function to convert region df to str
+convert_to_string <- function(df) {
+  result <- paste0("chr", df$chrom, ":", df$start, "-", df$end)
+  return(result)
 }
 
 #' Main processing function
@@ -193,6 +198,7 @@ process_coloc_results <- function(coloc_result, LD_meta_file_path,analysis_scrip
 
 
 
+
 #' Colocalization Analysis Wrapper
 #'
 #' This function processes xQTL and multiple GWAS finemapped data files for colocalization analysis.
@@ -216,11 +222,9 @@ process_coloc_results <- function(coloc_result, LD_meta_file_path,analysis_scrip
 #' @importFrom tidyr replace_na
 #' @importFrom coloc coloc.bf_bf
 #' @export
-coloc_wrapper <- function(xqtl_file, gwas_files, 
-                          gwas_finemapping_obj = NULL, xqtl_finemapping_obj = NULL,
-                          gwas_varname_obj = NULL, xqtl_varname_obj = NULL, 
-                          LD_meta_file_path, prior_tol = 1e-9,
-                          p1=1e-4, p2=1e-4, p12=5e-6, ...) {
+coloc_wrapper <- function(xqtl_file, gwas_files, xqtl_condition = NULL, gwas_condition = NULL, 
+                          finemapping_obj = "susie_result_trimmed", varname_obj = "variant_names", xqtl_region_obj = "region_info",
+                          prior_tol = 1e-9, p1=1e-4, p2=1e-4, p12=5e-6, ...) {
     # Load and process GWAS data
     gwas_lbf_matrices <- lapply(gwas_files, function(file) {
         raw_data <- readRDS(file)
@@ -243,15 +247,20 @@ coloc_wrapper <- function(xqtl_file, gwas_files,
 
 
     # Process xQTL data
-    xqtl_raw_data <- readRDS(xqtl_file)
-    xqtl_data <- if (!is.null(xqtl_finemapping_obj)) get_nested_element(xqtl_raw_data[[1]], xqtl_finemapping_obj) else xqtl_raw_data[[1]]
+    xqtl_finemapping_obj <- c(xqtl_condition,finemapping_obj)
+    xqtl_varname_obj <- c(xqtl_condition,varname_obj)
+    xqtl_region_obj <- c(xqtl_condition,xqtl_region_obj)
+    
+    
+    xqtl_raw_data <- readRDS(xqtl_file)[[1]]
+    xqtl_data <- if (!is.null(xqtl_finemapping_obj)) get_nested_element(xqtl_raw_data, xqtl_finemapping_obj) else xqtl_raw_data
     xqtl_lbf_matrix <- as.data.frame(xqtl_data$lbf_variable)
     xqtl_lbf_matrix <- xqtl_lbf_matrix[xqtl_data$V > prior_tol,]
-    if (!is.null(xqtl_varname_obj)) colnames(xqtl_lbf_matrix) <- get_nested_element(xqtl_raw_data[[1]], xqtl_varname_obj)
+    if (!is.null(xqtl_varname_obj)) colnames(xqtl_lbf_matrix) <- get_nested_element(xqtl_raw_data, xqtl_varname_obj)
 
     #add 'chr' in colnames 
     add_chr_prefix <- function(df) {
-      colnames(df) <- if (grepl("chr", colnames(df))) colnames(df) else paste0("chr", colnames(df))
+      colnames(df) <- if (sum(grepl("chr", colnames(df))) > 0) colnames(df) else paste0("chr", colnames(df))
       return(df)
     }
 
@@ -267,10 +276,33 @@ coloc_wrapper <- function(xqtl_file, gwas_files,
     # Report the number of dropped columns from xQTL matrix
     num_dropped_cols <- length(setdiff(colnames(xqtl_lbf_matrix), common_colnames))
     message("Number of columns dropped from xQTL matrix: ", num_dropped_cols)
+    
+    
+    region <- if (!is.null(xqtl_region_obj)) get_nested_element(xqtl_raw_data, xqtl_region_obj)$region %>% convert_to_string else NULL
 
     # COLOC function 
     coloc_res <- coloc.bf_bf(xqtl_lbf_matrix, combined_gwas_lbf_matrix, p1 = p1, p2 = p2, p12 = p12, ...)
-    coloc_res <- c(coloc_res,process_coloc_results(coloc_res, LD_meta_file_path, analysis_region = names(xqtl_raw_data) %>% str_extract(., 'chr\\d+:[0-9]+-[0-9]+') ))
-    # post processing for coloc results
+    return(c(coloc_res, analysis_region =  region))
+}
+
+
+# coloc_post_processor function
+coloc_post_processor <- function(coloc_res, LD_meta_file_path = NULL, analysis_region = NULL,...) {
+    if (!is.null(LD_meta_file_path)) {
+        if (is.null(analysis_region)) {
+            stop("LD_meta_file_path is provided but analysis_region is not provided. Please provide analysis_region for purity filter.")
+        }
+        # Perform purity filter using LD_meta_file_path and analysis_region
+        coloc_res <- c(coloc_res, process_coloc_results(coloc_res, LD_meta_file_path, analysis_region = analysis_region))
+    } else {
+        if (!is.null(analysis_region)) {
+            warning("Analysis_region is provided but will not be used as LD_meta_file_path is not provided.")
+        }
+        warning("LD_meta_file_path not provided. Purity filter cannot be applied.")
+    }
     return(coloc_res)
 }
+
+# In practice, analysis will contain two lines:
+# res <- coloc_wrapper(...)
+# post_processed_res <- coloc_post_processor
