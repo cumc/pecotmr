@@ -259,6 +259,10 @@ test_that("Test filter_by_common_samples",{
     expect_equal(rownames(filter_by_common_samples(dat, common_samples)), common_samples)
 })
 
+#' @importFrom readr read_delim cols
+prepare_data_list <- function(
+    geno_bed, phenotype, covariate, imiss_cutoff, maf_cutoff, mac_cutoff, xvar_cutoff,  phenotype_header = 4, keep_samples = NULL)
+
 test_that("Test prepare_data_list multiple pheno",{
     # Create dummy data
     ## Prepare Genotype Data
