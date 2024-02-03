@@ -4,7 +4,6 @@
 #'   or a character vector in "chr:pos:A1:A2" or "chr:pos_A1_A2" format.
 #' @return A data frame with columns "chrom", "pos", "A1", "A2", where 'chrom' 
 #'   and 'pos' are integers, and 'A1' and 'A2' are allele identifiers.
-#' @import stats
 #' @noRd
 convert_to_dataframe <- function(variant_id) {
   # Check if target_variants is already a data.frame with the required columns
