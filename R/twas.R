@@ -41,6 +41,7 @@ twas_z <- function(weights, z, R=NULL, X=NULL) {
 #' methods in the list can be either univariate (applied to each column of Y) or multivariate (applied to the entire Y matrix).
 #' @param seed An optional integer to set the random seed for reproducibility of sample splitting.
 #' @param max_num_variants An optional integer to set the randomly selected maximum number of variants to use for CV purpose, to save computing time.
+#' @param variants_to_keep An optional integer to ensure that the listed variants are kept in the CV when there is a limit on the max_num_variants to use.
 #' @param num_threads The number of threads to use for parallel processing.
 #'        If set to -1, the function uses all available cores.
 #'        If set to 0 or 1, no parallel processing is performed.
@@ -115,8 +116,22 @@ twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_
 
     # Select variants if necessary
     if (!is.null(max_num_variants) && ncol(X)> max_num_variants) {
-        selected_columns <- sort(sample(ncol(X), max_num_variants, replace = FALSE))
-        message(paste("Randomly selecting", ncol(X[, selected_columns]), "out of", ncol(X), "variants for cross validation purpose."))
+        if (!is.null(variants_to_keep) && length(variants_to_keep) > 0) {
+            variants_to_keep <- intersect(variants_to_keep, colnames(X))
+            remaining_columns <- setdiff(colnames(X), variants_to_keep)
+            additional_columns <- if (length(variants_to_keep) < max_num_variants) {
+                sample(remaining_columns, max_num_variants - length(variants_to_keep), replace = FALSE)
+            } else {
+                character(0)  # No additional columns needed
+            }
+            selected_columns <- sort(union(variants_to_keep, additional_columns), index.return = TRUE)
+            message(sprintf("Including %d specified variants and randomly selecting %d additional variants, for a total of %d variants out of %d for cross-validation purpose.",
+                    length(variants_to_keep), length(additional_columns), length(selected_columns), ncol(X)))
+        } else {
+            selected_columns <- sample(ncol(X), max_num_variants, replace = FALSE)
+            selected_columns <- sort(sample(ncol(X), max_num_variants, replace = FALSE))
+            message(paste("Randomly selecting", length(selected_columns), "out of", ncol(X), "variants for cross validation purpose."))
+        }
         X <- X[, selected_columns]
     }
     
