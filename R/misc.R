@@ -387,7 +387,6 @@ load_regional_univariate_data <- function(...) {
           residual_X = dat$residual_X,
           residual_Y_scalar = dat$residual_Y_scalar,
           residual_X_scalar = dat$residual_X_scalar,
-          X = dat$X,
           dropped_sample = dat$dropped_sample,
           maf = dat$maf,
           chrom = dat$chrom,

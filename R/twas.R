@@ -310,7 +310,7 @@ twas_weights <- function(X, Y, weight_methods, num_threads = 1, seed = NULL) {
     # Determine number of cores to use
     num_cores <- ifelse(num_threads == -1, detectCores(), num_threads)
 
-    compute_method_weigths <- function(method_name) {
+    compute_method_weights <- function(method_name) {
         # Hardcoded vector of multivariate methods
         multivariate_weight_methods <- c('mrmash_weights')
         args <- weight_methods[[method_name]]
