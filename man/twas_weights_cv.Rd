@@ -11,6 +11,7 @@ twas_weights_cv(
   sample_partitions = NULL,
   weight_methods = NULL,
   seed = NULL,
+  max_num_variants = NULL,
   num_threads = 1,
   ...
 )
@@ -30,6 +31,8 @@ containing columns 'Sample' (sample names) and 'Fold' (fold number). If NULL, 'f
 methods in the list can be either univariate (applied to each column of Y) or multivariate (applied to the entire Y matrix).}
 
 \item{seed}{An optional integer to set the random seed for reproducibility of sample splitting.}
+
+\item{max_num_variants}{An optional integer to set the randomly selected maximum number of variants to use for CV purpose, to save computing time.}
 
 \item{num_threads}{The number of threads to use for parallel processing.
 If set to -1, the function uses all available cores.
