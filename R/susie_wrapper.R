@@ -195,6 +195,7 @@ susie_rss_qc <- function(z, R, ref_panel, bhat=NULL, shat=NULL, var_y=NULL, n = 
     result_final$qc_impute_result <- susie_rss_wrapper(z=imputation_result$Z, R=LD_extract_filtered, bhat=bhat, shat=shat, var_y=var_y, 
                                       n=n, L=L, max_L=max_L, l_step=l_step, zR_discrepancy_correction=FALSE, ...)
     result_final$qc_impute_result$z = imputation_result$Z
+    result_final$impute_table = imputation_result
   }
     if(output_qc){
     result_final$qc_only_result <- result
