@@ -351,8 +351,8 @@ test_that("invert_mat_eigen returns the same matrix for an identity matrix", {
 test_that("invert_mat_eigen returns a zero matrix for a zero matrix input", {
     mat <- matrix(0, nrow = 2, ncol = 2)
     expected <- mat
-    actual <- invert_mat_eigen(mat)
-    expect_equal(actual, expected)
+    expect_error(invert_mat_eigen(mat),
+      "Cannot invert the input matrix because all its eigen values are negative or close to zero")
 })
 
 test_that("invert_mat_eigen handles matrices with negative eigenvalues", {
