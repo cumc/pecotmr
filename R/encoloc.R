@@ -110,12 +110,6 @@ calculate_purity <- function(variants, ext_ld, squared) {
   purity
 }
 
-#' Function to convert region df to str
-convert_to_string <- function(df) {
-  result <- paste0("chr", df$chrom, ":", df$start, "-", df$end)
-  return(result)
-}
-
 #' Main processing function
 #' This function is designed to summarize coloc results based on the following criteria:
 #' 1. Among the colocalized variant pairs, PPH4 has the highest value compared to PPH0-PPH3.
@@ -225,6 +219,7 @@ process_coloc_results <- function(coloc_result, LD_meta_file_path,analysis_scrip
 coloc_wrapper <- function(xqtl_file, gwas_files, xqtl_condition = NULL, gwas_condition = NULL, 
                           finemapping_obj = "susie_result_trimmed", varname_obj = "variant_names", xqtl_region_obj = "region_info",
                           prior_tol = 1e-9, p1=1e-4, p2=1e-4, p12=5e-6, ...) {
+
     # Load and process GWAS data
     gwas_lbf_matrices <- lapply(gwas_files, function(file) {
         raw_data <- readRDS(file)
@@ -275,8 +270,9 @@ coloc_wrapper <- function(xqtl_file, gwas_files, xqtl_condition = NULL, gwas_con
     # Report the number of dropped columns from xQTL matrix
     num_dropped_cols <- length(setdiff(colnames(xqtl_lbf_matrix), common_colnames))
     message("Number of columns dropped from xQTL matrix: ", num_dropped_cols)
-    
-    
+
+    # Function to convert region df to str
+    convert_to_string <- function(df) paste0("chr", df$chrom, ":", df$start, "-", df$end)
     region <- if (!is.null(xqtl_region_obj)) get_nested_element(xqtl_raw_data, xqtl_region_obj)$region %>% convert_to_string else NULL
 
     # COLOC function 

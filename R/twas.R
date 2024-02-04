@@ -40,6 +40,7 @@ twas_z <- function(weights, z, R=NULL, X=NULL) {
 #' @param weight_methods A list of methods and their specific arguments, formatted as list(method1 = method1_args, method2 = method2_args). 
 #' methods in the list can be either univariate (applied to each column of Y) or multivariate (applied to the entire Y matrix).
 #' @param seed An optional integer to set the random seed for reproducibility of sample splitting.
+#' @param max_num_variants An optional integer to set the randomly selected maximum number of variants to use for CV purpose, to save computing time.
 #' @param num_threads The number of threads to use for parallel processing.
 #'        If set to -1, the function uses all available cores.
 #'        If set to 0 or 1, no parallel processing is performed.
@@ -65,7 +66,7 @@ twas_z <- function(weights, z, R=NULL, X=NULL) {
 #' @importFrom foreach %dopar%
 #' @importFrom doParallel registerDoParallel
 #' @export
-twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_methods = NULL, seed = NULL, num_threads = 1, ...) {
+twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_methods = NULL, seed = NULL, max_num_variants = NULL, num_threads = 1, ...) {
     split_data <- function(X, Y, sample_partition, fold){
       if (is.null(rownames(X))) {
         warning("Row names in X are missing. Using row indices.")
@@ -110,6 +111,13 @@ twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_
         sample_names <- rownames(Y)
     } else {
         sample_names <- 1:nrow(X)
+    }
+
+    # Select variants if necessary
+    if (!is.null(max_num_variants) && ncol(X)> max_num_variants) {
+        selected_columns <- sort(sample(ncol(X), max_num_variants, replace = FALSE))
+        message(paste("Randomly selecting", ncol(X[, selected_columns]), "out of", ncol(X), "variants for cross validation purpose."))
+        X <- X[, selected_columns]
     }
     
     arg <-list(...)
