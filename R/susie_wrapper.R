@@ -334,6 +334,7 @@ susie_post_processor <- function(susie_output, data_x, data_y, X_scalar, y_scala
             mu = susie_output$mu[eff_idx, , drop = FALSE],
             mu2 = susie_output$mu2[eff_idx, , drop = FALSE],
             V = susie_output$V[eff_idx],
+            niter = niter,
             X_column_scale_factors = if (mode == "susie") susie_output$X_column_scale_factors else NULL
         )
         class(res$susie_result_trimmed) <- "susie"

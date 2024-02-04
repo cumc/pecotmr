@@ -124,7 +124,7 @@ twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_
             } else {
                 character(0)  # No additional columns needed
             }
-            selected_columns <- sort(union(variants_to_keep, additional_columns), index.return = TRUE)
+            selected_columns <- sort(union(variants_to_keep, additional_columns))
             message(sprintf("Including %d specified variants and randomly selecting %d additional variants, for a total of %d variants out of %d for cross-validation purpose.",
                     length(variants_to_keep), length(additional_columns), length(selected_columns), ncol(X)))
         } else {
