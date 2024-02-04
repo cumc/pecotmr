@@ -36,7 +36,7 @@ convert_to_dataframe <- function(variant_id) {
   }
 
   # Check if id1 is in the first vector format
-  if (any(grepl(":",varaint_id[1])) && any(grepl("_", variant_id[1]))) {
+  if (any(grepl(":", varaint_id[1])) && any(grepl("_", variant_id[1]))) {
     return(create_dataframe(variant_id, "colon_underscore"))
   }
 
