@@ -22,15 +22,15 @@
 #' result <- xqtl_enrichment_wrapper(gwas_files, xqtl_files)
 #' @export
 xqtl_enrichment_wrapper <- function(xqtl_files, gwas_files,
-                                    xqtl_finemapping_obj = NULL, xqtl_varname_obj = NULL,
-                                    gwas_finemapping_obj = NULL, gwas_varname_obj = NULL, 
+                                    xqtl_finemapping_obj = NULL, gwas_finemapping_obj = NULL, 
+                                    xqtl_varname_obj = NULL, gwas_varname_obj = NULL, 
                                     pi_gwas = NULL, pi_qtl = NULL, 
                                     lambda = 1.0, ImpN = 25,
                                     num_threads = 1) {
 
   process_finemapped_data <- function(xqtl_files, gwas_files,
-                                    xqtl_condition, gwas_condition, 
-                                    finemapping_obj, varname_obj) {
+                                    xqtl_finemapping_obj = NULL, gwas_finemapping_obj = NULL, 
+                                    xqtl_varname_obj = NULL, gwas_varname_obj = NULL) {
     # Load and process GWAS data
     gwas_pip <- list()
     for (file in gwas_files) {
@@ -61,7 +61,7 @@ xqtl_enrichment_wrapper <- function(xqtl_files, gwas_files,
   } 
   
   # Load data
-  dat <- process_finemapped_data(xqtl_files, gwas_files, xqtl_condition, gwas_condition, finemapping_obj, varname_obj )
+  dat <- process_finemapped_data(xqtl_files, gwas_files, xqtl_finemapping_obj, gwas_finemapping_obj, xqtl_varname_obj, gwas_varname_obj)
   # Compute QTL enrichment
   return(compute_qtl_enrichment(gwas_pip = dat$gwas_pip, susie_qtl_regions = dat$xqtl_data,
                                 pi_gwas = pi_gwas, pi_qtl = pi_qtl,
@@ -232,7 +232,7 @@ coloc_wrapper <- function(xqtl_file, gwas_files,
         gwas_data <- if (!is.null(gwas_finemapping_obj)) get_nested_element(raw_data, gwas_finemapping_obj) else raw_data 
         gwas_lbf_matrix <- as.data.frame(gwas_data$lbf_variable)
         gwas_lbf_matrix <- gwas_lbf_matrix[gwas_data$V > prior_tol,]
-        if (!is.null(gwas_varname_obj)) names(pip) <- get_nested_element(raw_data, gwas_varname_obj)
+        if (!is.null(gwas_varname_obj)) colnames(gwas_lbf_matrix) <- get_nested_element(raw_data, gwas_varname_obj)
         return(gwas_lbf_matrix)
     })
 
