@@ -195,6 +195,7 @@ susie_rss_qc <- function(z, R, ref_panel, bhat=NULL, shat=NULL, var_y=NULL, n = 
     result_final$qc_impute_result <- susie_rss_wrapper(z=imputation_result$Z, R=LD_extract_filtered, bhat=bhat, shat=shat, var_y=var_y, 
                                       n=n, L=L, max_L=max_L, l_step=l_step, zR_discrepancy_correction=FALSE, ...)
     result_final$qc_impute_result$z = imputation_result$Z
+    result_final$impute_table = imputation_result
   }
     if(output_qc){
     result_final$qc_only_result <- result
@@ -334,6 +335,7 @@ susie_post_processor <- function(susie_output, data_x, data_y, X_scalar, y_scala
             mu = susie_output$mu[eff_idx, , drop = FALSE],
             mu2 = susie_output$mu2[eff_idx, , drop = FALSE],
             V = susie_output$V[eff_idx],
+            niter = susie_output$niter,
             X_column_scale_factors = if (mode == "susie") susie_output$X_column_scale_factors else NULL
         )
         class(res$susie_result_trimmed) <- "susie"

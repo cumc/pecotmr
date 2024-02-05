@@ -4,7 +4,6 @@
 #'   or a character vector in "chr:pos:A1:A2" or "chr:pos_A1_A2" format.
 #' @return A data frame with columns "chrom", "pos", "A1", "A2", where 'chrom' 
 #'   and 'pos' are integers, and 'A1' and 'A2' are allele identifiers.
-#' @import stats
 #' @noRd
 convert_to_dataframe <- function(variant_id) {
   # Check if target_variants is already a data.frame with the required columns
@@ -84,7 +83,7 @@ allele_qc <- function(target_variants, ref_variants, target_data, col_to_flip,
     as.data.frame()
   
   # Align the rownames to the target_data_qced
-  target_data_qced$variant = matched$variants_id_qced
+  target_data_qced$variant_id = matched$variants_id_qced
   
   a1 <- toupper(matched$A1.target)
   a2 <- toupper(matched$A2.target)
@@ -158,6 +157,6 @@ allele_qc <- function(target_variants, ref_variants, target_data, col_to_flip,
     stop("Not enough variants have been matched.")
   }
     # change A1 and A2 so that it can fit the reference, and rearrange the columns so that the four are at the very front
-    target_data_qced = target_data_qced %>% tidyr::separate(variant, into = c("chrom", "pos", "A1", "A2"), sep = ":", remove = FALSE) %>% select(chrom, pos, A1, A2, everything()) %>% mutate(chrom = as.integer(chrom), pos = as.integer(pos))
+    target_data_qced = target_data_qced %>% tidyr::separate(variant_id, into = c("chrom", "pos", "A1", "A2"), sep = ":", remove = FALSE) %>% select(chrom, pos, A1, A2, everything()) %>% mutate(chrom = as.integer(chrom), pos = as.integer(pos))
   return(list(target_data_qced = target_data_qced, qc_summary = qc_summary))
 }

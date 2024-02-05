@@ -1,45 +1,7 @@
 context("twas_scan")
 
-generate_mock_data <- function(seed=1, num_snps=100, empty_sets = F) {
+generate_mock_data <- function(seed=1, num_snps=100, empty_sets = F, gwas_mismatch = F, LD_mismatch = F) {
   set.seed(seed)
-  weights_path <- data.frame(ID = "random_Gene", path = "a/b/c/")
-
-  # Mock data for 'region'
-  chroms <- rep(22, num_snps)
-  starts <- sample(1e6:5e6, num_snps, replace = TRUE)
-  ends <- starts + sample(1e4:1e5, num_snps, replace = TRUE)
-  region <- data.frame(chrom = chroms, start = starts, end = ends, ID = "random_Gene")
-
-  # Mock data for 'GWAS_data'
-  sumstat_A1 <- sample(c("A", "T", "G", "C"), num_snps, replace = TRUE)
-  sumstat_A2 <- unlist(lapply(sumstat_A1, function(x) {
-    if (x == "A") {
-      return(sample(c("G", "C"), 1))
-    } else if (x == "T") {
-      return(sample(c("G", "C"), 1))
-    } else if (x == "G") {
-      return(sample(c("A", "T"), 1))
-    } else if (x == "C") {
-      return(sample(c("A", "T"), 1))
-    }
-  }))
-  GWAS_data <- data.frame(
-    chr = rep(22, num_snps),
-    pos = sample(1e6:5e6, num_snps, replace = TRUE),
-    A1.sumstats = sumstat_A1,
-    A2.sumstats = sumstat_A2,
-    beta = rnorm(num_snps),
-    se = runif(num_snps, 0.01, 0.1),
-    z = rnorm(num_snps)
-  ) %>% arrange(chr, pos)
-
-  # Mock data for 'LD_meta_file'
-  LD_matrix <- matrix(runif(num_snps^2), nrow = num_snps, ncol = num_snps)
-  colnames(LD_matrix) <- rownames(LD_matrix) <- variants_id_all <-paste(
-    GWAS_data$chr, GWAS_data$pos, GWAS_data$A1.sumstats, GWAS_data$A2.sumstats, sep = ":")
-  ld_res <- list(
-    LD = LD_matrix,
-    variants_id_all = variants_id_all)
 
   random_weights <- function(num_true_effects = 10, num_snps = num_snps, seed = 1) {
     # Generate true effect sizes for a subset of variants
@@ -56,55 +18,72 @@ generate_mock_data <- function(seed=1, num_snps=100, empty_sets = F) {
     return(effect_sizes)
   }
 
-  # Mock data for QTL weights
-  qtl_weights <- list(list(
-      sets = if (empty_sets) NULL else list(
-        set1 = "test",
-        set2 = "test",
-        set3 = "test"
-      ),
-      variant_names = variants_id_all,
-      susie_weights = random_weights(num_true_effects = 10, num_snps = num_snps, seed = 1),
-      lasso_weights = random_weights(num_true_effects = 10, num_snps = num_snps, seed = 1),
-      enet_weights = random_weights(num_true_effects = 10, num_snps = num_snps, seed = 1),
-      mrash_weights = random_weights(num_true_effects = 10, num_snps = num_snps, seed = 1)
-  ))
-  return(list(gwas = GWAS_data, LD = ld_res, region = region, qtl_weights = qtl_weights, weights_path = weights_path))
+  weights_all_matrix <- matrix(
+    c(random_weights(num_true_effects = 10, num_snps = num_snps, seed = 1),
+    random_weights(num_true_effects = 10, num_snps = num_snps, seed = 2),
+    random_weights(num_true_effects = 10, num_snps = num_snps, seed = 3),
+    random_weights(num_true_effects = 10, num_snps = num_snps, seed = 4)),
+    ncol = 4, nrow=100)
+  
+  sumstat_A1 <- sample(c("A", "T", "G", "C"), num_snps, replace = TRUE)
+  sumstat_A2 <- unlist(lapply(sumstat_A1, function(x) {
+    if (x == "A") {
+      return(sample(c("G", "C"), 1))
+    } else if (x == "T") {
+      return(sample(c("G", "C"), 1))
+    } else if (x == "G") {
+      return(sample(c("A", "T"), 1))
+    } else if (x == "C") {
+      return(sample(c("A", "T"), 1))
+    }
+  }))
+  gwas_sumstats_db <- data.frame(
+    chr = rep(22, num_snps),
+    pos = sample(1e6:5e6, num_snps, replace = TRUE),
+    A1.sumstats = sumstat_A1,
+    A2.sumstats = sumstat_A2,
+    beta = rnorm(num_snps),
+    se = runif(num_snps, 0.01, 0.1),
+    z = rnorm(num_snps)
+  ) %>% arrange(chr, pos)
+  
+  LD_matrix <- matrix(runif(num_snps^2), nrow = num_snps, ncol = num_snps)
+  colnames(LD_matrix) <- rownames(LD_matrix) <- variants_id_all <- paste(
+    gwas_sumstats_db$chr, gwas_sumstats_db$pos, gwas_sumstats_db$A1.sumstats, gwas_sumstats_db$A2.sumstats, sep = ":")
+
+  extract_variants_objs <- variants_id_all
+
+  gwas_sumstats_db$variant_allele_flip <- if (!gwas_mismatch) variants_id_all else paste(
+    12, gwas_sumstats_db$pos, gwas_sumstats_db$A1.sumstats, gwas_sumstats_db$A2.sumstats, sep = ":")
+
+  colnames(LD_matrix) <- rownames(LD_matrix) <- if (!LD_mismatch) colnames(LD_matrix) else paste(
+    3, gwas_sumstats_db$pos, gwas_sumstats_db$A1.sumstats, gwas_sumstats_db$A2.sumstats, sep = ":")
+
+  return(list(
+    weights_all_matrix = weights_all_matrix,
+    gwas_sumstats_db = gwas_sumstats_db,
+    LD_matrix = LD_matrix,
+    extract_variants_objs = extract_variants_objs))
 }
 
 test_that("Confirm twas_scan works with simulated data",{
   data <- generate_mock_data()
-  weight_path <- gsub("//", "/", tempfile(pattern = "qtl_weights", tmpdir = tempdir(), fileext = ".RDS"))
-  saveRDS(data$qtl_weights, file=weight_path)
-  data$weights_path$path <- weight_path
-  local_mocked_bindings(
-      load_LD_matrix = function(...) data$LD,
-      allele_qc = function(...) data$gwas,
-  )
-  res <- twas_scan(data$weights_path, data$region, data$gwas, data$LD)
-  expect_equal(nrow(res$gene_weights_pq), nrow(data$region))
-  expect_equal(
-    res$outcome_QC,
-    data$gwas %>% 
-      mutate(variant_allele_flip = paste(chr, pos, A1.sumstats, A2.sumstats, sep = ":"))
-  )
-  expect_equal(nrow(res$twas_z_format), nrow(data$region))
-  file.remove(weight_path)
+  res <- twas_analysis(data$weights_all_matrix, data$gwas_sumstats_db, data$LD_matrix, data$extract_variants_objs)
+  expect_equal(length(res), 4)
+  expect_true(all(unlist(lapply(res, function(x) {"z" %in% names(x)}))))
+  expect_true(all(unlist(lapply(res, function(x) {"pval" %in% names(x)}))))
 })
 
+test_that("twas_analysis raises error if empty gwas",{
+  data <- generate_mock_data(gwas_mismatch = T, LD_mismatch = F)
+  expect_error(
+    twas_analysis(data$weights_all_matrix, data$gwas_sumstats_db, data$LD_matrix, data$extract_variants_objs),
+    "No GWAS summary statistics found for the specified variants.")
+})
 
-test_that("Confirm twas_scan works with null qtl_weights",{
-  data <- generate_mock_data(empty_sets = T)
-  weight_path <- gsub("//", "/", tempfile(pattern = "qtl_weights", tmpdir = tempdir(), fileext = ".RDS"))
-  saveRDS(data$qtl_weights, file=weight_path)
-  data$weights_path$path <- weight_path
-  local_mocked_bindings(
-      load_LD_matrix = function(...) data$LD,
-      allele_qc = function(...) data$gwas,
-  )
-  expect_output(
-    twas_scan(data$weights_path, data$region, data$gwas, data$LD),
-    "The 'qtl_weights' is NULL, so no output is generated.",
-    fixed = TRUE)
-  file.remove(weight_path)
+test_that("twas_analysis raises error if empty LD_matrix",{
+  data <- generate_mock_data(gwas_mismatch = F, LD_mismatch = T)
+  expect_error(
+    twas_analysis(data$weights_all_matrix, data$gwas_sumstats_db, data$LD_matrix, data$extract_variants_objs),
+    "LD matrix subset extraction failed.")
 })
