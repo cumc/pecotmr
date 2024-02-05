@@ -119,16 +119,16 @@ twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_
         if (!is.null(variants_to_keep) && length(variants_to_keep) > 0) {
             variants_to_keep <- intersect(variants_to_keep, colnames(X))
             remaining_columns <- setdiff(colnames(X), variants_to_keep)
-            additional_columns <- if (length(variants_to_keep) < max_num_variants) {
-                sample(remaining_columns, max_num_variants - length(variants_to_keep), replace = FALSE)
-            } else {
-                character(0)  # No additional columns needed
-            }
-            selected_columns <- sort(union(variants_to_keep, additional_columns))
-            message(sprintf("Including %d specified variants and randomly selecting %d additional variants, for a total of %d variants out of %d for cross-validation purpose.",
+            if (length(variants_to_keep) < max_num_variants) {
+                additional_columns <- sample(remaining_columns, max_num_variants - length(variants_to_keep), replace = FALSE)
+                selected_columns <- union(variants_to_keep, additional_columns)
+                message(sprintf("Including %d specified variants and randomly selecting %d additional variants, for a total of %d variants out of %d for cross-validation purpose.",
                     length(variants_to_keep), length(additional_columns), length(selected_columns), ncol(X)))
+            } else {
+                selected_columns <- sample(variants_to_keep, max_num_variants, replace = FALSE)
+                message(paste("Randomly selecting", length(selected_columns), "out of", length(variants_to_keep), "input variants for cross validation purpose."))
+            }
         } else {
-            selected_columns <- sample(ncol(X), max_num_variants, replace = FALSE)
             selected_columns <- sort(sample(ncol(X), max_num_variants, replace = FALSE))
             message(paste("Randomly selecting", length(selected_columns), "out of", ncol(X), "variants for cross validation purpose."))
         }
