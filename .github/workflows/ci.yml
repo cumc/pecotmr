@@ -37,7 +37,7 @@ jobs:
 
       - name: Run R CMD CHECK
         shell: micromamba-shell {0}
-        run: R -e "rmdcheck::rcmdcheck()"
+        run: R -e "rcmdcheck::rcmdcheck()"
 
       - name: Run BiocCheckGitClone
         shell: micromamba-shell {0}
