@@ -12,19 +12,23 @@
 #' alpha <- lbf_to_alpha_vector(lbf)
 #' print(alpha)
 lbf_to_alpha_vector = function(lbf, prior_weights = NULL) {
-      if (is.null(prior_weights)) prior_weights = rep(1/length(lbf), length(lbf))
-      maxlbf = max(lbf)
-      # If maxlbf is 0, return a vector of zeros
-      if (maxlbf == 0) {
-        return(setNames(rep(0, length(lbf)), names(lbf)))
-      }
-      # w is proportional to BF, subtract max for numerical stability.
-      w = exp(lbf - maxlbf)
-      # Posterior prob for each SNP.
-      w_weighted = w * prior_weights
-      weighted_sum_w = sum(w_weighted)
-      alpha = w_weighted / weighted_sum_w
-      return(alpha)
+  if (is.null(prior_weights)) prior_weights = rep(1/length(lbf), length(lbf))
+  maxlbf = max(lbf)
+  
+  # If maxlbf is 0, return a vector of zeros
+  if (maxlbf == 0) {
+    return(setNames(rep(0, length(lbf)), names(lbf)))
+  }
+  
+  # w is proportional to BF, subtract max for numerical stability
+  w = exp(lbf - maxlbf)
+  
+  # Posterior prob for each SNP
+  w_weighted = w * prior_weights
+  weighted_sum_w = sum(w_weighted)
+  alpha = w_weighted / weighted_sum_w
+  
+  return(alpha)
 }
 
 #' Applies the 'lbf_to_alpha_vector' function row-wise to a matrix of log Bayes factors
@@ -41,32 +45,30 @@ lbf_to_alpha = function(lbf) t(apply(lbf, 1, lbf_to_alpha_vector))
 
 #' @importFrom susieR susie
 #' @export 
-susie_wrapper = function(X, y, init_L = 10, max_L = 30, coverage = 0.95, max_iter=500, l_step = 5) {
-        L = init_L
-        # Perform SuSiE by dynamically increase L
-        while (TRUE) {
-            st = proc.time()
-            res <- susie(X,y, L=L,
-                             max_iter=500,
-                             estimate_residual_variance=TRUE,
-                             estimate_prior_variance=TRUE,
-                             refine=TRUE,
-                             compute_univariate_zscore=FALSE,
-                             min_abs_corr=0.5,
-                             median_abs_corr=0.8,
-                             coverage=coverage)
-            res$time_elapsed <- proc.time() - st
-            if (!is.null(res$sets$cs)) {
-                if (length(res$sets$cs)>=L && L<=max_L) {
-                  L = L + l_step
-                } else {
-                  break
-                }
-            } else {
-              break
-           }
-        }
-        return(res)
+susie_wrapper = function(X, y, init_L = 10, max_L = 30, l_step = 5, ...) {
+  if (init_L == max_L) {
+    return(susie(X, y, L = init_L, median_abs_corr = 0.8, ...))
+  }
+  L = init_L
+  # Perform SuSiE by dynamically increasing L
+  gst = proc.time()
+  while (TRUE) {
+    st = proc.time()
+    res <- susie(X, y, L = L,
+                 median_abs_corr = 0.8, ...)
+    res$time_elapsed <- proc.time() - st
+    if (!is.null(res$sets$cs)) {
+      if (length(res$sets$cs) >= L && L <= max_L) {
+        L = L + l_step
+      } else {
+        break
+      }
+    } else {
+      break
+    }
+  }
+  message(paste("Total time elapsed for susie_wrapper:", (proc.time()-gst)[3]))
+  return(res)
 }
 
 #' Wrapper Function for SuSiE RSS with Dynamic L Adjustment
@@ -93,11 +95,15 @@ susie_rss_wrapper <- function(z, R, bhat, shat, n = NULL, var_y = NULL, L = 10, 
                               zR_discrepancy_correction = FALSE, ...) {
   if (L == 1) {
     return(susie_rss(z = z, R = R, bhat = bhat, shat = shat, var_y = var_y, n = n, 
-                    L = 1, max_iter = 1, correct_zR_discrepancy = FALSE, ...))
+                    L = 1, max_iter = 1, median_abs_corr = 0.8, correct_zR_discrepancy = FALSE, ...))
+  }
+  if (L == max_L) {
+    return(susie_rss(z = z, R = R, bhat = bhat, shat = shat, var_y = var_y, n = n, L = L, median_abs_corr = 0.8,
+                                    correct_zR_discrepancy = zR_discrepancy_correction, ...))
   }
   while (TRUE) {
       st = proc.time()
-      susie_rss_result <- susie_rss(z = z, R = R, bhat = bhat, shat = shat, var_y = var_y, n = n, L = L,
+      susie_rss_result <- susie_rss(z = z, R = R, bhat = bhat, shat = shat, var_y = var_y, n = n, L = L, median_abs_corr = 0.8,
                                     correct_zR_discrepancy = zR_discrepancy_correction, ...)
       susie_rss_result$time_elapsed <- proc.time() - st
     # Check for convergence and adjust L if necessary
@@ -111,9 +117,6 @@ susie_rss_wrapper <- function(z, R, bhat, shat, n = NULL, var_y = NULL, L = 10, 
       break  # Break the loop if no credible sets are found
     }
   }
-
-  # Error handling if the model fails to converge
-
 
   return(susie_rss_result)
 }
