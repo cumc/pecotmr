@@ -6,10 +6,10 @@
 #'
 #' @param xqtl_files Vector of xQTL RDS file paths.
 #' @param gwas_files Vector of GWAS RDS file paths.
-#' @param xqtl_condition Optional condition name in GWAS RDS files (default 'NULL').
-#' @param gwas_condition Optional condition name in xQTL RDS files (default 'NULL').
-#' @param finemapping_obj Optional table name of susie results in susie_twas output files (default 'susie_result_trimmed').
-#' @param varname_obj Optional table name of variant_names in susie_twas output files (default 'variant_names').
+#' @param xqtl_finemapping_obj Optional table name in xQTL RDS files (default 'susie_fit').
+#' @param gwas_finemapping_obj Optional table name in GWAS RDS files (default 'susie_fit').
+#' @param xqtl_varname_obj Optional table name in xQTL RDS files (default 'susie_fit').
+#' @param gwas_varname_obj Optional table name in GWAS RDS files (default 'susie_fit').
 #' @param pi_gwas Optional parameter for GWAS enrichment estimation (see `compute_qtl_enrichment`).
 #' @param pi_qtl Optional parameter for xQTL enrichment estimation (see `compute_qtl_enrichment`).
 #' @param lambda Shrinkage parameter for enrichment computation (see `compute_qtl_enrichment`).
@@ -21,8 +21,9 @@
 #' xqtl_files <- c("xqtl_file1.rds", "xqtl_file2.rds")
 #' result <- xqtl_enrichment_wrapper(gwas_files, xqtl_files)
 #' @export
-xqtl_enrichment_wrapper <- function(xqtl_files, gwas_files,xqtl_condition = NULL, gwas_condition = NULL, 
-                                    finemapping_obj = "susie_result_trimmed", varname_obj = "variant_names", 
+xqtl_enrichment_wrapper <- function(xqtl_files, gwas_files,
+                                    xqtl_finemapping_obj = NULL, xqtl_varname_obj = NULL,
+                                    gwas_finemapping_obj = NULL, gwas_varname_obj = NULL, 
                                     pi_gwas = NULL, pi_qtl = NULL, 
                                     lambda = 1.0, ImpN = 25,
                                     num_threads = 1) {
@@ -31,11 +32,6 @@ xqtl_enrichment_wrapper <- function(xqtl_files, gwas_files,xqtl_condition = NULL
                                     xqtl_condition, gwas_condition, 
                                     finemapping_obj, varname_obj) {
     # Load and process GWAS data
-    if(!is.null(gwas_condition)){
-        gwas_finemapping_obj <- c(gwas_condition,finemapping_obj)
-        gwas_varname_obj <- c(gwas_condition,varname_obj)
-    } else{ gwas_finemapping_obj <- gwas_varname_obj <- NULL }
-
     gwas_pip <- list()
     for (file in gwas_files) {
         raw_data <- readRDS(file)
@@ -52,13 +48,7 @@ xqtl_enrichment_wrapper <- function(xqtl_files, gwas_files,xqtl_condition = NULL
     }
     gwas_pip <- unlist(gwas_pip)
 
-    # Process xQTL data
-    if(!is.null(xqtl_condition)){
-        xqtl_finemapping_obj <- c(xqtl_condition,finemapping_obj)
-        xqtl_varname_obj <- c(xqtl_condition,varname_obj)
-        } else{ xqtl_finemapping_obj <- xqtl_varname_obj  <- NULL }
-
-    
+    # Process xQTL data  
     xqtl_data <- lapply(xqtl_files, function(file) {
         raw_data <- readRDS(file)[[1]]
         xqtl_data <- if (!is.null(xqtl_finemapping_obj)) get_nested_element(raw_data, xqtl_finemapping_obj) else raw_data
@@ -212,10 +202,12 @@ process_coloc_results <- function(coloc_result, LD_meta_file_path,analysis_scrip
 #'
 #' @param xqtl_file Path to the xQTL RDS file.
 #' @param gwas_files Vector of paths to GWAS RDS files.
-#' @param xqtl_condition Optional condition name in GWAS RDS files (default 'NULL').
-#' @param gwas_condition Optional condition name in xQTL RDS files (default 'NULL').
-#' @param finemapping_obj Optional table name of susie results in susie_twas output files (default 'susie_result_trimmed').
-#' @param varname_obj Optional table name of variant_names in susie_twas output files (default 'variant_names').
+#' @param xqtl_finemapping_obj Optional table name in xQTL RDS files (default 'susie_fit').
+#' @param gwas_finemapping_obj Optional table name in GWAS RDS files (default 'susie_fit').
+#' @param xqtl_varname_obj Optional table name in xQTL RDS files (default 'susie_fit').
+#' @param gwas_varname_obj Optional table name in GWAS RDS files (default 'susie_fit').
+#' @param xqtl_region_obj Optional table name in xQTL RDS files (default 'susie_fit').
+#' @param gwas_region_obj Optional table name in GWAS RDS files (default 'susie_fit').
 #' @param region_obj Optional table name of region info in susie_twas output filess (default 'region_info').
 #' @param p1, p2, and p12 are results from xqtl_enrichment_wrapper (default 'p1=1e-4, p2=1e-4, p12=5e-6', same as coloc.bf_bf).
 #' @param prior_tol When the prior variance is estimated, compare the estimated value to \code{prior_tol} at the end of the computation, 
@@ -229,16 +221,12 @@ process_coloc_results <- function(coloc_result, LD_meta_file_path,analysis_scrip
 #' @importFrom tidyr replace_na
 #' @importFrom coloc coloc.bf_bf
 #' @export
-coloc_wrapper <- function(xqtl_file, gwas_files, xqtl_condition = NULL, gwas_condition = NULL, 
-                          finemapping_obj = "susie_result_trimmed", varname_obj = "variant_names", region_obj = "region_info",
+coloc_wrapper <- function(xqtl_file, gwas_files, 
+                          xqtl_finemapping_obj = NULL, xqtl_varname_obj = NULL, xqtl_region_obj = NULL,
+                          gwas_finemapping_obj = NULL, gwas_varname_obj = NULL, gwas_region_obj = NULL,
                           prior_tol = 1e-9, p1=1e-4, p2=1e-4, p12=5e-6, ...) {
 
     # Load and process GWAS data
-    if(!is.null(gwas_condition)){
-        gwas_finemapping_obj <- c(gwas_condition,finemapping_obj)
-        gwas_varname_obj <- c(gwas_condition,varname_obj)
-    } else{ gwas_finemapping_obj <- gwas_varname_obj <- NULL }
-
     gwas_lbf_matrices <- lapply(gwas_files, function(file) {
         raw_data <- readRDS(file)
         gwas_data <- if (!is.null(gwas_finemapping_obj)) get_nested_element(raw_data, gwas_finemapping_obj) else raw_data 
@@ -260,13 +248,6 @@ coloc_wrapper <- function(xqtl_file, gwas_files, xqtl_condition = NULL, gwas_con
 
 
     # Process xQTL data
-    if(!is.null(xqtl_condition)){
-        xqtl_finemapping_obj <- c(xqtl_condition,finemapping_obj)
-        xqtl_varname_obj <- c(xqtl_condition,varname_obj)
-        xqtl_region_obj <- c(xqtl_condition,region_obj)
-        } else{ xqtl_finemapping_obj <- xqtl_varname_obj <- region_obj <- NULL }
-
-    
     xqtl_raw_data <- readRDS(xqtl_file)[[1]]
     xqtl_data <- if (!is.null(xqtl_finemapping_obj)) get_nested_element(xqtl_raw_data, xqtl_finemapping_obj) else xqtl_raw_data
     xqtl_lbf_matrix <- as.data.frame(xqtl_data$lbf_variable)
