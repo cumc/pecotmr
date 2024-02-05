@@ -47,6 +47,7 @@ susie_wrapper = function(X, y, init_L = 10, max_L = 30, l_step = 5, ...) {
   }
   L = init_L
   # Perform SuSiE by dynamically increasing L
+  gst = proc.time()
   while (TRUE) {
     st = proc.time()
     res <- susie(X, y, L = L,
@@ -62,6 +63,7 @@ susie_wrapper = function(X, y, init_L = 10, max_L = 30, l_step = 5, ...) {
       break
     }
   }
+  message(paste("Total time elapsed for susie_wrapper:", (proc.time()-gst)[3]))
   return(res)
 }
 
