@@ -40,8 +40,6 @@ twas_z <- function(weights, z, R=NULL, X=NULL) {
 #' @param weight_methods A list of methods and their specific arguments, formatted as list(method1 = method1_args, method2 = method2_args). 
 #' methods in the list can be either univariate (applied to each column of Y) or multivariate (applied to the entire Y matrix).
 #' @param seed An optional integer to set the random seed for reproducibility of sample splitting.
-#' @param max_num_variants An optional integer to set the randomly selected maximum number of variants to use for CV purpose, to save computing time.
-#' @param variants_to_keep An optional integer to ensure that the listed variants are kept in the CV when there is a limit on the max_num_variants to use.
 #' @param num_threads The number of threads to use for parallel processing.
 #'        If set to -1, the function uses all available cores.
 #'        If set to 0 or 1, no parallel processing is performed.
@@ -67,7 +65,7 @@ twas_z <- function(weights, z, R=NULL, X=NULL) {
 #' @importFrom foreach %dopar%
 #' @importFrom doParallel registerDoParallel
 #' @export
-twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_methods = NULL, seed = NULL, max_num_variants = NULL, variants_to_keep = NULL, num_threads = 1, ...) {
+twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_methods = NULL, seed = NULL, num_threads = 1, ...) {
     split_data <- function(X, Y, sample_partition, fold){
       if (is.null(rownames(X))) {
         warning("Row names in X are missing. Using row indices.")
@@ -113,27 +111,6 @@ twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_
     } else {
         sample_names <- 1:nrow(X)
     }
-
-    # Select variants if necessary
-    if (!is.null(max_num_variants) && ncol(X)> max_num_variants) {
-        if (!is.null(variants_to_keep) && length(variants_to_keep) > 0) {
-            variants_to_keep <- intersect(variants_to_keep, colnames(X))
-            remaining_columns <- setdiff(colnames(X), variants_to_keep)
-            if (length(variants_to_keep) < max_num_variants) {
-                additional_columns <- sample(remaining_columns, max_num_variants - length(variants_to_keep), replace = FALSE)
-                selected_columns <- union(variants_to_keep, additional_columns)
-                message(sprintf("Including %d specified variants and randomly selecting %d additional variants, for a total of %d variants out of %d for cross-validation purpose.",
-                    length(variants_to_keep), length(additional_columns), length(selected_columns), ncol(X)))
-            } else {
-                selected_columns <- sample(variants_to_keep, max_num_variants, replace = FALSE)
-                message(paste("Randomly selecting", length(selected_columns), "out of", length(variants_to_keep), "input variants for cross validation purpose."))
-            }
-        } else {
-            selected_columns <- sort(sample(ncol(X), max_num_variants, replace = FALSE))
-            message(paste("Randomly selecting", length(selected_columns), "out of", ncol(X), "variants for cross validation purpose."))
-        }
-        X <- X[, selected_columns]
-    }
     
     arg <-list(...)
     
@@ -142,7 +119,7 @@ twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_
         if (!is.null(seed)) set.seed(seed)
         
         if (!is.null(sample_partitions)) {
-            if(fold != length(unique(sample_partition$Fold))){
+            if(fold!= length(unique(sample_partition$Fold))){
                 message(paste0("fold number provided does not match with sample partition, performing ", length(unique(sample_partition$Fold)),
                        " fold cross validation based on provided sample partition. "))
                 }
@@ -177,7 +154,7 @@ twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_
         num_cores <- ifelse(num_threads == -1, detectCores(), num_threads)
         
         # Perform CV with parallel processing
-        compute_method_predictions <- function(j) { 
+        process_method <- function(j){          
             dat_split <- split_data(X, Y, sample_partition=sample_partition, fold=j)
             X_train <- dat_split$Xtrain
             Y_train <- dat_split$Ytrain
@@ -202,21 +179,18 @@ twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_
                     rownames(full_weights_matrix) <- rownames(weights_matrix)
                     colnames(full_weights_matrix) <- colnames(weights_matrix)
                     full_weights_matrix[valid_columns, ] <- weights_matrix[valid_columns, ]
-                    Y_pred <- X_test %*% full_weights_matrix
-                    rownames(Y_pred) <- rownames(X_test)
-                    return(Y_pred)
+                    return(X_test %*% full_weights_matrix)
+                    
                 } else {
-                    Y_pred <- sapply(1:ncol(Y_train), function(k) {
+                    sapply(1:ncol(Y_train), function(k) {
                         if (!is.null(seed)) set.seed(seed)
                         weights <- do.call(method, c(list(X = X_train, y = Y_train[, k]), args))
                         full_weights <- rep(0, ncol(X))
                         full_weights[valid_columns] <- weights
                         # Handle NAs in weights
                         full_weights[is.na(full_weights)] <- 0
-                        X_test %*% full_weights
+                        return(X_test %*% full_weights)
                     })
-                    rownames(Y_pred) <- rownames(X_test)
-                    return(Y_pred)
                 }
             }), names(weight_methods))
         }
@@ -225,26 +199,30 @@ twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_
             cl <- makeCluster(num_cores)
             registerDoParallel(cl)
             fold_results <- foreach(j = 1:fold) %dopar% {
-                compute_method_predictions(j)
+                process_method(j)
             }
             stopCluster(cl)
         } else { 
-            fold_results <- lapply(1:fold, compute_method_predictions)
+            fold_results <- lapply(1:fold, process_method)
         }
                                    
         # Reorganize into Y_pred
         # After cross validation, each sample should have been in
         # test set at some point, and therefore has predicted value.
         # The prediction matrix is therefore exactly the same dimension as input Y
-        Y_pred <- setNames(lapply(weight_methods, function(x) `dimnames<-`(matrix(NA, nrow(Y), ncol(Y)), dimnames(Y))), names(weight_methods))
+        Y_pred <- setNames(lapply(weight_methods, function(x) matrix(NA, nrow = nrow(Y), ncol = ncol(Y))), names(weight_methods))
         for (j in 1:length(fold_results)) {
+            fold_sample <- sample_partition$Sample[sample_partition$Fold==j] 
             for (method in names(weight_methods)) {
-                Y_pred[[method]][rownames(fold_results[[j]][[method]]), ] <- fold_results[[j]][[method]]
+                rownames(Y_pred[[method]]) <- rownames(Y)
+                colnames(Y_pred[[method]]) <- colnames(Y) 
+                Y_pred[[method]][fold_sample, ] <- fold_results[[j]][[method]]
             }
         }
                                   
         names(Y_pred) <- gsub("_weights", "_predicted", names(Y_pred))
-     
+                   
+                                  
         # Compute rsq, adj rsq, p-value, RMSE, and MAE for each method
         # metrics_table <- matrix(NA, nrow = length(weight_methods), ncol = 5)
         metrics_table <- list()
@@ -333,7 +311,7 @@ twas_weights <- function(X, Y, weight_methods, num_threads = 1, seed = NULL) {
     # Determine number of cores to use
     num_cores <- ifelse(num_threads == -1, detectCores(), num_threads)
 
-    compute_method_weights <- function(method_name) {
+    process_method <- function(method_name) {
         # Hardcoded vector of multivariate methods
         multivariate_weight_methods <- c('mrmash_weights')
         args <- weight_methods[[method_name]]
@@ -368,23 +346,20 @@ twas_weights <- function(X, Y, weight_methods, num_threads = 1, seed = NULL) {
         cl <- makeCluster(num_cores)
         registerDoParallel(cl)
         weights_list <- foreach(method_name = names(weight_methods)) %dopar% {
-            compute_method_weights(method_name)
+            process_method(method_name)
         }
         stopCluster(cl)
     } else {
-        weights_list <- lapply(names(weight_methods), compute_method_weights)
+        weights_list <- lapply(names(weight_methods), process_method)
     }
     names(weights_list) <- names(weight_methods)
 
-    if (!is.null(colnames(X))) {
-        weights_list <- lapply(weights_list, function(x) { rownames(x) <- colnames(X); return(x) })
-    }
     return(weights_list)
 }
 
 #' @export
 twas_predict <- function(X, weights_list) {
-   setNames(lapply(weights_list, function(w) X %*% w), gsub("_weights", "_predicted", names(weights_list)))
+   setNames(lapply(weights_list, function(w) X %*% w), names(weights_list))
 }
 
 #' @importFrom susieR coef.susie
@@ -409,40 +384,43 @@ susie_weights <- function(X=NULL, y=NULL, susie_fit=NULL, ...) {
 #' This function adjusts the SuSiE weights based on a set of intersected variants.
 #' It subsets various components like lbf_matrix, mu, and scale factors based on these variants.
 #'
-#' @param weight_db_file A RDS file containing TWAS weights..
-#' @param weights the output of `load_twas_weights function`, matrix of twas weights.
-#' @param condition Optional; specific condition. If NULL, uses the first condition in xqtl_data.
+#' @param weight_db_file A RDS file containing TWAS weights.
+#' @param condition specific condition.
 #' @param keep_variants Vector of variant names to keep.
-#' @return Adjusted xQTL coefficients.
+#' @param allele_qc Optional                   
+#' @return A list of adjusted xQTL coefficients and remained variants ids
 #' @export
 
-adjust_susie_weights <- function(twas_weights_results, condition, keep_variants) {
+adjust_susie_weights <- function(twas_weights_results, condition, keep_variants, allele_qc = TRUE) {
   # Intersect the rownames of weights with keep_variants
-  intersected_variants <- intersect(get_nested_element(twas_weights_results,c("susie_results",condition,"variant_names")),keep_variants)
-  if (length(intersected_variants) == 0) {
+  twas_weights_variants <- get_nested_element(twas_weights_results, c("susie_results",condition, "variant_names"))
+  # allele flip twas weights matrix variants name
+  if(allele_qc == TRUE){
+            weights_matrix <-  get_nested_element(twas_weights_results, c("weights",condition))
+            weights_matrix_qced <- allele_qc(twas_weights_variants, gwas_LD_list$combined_LD_variants, weights_matrix, 1:ncol(weights_matrix))
+            intersected_indices <- which(weights_matrix_qced$qc_summary$keep == TRUE)
+  } else {
+      keep_variants_transformed <- ifelse(!startsWith(keep_variants, "chr"), paste0("chr", keep_variants), keep_variants)
+      intersected_variants <- intersect(twas_weights_variants, keep_variants_transformed)
+      intersected_indices <- match(intersected_variants, twas_weights_variants)
+  }
+  if (length(intersected_indices) == 0) {
     stop("Error: No intersected variants found. Please check 'twas_weights' and 'keep_variants' inputs to make sure there are variants left to use.")
   }
-
-  # Reformat intersected_variants to chrX:pos_ref_alt
-  # formatted_intersected_variants <- gsub(":", "_", gsub("^([0-9]+):", "chr\\1:", intersected_variants), perl = TRUE)
-  # formatted_intersected_variants <- sub("_", ":", formatted_intersected_variants)
-
   # Subset lbf_matrix, mu, and x_column_scale_factors
-  lbf_matrix <- get_nested_element(twas_weights_results,c("susie_results",condtion,"susie_result_trimmed","lbf_variable"))
-  mu <- get_nested_element(twas_weights_results,c("susie_results",condtion,"susie_result_trimmed","susie_result_trimmed","mu"))
-  x_column_scal_factors <- get_nested_element(twas_weights_results,c("susie_results",condtion,"susie_result_trimmed","X_column_scale_factors"))
+  lbf_matrix <- get_nested_element(twas_weights_results,c("susie_results",condition,"susie_result_trimmed","lbf_variable"))
+  mu <- get_nested_element(twas_weights_results,c("susie_results",condition,"susie_result_trimmed","mu"))
+  x_column_scal_factors <- get_nested_element(twas_weights_results,c("susie_results",condition,"susie_result_trimmed","X_column_scale_factors"))
 
-  lbf_matrix_subset <- lbf_matrix[, formatted_intersected_variants]
-  mu_subset <- mu[, formatted_intersected_variants]
-  x_column_scal_factors_subset <- x_column_scal_factors[formatted_intersected_variants]
+  lbf_matrix_subset <- lbf_matrix[, intersected_indices]
+  mu_subset <- mu[, intersected_indices]
+  x_column_scal_factors_subset <- x_column_scal_factors[intersected_indices]
 
   # Convert lbf_matrix to alpha and calculate adjusted xQTL coefficients
   adjusted_xqtl_alpha <- lbf_to_alpha(lbf_matrix_subset)
   adjusted_xqtl_coef <- colSums(adjusted_xqtl_alpha * mu_subset) / x_column_scal_factors_subset
 
-  # Convert names of adjusted susie weights to the format X:pos:ref:alt, which is consistent with gwas summary stats
-  #names(adjusted_xqtl_coef) <- gsub("chr([0-9]+):([0-9]+)_([A-Z])_([A-Z])", "\\1:\\2:\\3:\\4", names(adjusted_xqtl_coef))
-  return(list(adjusted_susie_weights = adjusted_xqtl_coef,remained_variants_names = names(adjusted_xqtl_coef)))
+  return(list(adjusted_susie_weights = adjusted_xqtl_coef,remained_variants_ids = names(adjusted_xqtl_coef)))
 }
 
 #' @importFrom mr.mash.alpha coef.mr.mash

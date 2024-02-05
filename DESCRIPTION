@@ -30,9 +30,9 @@ Imports:
     tidyr,
     Rfast,
     doMC,
-    pgenlibr,
     doParallel,
     foreach,
+    pgenlibr,
     snpStats,
     vctrs
 Suggests: 

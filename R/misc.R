@@ -96,6 +96,7 @@ parse_region <- function(region) {
 }
              
 #Retrieve a nested element from a list structure
+#' @export
 get_nested_element <- function(nested_list, name_vector) {
     if (is.null(name_vector)) return (NULL)
     current_element <- nested_list
@@ -387,6 +388,7 @@ load_regional_univariate_data <- function(...) {
           residual_X = dat$residual_X,
           residual_Y_scalar = dat$residual_Y_scalar,
           residual_X_scalar = dat$residual_X_scalar,
+          X = dat$X,
           dropped_sample = dat$dropped_sample,
           maf = dat$maf,
           chrom = dat$chrom,
@@ -500,8 +502,10 @@ load_twas_weights <- function(weight_db_files, conditions = NULL,
    extract_variants_and_susie_results <- function(combined_all_data, conditions){
         combined_susie_result_trimmed <- lapply(conditions, function(condition) {
         list(
-             variant_names = get_nested_element(combined_all_data,c(condition,"variant_names")),
-             susie_result_trimmed = get_nested_element(combined_all_data, c(condition,"susie_result_trimmed"))
+             variant_names = get_nested_element(combined_all_data,c(condition,"preset_variants_result","variant_names")),
+             susie_result_trimmed = get_nested_element(combined_all_data, c(condition,"preset_variants_result","susie_result_trimmed")),
+             top_loci = get_nested_element(combined_all_data, c(condition,"preset_variants_result","top_loci")),
+             region_info = get_nested_element(combined_all_data, c(condition,"region_info"))
             )
          })
         names(combined_susie_result_trimmed) = conditions                                           
@@ -529,6 +533,7 @@ load_twas_weights <- function(weight_db_files, conditions = NULL,
       }
       existing_colnames <- c(existing_colnames, new_colnames)
 
+      #consolidated_list[[i]] <- matrix(as.numeric(temp_matrix), nrow = nrow(temp_matrix), byrow = TRUE)
       consolidated_list[[i]] <- temp_matrix
       colnames(consolidated_list[[i]]) <- existing_colnames
     }
@@ -541,8 +546,10 @@ load_twas_weights <- function(weight_db_files, conditions = NULL,
     if (is.null(conditions)) {
     conditions <- names(combined_all_data)
     }
-    combined_weights_by_condition <- lapply(conditions, function(condition) {                                         
-    sapply(get_nested_element(combined_all_data,c(condition,twas_weights_table)), cbind)
+    combined_weights_by_condition <- lapply(conditions, function(condition) {
+      temp_list <- get_nested_element(combined_all_data,c(condition,twas_weights_table))
+      temp_list <- temp_list[!names(temp_list)%in%"variant_names"]
+      sapply(temp_list, cbind)
     })
     names(combined_weights_by_condition) <- conditions
     if (is.null(variable_name_obj)) {
@@ -555,7 +562,7 @@ load_twas_weights <- function(weight_db_files, conditions = NULL,
     } else {
       # Processing with variable_name_obj: Align and merge data, fill missing with zeros
       variable_objs <- lapply(conditions, function(condition) {
-      get_nested_element(combined_all_data,c(condition,variable_name_obj))})
+      get_nested_element(combined_all_data,c(condition,twas_weights_table,variable_name_obj))})
       weights <- align_and_merge(combined_weights_by_condition, variable_objs)
     }
     names(weights) <- conditions                        
@@ -567,6 +574,6 @@ load_twas_weights <- function(weight_db_files, conditions = NULL,
     combined_all_data <- load_and_validate_data(weight_db_files, conditions, variable_name_obj)
     combined_susie_result_trimmed <- extract_variants_and_susie_results(combined_all_data, conditions)
     weights <- consolidate_weights_list(combined_all_data, conditions, variable_name_obj,twas_weights_table)
-    return(list(combined_susie_result_trimmed = combined_susie_result_trimmed, weights = weights))
+    return(list(susie_results = combined_susie_result_trimmed, weights = weights))
   }, silent = TRUE)
 }
