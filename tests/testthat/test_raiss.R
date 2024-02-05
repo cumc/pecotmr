@@ -7,7 +7,7 @@ generate_dummy_data <- function(seed=1, ref_panel_ordered=TRUE, known_zscores_or
 
     n_variants <- 100
     ref_panel <- data.frame(
-        chr = rep(1, n_variants),
+        chrom = rep(1, n_variants),
         pos = seq(1, n_variants * 10, 10),
         variant_id = paste0("rs", seq_len(n_variants)),
         A0 = sample(c("A", "T", "G", "C"), n_variants, replace = TRUE),
@@ -16,7 +16,7 @@ generate_dummy_data <- function(seed=1, ref_panel_ordered=TRUE, known_zscores_or
 
     n_known <- 50
     known_zscores <- data.frame(
-        chr = rep(1, n_known),
+        chrom = rep(1, n_known),
         pos = sample(ref_panel$pos, n_known),
         variant_id = sample(ref_panel$variant_id, n_known),
         A0 = sample(c("A", "T", "G", "C"), n_known, replace = TRUE),
@@ -135,7 +135,7 @@ test_that("format_raiss_df returns correctly formatted data frame", {
   )
   
   ref_panel <- data.frame(
-    chr = sample(1:22, 10, replace = TRUE),
+    chrom = sample(1:22, 10, replace = TRUE),
     pos = sample(1:10000, 10),
     variant_id = paste0("rs", 1:10),
     A0 = sample(c("A", "T", "G", "C"), 10, replace = TRUE),
@@ -148,9 +148,9 @@ test_that("format_raiss_df returns correctly formatted data frame", {
 
   expect_true(is.data.frame(result))
   expect_equal(ncol(result), 10)
-  expect_equal(colnames(result), c('chr', 'pos', 'variant_id', 'A0', 'A1', 'Z', 'Var', 'ld_score', 'condition_number', 'correct_inversion'))
+  expect_equal(colnames(result), c('chrom', 'pos', 'variant_id', 'A0', 'A1', 'Z', 'Var', 'ld_score', 'condition_number', 'correct_inversion'))
 
-  for (col in c('chr', 'pos', 'variant_id', 'A0', 'A1')) {
+  for (col in c('chrom', 'pos', 'variant_id', 'A0', 'A1')) {
     expect_equal(setNames(unlist(result[col]), NULL), unlist(ref_panel[unknowns, col, drop = TRUE]))
   }
   for (col in c('Z', 'Var', 'ld_score', 'condition_number', 'correct_inversion')) {
@@ -161,7 +161,7 @@ test_that("format_raiss_df returns correctly formatted data frame", {
 
 test_that("Merge operation is correct for merge_raiss_df", {
     raiss_df_example <- data.frame(
-        chr = c("chr21", "chr22"),
+        chrom = c("chr21", "chr22"),
         pos = c(123, 456),
         variant_id = c("var1", "var2"),
         A0 = c("A", "T"),
@@ -172,7 +172,7 @@ test_that("Merge operation is correct for merge_raiss_df", {
         imputation_R2 = c(0.8, 0.7))
 
     known_zscores_example <- data.frame(
-        chr = c("chr21", "chr22"),
+        chrom = c("chr21", "chr22"),
         pos = c(123, 456),
         variant_id = c("var1", "var2"),
         A0 = c("A", "T"),
@@ -181,13 +181,13 @@ test_that("Merge operation is correct for merge_raiss_df", {
 
     merged_df <- merge_raiss_df(raiss_df_example, known_zscores_example)
     expect_equal(nrow(merged_df), 2)
-    expect_true(all(c("chr21", "chr22") %in% merged_df$chr))
+    expect_true(all(c("chr21", "chr22") %in% merged_df$chrom))
 })
 
 generate_fro_test_data <- function(seed=1) {
     set.seed(seed)
     return(data.frame(
-        chr = paste0("chr", rep(22, 10)),
+        chrom = paste0("chr", rep(22, 10)),
         pos = seq(1, 100, 10),
         variant_id = 1:10,
         A0 = rep("A", 10),
