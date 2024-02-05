@@ -7,10 +7,10 @@
 xqtl_enrichment_wrapper(
   xqtl_files,
   gwas_files,
-  xqtl_condition = NULL,
-  gwas_condition = NULL,
-  finemapping_obj = "susie_result_trimmed",
-  varname_obj = "variant_names",
+  xqtl_finemapping_obj = NULL,
+  xqtl_varname_obj = NULL,
+  gwas_finemapping_obj = NULL,
+  gwas_varname_obj = NULL,
   pi_gwas = NULL,
   pi_qtl = NULL,
   lambda = 1,
@@ -23,6 +23,14 @@ xqtl_enrichment_wrapper(
 
 \item{gwas_files}{Vector of GWAS RDS file paths.}
 
+\item{xqtl_finemapping_obj}{Optional table name in xQTL RDS files (default 'susie_fit').}
+
+\item{xqtl_varname_obj}{Optional table name in xQTL RDS files (default 'susie_fit').}
+
+\item{gwas_finemapping_obj}{Optional table name in GWAS RDS files (default 'susie_fit').}
+
+\item{gwas_varname_obj}{Optional table name in GWAS RDS files (default 'susie_fit').}
+
 \item{pi_gwas}{Optional parameter for GWAS enrichment estimation (see `compute_qtl_enrichment`).}
 
 \item{pi_qtl}{Optional parameter for xQTL enrichment estimation (see `compute_qtl_enrichment`).}
@@ -32,10 +40,6 @@ xqtl_enrichment_wrapper(
 \item{ImpN}{Importance parameter for enrichment computation (see `compute_qtl_enrichment`).}
 
 \item{num_threads}{Number of threads for parallel processing (see `compute_qtl_enrichment`).}
-
-\item{xqtl_finemapping_obj}{Optional table name in xQTL RDS files (default 'susie_fit').}
-
-\item{gwas_finemapping_obj}{Optional table name in GWAS RDS files (default 'susie_fit').}
 }
 \value{
 The output from the compute_qtl_enrichment function.

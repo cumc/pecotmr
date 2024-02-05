@@ -12,19 +12,23 @@
 #' alpha <- lbf_to_alpha_vector(lbf)
 #' print(alpha)
 lbf_to_alpha_vector = function(lbf, prior_weights = NULL) {
-      if (is.null(prior_weights)) prior_weights = rep(1/length(lbf), length(lbf))
-      maxlbf = max(lbf)
-      # If maxlbf is 0, return a vector of zeros
-      if (maxlbf == 0) {
-        return(setNames(rep(0, length(lbf)), names(lbf)))
-      }
-      # w is proportional to BF, subtract max for numerical stability.
-      w = exp(lbf - maxlbf)
-      # Posterior prob for each SNP.
-      w_weighted = w * prior_weights
-      weighted_sum_w = sum(w_weighted)
-      alpha = w_weighted / weighted_sum_w
-      return(alpha)
+  if (is.null(prior_weights)) prior_weights = rep(1/length(lbf), length(lbf))
+  maxlbf = max(lbf)
+  
+  # If maxlbf is 0, return a vector of zeros
+  if (maxlbf == 0) {
+    return(setNames(rep(0, length(lbf)), names(lbf)))
+  }
+  
+  # w is proportional to BF, subtract max for numerical stability
+  w = exp(lbf - maxlbf)
+  
+  # Posterior prob for each SNP
+  w_weighted = w * prior_weights
+  weighted_sum_w = sum(w_weighted)
+  alpha = w_weighted / weighted_sum_w
+  
+  return(alpha)
 }
 
 #' Applies the 'lbf_to_alpha_vector' function row-wise to a matrix of log Bayes factors
@@ -43,7 +47,7 @@ lbf_to_alpha = function(lbf) t(apply(lbf, 1, lbf_to_alpha_vector))
 #' @export 
 susie_wrapper = function(X, y, init_L = 10, max_L = 30, l_step = 5, ...) {
   if (init_L == max_L) {
-    return(susie(X, y, L = init_L, refine = refine, median_abs_corr = 0.8, ...))
+    return(susie(X, y, L = init_L, median_abs_corr = 0.8, ...))
   }
   L = init_L
   # Perform SuSiE by dynamically increasing L

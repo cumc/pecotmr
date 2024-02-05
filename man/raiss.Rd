@@ -15,9 +15,9 @@ raiss(
 )
 }
 \arguments{
-\item{ref_panel}{A data frame containing 'chr', 'pos', 'variant_id', 'A0', and 'A1'.}
+\item{ref_panel}{A data frame containing 'chr', 'pos', 'variant_id', 'A1', and 'A2'.}
 
-\item{known_zscores}{A data frame containing 'chr', 'pos', 'variant_id', 'A0', 'A1', and 'Z' values.}
+\item{known_zscores}{A data frame containing 'chr', 'pos', 'variant_id', 'A1', 'A2', and 'Z' values.}
 
 \item{LD_matrix}{A square matrix of dimension equal to the number of rows in ref_panel.}
 
