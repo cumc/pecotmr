@@ -163,7 +163,7 @@ susie_rss_qc <- function(z, R, ref_panel, bhat=NULL, shat=NULL, var_y=NULL, n = 
 
   ## Perform initial SuSiE RSS analysis with discrepancy correction
   result <- susie_rss(z=z, R=R, bhat=bhat, shat=shat, var_y=var_y, n=n, L=max_L,  
-                     correct_zR_discrepancy=TRUE, track_fit = TRUE, ...)
+                     correct_zR_discrepancy=TRUE, track_fit = TRUE, max_iter = 100,...)
 
   ## Initialize result_final
   result_final <- NULL
