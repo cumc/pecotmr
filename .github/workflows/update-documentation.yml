@@ -1,0 +1,41 @@
+name: Update documentation
+
+on:
+  pull_request:
+    paths-ignore:
+      - .github
+      - .gitignore
+
+jobs:
+  update_documentation:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout pull request branch
+        uses: actions/checkout@v3
+        with:
+          token: ${{ secrets.CI_TOKEN }}
+          fetch-depth: 0
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          ref: ${{ github.event.pull_request.head.ref }}
+
+      - name: Create YAML from recipe
+        run: |
+          cp .github/environment/environment.yaml /tmp/environment.yaml
+          grep -v '{%' < .github/recipe/meta.yaml | yq .requirements.host | sed 's/^/  /' >> /tmp/environment.yaml
+
+      - name: Setup micromamba
+        uses: mamba-org/setup-micromamba@v1
+        with:
+          environment-file: /tmp/environment.yaml
+          generate-run-shell: true
+
+      - name: Update documentation
+        shell: micromamba-shell {0}
+        run: R -e "devtools::document()"
+
+      - name: Commit changes to documentation
+        uses: EndBug/add-and-commit@v9
+        with:
+          push: true
+          message: Update documentation

@@ -8,8 +8,8 @@ xqtl_enrichment_wrapper(
   xqtl_files,
   gwas_files,
   xqtl_finemapping_obj = NULL,
-  xqtl_varname_obj = NULL,
   gwas_finemapping_obj = NULL,
+  xqtl_varname_obj = NULL,
   gwas_varname_obj = NULL,
   pi_gwas = NULL,
   pi_qtl = NULL,
@@ -25,9 +25,9 @@ xqtl_enrichment_wrapper(
 
 \item{xqtl_finemapping_obj}{Optional table name in xQTL RDS files (default 'susie_fit').}
 
-\item{xqtl_varname_obj}{Optional table name in xQTL RDS files (default 'susie_fit').}
-
 \item{gwas_finemapping_obj}{Optional table name in GWAS RDS files (default 'susie_fit').}
+
+\item{xqtl_varname_obj}{Optional table name in xQTL RDS files (default 'susie_fit').}
 
 \item{gwas_varname_obj}{Optional table name in GWAS RDS files (default 'susie_fit').}
 
