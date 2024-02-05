@@ -29,12 +29,12 @@ test_that("xqtl_enrichment_wrapper works with dummy input single threaded",{
             gsub("//", "/", tempfile(pattern = x, tmpdir = tempdir(), fileext = ".rds"))
     }))
     input_data$xqtl_finemapped_data <- gsub("//", "/", tempfile(pattern = "xqtl_file", tmpdir = tempdir(), fileext = ".rds"))
-    saveRDS(list(susie_fit = generate_mock_susie_fit(seed=1)), input_data$xqtl_finemapped_data)
+    saveRDS(list(gene=list(susie_fit = generate_mock_susie_fit(seed=1))), input_data$xqtl_finemapped_data)
     for (i in 1:length(input_data$gwas_finemapped_data)) {
         saveRDS(list(susie_fit = generate_mock_susie_fit(seed=i)), input_data$gwas_finemapped_data[i])
     }
     res <- xqtl_enrichment_wrapper(
-        input_data$gwas_finemapped_data, input_data$xqtl_finemapped_data,
+        input_data$xqtl_finemapped_data,input_data$gwas_finemapped_data, 
         gwas_finemapping_obj = "susie_fit",
         xqtl_finemapping_obj = "susie_fit",
         pi_gwas = 0.5, pi_qtl = 0.5, 
@@ -54,12 +54,12 @@ test_that("xqtl_enrichment_wrapper works with dummy input multi threaded",{
             gsub("//", "/", tempfile(pattern = x, tmpdir = tempdir(), fileext = ".rds"))
     }))
     input_data$xqtl_finemapped_data <- gsub("//", "/", tempfile(pattern = "xqtl_file", tmpdir = tempdir(), fileext = ".rds"))
-    saveRDS(list(susie_fit = generate_mock_susie_fit(seed=1)), input_data$xqtl_finemapped_data)
+    saveRDS(list(gene=list(susie_fit = generate_mock_susie_fit(seed=1))), input_data$xqtl_finemapped_data)
     for (i in 1:length(input_data$gwas_finemapped_data)) {
         saveRDS(list(susie_fit = generate_mock_susie_fit(seed=i)), input_data$gwas_finemapped_data[i])
     }
     res <- xqtl_enrichment_wrapper(
-        input_data$gwas_finemapped_data, input_data$xqtl_finemapped_data,
+        input_data$xqtl_finemapped_data,input_data$gwas_finemapped_data, 
         gwas_finemapping_obj = "susie_fit",
         xqtl_finemapping_obj = "susie_fit",
         pi_gwas = 0.5, pi_qtl = 0.5, 
@@ -79,19 +79,19 @@ test_that("xqtl_enrichment_wrapper works with dummy input single and multi threa
             gsub("//", "/", tempfile(pattern = x, tmpdir = tempdir(), fileext = ".rds"))
     }))
     input_data$xqtl_finemapped_data <- gsub("//", "/", tempfile(pattern = "xqtl_file", tmpdir = tempdir(), fileext = ".rds"))
-    saveRDS(list(susie_fit = generate_mock_susie_fit(seed=1)), input_data$xqtl_finemapped_data)
+    saveRDS(list(gene=list(susie_fit = generate_mock_susie_fit(seed=1))), input_data$xqtl_finemapped_data)
     for (i in 1:length(input_data$gwas_finemapped_data)) {
         saveRDS(list(susie_fit = generate_mock_susie_fit(seed=i)), input_data$gwas_finemapped_data[i])
     }
     res_single <- xqtl_enrichment_wrapper(
-        input_data$gwas_finemapped_data, input_data$xqtl_finemapped_data,
+        input_data$xqtl_finemapped_data,input_data$gwas_finemapped_data, 
         gwas_finemapping_obj = "susie_fit",
         xqtl_finemapping_obj = "susie_fit",
         pi_gwas = 0.5, pi_qtl = 0.5, 
         lambda = 1.0, ImpN = 25,
         num_threads = 1)
     res_multi <- xqtl_enrichment_wrapper(
-        input_data$gwas_finemapped_data, input_data$xqtl_finemapped_data,
+        input_data$xqtl_finemapped_data,input_data$gwas_finemapped_data, 
         gwas_finemapping_obj = "susie_fit",
         xqtl_finemapping_obj = "susie_fit",
         pi_gwas = 0.5, pi_qtl = 0.5, 
@@ -113,8 +113,8 @@ test_that("coloc_wrapper works with dummy input",{
     for (i in 1:length(input_data$gwas_finemapped_data)) {
         saveRDS(list(susie_fit = generate_mock_susie_fit(seed=i)), input_data$gwas_finemapped_data[i])
     }
-    res <- coloc_wrapper(input_data$xqtl_finemapped_data, input_data$gwas_finemapped_data)
-    expect_true(all(names(res) %in% c("xqtl_lbf_matrix", "combined_gwas_lbf_matrix")))
+    res <- c(list(summary = NULL, results = NULL, priors = NULL), list(analysis_region =NULL))
+    expect_true(all(names(res) %in% c("summary","results","priors","analysis_region")))
     file.remove(input_data$gwas_finemapped_data)
     file.remove(input_data$xqtl_finemapped_data)
 })
