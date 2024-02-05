@@ -29,8 +29,8 @@ xqtl_enrichment_wrapper <- function(xqtl_files, gwas_files,
                                     num_threads = 1) {
 
   process_finemapped_data <- function(xqtl_files, gwas_files,
-                                    xqtl_condition, gwas_condition, 
-                                    finemapping_obj, varname_obj) {
+                                    xqtl_finemapping_obj, xqtl_varname_obj, 
+                                    gwas_finemapping_obj, gwas_varname_obj) {
     # Load and process GWAS data
     gwas_pip <- list()
     for (file in gwas_files) {
@@ -61,7 +61,7 @@ xqtl_enrichment_wrapper <- function(xqtl_files, gwas_files,
   } 
   
   # Load data
-  dat <- process_finemapped_data(xqtl_files, gwas_files, xqtl_condition, gwas_condition, finemapping_obj, varname_obj )
+  dat <- process_finemapped_data(xqtl_files, gwas_files,xqtl_finemapping_obj, xqtl_varname_obj, gwas_finemapping_obj, gwas_varname_obj)
   # Compute QTL enrichment
   return(compute_qtl_enrichment(gwas_pip = dat$gwas_pip, susie_qtl_regions = dat$xqtl_data,
                                 pi_gwas = pi_gwas, pi_qtl = pi_qtl,
