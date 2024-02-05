@@ -232,7 +232,7 @@ coloc_wrapper <- function(xqtl_file, gwas_files,
         gwas_data <- if (!is.null(gwas_finemapping_obj)) get_nested_element(raw_data, gwas_finemapping_obj) else raw_data 
         gwas_lbf_matrix <- as.data.frame(gwas_data$lbf_variable)
         gwas_lbf_matrix <- gwas_lbf_matrix[gwas_data$V > prior_tol,]
-        if (!is.null(gwas_varname_obj)) names(pip) <- get_nested_element(raw_data, gwas_varname_obj)
+        if (!is.null(gwas_varname_obj)) colnames(gwas_lbf_matrix) <- get_nested_element(raw_data, gwas_varname_obj)
         return(gwas_lbf_matrix)
     })
 
