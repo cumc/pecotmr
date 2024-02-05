@@ -92,10 +92,21 @@ create_allele_data <- function(seed, n=100, match_min_prop=0.8, ambiguous=FALSE,
     }
   })))
 
-
   chromosome <- unlist(rep(sample(1:20, 1), n))
   snp_positions <- sample(1:1000000, n)
-  sumstats <- data.frame(
+  target_variants <- data.frame(
+    chrom = chromosome,
+    pos = snp_positions,
+    A1 = sumstat_A1,
+    A2 = sumstat_A2
+  )
+  ref_variants <- data.frame(
+    chrom = chromosome,
+    pos = snp_positions,
+    A1 = info_A1,
+    A2 = info_A2
+  )
+  target_data <- data.frame(
     chrom = chromosome,
     pos = snp_positions,
     A1 = sumstat_A1,
@@ -103,29 +114,29 @@ create_allele_data <- function(seed, n=100, match_min_prop=0.8, ambiguous=FALSE,
     beta = rnorm(n),
     z = rnorm(n)
   )
-  info_snp <- data.frame(
-    chrom = chromosome,
-    pos = snp_positions,
-    A1 = info_A1,
-    A2 = info_A2
-  )
 
-  return(list(sumstats = sumstats, info_snp = info_snp))
+  return(list(target_data = target_data, target_variants = target_variants, ref_variants = ref_variants))
 }
 
 test_that("Check that we correctly remove stand ambiguous SNPs",{
   res <- create_allele_data(1, n=100, match_min_prop=0.8, ambiguous=TRUE)
-  output <- allele_qc(res$sumstats,res$info_snp,0.2,TRUE,TRUE,TRUE) 
-  expect_equal(nrow(output), 80)
+  output <- allele_qc(
+    res$target_variants, res$ref_variants, res$target_data, "beta", match.min.prop = 0.2,
+    TRUE, TRUE, TRUE)
+  expect_equal(nrow(output$target_data_qced), 80)
 })
 
 test_that("Check that we correctly remove non-ACTG coding SNPs",{
   res <- create_allele_data(1, n=100, match_min_prop=0.4, non_actg=TRUE)
-  output <- allele_qc(res$sumstats,res$info_snp,0.2,TRUE,TRUE,TRUE) 
-  expect_equal(nrow(output), 40)
+  output <- allele_qc(
+    res$target_variants, res$ref_variants, res$target_data, "beta", match.min.prop = 0.2,
+    TRUE, TRUE, TRUE)
+  expect_equal(nrow(output$target_data_qced), 40)
 })
 
 test_that("Check that execution stops if not enough variants are matched",{
   res <- create_allele_data(1, n=100, match_min_prop=0.1, ambiguous=TRUE)
-  expect_error(allele_qc(res$sumstats,res$info_snp,0.2,TRUE,TRUE,TRUE), "Not enough variants have been matched.")
+  expect_error(allele_qc(
+    res$target_variants, res$ref_variants, res$target_data, "beta", match.min.prop = 0.2,
+    TRUE, TRUE, TRUE), "Not enough variants have been matched.")
 })

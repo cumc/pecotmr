@@ -10,8 +10,8 @@ generate_dummy_data <- function(seed=1, ref_panel_ordered=TRUE, known_zscores_or
         chr = rep(1, n_variants),
         pos = seq(1, n_variants * 10, 10),
         variant_id = paste0("rs", seq_len(n_variants)),
-        A0 = sample(c("A", "T", "G", "C"), n_variants, replace = TRUE),
-        A1 = sample(c("A", "T", "G", "C"), n_variants, replace = TRUE)
+        A1 = sample(c("A", "T", "G", "C"), n_variants, replace = TRUE),
+        A2 = sample(c("A", "T", "G", "C"), n_variants, replace = TRUE)
     )
 
     n_known <- 50
@@ -19,8 +19,8 @@ generate_dummy_data <- function(seed=1, ref_panel_ordered=TRUE, known_zscores_or
         chr = rep(1, n_known),
         pos = sample(ref_panel$pos, n_known),
         variant_id = sample(ref_panel$variant_id, n_known),
-        A0 = sample(c("A", "T", "G", "C"), n_known, replace = TRUE),
         A1 = sample(c("A", "T", "G", "C"), n_known, replace = TRUE),
+        A2 = sample(c("A", "T", "G", "C"), n_known, replace = TRUE),
         Z = rnorm(n_known)
     )
 
@@ -138,8 +138,8 @@ test_that("format_raiss_df returns correctly formatted data frame", {
     chr = sample(1:22, 10, replace = TRUE),
     pos = sample(1:10000, 10),
     variant_id = paste0("rs", 1:10),
-    A0 = sample(c("A", "T", "G", "C"), 10, replace = TRUE),
-    A1 = sample(c("A", "T", "G", "C"), 10, replace = TRUE)
+    A1 = sample(c("A", "T", "G", "C"), 10, replace = TRUE),
+    A2 = sample(c("A", "T", "G", "C"), 10, replace = TRUE)
   )
 
   unknowns <- sample(1:nrow(ref_panel), 5)
@@ -148,9 +148,9 @@ test_that("format_raiss_df returns correctly formatted data frame", {
 
   expect_true(is.data.frame(result))
   expect_equal(ncol(result), 10)
-  expect_equal(colnames(result), c('chr', 'pos', 'variant_id', 'A0', 'A1', 'Z', 'Var', 'ld_score', 'condition_number', 'correct_inversion'))
+  expect_equal(colnames(result), c('chr', 'pos', 'variant_id', 'A1', 'A2', 'Z', 'Var', 'ld_score', 'condition_number', 'correct_inversion'))
 
-  for (col in c('chr', 'pos', 'variant_id', 'A0', 'A1')) {
+  for (col in c('chr', 'pos', 'variant_id', 'A1', 'A2')) {
     expect_equal(setNames(unlist(result[col]), NULL), unlist(ref_panel[unknowns, col, drop = TRUE]))
   }
   for (col in c('Z', 'Var', 'ld_score', 'condition_number', 'correct_inversion')) {
@@ -164,8 +164,8 @@ test_that("Merge operation is correct for merge_raiss_df", {
         chr = c("chr21", "chr22"),
         pos = c(123, 456),
         variant_id = c("var1", "var2"),
-        A0 = c("A", "T"),
-        A1 = c("T", "A"),
+        A1 = c("A", "T"),
+        A2 = c("T", "A"),
         Z = c(0.5, 1.5),
         Var = c(0.2, 0.3),
         ld_score = c(10, 20),
@@ -175,8 +175,8 @@ test_that("Merge operation is correct for merge_raiss_df", {
         chr = c("chr21", "chr22"),
         pos = c(123, 456),
         variant_id = c("var1", "var2"),
-        A0 = c("A", "T"),
-        A1 = c("T", "A"),
+        A1 = c("A", "T"),
+        A2 = c("T", "A"),
         Z = c(0.5, 1.5))
 
     merged_df <- merge_raiss_df(raiss_df_example, known_zscores_example)
@@ -190,8 +190,8 @@ generate_fro_test_data <- function(seed=1) {
         chr = paste0("chr", rep(22, 10)),
         pos = seq(1, 100, 10),
         variant_id = 1:10,
-        A0 = rep("A", 10),
-        A1 = rep("T", 10),
+        A1 = rep("A", 10),
+        A2 = rep("T", 10),
         Z = rnorm(10),
         Var = runif(10, 0, 1),
         ld_score = rnorm(10, 5, 2)
@@ -201,7 +201,7 @@ generate_fro_test_data <- function(seed=1) {
 test_that("Correct columns are selected in filter_raiss_output", {
     test_data <- generate_fro_test_data()
     output <- filter_raiss_output(test_data)
-    expect_true(all(c('variant_id', 'A0', 'A1', 'Z', 'Var', 'ld_score') %in% names(output)))
+    expect_true(all(c('variant_id', 'A1', 'A2', 'Z', 'Var', 'ld_score') %in% names(output)))
 })
 
 test_that("imputation_R2 is calculated correctly in filter_raiss_output", {
@@ -351,8 +351,8 @@ test_that("invert_mat_eigen returns the same matrix for an identity matrix", {
 test_that("invert_mat_eigen returns a zero matrix for a zero matrix input", {
     mat <- matrix(0, nrow = 2, ncol = 2)
     expected <- mat
-    actual <- invert_mat_eigen(mat)
-    expect_equal(actual, expected)
+    expect_error(invert_mat_eigen(mat),
+      "Cannot invert the input matrix because all its eigen values are negative or close to zero")
 })
 
 test_that("invert_mat_eigen handles matrices with negative eigenvalues", {

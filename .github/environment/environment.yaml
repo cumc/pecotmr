@@ -1,0 +1,14 @@
+name: pecotmr
+channels:
+  - dnachun
+  - conda-forge
+  - bioconda
+  - nodefaults
+dependencies:
+  - compilers
+  - gsl
+  - bioconductor-bioccheck
+  - r-devtools
+  - r-rcmdcheck
+  - r-covr
+  - r-tidyverse

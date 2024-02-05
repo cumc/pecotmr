@@ -21,34 +21,40 @@ generate_dummy_data <- function() {
   return(list(region = region, meta = meta_df))
 }
 
+
 test_that("Check that we correctly retrieve the names from the matrix",{
   data <- generate_dummy_data()
   region <- data$region
-  meta <- data$meta
-  res <- load_LD_matrix(meta, region)
+  LD_meta_file_path <- gsub("//", "/", tempfile(pattern = "ld_meta_file", tmpdir = tempdir(), fileext = ".RDS"))
+  write_delim(data$meta, LD_meta_file_path, delim = "\t")
+  res <- load_LD_matrix(LD_meta_file_path, region)
   variants <- unlist(
     c("1:1000:A:G", "1:1040:A:G", "1:1080:A:G", "1:1120:A:G", "1:1160:A:G"))
   expect_equal(
-    unlist(res$combined_LD_variants$variants),
+    unlist(res$combined_LD_variants),
     variants)
+  file.remove(LD_meta_file_path)
 })
 
 test_that("Check that the LD block has the appropriate rownames and colnames",{
   data <- generate_dummy_data()
   region <- data$region
-  meta <- data$meta
-  res <- load_LD_matrix(meta, region)
+  LD_meta_file_path <- gsub("//", "/", tempfile(pattern = "ld_meta_file", tmpdir = tempdir(), fileext = ".RDS"))
+  write_delim(data$meta, LD_meta_file_path, delim = "\t")
+  res <- load_LD_matrix(LD_meta_file_path, region)
   variants <- unlist(
     c("1:1000:A:G", "1:1040:A:G", "1:1080:A:G", "1:1120:A:G", "1:1160:A:G"))
   expect_identical(rownames(res$combined_LD_matrix), variants)
   expect_identical(colnames(res$combined_LD_matrix), variants)
+  file.remove(LD_meta_file_path)
 })
 
 test_that("Check that the LD block contains the correct information",{
   data <- generate_dummy_data()
   region <- data$region
-  meta <- data$meta
-  res <- load_LD_matrix(meta, region)
+  LD_meta_file_path <- gsub("//", "/", tempfile(pattern = "ld_meta_file", tmpdir = tempdir(), fileext = ".RDS"))
+  write_delim(data$meta, LD_meta_file_path, delim = "\t")
+  res <- load_LD_matrix(LD_meta_file_path, region)
   # Variant names
   variants <- unlist(
     c("1:1000:A:G", "1:1040:A:G", "1:1080:A:G", "1:1120:A:G", "1:1160:A:G"))
@@ -60,4 +66,5 @@ test_that("Check that the LD block contains the correct information",{
       delim = " ", col_names = F))
   rownames(ld_block_one_original) <- colnames(ld_block_one_original) <- variants
   expect_equal(ld_block_one, ld_block_one_original)
+  file.remove(LD_meta_file_path)
 })
