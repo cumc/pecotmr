@@ -318,11 +318,6 @@ filter_variants_by_ld_reference <- function(variant_ids, ld_reference_meta_file,
   variants_df$chrom <- ifelse(grepl("^chr", variants_df$chrom), 
                      as.integer(sub("^chr", "", variants_df$chrom)), # Remove 'chr' and convert to integer
                      as.integer(variants_df$chrom))
-  valid_nucleotides <- c("A", "T", "C", "G")
-  snp_idx <- variants_df$ref %in% valid_nucleotides & variants_df$alt %in% valid_nucleotides
-  if (!keep_indel) {
-    variants_df <- variants_df[snp_idx,,drop=F]
-  }
   # Step 2: Derive region information from the variants data frame
   region_df <- variants_df %>%
                group_by(chrom) %>%
@@ -340,7 +335,9 @@ filter_variants_by_ld_reference <- function(variant_ids, ld_reference_meta_file,
   # Step 5: Overlap the variants data frame with bim_data
   keep_indices <- which(paste(variants_df$chrom, variants_df$pos) %in% paste(bim_data$chrom, bim_data$pos))
   if (!keep_indel) {
-    keep_indices = intersect(keep_indices, snp_idx)
+    valid_nucleotides <- c("A", "T", "C", "G")
+    snp_idx <- variants_df$ref %in% valid_nucleotides & variants_df$alt %in% valid_nucleotides
+    keep_indices <- intersect(keep_indices, snp_idx)
   }
   variants_filtered <- variant_ids[keep_indices]
 
