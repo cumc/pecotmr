@@ -336,7 +336,7 @@ filter_variants_by_ld_reference <- function(variant_ids, ld_reference_meta_file,
   keep_indices <- which(paste(variants_df$chrom, variants_df$pos) %in% paste(bim_data$chrom, bim_data$pos))
   if (!keep_indel) {
     valid_nucleotides <- c("A", "T", "C", "G")
-    snp_idx <- variants_df$ref %in% valid_nucleotides & variants_df$alt %in% valid_nucleotides
+    snp_idx <- which((variants_df$ref %in% valid_nucleotides) & (variants_df$alt %in% valid_nucleotides))
     keep_indices <- intersect(keep_indices, snp_idx)
   }
   variants_filtered <- variant_ids[keep_indices]
