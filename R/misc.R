@@ -96,6 +96,7 @@ parse_region <- function(region) {
 }
              
 #Retrieve a nested element from a list structure
+#' @export
 get_nested_element <- function(nested_list, name_vector) {
     if (is.null(name_vector)) return (NULL)
     current_element <- nested_list
