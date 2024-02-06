@@ -188,10 +188,10 @@ load_phenotype_data <- function(phenotype_path, region, extract_region_name = NU
       message("Phenotype file ", .x, " is empty for the specified region.")
       return(NULL) # Exclude empty results and report
     }
-    if (!is.null(extract_region_name) && is.vector(extract_region_name) && !is.null(region_name_col) && is.integer(region_name_col)) {
+    if (!is.null(extract_region_name) && is.vector(extract_region_name) && !is.null(region_name_col) && (region_name_col%%1==0)) {
       if (region_name_col <= ncol(tabix_data)) {
       region_col_name <- colnames(tabix_data)[region_name_col]
-      return(tabix_data %>% filter(.data[[region_col_name]] %in% extract_region_name) %>% t)
+      return(tabix_data %>% filter(.data[[region_col_name]] %in% extract_region_name) %>% t())
       } else {
         stop("region_name_col is out of bounds for the number of columns in tabix_data.")
       }
@@ -355,7 +355,7 @@ load_regional_association_data <- function(genotype, # PLINK file
     geno <- load_genotype_region(genotype, cis_window, keep_indel)
     ## Load phenotype and covariates and perform some pre-processing
     covar <- load_covariate_data(covariate)
-    pheno <- load_phenotype_data(phenotype, region, tabix_header = tabix_header)
+    pheno <- load_phenotype_data(phenotype, region, extract_region_name=extract_region_name, region_name_col=region_name_col, tabix_header=tabix_header)
     ### including Y ( cov ) and specific X and covar match, filter X variants based on the overlapped samples.
     data_list <- prepare_data_list(geno, pheno, covar, imiss_cutoff,
                                     maf_cutoff, mac_cutoff, xvar_cutoff, 
