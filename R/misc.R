@@ -180,7 +180,7 @@ NoPhenotypeError <- function(message) {
 
 #' @importFrom purrr map compact
 #' @noRd 
-load_phenotype_data <- function(phenotype_path, region, tabix_header = TRUE) {
+load_phenotype_data <- function(phenotype_path, region, extract_region_name = NULL, region_name_col = NULL, tabix_header = TRUE) {
   # `compact` should remove all NULL elements
   phenotype_data <- compact(map(phenotype_path, ~ {
     tabix_data <- if (!is.null(region)) tabix_region(.x, region, tabix_header = tabix_header) else read_delim(.x, "\t", col_types = cols())
@@ -188,8 +188,16 @@ load_phenotype_data <- function(phenotype_path, region, tabix_header = TRUE) {
       message("Phenotype file ", .x, " is empty for the specified region.")
       return(NULL) # Exclude empty results and report
     }
-    # Process non-empty data
-    tabix_data %>% t()
+    if (!is.null(extract_region_name) && is.vector(extract_region_name) && !is.null(region_name_col) && is.integer(region_name_col)) {
+      if (region_name_col <= ncol(tabix_data)) {
+      region_col_name <- colnames(tabix_data)[region_name_col]
+      return(tabix_data %>% filter(.data[[region_col_name]] %in% extract_region_name) %>% t)
+      } else {
+        stop("region_name_col is out of bounds for the number of columns in tabix_data.")
+      }
+    } else {
+      return(tabix_data %>% t())
+    }
   }))
 
   # Check if all phenotype files are empty
@@ -336,6 +344,8 @@ load_regional_association_data <- function(genotype, # PLINK file
                                            imiss_cutoff = 0,
                                            cis_window = NULL, #  a string of chr:start-end for cis-window. If not provided all genotype data will be loaded
                                            y_as_matrix = FALSE,
+                                           extract_region_name = NULL, # a string of eg gene ID ENSG00000269699, this is helpful if we only want to keep a subset of the information when there are multiple regions available
+                                           region_name_col = NULL,
                                            keep_indel = TRUE,
                                            keep_samples = NULL,
                                            phenotype_header = 4, # skip first 4 rows of transposed phenotype for chr, start, end and ID 
