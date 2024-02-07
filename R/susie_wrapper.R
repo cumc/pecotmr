@@ -273,7 +273,6 @@ susie_post_processor <- function(susie_output, data_x, data_y, X_scalar, y_scala
 
     # Initialize result list
     res <- list(other_quantities = other_quantities,
-                susie_result_trimmed = list(),
                 analysis_script = load_script(),
                 variant_names = format_variant_id(names(susie_output$pip)))
 
