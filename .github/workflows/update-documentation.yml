@@ -3,7 +3,7 @@ name: Update documentation
 on:
   pull_request_target:
     paths-ignore:
-      - .github
+      - .github/*
       - .gitignore
 
 jobs:
