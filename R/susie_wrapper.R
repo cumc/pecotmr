@@ -94,10 +94,6 @@ susie_wrapper = function(X, y, init_L = 10, max_L = 30, l_step = 5, ...) {
 susie_rss_wrapper <- function(z, R, bhat, shat, n = NULL, var_y = NULL, L = 10, max_L = 30, l_step = 5, 
                               zR_discrepancy_correction = FALSE, ...) {
   if (L == 1) {
-      print(bhat)
-      print(shat)
-      print(sum(c((missing(z) | is.null(z)), (missing(bhat) | is.null(bhat)) || 
-        (missing(shat) | is.null(shat)))) != 1)
     return(susie_rss(z = z, R = R, bhat = bhat, shat = shat, var_y = var_y, n = n, 
                     L = 1, max_iter = 1, median_abs_corr = 0.8, correct_zR_discrepancy = FALSE, ...))
   }
