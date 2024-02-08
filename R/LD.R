@@ -146,6 +146,18 @@ get_regional_ld_meta <- function(ld_reference_meta_file, region, complete_covera
 #' @importFrom stats setNames                            
 # Process an LD matrix from a file path
 process_LD_matrix <- function(LD_file_path, bim_file_path) {
+    # Order the variants by position
+    order_variants_by_position <- function(strings){
+        # Apply the function to each variant to get a vector of positions
+        positions <- sapply(strings, function(variant) as.integer(strsplit(variant,":")[[1]][2]))
+        # Check whether the merged variants is orderd
+        if(!all(diff(positions[order(positions)]) > 0)){
+           stop("The positions are not in increasing order")
+        }
+        # Order the variants by position
+        strings_ordered <- strings[order(positions)]
+        return(strings_ordered)
+    }
     # Read the LD matrix
     LD_file_con <- xzfile(LD_file_path)
     LD_matrix <- scan(LD_file_con, quiet = TRUE)
@@ -168,7 +180,19 @@ process_LD_matrix <- function(LD_file_path, bim_file_path) {
               mutate(variants = ifelse(grepl("^chr[0-9]+:", variants), gsub("^chr", "", variants), variants))
     # Set column and row names of the LD matrix
     colnames(LD_matrix) <- rownames(LD_matrix) <- LD_variants$variants
-    list(LD_matrix = LD_matrix, LD_variants = LD_variants)
+    # Check if the matrix is upper diagonal
+    #We assume a matrix is upper diagonal if all elements below the main diagonal are zero
+    is_upper_diagonal <- all(LD_matrix[lower.tri(LD_matrix)] == 0)
+    if (is_upper_diagonal) {
+    # If the matrix is upper diagonal, transpose the upper triangle to the lower triangle
+    LD_matrix[lower.tri(LD_matrix)] <- t(LD_matrix)[lower.tri(LD_matrix)]
+    } else {
+    # If the matrix is lower diagonal, transpose the lower triangle to the upper triangle
+    LD_matrix[upper.tri(LD_matrix)] <- t(LD_matrix)[upper.tri(LD_matrix)]
+    }
+    LD_variants_ordered <- LD_variants[match(order_variants_by_position(LD_variants$variants), LD_variants$variants),]
+    LD_matrix <- LD_matrix[match(LD_variants_ordered$variants, rownames(LD_matrix)),match(LD_variants_ordered$variants, rownames(LD_matrix))]
+    list(LD_matrix = LD_matrix, LD_variants = LD_variants_ordered)
 }
 
 #' @import dplyr                            
@@ -239,17 +263,7 @@ create_combined_LD_matrix <- function(LD_matrices, variants) {
     # Apply the fill_matrix function to each LD matrix and accumulate the results
     combined_LD_matrix <- Reduce(function(x, y) align_matrix(y[[1]], x, y[[2]]), 
                                Map(list, LD_matrices, lapply(LD_matrices, rownames)), 
-                               combined_LD_matrix)                                           
-    # Check if the matrix is upper diagonal
-    # We assume a matrix is upper diagonal if all elements below the main diagonal are zero
-    is_upper_diagonal <- all(combined_LD_matrix[lower.tri(combined_LD_matrix)] == 0)
-    if (is_upper_diagonal) {
-    # If the matrix is upper diagonal, transpose the upper triangle to the lower triangle
-    combined_LD_matrix[lower.tri(combined_LD_matrix)] <- t(combined_LD_matrix)[lower.tri(combined_LD_matrix)]
-    } else {
-    # If the matrix is lower diagonal, transpose the lower triangle to the upper triangle
-    combined_LD_matrix[upper.tri(combined_LD_matrix)] <- t(combined_LD_matrix)[upper.tri(combined_LD_matrix)]
-    }                             
+                               combined_LD_matrix)                                                              
     combined_LD_matrix
 }
 
