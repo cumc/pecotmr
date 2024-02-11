@@ -2,79 +2,172 @@ matxMax <- function(mtx) {
   return(arrayInd(which.max(mtx), dim(mtx)))
 }
 
-handle_invalid_summary_stat = function(x) {
-    x$bhat[which(is.nan(x$bhat))] = 0
-    x$sbhat[which(is.nan(x$sbhat) | is.infinite(x$sbhat))] = 1E3
-    return(x)
+handle_invalid_summary_stat = function(x, bhat="beta", sbhat="se") { 
+  x$bhat <- x$bhat %>%
+    mutate(across(starts_with(bhat), as.numeric)) %>%
+    mutate(across(starts_with(bhat), ~replace(., is.nan(.), 0)))
+  x$sbhat <- x$sbhat %>%
+    mutate(across(starts_with(sbhat), as.numeric)) %>%
+    mutate(across(starts_with(sbhat), ~replace(., is.nan(.) | is.infinite(.), 1E3)))
+  return(x)
 }
 
 # This function extracts tensorQTL results for given region for multiple summary statistics files
 #' @import dplyr
 #' @importFrom data.table fread
 #' @export 
-load_multitrait_tensorqtl_sumstat <- function(sumstats_paths, region, trait_names, filter_file = NULL, remove_any_missing = TRUE, max_rows_selected = 300, nan_remove=TRUE) {
-    if (!is.vector(sumstats_paths) || !all(file.exists(sumstats_paths))) {
-        stop("sumstats_paths must be a vector of existing file paths.")
-    }
-    if (!is.character(region) || length(region) != 1) {
-        stop("region must be a single character string.")
-    }
-    if (!is.character(trait_names)) {
-        stop("trait_names must be a vector of character strings.")
-    }
+load_multitrait_tensorqtl_sumstat <- function(sumstats_paths, 
+                                              region, 
+                                              gene=NULL,
+                                              trait_names=NULL, 
+                                              top_loci=FALSE, 
+                                              filter_file = NULL, 
+                                              remove_any_missing = TRUE, 
+                                              max_rows_selected = 300, 
+                                              nan_remove=TRUE) {
+  if (!is.vector(sumstats_paths) || !all(file.exists(sumstats_paths))) {
+    stop("sumstats_paths must be a vector of existing file paths.")
+  }
+  if (!is.character(region) || length(region) != 1) {
+    stop("region must be a single character string.")
+  }
+  if (!is.character(trait_names)) {
+    stop("trait_names must be a vector of character strings.")
+  }
+  
+  
+  extract_tensorqtl_data <- function(path, region) {
+      tabix_region(path, region) %>%
+      mutate(variants = paste(.[[1]] , .[[2]], .[[3]],.[[4]], sep = ":")) %>% #first four columns are "chrom","pos","alt","ref"
+      distinct(variants, molecular_trait_id, .keep_all = TRUE) 
+  }
+  
+  
+  merge_matrices <- function(matrix_list, value_column, id_column = "variants", remove_any_missing = FALSE) {
+    # Convert matrices to data frames
+    df_list <- lapply(seq_along(matrix_list), function(i) {
+      df <- as.data.frame(matrix_list[[i]])
+      df2 <- df[, c(id_column, value_column)]
+      # Rename columns to avoid duplication
+      colnames(df2) <- c(id_column, paste0(value_column, "_", i))
+      return(df2)
+    })
     
-    extract_tensorqtl_data <- function(path, region) {
-        tabix_region(path, region) %>%
-            mutate(variant = paste(`#CHROM`, POS, REF, ALT, sep = ":")) %>%
-            select(-c(3, 6:9)) %>%
-            distinct(variant, .keep_all = TRUE) %>%
-            as.matrix
-    }
-
-    extract_component <- function(df, component_index) {
-        df %>%
-        select(6:ncol(df)) %>%
-        mutate(across(everything(), ~as.numeric(strsplit(as.character(.), ":")[[1]][component_index]))) %>%
-        as.matrix
-    }
+    # Iteratively merge the data frames
+    merged_df <- Reduce(function(x, y) merge(x, y, by = id_column, all = TRUE), df_list)
     
-    Y <- lapply(sumstats_paths, extract_tensorqtl_data, region)
-
-    combined_matrix <- Reduce(function(x, y) merge(x, y, by = c("variant", "#CHROM", "POS", "REF", "ALT")), Y) %>%
-        distinct(variant, .keep_all = TRUE)
-
+    # Optionally, remove rows with any missing values
     if (remove_any_missing) {
-        combined_matrix <- combined_matrix[complete.cases(combined_matrix), ]
+      merged_df <- merged_df[complete.cases(merged_df), ]
     }
-
-    if (!is.null(filter_file)) {
-        if (!file.exists(filter_file)) {
-            stop("Filter file does not exist.")
-        }
-        filter_df <- tabix_region(filter_file, region)
-        if (!all(c("#CHROM", "POS") %in% colnames(filter_df))) {
-            stop("Filter file must contain columns: #CHROM, POS.")
-        }
-        combined_matrix <- inner_join(combined_matrix, filter_df %>% select(`#CHROM`, POS), by = c("#CHROM", "POS"))
+    return(merged_df)
+  }
+  
+  split_variants_and_match <- function(variant, filter_file, max_rows_selected) {
+    if (!file.exists(filter_file)) {
+      stop("Filter file does not exist.")
     }
-
-    if (!is.null(max_rows_selected) && max_rows_selected > 0 && max_rows_selected < nrow(combined_matrix)) {
-        selected_rows <- sample(nrow(combined_matrix), max_rows_selected)
-        combined_matrix <- combined_matrix[selected_rows, ]
-    }
-
-    dat <- list(
-        bhat = extract_component(combined_matrix, 1),
-        sbhat = extract_component(combined_matrix, 2)
+    
+    # Split the variant vector into components
+    variant_split <- strsplit(variant, ":")
+    variant_df <- data.frame(
+      chr = sapply(variant_split, `[`, 1),
+      pos = sapply(variant_split, `[`, 2),
+      stringsAsFactors = FALSE
     )
-    if (nan_remove) dat <- handle_invalid_summary_stat(dat)
-    #dat$z <- dat$bhat / dat$sbhat
-    #rownames(dat$bhat) <- rownames(dat$sbhat) <- rownames(dat$z) <- combined_matrix$variant
-    #colnames(dat$bhat) <- colnames(dat$sbhat) <- colnames(dat$z) <- trait_names
-    rownames(dat$bhat) <- rownames(dat$sbhat) <- combined_matrix$variant
-    colnames(dat$bhat) <- colnames(dat$sbhat) <- trait_names
-    dat$region = region
-    return(dat)
+    variant_df$pos <- as.numeric(variant_df$pos)
+    
+    # get the region of interest
+    min_pos <- min(variant_df$pos)
+    max_pos <- max(variant_df$pos)
+    chrom <- unique(variant_df$chr)
+    if (length(chrom) != 1) {
+      stop("Variants are from multiple chromosomes. Cannot create a single range string.")
+    }
+    region = paste0(chrom, ":", min_pos, "-", max_pos)
+    ref_table <- tabix_region(filter_file, region)
+    if (is.null(ref_table)){
+      stop("No variants in the region.")
+    }
+    colnames(ref_table)[1:2] = c("#CHROM", "POS")
+    if (!all(c("#CHROM", "POS") %in% colnames(ref_table))) {
+      stop("Filter file must contain columns: #CHROM, POS.")
+    }
+    matched_indices <- which(variant_df$chr %in% ref_table$`#CHROM` & variant_df$pos %in% ref_table$POS)
+    if (!is.null(max_rows_selected) && max_rows_selected > 0 && max_rows_selected < length(matched_indices)) {
+      selected_rows <- sample(length(matched_indices), max_rows_selected)
+      matched_indices <- matched_indices[selected_rows]
+    }
+    return(matched_indices)
+  }
+  
+  Y <- lapply(sumstats_paths, function(x, region, gene){
+    out <- extract_tensorqtl_data(x, region)
+    if (!is.null(gene)){
+        out <- out[which(out$molecular_trait_id %in% gene), ]
+    }
+    sorted <- out[order(-abs(out$beta/out$se)),c("variants", "molecular_trait_id")]
+    top_v <- apply(sorted[1:2,],1,function(row) paste(row, collapse = "_")) #paste the variant (chr:pos:alt:ref) with gene_id with "_"
+    out <- as.list(out)
+    out$top_variants <- top_v
+    return(out)}, region=region, gene=gene)
+  
+  ## Y is list of data frames where
+  ## colnames(Y[[1]])= c('chrom','pos','alt','ref','variant_id','molecular_trait_id','start_distance',
+  # 'end_distance','af','ma_samples','ma_count','pvalue','beta','se','molecular_trait_object_id',
+  # 'n','variant''top_variants')
+  
+  ### The step below assigns condition names to the Y; 
+  # in case the filename itself does not contain any condition names, users can input the condition names via assigning trait_names 
+  # if trait_names left blank, then the file names will be assigned as trait_names, 
+  # where if the text before "." (extension) can differentiate the conditions, we will use the shorter names as trait_name
+  if (is.null(trait_names)){
+    trait_names <- gsub("\\..*", "", basename(sumstats_paths)) # extract condition name that is listed before the first appearance of "."
+    
+    if (length(trait_names[duplicated(trait_names)])>=1){
+      trait_names <- basename(sumstats_paths)
+    }
+  }
+  names(Y) <- trait_names 
+
+  bhat <- merge_matrices(Y, value_column="beta",  id_column = c("variants", "molecular_trait_id"), remove_any_missing)
+  sbhat <- merge_matrices(Y, value_column="se",  id_column = c("variants", "molecular_trait_id"), remove_any_missing)
+  out <- list(bhat = bhat, sbhat = sbhat)
+  
+  # Check if variants are the same in both bhat and sbhat
+  if (!identical(out$bhat$variants, out$sbhat$variants)) {
+    stop("Error: Variants in bhat and sbhat are not the same.")
+  }
+  
+  var_idx = 1:nrow(out$bhat)
+  
+  # match with filter_file
+  if (!is.null(filter_file)) {
+    if (!file.exists(filter_file)) {
+      stop("Filter file does not exist.")
+    }
+    variants = paste0(out$bhat$variants, "_", out$bhat$molecular_trait_id)
+    var_idx = split_variants_and_match(out$bhat$variants, filter_file, max_rows_selected)
+  }
+  
+  
+  if (top_loci) {
+    union_top_loci <- unique(unlist(lapply(Y, function(item) item$top_variants)))
+    var_idx <- which(variants %in% union_top_loci) #var_idx may end up empty if max_rows_selected number too small
+  }
+
+  # Extract only subset of data
+  variants <- paste0(out$bhat$variants[var_idx], "_", out$bhat$molecular_trait_id[var_idx])
+  out$bhat <- out$bhat[var_idx,]
+  out$sbhat <- out$sbhat[var_idx,]
+
+  if (nan_remove) out <- handle_invalid_summary_stat(out, bhat="beta", sbhat="se")
+
+  rownames(out$bhat) <- rownames(out$sbhat) <- variants
+  colnames(out$bhat)[which(startsWith(colnames(out$bhat), "beta"))] <- colnames(out$sbhat)[which(startsWith(colnames(out$sbhat),  "se"))] <- trait_names
+  out$region = region
+  out$top_variants <- lapply(Y, function(x) x$top_variants)
+  return(out)
 }
 
 #' @export
@@ -189,7 +282,7 @@ load_multitrait_R_sumstat <- function(rds_files, top_loci = FALSE, filter_file =
   #rownames(out$bhat) <- rownames(out$sbhat) <- rownames(out$z) <- variants
   #colnames(out$bhat) <- colnames(out$sbhat) <- colnames(out$z) <- trait_names
   rownames(out$bhat) <- rownames(out$sbhat) <- variants
-  colnames(out$bhat) <- colnames(out$sbhat) <- trait_names
+  colnames(out$bhat)[2:ncol(out$bhat)] <- colnames(out$sbhat)[2:ncol(out$bhat)] <- trait_names
   out$region = rds_files
   return(out)
 }
