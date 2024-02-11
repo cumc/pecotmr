@@ -94,6 +94,10 @@ susie_wrapper = function(X, y, init_L = 10, max_L = 30, l_step = 5, ...) {
 susie_rss_wrapper <- function(z, R, bhat, shat, n = NULL, var_y = NULL, L = 10, max_L = 30, l_step = 5, 
                               zR_discrepancy_correction = FALSE, ...) {
   if (L == 1) {
+      print(bhat)
+      print(shat)
+      print(sum(c((missing(z) | is.null(z)), (missing(bhat) | is.null(bhat)) || 
+        (missing(shat) | is.null(shat)))) != 1)
     return(susie_rss(z = z, R = R, bhat = bhat, shat = shat, var_y = var_y, n = n, 
                     L = 1, max_iter = 1, median_abs_corr = 0.8, correct_zR_discrepancy = FALSE, ...))
   }
@@ -165,8 +169,9 @@ susie_rss_qc <- function(z, R, ref_panel, bhat=NULL, shat=NULL, var_y=NULL, n = 
   }
 
   ## Perform initial SuSiE RSS analysis with discrepancy correction
+  ## FIXME: should parse ...  directly and use do.call  for function calls
   result <- susie_rss(z=z, R=R, bhat=bhat, shat=shat, var_y=var_y, n=n, L=max_L,  
-                     correct_zR_discrepancy=TRUE, track_fit = TRUE, ...)
+                     correct_zR_discrepancy=TRUE, track_fit = TRUE, max_iter = 100)
 
   ## Initialize result_final
   result_final <- NULL
@@ -272,7 +277,6 @@ susie_post_processor <- function(susie_output, data_x, data_y, X_scalar, y_scala
 
     # Initialize result list
     res <- list(other_quantities = other_quantities,
-                susie_result_trimmed = list(),
                 analysis_script = load_script(),
                 variant_names = format_variant_id(names(susie_output$pip)))
 

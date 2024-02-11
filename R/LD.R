@@ -301,17 +301,16 @@ load_LD_matrix <- function(LD_meta_file_path, region, extract_coordinates = NULL
     return(combined_LD_list)
 }
 
-#' Filter Genotype Matrix by LD Reference
+#' Filter variants by LD Reference
 #'
-#' @param X A genotype matrix with col names as variant names in the format chr:pos_ref_alt or chr:pos:ref:alt.
+#' @param variant_ids variant names in the format chr:pos_ref_alt or chr:pos:ref:alt.
 #' @param ld_reference_meta_file A data frame similar to 'genomic_data' in get_regional_ld_meta function.
-#' @return A subset of the genotype matrix X, filtered based on LD reference data.
+#' @return A subset of variants, filtered based on LD reference data.
 #' @importFrom stringr str_split
 #' @importFrom dplyr select
 #' @export
-filter_genotype_by_ld_reference <- function(X, ld_reference_meta_file) {
+filter_variants_by_ld_reference <- function(variant_ids, ld_reference_meta_file, keep_indel=TRUE) {
   # Step 1: Process variant IDs into a data frame and filter out non-standard nucleotides
-  variant_ids <- colnames(X)
   variants_df <- do.call(rbind, lapply(strsplit(variant_ids,":"), function(x) {
        data.frame(chrom = x[1], pos = as.integer(x[2]), ref = x[3], alt = x[4])
   }))
@@ -319,10 +318,6 @@ filter_genotype_by_ld_reference <- function(X, ld_reference_meta_file) {
   variants_df$chrom <- ifelse(grepl("^chr", variants_df$chrom), 
                      as.integer(sub("^chr", "", variants_df$chrom)), # Remove 'chr' and convert to integer
                      as.integer(variants_df$chrom))
-
-  valid_nucleotides <- c("A", "T", "C", "G")
-  variants_df <- variants_df[variants_df$ref %in% valid_nucleotides & variants_df$alt %in% valid_nucleotides,]
-
   # Step 2: Derive region information from the variants data frame
   region_df <- variants_df %>%
                group_by(chrom) %>%
@@ -339,10 +334,15 @@ filter_genotype_by_ld_reference <- function(X, ld_reference_meta_file) {
 
   # Step 5: Overlap the variants data frame with bim_data
   keep_indices <- which(paste(variants_df$chrom, variants_df$pos) %in% paste(bim_data$chrom, bim_data$pos))
-  X_filtered <- X[,keep_indices,drop=F]
+  if (!keep_indel) {
+    valid_nucleotides <- c("A", "T", "C", "G")
+    snp_idx <- which((variants_df$ref %in% valid_nucleotides) & (variants_df$alt %in% valid_nucleotides))
+    keep_indices <- intersect(keep_indices, snp_idx)
+  }
+  variants_filtered <- variant_ids[keep_indices]
 
-  message("Number of variants dropped: ", ncol(X) - length(keep_indices), 
-          " out of ", ncol(X), " total columns.")
+  message("Number of variants dropped: ", length(variant_ids) - length(keep_indices), 
+          " out of ", length(variant_ids), " total variants.")
 
-  return(list(data=X_filtered, idx=keep_indices))
+  return(list(data=variants_filtered, idx=keep_indices))
 }

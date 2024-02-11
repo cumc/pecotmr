@@ -6,8 +6,8 @@
 #' Noah Zaitlen, et al., titled "Fast and accurate imputation of summary
 #' statistics enhances evidence of functional enrichment", published in
 #' Bioinformatics in 2014.
-#' @param ref_panel A data frame containing 'chr', 'pos', 'variant_id', 'A1', and 'A2'.
-#' @param known_zscores A data frame containing 'chr', 'pos', 'variant_id', 'A1', 'A2', and 'Z' values.
+#' @param ref_panel A data frame containing 'chrom', 'pos', 'variant_id', 'A1', and 'A2'.
+#' @param known_zscores A data frame containing 'chrom', 'pos', 'variant_id', 'A1', 'A2', and 'Z' values.
 #' @param LD_matrix A square matrix of dimension equal to the number of rows in ref_panel.
 #' @param lamb Regularization term added to the diagonal of the LD_matrix in the RAImputation model.
 #' @param rcond Threshold for filtering eigenvalues in the pseudo-inverse computation in the RAImputation model.
@@ -93,10 +93,10 @@ raiss_model <- function(zt, sig_t, sig_i_t, lamb=0.01, rcond=0.01, batch=TRUE, r
 }
 
 #' @param imp is the output of raiss_model()
-#' @param ref_panel is a data frame with columns 'chr', 'pos', 'variant_id', 'ref', and 'alt'.
+#' @param ref_panel is a data frame with columns 'chrom', 'pos', 'variant_id', 'ref', and 'alt'.
 format_raiss_df <- function(imp, ref_panel, unknowns) {
   result_df <- data.frame(
-    chr = ref_panel[unknowns, 'chr'],
+    chrom = ref_panel[unknowns, 'chrom'],
     pos = ref_panel[unknowns, 'pos'],
     variant_id = ref_panel[unknowns, 'variant_id'],
     A1 = ref_panel[unknowns, 'A1'],
@@ -109,7 +109,7 @@ format_raiss_df <- function(imp, ref_panel, unknowns) {
   )
 
   # Specify the column order
-  column_order <- c('chr', 'pos', 'variant_id', "A1", "A2", 'Z', 'Var', 'ld_score', 'condition_number', 
+  column_order <- c('chrom', 'pos', 'variant_id', "A1", "A2", 'Z', 'Var', 'ld_score', 'condition_number', 
                     'correct_inversion')
 
   # Reorder the columns
@@ -119,7 +119,7 @@ format_raiss_df <- function(imp, ref_panel, unknowns) {
 
 merge_raiss_df <- function(raiss_df, known_zscores) {
   # Merge the data frames
-  merged_df <- merge(raiss_df, known_zscores, by = c("chr", "pos", "variant_id", "A1", "A2"), all = TRUE)
+  merged_df <- merge(raiss_df, known_zscores, by = c("chrom", "pos", "variant_id", "A1", "A2"), all = TRUE)
 
   # Identify rows that came from known_zscores
   from_known <- !is.na(merged_df$Z.y) & is.na(merged_df$Z.x)
@@ -140,7 +140,7 @@ merge_raiss_df <- function(raiss_df, known_zscores) {
 
 filter_raiss_output <- function(zscores, R2_threshold = 0.6, minimum_ld = 5) {
   # Reset the index and subset the data frame
-  zscores <- zscores[, c('chr', 'pos', 'variant_id', 'A1', 'A2', 'Z', 'Var', 'ld_score')]
+  zscores <- zscores[, c('chrom', 'pos', 'variant_id', 'A1', 'A2', 'Z', 'Var', 'ld_score')]
   zscores$imputation_R2 <- 1 - zscores$Var
 
   # Count statistics before filtering
