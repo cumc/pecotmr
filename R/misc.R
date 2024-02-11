@@ -320,7 +320,9 @@ add_Y_residuals <- function(data_list, conditions, y_as_matrix = FALSE, scale_re
                      unnest(Y_resid) %>%
                      as.matrix()
     colnames(Y_resid_matrix) <- conditions
-    data_list$Y_resid <- Y_resid_matrix
+    data_list <- as.list(data_list)
+    data_list$Y_resid[[1]] <- Y_resid_matrix
+    data_list <- as_tibble(data_list)
   } else {
     names(data_list$Y_resid) <- conditions
   }
@@ -425,7 +427,7 @@ load_regional_multivariate_data <- function(matrix_y_min_complete = NULL, # when
                                             ...) {
   dat = load_regional_association_data(y_as_matrix = TRUE, ...)
   if (!is.null(matrix_y_min_complete)) {
-    Y = filter_Y(dat$residual_Y, matrix_y_min_complete)
+    Y = filter_Y(dat$residual_Y[[1]], matrix_y_min_complete)
     if (length(Y$rm_rows)>0) {
       X =  dat$X[-Y$rm_rows, ]
       Y_scalar = dat$residual_Y_scalar[-Y$rm_rows]
