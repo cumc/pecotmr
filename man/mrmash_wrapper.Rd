@@ -7,10 +7,8 @@
 mrmash_wrapper(
   X,
   Y,
-  prior_data_driven_matrices,
+  prior_data_driven_matrices = NULL,
   prior_grid = NULL,
-  bhat = NULL,
-  sbhat = NULL,
   nthreads = 2,
   prior_canonical_matrices = FALSE,
   standardize = FALSE,
