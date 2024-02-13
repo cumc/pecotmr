@@ -17,7 +17,7 @@ raiss(
 \arguments{
 \item{ref_panel}{A data frame containing 'chrom', 'pos', 'variant_id', 'A1', and 'A2'.}
 
-\item{known_zscores}{A data frame containing 'chrom', 'pos', 'variant_id', 'A1', 'A2', and 'Z' values.}
+\item{known_zscores}{A data frame containing 'chrom', 'pos', 'variant_id', 'A1', 'A2', and 'z' values.}
 
 \item{LD_matrix}{A square matrix of dimension equal to the number of rows in ref_panel.}
 
@@ -36,7 +36,7 @@ A data frame that is the result of merging the imputed SNP data with known z-sco
 This function is a part of the statistical library for SNP imputation from:
 https://gitlab.pasteur.fr/statistical-genetics/raiss/-/blob/master/raiss/stat_models.py
 It is R implementation of the imputation model described in the paper by Bogdan Pasaniuc,
-Noah Zaitlen, et al., titled "Fast and accurate imputation of summary
+Noah zaitlen, et al., titled "Fast and accurate imputation of summary
 statistics enhances evidence of functional enrichment", published in
 Bioinformatics in 2014.
 }
