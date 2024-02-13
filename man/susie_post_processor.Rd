@@ -15,6 +15,8 @@ susie_post_processor(
   signal_cutoff = 0.1,
   other_quantities = NULL,
   prior_eff_tol = 1e-09,
+  min_abs_corr = 0.5,
+  median_abs_corr = 0.8,
   mode = c("susie", "susie_rss")
 )
 }
