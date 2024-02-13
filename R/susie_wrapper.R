@@ -121,6 +121,113 @@ susie_rss_wrapper <- function(z, R, bhat, shat, n = NULL, var_y = NULL, L = 10, 
   return(susie_rss_result)
 }
 
+get_rss_input = function(sumstat_path, column_file_path, n_sample, n_case, n_control){
+    var_y = NULL
+    sumstats = fread(sumstat_path)
+        column_data <- read.table(column_file_path, header = FALSE, sep = ":", stringsAsFactors = FALSE)
+    colnames(column_data) = c("standard", "original")
+    count = 1
+    for (name in colnames(sumstats)){
+        if(name %in% column_data$original){
+            index = which(column_data$original == name)
+            colnames(sumstats)[count] = column_data$standard[index]
+        }
+        count = count + 1
+    }
+  
+    ## if the data don't have z scores, derive by beta/se, so that allele flip function can run
+    if(length(sumstats$z) == 0){
+          sumstats$z = sumstats$beta / sumstats$se
+    }
+  
+    ## if the data don't have beta, derive it by making beta = z and se =1, so that allele flip function can run
+   if(length(sumstats$beta) == 0){
+          sumstats$beta = sumstats$z
+          sumstats$se = 1
+    }
+        if(n_sample != 0 & (n_case + n_control) !=0){
+      stop("Please provide sample size, or case number with control number, but not both")
+    }else if(n_sample !=0 ){
+      n = n_sample
+    }else if((n_case + n_control) !=0){
+      n = n_case + n_control
+      phi = n_case/n
+      var_y = residual_variance = 1/(phi*(1-phi))
+    }else{
+      # 2. if sample size not specified, but there are columns corresponding to sample size in sumstat
+      if(length(sumstats$n_sample) != 0){
+          n = median(sumstats$n_sample)
+      }else if(length(sumstats$n_case) != 0 & length(sumstats$n_control) != 0){
+          n = median(sumstats$n_case + sumstats$n_control)
+          phi =  median(sumstats$n_case/n)
+          var_y = residual_variance = 1/(phi*(1-phi))
+      }else{
+      # 3. if no infomation related to sample size
+          n = NULL
+      }
+    }     
+    return(rss_input = list(sumstats = sumstats, n = n, var_y = var_y))
+}
+
+
+rss_input_preprocess = function(sumstats, LD_data, imputation = TRUE){
+    target_variants = sumstats[,c("chrom","pos","A1","A2")]
+    ref_variants = LD_data$combined_LD_variants
+    allele_flip = allele_qc(target_variants, ref_variants, sumstats, col_to_flip = c("beta", "z"), match.min.prop=0.2, remove_dups=FALSE, flip=TRUE, remove=TRUE)
+    if(imputation){
+        ref_panel = LD_data$ref_panel
+        known_zscores = allele_flip$target_data_qced %>% select("chrom", "pos", "variant_id", "A1", "A2", "z")
+        impute_result = raiss(ref_panel = ref_panel, known_zscores = known_zscores, LD_matrix = LD_data$combined_LD_matrix, R2_threshold = -1, minimum_ld = 0)
+        impute_result$chrom = as.numeric(impute_result$chrom)
+        LD_extract =  LD_data$combined_LD_matrix[impute_result$variant_id, impute_result$variant_id, drop = FALSE]
+        sumstat_processed = full_join(allele_flip$target_data_qced %>% select(-beta, -se, -z), impute_result, by = c("chrom", "pos", "A1", "A2", "variant_id")) %>% arrange(pos)
+    }else{
+        LD_extract = LD_data$combined_LD_matrix[allele_flip$target_data_qced$variant_id, allele_flip$target_data_qced$variant_id, drop = FALSE]
+        ref_panel = allele_flip$target_data_qced %>% select("chrom", "pos", "variant_id", "A1", "A2") 
+        sumstat_processed = allele_flip$target_data_qced %>% arrange(pos)
+    }
+    
+    return(input_processed = list(sumstat_processed = sumstat_processed, LD_extract = LD_extract))
+    
+}
+
+
+susie_rss_pipeline = function(z, R, ref_panel, bhat = NULL, shat = NULL, n, L, var_y, QC = TRUE, impute_QC = TRUE, cond_analysis = TRUE, rcond, R2_threshold, max_L, l_step){
+    final_result = list() 
+    single_effect_res = susie_rss_wrapper(z = z, R = LD_extract, bhat = NULL, shat = NULL, L = 1, n = n, var_y = var_y)
+    if (!any(single_effect_res$pip > 0.05)) {
+        message("No variant has a PIP value greater than 0.05 for single effect model. Will return single effect model result.")
+        final_result$single_effect_result = single_effect_res
+    } else {  
+        # 1. Output 1 & 2 (default):  single effect result + susie_rss no QC
+        result_noqc = susie_rss_wrapper(z = z, R = LD_extract, bhat = NULL, shat = NULL, n = n, L = L, var_y = var_y)
+        result_noqc_post = susie_post_processor(result_noqc, data_x = LD_extract, data_y = list(z), mode = "susie_rss")
+        final_result$noqc_result = result_noqc_post
+        final_result$single_effect_result = single_effect_res
+        if(QC){
+            result_qced = susie_rss_qc(z = z, ref_panel = ref_panel, R = LD_extract, n = n, L = L, impute = impute_QC,
+            rcond = rcond, R2_threshold = R2_threshold, max_L = max_L, l_step = l_step, var_y = var_y)
+            var_impute_kept = names(result_qced$qc_impute_result$pip)
+            result_qced_impute_post = susie_post_processor(result_qced$qc_impute_result, data_x = LD_extract[var_impute_kept, var_impute_kept, drop = FALSE], data_y = list(z = result_qced$qc_impute_result$z), mode = "susie_rss")
+            final_result$qc_only_result = result_qced$qc_only_result
+            final_result$qc_impute_result = result_qced_impute_post
+            result_qced$impute_table$chrom = as.numeric(result_qced$impute_table$chrom)
+            final_result$qc_impute_table = result_qced$qc_impute_table
+        }
+        if(cond_analysis){
+            conditional_noqc = susie_rss_wrapper(z = z, R = LD_extract, bhat = NULL, shat = NULL, n = n, L = L, max_iter = 1, var_y = var_y)
+            conditional_qced = susie_rss_qc(z = z, ref_panel = ref_panel, R = LD_extract, n = n, L = L, impute = impute_QC, var_y = var_y,
+            rcond = rcond, R2_threshold = R2_threshold, max_L = max_L, l_step = l_step, max_iter = 1)
+            final_result$cond_noqc = conditional_noqc
+            final_result$cond_qced = conditional_qced
+        
+        }
+
+    }
+    return(final_result)
+}
+
+
 #' SuSiE RSS Analysis with Quality Control and Imputation
 #'
 #' Performs SuSiE RSS analysis with optional quality control steps that include
@@ -151,8 +258,6 @@ susie_rss_wrapper <- function(z, R, bhat, shat, n = NULL, var_y = NULL, L = 10, 
 susie_rss_qc <- function(z, R, ref_panel, bhat=NULL, shat=NULL, var_y=NULL, n = NULL, L = 10, max_L = 20, l_step = 5, 
                         lamb = 0.01, rcond = 0.01, R2_threshold = 0.6, minimum_ld = 5, impute = TRUE, output_qc = TRUE, ...) {
   
-    
-    
   ## Input validation for z-scores and reference panel
   if (length(z) != nrow(ref_panel)) {
     stop("The length of z-scores does not match the number of rows in the reference panel.")
@@ -177,7 +282,7 @@ susie_rss_qc <- function(z, R, ref_panel, bhat=NULL, shat=NULL, var_y=NULL, n = 
     ## Extracting known z-scores excluding outliers
     outlier = result$zR_outliers
     known_zscores = ref_panel[-outlier,]
-    known_zscores$Z = z[-outlier]
+    known_zscores$z = z[-outlier]
     known_zscores = known_zscores %>% arrange(pos)
     
     ## Imputation logic using RAiSS or other methods
@@ -196,10 +301,10 @@ susie_rss_qc <- function(z, R, ref_panel, bhat=NULL, shat=NULL, var_y=NULL, n = 
     }
 
     ## Re-run SuSiE RSS with imputed z-scores and updated LD matrix
-    result_final$qc_impute_result <- susie_rss_wrapper(z=imputation_result$Z, R=LD_extract_filtered, bhat=bhat, shat=shat, var_y=var_y, 
+    result_final$qc_impute_result <- susie_rss_wrapper(z=imputation_result$z, R=LD_extract_filtered, bhat=bhat, shat=shat, var_y=var_y, 
                                       n=n, L=L, max_L=max_L, l_step=l_step, zR_discrepancy_correction=FALSE, ...)
-    result_final$qc_impute_result$z = imputation_result$Z
-    result_final$impute_table = imputation_result
+    result_final$qc_impute_result$z = imputation_result$z
+    result_final$qc_impute_table = imputation_result
   }
     if(output_qc){
     result_final$qc_only_result <- result
@@ -237,7 +342,7 @@ susie_rss_qc <- function(z, R, ref_panel, bhat=NULL, shat=NULL, var_y=NULL, n = 
 #' @importFrom susieR get_cs_correlation susie_get_cs
 #' @importFrom stringr str_replace
 #' @export
-susie_post_processor <- function(susie_output, data_x, data_y, X_scalar, y_scalar, maf, 
+susie_post_processor <- function(susie_output, data_x, data_y, X_scalar, y_scalar, maf = NULL, 
                                 secondary_coverage = c(0.5, 0.7), signal_cutoff = 0.1, 
                                 other_quantities = NULL, prior_eff_tol = 1e-9, 
                                 mode = c("susie", "susie_rss")) {

@@ -21,7 +21,7 @@ generate_dummy_data <- function(seed=1, ref_panel_ordered=TRUE, known_zscores_or
         variant_id = sample(ref_panel$variant_id, n_known),
         A1 = sample(c("A", "T", "G", "C"), n_known, replace = TRUE),
         A2 = sample(c("A", "T", "G", "C"), n_known, replace = TRUE),
-        Z = rnorm(n_known)
+        z = rnorm(n_known)
     )
 
     LD_matrix <- matrix(rnorm(n_variants^2), nrow = n_variants, ncol = n_variants)
@@ -148,13 +148,13 @@ test_that("format_raiss_df returns correctly formatted data frame", {
 
   expect_true(is.data.frame(result))
   expect_equal(ncol(result), 10)
-  expect_equal(colnames(result), c('chrom', 'pos', 'variant_id', 'A1', 'A2', 'Z', 'Var', 'ld_score', 'condition_number', 'correct_inversion'))
+  expect_equal(colnames(result), c('chrom', 'pos', 'variant_id', 'A1', 'A2', 'z', 'Var', 'ld_score', 'condition_number', 'correct_inversion'))
 
   for (col in c('chrom', 'pos', 'variant_id', 'A1', 'A2')) {
     expect_equal(setNames(unlist(result[col]), NULL), unlist(ref_panel[unknowns, col, drop = TRUE]))
   }
-  for (col in c('Z', 'Var', 'ld_score', 'condition_number', 'correct_inversion')) {
-    expected_col <- if (col == "Z") "mu" else if (col == "Var") "var" else col
+  for (col in c('z', 'Var', 'ld_score', 'condition_number', 'correct_inversion')) {
+    expected_col <- if (col == "z") "mu" else if (col == "Var") "var" else col
     expect_equal(setNames(unlist(result[col]), NULL), setNames(unlist(imp[expected_col]), NULL))
   }
 })
@@ -166,7 +166,7 @@ test_that("Merge operation is correct for merge_raiss_df", {
         variant_id = c("var1", "var2"),
         A1 = c("A", "T"),
         A2 = c("T", "A"),
-        Z = c(0.5, 1.5),
+        z = c(0.5, 1.5),
         Var = c(0.2, 0.3),
         ld_score = c(10, 20),
         imputation_R2 = c(0.8, 0.7))
@@ -177,7 +177,7 @@ test_that("Merge operation is correct for merge_raiss_df", {
         variant_id = c("var1", "var2"),
         A1 = c("A", "T"),
         A2 = c("T", "A"),
-        Z = c(0.5, 1.5))
+        z = c(0.5, 1.5))
 
     merged_df <- merge_raiss_df(raiss_df_example, known_zscores_example)
     expect_equal(nrow(merged_df), 2)
@@ -192,7 +192,7 @@ generate_fro_test_data <- function(seed=1) {
         variant_id = 1:10,
         A1 = rep("A", 10),
         A2 = rep("T", 10),
-        Z = rnorm(10),
+        z = rnorm(10),
         Var = runif(10, 0, 1),
         ld_score = rnorm(10, 5, 2)
     ))
@@ -201,7 +201,7 @@ generate_fro_test_data <- function(seed=1) {
 test_that("Correct columns are selected in filter_raiss_output", {
     test_data <- generate_fro_test_data()
     output <- filter_raiss_output(test_data)
-    expect_true(all(c('variant_id', 'A1', 'A2', 'Z', 'Var', 'ld_score') %in% names(output)))
+    expect_true(all(c('variant_id', 'A1', 'A2', 'z', 'Var', 'ld_score') %in% names(output)))
 })
 
 test_that("imputation_R2 is calculated correctly in filter_raiss_output", {

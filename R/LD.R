@@ -294,9 +294,14 @@ load_LD_matrix <- function(LD_meta_file_path, region, extract_coordinates = NULL
 
     # Create a combined LD matrix
     combined_LD_matrix <- create_combined_LD_matrix(extracted_LD_matrices_list, extracted_LD_variants_list)
+                                         
+    ref_panel <- do.call(rbind, lapply(strsplit(rownames(combined_LD_matrix),":"), function(x) {
+       data.frame(chrom = x[1], pos = as.integer(x[2]), A1 = x[3], A2 = x[4])
+    }))                       
+    ref_panel$variant_id = rownames(combined_LD_matrix)                                      
     
     # LD list for region
-    combined_LD_list <- list(combined_LD_variants = rownames(combined_LD_matrix), combined_LD_matrix = combined_LD_matrix)
+    combined_LD_list <- list(combined_LD_variants = rownames(combined_LD_matrix), combined_LD_matrix = combined_LD_matrix, ref_panel = ref_panel)
 
     return(combined_LD_list)
 }
