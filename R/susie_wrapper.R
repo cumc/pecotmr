@@ -170,60 +170,61 @@ get_rss_input = function(sumstat_path, column_file_path, n_sample, n_case, n_con
 }
 
 
-rss_input_preprocess = function(sumstats, LD_data, imputation = TRUE){
+rss_input_preprocess = function(sumstats, LD_data){
     target_variants = sumstats[,c("chrom","pos","A1","A2")]
     ref_variants = LD_data$combined_LD_variants
     allele_flip = allele_qc(target_variants, ref_variants, sumstats, col_to_flip = c("beta", "z"), match.min.prop=0.2, remove_dups=FALSE, flip=TRUE, remove=TRUE)
-    if(imputation){
-        ref_panel = LD_data$ref_panel
-        known_zscores = allele_flip$target_data_qced %>% select("chrom", "pos", "variant_id", "A1", "A2", "z")
-        impute_result = raiss(ref_panel = ref_panel, known_zscores = known_zscores, LD_matrix = LD_data$combined_LD_matrix, R2_threshold = -1, minimum_ld = 0)
-        impute_result$chrom = as.numeric(impute_result$chrom)
-        LD_extract =  LD_data$combined_LD_matrix[impute_result$variant_id, impute_result$variant_id, drop = FALSE]
-        sumstat_processed = full_join(allele_flip$target_data_qced %>% select(-beta, -se, -z), impute_result, by = c("chrom", "pos", "A1", "A2", "variant_id")) %>% arrange(pos)
-    }else{
-        LD_extract = LD_data$combined_LD_matrix[allele_flip$target_data_qced$variant_id, allele_flip$target_data_qced$variant_id, drop = FALSE]
-        ref_panel = allele_flip$target_data_qced %>% select("chrom", "pos", "variant_id", "A1", "A2") 
-        sumstat_processed = allele_flip$target_data_qced %>% arrange(pos)
-    }
-    
-    return(input_processed = list(sumstat_processed = sumstat_processed, LD_extract = LD_extract))
+
+    sumstat_processed = allele_flip$target_data_qced %>% arrange(pos)
+    return(sumstat_processed)
     
 }
 
 
-susie_rss_pipeline = function(z, R, ref_panel, bhat = NULL, shat = NULL, n, L, var_y, QC = TRUE, impute_QC = TRUE, cond_analysis = TRUE, rcond, R2_threshold, max_L, l_step){
-    final_result = list() 
-    single_effect_res = susie_rss_wrapper(z = z, R = LD_extract, bhat = NULL, shat = NULL, L = 1, n = n, var_y = var_y)
-    if (!any(single_effect_res$pip > 0.05)) {
-        message("No variant has a PIP value greater than 0.05 for single effect model. Will return single effect model result.")
-        final_result$single_effect_result = single_effect_res
-    } else {  
-        # 1. Output 1 & 2 (default):  single effect result + susie_rss no QC
+susie_rss_pipeline = function(sumstat, R, ref_panel, bhat = NULL, shat = NULL, n, L, var_y, QC = TRUE, impute = TRUE, cond_analysis = TRUE, rcond, R2_threshold, max_L, l_step, minimum_ld){
+        final_result = list()
+        z = sumstat$z
+        LD_extract = R[sumstat$variant_id, sumstat$variant_id, drop = FALSE]
+        single_effect_res = susie_rss_wrapper(z = z, R = LD_extract, bhat = NULL, shat = NULL, L = 1, n = n, var_y = var_y)
+        single_effect_post = susie_post_processor(single_effect_res, data_x = LD_extract, data_y = list(z), mode = "susie_rss")
+        final_result$single_effect_result = single_effect_post
+    
         result_noqc = susie_rss_wrapper(z = z, R = LD_extract, bhat = NULL, shat = NULL, n = n, L = L, var_y = var_y)
         result_noqc_post = susie_post_processor(result_noqc, data_x = LD_extract, data_y = list(z), mode = "susie_rss")
         final_result$noqc_result = result_noqc_post
-        final_result$single_effect_result = single_effect_res
+
+
         if(QC){
-            result_qced = susie_rss_qc(z = z, ref_panel = ref_panel, R = LD_extract, n = n, L = L, impute = impute_QC,
-            rcond = rcond, R2_threshold = R2_threshold, max_L = max_L, l_step = l_step, var_y = var_y)
+            result_qced = susie_rss_qc(sumstat, ref_panel = ref_panel, R = R, n = n, L = L, impute = impute,
+            rcond = rcond, R2_threshold = R2_threshold, max_L = max_L, minimum_ld = minimum_ld, l_step = l_step, var_y = var_y)  
             var_impute_kept = names(result_qced$qc_impute_result$pip)
-            result_qced_impute_post = susie_post_processor(result_qced$qc_impute_result, data_x = LD_extract[var_impute_kept, var_impute_kept, drop = FALSE], data_y = list(z = result_qced$qc_impute_result$z), mode = "susie_rss")
-            final_result$qc_only_result = result_qced$qc_only_result
+            
+            result_qced_impute_post = susie_post_processor(result_qced$qc_impute_result, data_x = R[var_impute_kept, var_impute_kept, drop = FALSE], data_y = list(z = result_qced$qc_impute_result$z), mode = "susie_rss")
+
+            result_qced_only_post = susie_post_processor(result_qced$qc_only_result, data_x = LD_extract, data_y = list(z = result_qced$qc_only_result$z), mode = "susie_rss")
+            
             final_result$qc_impute_result = result_qced_impute_post
-            result_qced$impute_table$chrom = as.numeric(result_qced$impute_table$chrom)
-            final_result$qc_impute_table = result_qced$qc_impute_table
-        }
-        if(cond_analysis){
-            conditional_noqc = susie_rss_wrapper(z = z, R = LD_extract, bhat = NULL, shat = NULL, n = n, L = L, max_iter = 1, var_y = var_y)
-            conditional_qced = susie_rss_qc(z = z, ref_panel = ref_panel, R = LD_extract, n = n, L = L, impute = impute_QC, var_y = var_y,
-            rcond = rcond, R2_threshold = R2_threshold, max_L = max_L, l_step = l_step, max_iter = 1)
-            final_result$cond_noqc = conditional_noqc
-            final_result$cond_qced = conditional_qced
-        
+            final_result$qc_only_result = result_qced_only_post
+            
+            result_qced$qc_impute_filter_table$chrom = as.numeric(result_qced$qc_impute_filter_table$chrom)
+            result_qced$qc_impute_nofilter_table$chrom = as.numeric(result_qced$qc_impute_nofilter_table$chrom)
+            final_result$qc_impute_filter_table = result_qced$qc_impute_filter_table
+            final_result$qc_impute_nofilter_table = result_qced$qc_impute_nofilter_table
         }
 
-    }
+        if(cond_analysis){
+            conditional_noqc = susie_rss_wrapper(z = z, R = LD_extract, bhat = NULL, shat = NULL, n = n, L = L, max_iter = 1, var_y = var_y)
+            conditional_noqc_post = susie_post_processor(conditional_noqc, data_x = LD_extract, data_y = list(z = conditional_noqc$z), mode = "susie_rss")
+            
+            conditional_qced = susie_rss_qc(sumstat, ref_panel = ref_panel, R = R, n = n, L = L, impute = impute, var_y = var_y,
+            rcond = rcond, R2_threshold = R2_threshold, max_L = max_L, l_step = l_step, max_iter = 1)
+            var_impute_kept = names(conditional_qced$qc_impute_result$pip)
+            conditional_qced_post = susie_post_processor(conditional_qced$qc_impute_result,, data_x = R[var_impute_kept, var_impute_kept, drop = FALSE], data_y = list(z = conditional_qced$qc_impute_result$z), mode = "susie_rss")
+            
+            final_result$cond_noqc = conditional_noqc_post
+            final_result$cond_qced = conditional_qced_post
+        
+        }
     return(final_result)
 }
 
@@ -255,13 +256,10 @@ susie_rss_pipeline = function(z, R, ref_panel, bhat = NULL, shat = NULL, n, L, v
 #' @importFrom susieR susie_rss
 #' @import dplyr
 #' @export
-susie_rss_qc <- function(z, R, ref_panel, bhat=NULL, shat=NULL, var_y=NULL, n = NULL, L = 10, max_L = 20, l_step = 5, 
+susie_rss_qc <- function(sumstat, R, ref_panel, bhat=NULL, shat=NULL, var_y=NULL, n = NULL, L = 10, max_L = 20, l_step = 5, 
                         lamb = 0.01, rcond = 0.01, R2_threshold = 0.6, minimum_ld = 5, impute = TRUE, output_qc = TRUE, ...) {
-  
+  z = sumstat$z
   ## Input validation for z-scores and reference panel
-  if (length(z) != nrow(ref_panel)) {
-    stop("The length of z-scores does not match the number of rows in the reference panel.")
-  }
   
   if (is.null(names(z))) {
     warning("Z-score names are NULL. Assuming names match reference panel variant_id.")
@@ -271,7 +269,8 @@ susie_rss_qc <- function(z, R, ref_panel, bhat=NULL, shat=NULL, var_y=NULL, n = 
 
   ## Perform initial SuSiE RSS analysis with discrepancy correction
   ## FIXME: should parse ...  directly and use do.call  for function calls
-  result <- susie_rss(z=z, R=R, bhat=bhat, shat=shat, var_y=var_y, n=n, L=max_L,  
+  LD_extract = R[sumstat$variant_id, sumstat$variant_id, drop = FALSE]
+  result <- susie_rss(z=z, R=LD_extract, bhat=bhat, shat=shat, var_y=var_y, n=n, L=max_L,  
                      correct_zR_discrepancy=TRUE, track_fit = TRUE, max_iter = 100)
 
   ## Initialize result_final
@@ -281,16 +280,19 @@ susie_rss_qc <- function(z, R, ref_panel, bhat=NULL, shat=NULL, var_y=NULL, n = 
   if (impute && !is.null(result$zR_outliers) && length(result$zR_outliers) > 0) {
     ## Extracting known z-scores excluding outliers
     outlier = result$zR_outliers
-    known_zscores = ref_panel[-outlier,]
-    known_zscores$z = z[-outlier]
+      
+    known_zscores = sumstat[-outlier,]
     known_zscores = known_zscores %>% arrange(pos)
     
     ## Imputation logic using RAiSS or other methods
-    imputation_result <- raiss(ref_panel, known_zscores, R, lamb = lamb, rcond = rcond, 
+
+    imputation_res <- raiss(ref_panel, known_zscores, R, lamb = lamb, rcond = rcond, 
                                R2_threshold = R2_threshold, minimum_ld = minimum_ld)
-    
+      
+    imputation_result_nofilter = imputation_res$result_nofilter
+    imputation_result_filter = imputation_res$result_filter 
     ## Filter out variants not included in the imputation result
-    filtered_out_variant <- setdiff(ref_panel$variant_id, imputation_result$variant_id)
+    filtered_out_variant <- setdiff(ref_panel$variant_id, imputation_result_filter$variant_id)
     
     ## Update the LD matrix excluding filtered variants
     LD_extract_filtered <- if (length(filtered_out_variant) > 0) {
@@ -301,10 +303,11 @@ susie_rss_qc <- function(z, R, ref_panel, bhat=NULL, shat=NULL, var_y=NULL, n = 
     }
 
     ## Re-run SuSiE RSS with imputed z-scores and updated LD matrix
-    result_final$qc_impute_result <- susie_rss_wrapper(z=imputation_result$z, R=LD_extract_filtered, bhat=bhat, shat=shat, var_y=var_y, 
+    result_final$qc_impute_result <- susie_rss_wrapper(z=imputation_result_filter$z, R=LD_extract_filtered, bhat=bhat, shat=shat, var_y=var_y, 
                                       n=n, L=L, max_L=max_L, l_step=l_step, zR_discrepancy_correction=FALSE, ...)
-    result_final$qc_impute_result$z = imputation_result$z
-    result_final$qc_impute_table = imputation_result
+    result_final$qc_impute_result$z = imputation_result_filter$z
+    result_final$qc_impute_filter_table = imputation_result_filter
+    result_final$qc_impute_nofilter_table = imputation_result_nofilter
   }
     if(output_qc){
     result_final$qc_only_result <- result

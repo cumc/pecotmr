@@ -49,8 +49,9 @@ raiss <- function(ref_panel, known_zscores, LD_matrix, lamb = 0.01, rcond = 0.01
   results <- filter_raiss_output(results, R2_threshold, minimum_ld)
 
   # Merge with known z-scores
-  results <- merge_raiss_df(results, known_zscores)
-
+  result_nofilter <- merge_raiss_df(results$zscores_nofilter, known_zscores) %>% arrange(pos)
+  result_filter <- merge_raiss_df(results$zscores, known_zscores)%>% arrange(pos)
+  results = list(result_nofilter = result_nofilter, result_filter  = result_filter )
   return(results)
 }
 
@@ -151,6 +152,7 @@ filter_raiss_output <- function(zscores, R2_threshold = 0.6, minimum_ld = 5) {
   NSNPs_R2_filt <- sum(zscores$imputation_R2 < R2_threshold)
 
   # Apply filters
+  zscores_nofilter = zscores
   zscores <- zscores[zscores$imputation_R2 > R2_threshold & zscores$ld_score >= minimum_ld, ]
   NSNPs_af_filt <- nrow(zscores)
 
@@ -163,7 +165,7 @@ filter_raiss_output <- function(zscores, R2_threshold = 0.6, minimum_ld = 5) {
   cat("filtered because of ld:", NSNPs_ld_filt, "\n")
   cat("filtered because of R2:", NSNPs_R2_filt, "\n")
   cat("after filter:", NSNPs_af_filt, "\n")
-  return(zscores)
+  return(zscore_list = list(zscores_nofilter =zscores_nofilter, zscores = zscores))
 }
 
 compute_mu <- function(sig_i_t, sig_t_inv, zt) {

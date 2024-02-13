@@ -42,7 +42,7 @@ test_that("Default parameters for raiss work correctly", {
     # TODO - ask Gao about merging on removed columns
     input_data <- generate_dummy_data()
     result <- raiss(input_data$ref_panel, input_data$known_zscores, input_data$LD_matrix)
-    expect_true(is.data.frame(result))
+    expect_true(is.list(result))
 })
 
 test_that("Test Default Parameters for raiss_model", {
@@ -200,13 +200,13 @@ generate_fro_test_data <- function(seed=1) {
 
 test_that("Correct columns are selected in filter_raiss_output", {
     test_data <- generate_fro_test_data()
-    output <- filter_raiss_output(test_data)
+    output <- filter_raiss_output(test_data)$zscores
     expect_true(all(c('variant_id', 'A1', 'A2', 'z', 'Var', 'ld_score') %in% names(output)))
 })
 
 test_that("imputation_R2 is calculated correctly in filter_raiss_output", {
     test_data <- generate_fro_test_data()
-    output <- filter_raiss_output(test_data)
+    output <- filter_raiss_output(test_data)$zscores
     expected_R2 <- 1 - test_data[which(test_data$ld_score >= 5),]$Var
     expect_equal(output$imputation_R2, expected_R2[which(expected_R2 > 0.6)])
 })
@@ -215,7 +215,7 @@ test_that("Filtering is applied correctly in filter_raiss_output", {
     test_data <- generate_fro_test_data()
     R2_threshold <- 0.6
     minimum_ld <- 5
-    output <- filter_raiss_output(test_data, R2_threshold, minimum_ld)
+    output <- filter_raiss_output(test_data, R2_threshold, minimum_ld)$zscores
 
     expect_true(all(output$imputation_R2 > R2_threshold))
     expect_true(all(output$ld_score >= minimum_ld))
@@ -224,7 +224,7 @@ test_that("Filtering is applied correctly in filter_raiss_output", {
 test_that("Function returns the correct subset in filter_raiss_output", {
     test_data <- generate_fro_test_data()
     test_data$imputation_R2 <- 1 - test_data$Var
-    output <- filter_raiss_output(test_data)
+    output <- filter_raiss_output(test_data)$zscores
 
     manual_filter <- test_data[test_data$imputation_R2 > 0.6 & test_data$ld_score >= 5, ]
 
