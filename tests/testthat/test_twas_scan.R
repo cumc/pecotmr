@@ -53,7 +53,7 @@ generate_mock_data <- function(seed=1, num_snps=100, empty_sets = F, gwas_mismat
 
   extract_variants_objs <- variants_id_all
 
-  gwas_sumstats_db$variant_allele_flip <- if (!gwas_mismatch) variants_id_all else paste(
+  gwas_sumstats_db$variant_id <- if (!gwas_mismatch) variants_id_all else paste(
     12, gwas_sumstats_db$pos, gwas_sumstats_db$A1.sumstats, gwas_sumstats_db$A2.sumstats, sep = ":")
 
   colnames(LD_matrix) <- rownames(LD_matrix) <- if (!LD_mismatch) colnames(LD_matrix) else paste(
@@ -81,9 +81,10 @@ test_that("twas_analysis raises error if empty gwas",{
     "No GWAS summary statistics found for the specified variants.")
 })
 
-test_that("twas_analysis raises error if empty LD_matrix",{
-  data <- generate_mock_data(gwas_mismatch = F, LD_mismatch = T)
+test_that("twas_analysis raises error if specified variants are not in LD_matrix", {
+  data <- generate_mock_data(gwas_mismatch = FALSE, LD_mismatch = TRUE)
   expect_error(
-    twas_analysis(data$weights_all_matrix, data$gwas_sumstats_db, data$LD_matrix, data$extract_variants_objs),
-    "LD matrix subset extraction failed.")
+    twas_analysis(data$weights_matrix, data$gwas_sumstats_db, data$LD_matrix, data$extract_variants_objs),
+    "None of the specified variants are present in the LD matrix."
+  )
 })

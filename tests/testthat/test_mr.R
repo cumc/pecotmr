@@ -1,53 +1,49 @@
 context("mr")
 library(tidyverse)
 
-generate_format_mock_data <- function(seed = 1, num_genes = 5, empty_sets = F) {
-    target_genes <- data.frame(
-        chr = rep(22, num_genes),
-        gene_id = paste0("ENSG", 1:num_genes),
-        gene_name = paste0("Gene", 1:num_genes))
-    
-    susie_path <- data.frame(
-        ID = paste0("Gene", 1:num_genes),
-        path = paste0("a/b/c/", 1:num_genes))
-    
-    susie_obj <- list()
-    for (i in 1:nrow(susie_path)) {
-        susie_obj[[i]] <- list(list(
-                sets = list(
-                    cs = if(empty_sets) NULL else list(one = 1, two = 2)
-                ),
-                top_loci = data.frame(
-                    variant_id = paste0("chr22:", 1:num_genes),
-                    bhat = rnorm(num_genes),
-                    sbhat = runif(num_genes),
-                    pip = runif(num_genes),
-                    cs_index_primary = sample(1:2, num_genes, replace = TRUE),
-                    cs_index_secondary = sample(1:2, num_genes, replace = TRUE))))
-    }
-    
-    weights_file_path <- data.frame(
-        ID = paste0("Gene", 1:num_genes),
-        path = paste0("a/b/c/", 1:num_genes))
-    
-    weights_obj <- lapply(
-        weights_file_path$ID,
-        function(x) { list(
-        outcome_QC = data.frame(
-            variant_allele_flip = paste0("chr22:", 1:num_genes),
-            beta = rnorm(num_genes),
-            se = runif(num_genes))
-    )})
-
-    return(
-        list(
-            target_genes = target_genes,
-            susie_path = susie_path,
-            susie_obj = susie_obj,
-            weights_file_path = weights_file_path,
-            weights_obj = weights_obj
-        )
+# Define a function to randomly generate ref:alt pairs
+library(testthat)
+generate_format_mock_data <- function(seed = 1, num_variants = 10, empty_sets = F) {
+generate_ref_alt <- function(num_variants){
+  ref_alleles <- c("A", "T", "G", "C")
+  alt_alleles <- c("A", "T", "G", "C")
+  pairs <- paste0(sample(ref_alleles, num_variants, replace = TRUE), ":", sample(alt_alleles, num_variants, replace = TRUE))
+  # Ensure that ref is not the same as alt
+  while(any(sapply(strsplit(pairs, ":"), function(x) x[1] == x[2]))) {
+    pairs <- paste0(sample(ref_alleles, num_variants, replace = TRUE), ":", sample(alt_alleles, num_variants, replace = TRUE))
+  }
+  return(pairs)
+}
+top_loci_mock <- data.frame(
+  variant_id = paste0("chr1:", 1:num_variants, ":", generate_ref_alt(num_variants)),
+  betahat = rnorm(num_variants),
+  sebetahat = runif(num_variants, 0.05, 0.1),
+  #maf = runif(n_entries, 0.1, 0.5),
+  pip = runif(num_variants, 0, 1),
+  cs_coverage_0.95 = sample(0:2, num_variants, replace = TRUE),
+  cs_coverage_0.7 = sample(0:2, num_variants, replace = TRUE),
+  cs_coverage_0.5 = sample(0:2, num_variants, replace = TRUE)
+)
+susie_result_mock <- list(
+  susie_results = list(
+    condition1 = list(
+      top_loci = top_loci_mock,
+      region_info = list(name = "Gene1")
     )
+  )
+) 
+gwas_sumstats_db_mock <- data.frame(
+  variant_id = paste0("chr1:", 1:num_variants, ":", generate_ref_alt(num_variants)),
+  beta = rnorm(num_variants),
+  se = runif(num_variants, 0.05, 0.1)
+)
+return(
+        list(
+            susie_result = susie_result_mock,
+            gwas_sumstats_db = gwas_sumstats_db_mock
+          )
+    )
+
 }
 
 
@@ -74,95 +70,119 @@ test_that("calc_I2 works with dummy data",{
     expect_equal(calc_I2(10, c()), 1.1)
 })
 
-test_that("twas_mr_format_input functions with normal parameters",{
-    input_data <- generate_format_mock_data()
-    input_data$susie_path$path <- unlist(lapply(
-    input_data$susie_path$ID, function(x) {
-        gsub("//", "/", tempfile(pattern = paste0(x, "_susie"), tmpdir = tempdir(), fileext = ".RDS"))
-    }))
-    input_data$weights_file_path$path <- unlist(lapply(
-    input_data$weights_file_path$ID, function(x) {
-        gsub("//", "/", tempfile(pattern = paste0(x, "_weights"), tmpdir = tempdir(), fileext = ".RDS"))
-    }))
-    for (i in 1:length(input_data$susie_path$path)) {
-        saveRDS(input_data$susie_obj[[i]], file=input_data$susie_path$path[i])
-        saveRDS(input_data$weights_obj[[i]], file=input_data$weights_file_path$path[i])}
-    res <- twas_mr_format_input(input_data$target_genes, input_data$susie_path, input_data$weights_file_path)
-    expect_true(all(c("snp", "bhat_x", "sbhat_x", "pip", "cs", "X_ID", "gene_id", "bhat_y", "sbhat_y") %in% names(res)))
-    file.remove(input_data$susie_path$path)
-    file.remove(input_data$weights_file_path$path)
-})
+test_that("mr_format functions with normal parameters", {
+  input_data <- generate_format_mock_data()  
 
-test_that("twas_mr_format_input returns null with empty target genes",{
-    input_data <- generate_format_mock_data()
-    input_data$susie_path$path <- unlist(lapply(
-    input_data$susie_path$ID, function(x) {
-        gsub("//", "/", tempfile(pattern = paste0(x, "_susie"), tmpdir = tempdir(), fileext = ".RDS"))
-    }))
-    input_data$weights_file_path$path <- unlist(lapply(
-    input_data$weights_file_path$ID, function(x) {
-        gsub("//", "/", tempfile(pattern = paste0(x, "_weights"), tmpdir = tempdir(), fileext = ".RDS"))
-    }))
-    for (i in 1:length(input_data$susie_path$path)) {
-        saveRDS(input_data$susie_obj[[i]], file=input_data$susie_path$path[i])
-        saveRDS(input_data$weights_obj[[i]], file=input_data$weights_file_path$path[i])}
-    expect_error(twas_mr_format_input(c(), input_data$susie_path, input_data$weights_file_path))
-    file.remove(input_data$susie_path$path)
-    file.remove(input_data$weights_file_path$path)
-})
+  condition <- "condition1"
+  coverage <- "cs_coverage_0.95"
+  allele_qc <- TRUE
+  
+  res <- mr_format(input_data$susie_result, condition, input_data$gwas_sumstats_db, coverage, allele_qc)
+   expect_true(all(c("gene_name", "variant_id", "bhat_x", "sbhat_x", "cs", "pip", "bhat_y", "sbhat_y") %in% names(res)))
+ })
+test_that("mr_format returns a dataframe with NAs for zero coverage in top_loci", {
+  # Assume generate_format_mock_data generates mock data including susie_result with top_loci
+  # and gwas_sumstats_db as per the structure required by the mr_format function.
+  input_data <- generate_format_mock_data()
 
-test_that("twas_mr_format_input returns null with empty susie cs",{
-    input_data <- generate_format_mock_data(empty_sets = T)
-    input_data$susie_path$path <- unlist(lapply(
-    input_data$susie_path$ID, function(x) {
-        gsub("//", "/", tempfile(pattern = paste0(x, "_susie"), tmpdir = tempdir(), fileext = ".RDS"))
-    }))
-    input_data$weights_file_path$path <- unlist(lapply(
-    input_data$weights_file_path$ID, function(x) {
-        gsub("//", "/", tempfile(pattern = paste0(x, "_weights"), tmpdir = tempdir(), fileext = ".RDS"))
-    }))
-    for (i in 1:length(input_data$susie_path$path)) {
-        saveRDS(input_data$susie_obj[[i]], file=input_data$susie_path$path[i])
-        saveRDS(input_data$weights_obj[[i]], file=input_data$weights_file_path$path[i])}
-    res <- twas_mr_format_input(input_data$target_genes, input_data$susie_path, input_data$weights_file_path)
-    expect_equal(res, NULL)
-    file.remove(input_data$susie_path$path)
-    file.remove(input_data$weights_file_path$path)
-})
+  condition <- "condition1"
+  coverage <- "cs_coverage_0.95"
+  allele_qc <- TRUE
 
-generate_finemr_mock_input <- function(seed=1) {
-    set.seed(seed)
-    tibble(
-        X_ID = rep(c("X1", "X2"), each = 5),
-        cs = rep(1:5, 2),
-        gene_id = rep(c("gene1", "gene2"), each = 5),
-        snp = sample(c("SNP1", "SNP2", "SNP3", "SNP4", "SNP5"), 10, replace = TRUE),
-        bhat_y = rnorm(10),
-        sbhat_y = runif(10, 0.1, 1),
-        bhat_x = rnorm(10),
-        sbhat_x = runif(10, 0.1, 1),
-        pip = runif(10, 0, 1)
-    )
-}
-
-# Test cases
-test_that("fine_mr returns expected structure and types", {
-  mock_input <- generate_finemr_mock_input()
-  result <- fine_mr(mock_input, 0.5)
-
-  # Check if the result is a data frame
+  # Create a mock susie_result with zero coverage in top_loci
+  susie_result_mock <- input_data$susie_result
+  susie_result_mock[["susie_results"]][[condition]][["top_loci"]][[coverage]] <- rep(0, nrow(susie_result_mock[["susie_results"]][[condition]][["top_loci"]]))
+  
+  # Run the mr_format function with the mock data where coverage is zero
+  result <- mr_format(susie_result_mock, condition, input_data$gwas_sumstats_db, coverage = coverage, allele_qc = allele_qc)
+  
+  # Check if the result is a dataframe with the expected NAs
   expect_true(is.data.frame(result))
+  expect_true(all(is.na(result[,-1])))
+})                   
+# Test whether function handles non-existent top_loci
+test_that("mr_format returns a dataframe with NAs with non-existent top_loci", {
+  input_data <- generate_format_mock_data()
 
-  # Check for expected columns
-  expected_cols <- c("X_ID", "num_CS", "num_IV", "cpip", "gene_id", "meta_eff",
-                     "se_meta_eff", "meta_pval", "meta_qval", "Q", "Q_pval", "I2")
-  expect_true(all(expected_cols %in% names(result)))
+  condition <- "condition1"
+  coverage <- "cs_coverage_0.95"
+  allele_qc <- TRUE
 
-  # Check for data types
-  expect_true(is.numeric(result$meta_eff))
-  expect_true(is.numeric(result$Q_pval))
-  # ... other column type checks
+ 
+  # Create a mock susie_result with zero coverage in top_loci
+  susie_result_mock <- input_data$susie_result
+  susie_result_mock[["susie_results"]][[condition]][["top_loci"]] <- list()
 
-  # Check for expected values (example)
-  expect_true(all(result$cpip >= 0.5))
+  
+  # Run the mr_format function with the mock data where coverage is zero
+  result <- mr_format(susie_result_mock, condition, input_data$gwas_sumstats_db, coverage = coverage, allele_qc = allele_qc)
+
+  # Check if the result is a dataframe with the expected NAs
+  expect_true(is.data.frame(result))
+  expect_true(all(is.na(result[,-1])))
 })
+
+generate_mock_mr_formatted_input <- function(num_variants = NULL, generate_full_dataset = TRUE) {
+  generate_ref_alt <- function(num_variants){
+  ref_alleles <- c("A", "T", "G", "C")
+  alt_alleles <- c("A", "T", "G", "C")
+  pairs <- paste0(sample(ref_alleles, num_variants, replace = TRUE), ":", sample(alt_alleles, num_variants, replace = TRUE))
+  # Ensure that ref is not the same as alt
+  while(any(sapply(strsplit(pairs, ":"), function(x) x[1] == x[2]))) {
+    pairs <- paste0(sample(ref_alleles, num_variants, replace = TRUE), ":", sample(alt_alleles, num_variants, replace = TRUE))
+  }
+  return(pairs)
+  }
+  if (generate_full_dataset) {
+    data.frame(
+      gene_name = rep("Gene1", num_variants),
+      #cs = sample(1:2, num_variants, replace = TRUE),
+      cs = as.integer(rep(1,num_variants)),
+      variant_id = paste0("1:", 1:num_variants, ":", generate_ref_alt(num_variants)),
+      bhat_x = rnorm(num_variants),
+      sbhat_x = runif(num_variants, 0.1, 0.2),
+      bhat_y = rnorm(num_variants),
+      sbhat_y = runif(num_variants, 0.1, 0.2),
+      pip = runif(num_variants, 0, 1),
+      stringsAsFactors = FALSE
+    )
+  } else {
+    data.frame(
+     gene_name = "Gene1",
+     variant_id = as.character(NA),
+     bhat_x = as.numeric(NA),
+     sbhat_x = as.numeric(NA),
+     cs = as.numeric(NA),
+     pip = as.numeric(NA),
+     bhat_y = as.numeric(NA),
+     sbhat_y = as.numeric(NA),
+     stringsAsFactors = FALSE # Optional, to prevent factors
+     )
+    }
+  }
+# Test 1: normal input data
+test_that("mr_analysis returns expected output with normal inputs", {
+  input_data <- generate_mock_mr_formatted_input(num_variants = 10, generate_full_dataset = TRUE)
+  result <- mr_analysis(input_data, cpip_cutoff=0.5)
+  expect_true(is.data.frame(result))
+  expect_gt(nrow(result), 0)
+  expect_true(all(c("gene_name", "num_CS", "num_IV", "cpip", "meta_eff", "se_meta_eff", "meta_pval", "Q", "Q_pval", "I2") %in% names(result)))
+})
+# Test 2: All NA values except gene_name
+test_that("mr_analysis returns null output for all NA input except gene_name", {
+  input_data <- generate_mock_mr_formatted_input(generate_full_dataset = FALSE)
+  result <- mr_analysis(input_data, cpip_cutoff=0.5)
+  expect_true(is.data.frame(result))
+  expect_equal(nrow(result), 1)
+  expect_true(all(is.na(result[,-1])))
+})
+# Test 3: No significant cpip values
+test_that("mr_analysis handles no significant cpip values correctly", {
+  input_data <- generate_mock_mr_formatted_input(num_variants = 5, generate_full_dataset = TRUE)
+  input_data$pip <- runif(nrow(input_data), 0, 0.1) # Setting low pip values to ensure cpip < cpip_cutoff
+  result <- mr_analysis(input_data, cpip_cutoff = 0.5)
+  expect_true(is.data.frame(result))
+  #Expecting an empty or null output depending on how you handle this case
+  expect_equal(nrow(result), 1)
+  expect_true(all(is.na(result[,-1])))
+})     

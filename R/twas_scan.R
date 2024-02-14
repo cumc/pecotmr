@@ -4,29 +4,32 @@
 #' and LD matrix. It extracts the necessary GWAS summary statistics and LD matrix based on the
 #' specified variants and computes the z-score and p-value for each gene.
 #'
-#' @param weights_all_matrix A matrix containing weights for all methods.
+#' @param weights_matrix A matrix containing weights for all methods.
 #' @param gwas_sumstats_db A data frame containing the GWAS summary statistics.
 #' @param LD_matrix A matrix representing linkage disequilibrium between variants.
 #' @param extract_variants_objs A vector of variant identifiers to extract from the GWAS and LD matrix.
 #'
 #' @return A list with TWAS z-scores and p-values across four methods for each gene.
 #' @export
-twas_analysis <- function(weights_all_matrix, gwas_sumstats_db, LD_matrix, extract_variants_objs) {
+twas_analysis <- function(weights_matrix, gwas_sumstats_db, LD_matrix, extract_variants_objs) {
+    #
     # Extract gwas_sumstats
-    gwas_sumstats_subset <- gwas_sumstats_db[match(extract_variants_objs,gwas_sumstats_db$variant_allele_flip, nomatch = 0),]
+    gwas_sumstats_subset <- gwas_sumstats_db[match(extract_variants_objs,gwas_sumstats_db$variant_id),]
     # Validate that the GWAS subset is not empty
-    if (nrow(gwas_sumstats_subset) == 0) {
+    if (nrow(gwas_sumstats_subset) == 0| all(is.na(gwas_sumstats_subset))) {
     stop("No GWAS summary statistics found for the specified variants.")
     }
-    # Extract LD_matrix
-    valid_extract_variants_objs <- extract_variants_objs[
-        extract_variants_objs %in% colnames(LD_matrix)]
-    if (length(valid_extract_variants_objs) == 0) {
-     stop("LD matrix subset extraction failed. Specified variant identifiers not found in LD matrix.")
+    #Check if extract_variants_objs are in the rownames of LD_matrix
+    valid_indices <- extract_variants_objs %in% rownames(LD_matrix)
+    if (!any(valid_indices)) {
+        stop("None of the specified variants are present in the LD matrix.")
     }
-    LD_matrix_subset <- LD_matrix[valid_extract_variants_objs,valid_extract_variants_objs]
+    # Extract only the valid indices from extract_variants_objs
+    valid_variants_objs <- extract_variants_objs[valid_indices]
+    # Extract LD_matrix subset using valid indices
+    LD_matrix_subset <- LD_matrix[valid_variants_objs, valid_variants_objs]
     # Caculate the z score and pvalue of each gene
-    twas_z_pval <- apply(weights_all_matrix, 2, 
+    twas_z_pval <- apply(as.matrix(weights_matrix), 2, 
                      function(x) twas_z(x, gwas_sumstats_subset$z, R = LD_matrix_subset))
     return(twas_z_pval)
 }
@@ -82,8 +85,10 @@ load_twas_weights <- function(weight_db_files, conditions = NULL,
    extract_variants_and_susie_results <- function(combined_all_data, conditions){
         combined_susie_result_trimmed <- lapply(conditions, function(condition) {
         list(
-             variant_names = get_nested_element(combined_all_data,c(condition,"variant_names")),
-             susie_result_trimmed = get_nested_element(combined_all_data, c(condition,"susie_result_trimmed"))
+             variant_names = get_nested_element(combined_all_data,c(condition,"preset_variants_result","variant_names")),
+             susie_result_trimmed = get_nested_element(combined_all_data, c(condition,"preset_variants_result","susie_result_trimmed")),
+             top_loci = get_nested_element(combined_all_data, c(condition,"preset_variants_result","top_loci")),
+             region_info = get_nested_element(combined_all_data, c(condition,"region_info"))
             )
          })
         names(combined_susie_result_trimmed) = conditions                                           
@@ -111,6 +116,7 @@ load_twas_weights <- function(weight_db_files, conditions = NULL,
       }
       existing_colnames <- c(existing_colnames, new_colnames)
 
+      #consolidated_list[[i]] <- matrix(as.numeric(temp_matrix), nrow = nrow(temp_matrix), byrow = TRUE)
       consolidated_list[[i]] <- temp_matrix
       colnames(consolidated_list[[i]]) <- existing_colnames
     }
@@ -123,8 +129,10 @@ load_twas_weights <- function(weight_db_files, conditions = NULL,
     if (is.null(conditions)) {
     conditions <- names(combined_all_data)
     }
-    combined_weights_by_condition <- lapply(conditions, function(condition) {                                         
-    sapply(get_nested_element(combined_all_data,c(condition,twas_weights_table)), cbind)
+    combined_weights_by_condition <- lapply(conditions, function(condition) {
+      temp_list <- get_nested_element(combined_all_data,c(condition,twas_weights_table))
+      temp_list <- temp_list[!names(temp_list)%in%"variant_names"]
+      sapply(temp_list, cbind)
     })
     names(combined_weights_by_condition) <- conditions
     if (is.null(variable_name_obj)) {
@@ -137,7 +145,7 @@ load_twas_weights <- function(weight_db_files, conditions = NULL,
     } else {
       # Processing with variable_name_obj: Align and merge data, fill missing with zeros
       variable_objs <- lapply(conditions, function(condition) {
-      get_nested_element(combined_all_data,c(condition,variable_name_obj))})
+      get_nested_element(combined_all_data,c(condition,twas_weights_table,variable_name_obj))})
       weights <- align_and_merge(combined_weights_by_condition, variable_objs)
     }
     names(weights) <- conditions                        
@@ -149,6 +157,6 @@ load_twas_weights <- function(weight_db_files, conditions = NULL,
     combined_all_data <- load_and_validate_data(weight_db_files, conditions, variable_name_obj)
     combined_susie_result_trimmed <- extract_variants_and_susie_results(combined_all_data, conditions)
     weights <- consolidate_weights_list(combined_all_data, conditions, variable_name_obj,twas_weights_table)
-    return(list(combined_susie_result_trimmed = combined_susie_result_trimmed, weights = weights))
+    return(list(susie_results = combined_susie_result_trimmed, weights = weights))
   }, silent = TRUE)
 }

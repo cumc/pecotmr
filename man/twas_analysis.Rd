@@ -5,14 +5,14 @@
 \title{TWAS Analysis}
 \usage{
 twas_analysis(
-  weights_all_matrix,
+  weights_matrix,
   gwas_sumstats_db,
   LD_matrix,
   extract_variants_objs
 )
 }
 \arguments{
-\item{weights_all_matrix}{A matrix containing weights for all methods.}
+\item{weights_matrix}{A matrix containing weights for all methods.}
 
 \item{gwas_sumstats_db}{A data frame containing the GWAS summary statistics.}
 
