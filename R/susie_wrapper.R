@@ -181,16 +181,28 @@ rss_input_preprocess = function(sumstats, LD_data){
 }
 
 
-susie_rss_pipeline = function(sumstat, R, ref_panel, bhat = NULL, shat = NULL, n, L, var_y, QC = TRUE, impute = TRUE, cond_analysis = TRUE, rcond, R2_threshold, max_L, l_step, minimum_ld){
+susie_rss_pipeline = function(sumstat, R, ref_panel, n, L, var_y, QC = TRUE, impute = TRUE, bayesian_conditional_analysis = TRUE, rcond, R2_threshold, max_L, l_step, minimum_ld){
+    if(!is.null(sumstat$z)){
+        z = sumstat$z 
+        bhat = NULL
+        shat = NULL
+    }else if ((!is.null(sumstat$beta)) && (!is.null(sumstat$se))){
+        z = NULL
+        bhat = sumstat$beta
+        shat = sumstat$se
+    }else{
+        stop("Sumstat should have z or (bhat and shat)")
+    }
+    
         final_result = list()
-        z = sumstat$z
+
         LD_extract = R[sumstat$variant_id, sumstat$variant_id, drop = FALSE]
-        single_effect_res = susie_rss_wrapper(z = z, R = LD_extract, bhat = NULL, shat = NULL, L = 1, n = n, var_y = var_y)
-        single_effect_post = susie_post_processor(single_effect_res, data_x = LD_extract, data_y = list(z), mode = "susie_rss")
+        single_effect_res = susie_rss_wrapper(z = z, R = LD_extract, bhat = bhat, shat = shat, L = 1, n = n, var_y = var_y)
+        single_effect_post = susie_post_processor(single_effect_res, data_x = LD_extract, data_y = list(z = z), mode = "susie_rss")
         final_result$single_effect_result = single_effect_post
     
-        result_noqc = susie_rss_wrapper(z = z, R = LD_extract, bhat = NULL, shat = NULL, n = n, L = L, var_y = var_y)
-        result_noqc_post = susie_post_processor(result_noqc, data_x = LD_extract, data_y = list(z), mode = "susie_rss")
+        result_noqc = susie_rss_wrapper(z = z, R = LD_extract, bhat = bhat, shat = shat, n = n, L = L, var_y = var_y)
+        result_noqc_post = susie_post_processor(result_noqc, data_x = LD_extract, data_y = list(z = z), mode = "susie_rss")
         final_result$noqc_result = result_noqc_post
 
 
@@ -201,28 +213,35 @@ susie_rss_pipeline = function(sumstat, R, ref_panel, bhat = NULL, shat = NULL, n
             
             result_qced_impute_post = susie_post_processor(result_qced$qc_impute_result, data_x = R[var_impute_kept, var_impute_kept, drop = FALSE], data_y = list(z = result_qced$qc_impute_result$z), mode = "susie_rss")
 
-            result_qced_only_post = susie_post_processor(result_qced$qc_only_result, data_x = LD_extract, data_y = list(z = result_qced$qc_only_result$z), mode = "susie_rss")
+            result_qced_only_post = susie_post_processor(result_qced$qc_only_result, data_x = LD_extract, data_y = list(z = z), mode = "susie_rss")
             
             final_result$qc_impute_result = result_qced_impute_post
             final_result$qc_only_result = result_qced_only_post
             
             result_qced$qc_impute_filter_table$chrom = as.numeric(result_qced$qc_impute_filter_table$chrom)
             result_qced$qc_impute_nofilter_table$chrom = as.numeric(result_qced$qc_impute_nofilter_table$chrom)
-            final_result$qc_impute_filter_table = result_qced$qc_impute_filter_table
-            final_result$qc_impute_nofilter_table = result_qced$qc_impute_nofilter_table
+            final_result$qc_impute_filter_table = result_qced$qc_impute_filter_table %>% select(-beta, -se)
+            final_result$qc_impute_nofilter_table = result_qced$qc_impute_nofilter_table %>% select(-beta, -se)
         }
 
-        if(cond_analysis){
-            conditional_noqc = susie_rss_wrapper(z = z, R = LD_extract, bhat = NULL, shat = NULL, n = n, L = L, max_iter = 1, var_y = var_y)
-            conditional_noqc_post = susie_post_processor(conditional_noqc, data_x = LD_extract, data_y = list(z = conditional_noqc$z), mode = "susie_rss")
-            
-            conditional_qced = susie_rss_qc(sumstat, ref_panel = ref_panel, R = R, n = n, L = L, impute = impute, var_y = var_y,
-            rcond = rcond, R2_threshold = R2_threshold, max_L = max_L, l_step = l_step, max_iter = 1)
-            var_impute_kept = names(conditional_qced$qc_impute_result$pip)
-            conditional_qced_post = susie_post_processor(conditional_qced$qc_impute_result,, data_x = R[var_impute_kept, var_impute_kept, drop = FALSE], data_y = list(z = conditional_qced$qc_impute_result$z), mode = "susie_rss")
-            
+        if(bayesian_conditional_analysis){
+            conditional_noqc = susie_rss_wrapper(z = z, R = LD_extract, bhat = bhat, shat = shat, n = n, L = L, max_iter = 1, var_y = var_y)
+            conditional_noqc_post = susie_post_processor(conditional_noqc, data_x = LD_extract, data_y = list(z = z), mode = "susie_rss")
             final_result$cond_noqc = conditional_noqc_post
-            final_result$cond_qced = conditional_qced_post
+            if(QC){
+                conditional_qc_only = susie_rss_wrapper(z = z, R = LD_extract, bhat = bhat, shat =shat, n = n, L = L, max_iter = 1, var_y = var_y)
+                conditional_qc_only_post = susie_post_processor(conditional_qced_impute, data_x = LD_extract, data_y = list(z = z), mode = "susie_rss")
+                
+                if(impute){
+                conditional_qced_impute = susie_rss_wrapper(z = result_qced$qc_impute_result$z, R = R[var_impute_kept, var_impute_kept, drop = FALSE], bhat = bhat, shat =shat, n = n, L = L, max_iter = 1, var_y = var_y)
+                conditional_qced_impute_post = susie_post_processor(conditional_qced_impute, data_x = R[var_impute_kept, var_impute_kept, drop = FALSE], data_y = list(z = result_qced$qc_impute_result$z), mode = "susie_rss")
+                final_result$cond_qc_impute = conditional_qced_impute_post
+                
+                }
+                
+                final_result$cond_qc_only =  conditional_qc_only_post
+            }
+            
         
         }
     return(final_result)
