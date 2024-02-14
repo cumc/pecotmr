@@ -18,22 +18,39 @@ calc_I2 = function(Q, Est) {
 #' @param allele_qc Optional. A logical value indicating whether allele qc should be performed on the variants. When TRUE, allele qc are applied to the variants based on the GWAS summary statistics database ('gwas_sumstats_db').
 #' @return A data frame formatted for MR analysis or NULL if cs_list is empty.
 #' @export
-mr_format<- function(susie_result, condition, gwas_sumstats_db, sets = "sets", coverage = "coverage_0.95", allele_qc = TRUE) {
-    if(sets == "sets"){
-        cs_list = get_nested_element(susie_result,c("susie_results",condition, "susie_result_trimmed", sets))[["cs"]]
-    } else {
-        cs_list = get_nested_element(susie_result,c("susie_results",condition, "susie_result_trimmed", sets, coverage,"sets"))[["cs"]]
+mr_format<- function(susie_result, condition, gwas_sumstats_db, coverage = "cs_coverage_0.95", allele_qc = TRUE) {
+    # Create null mr_format_input
+    create_null_mr_input <- function(gene_name) {
+     mr_format_input <- data.frame(
+                                gene_name = gene_name,
+                                variant_id = as.character(rep(NA,length(gene_name))),
+                                bhat_x = as.numeric(rep(NA,length(gene_name))),
+                                sbhat_x = as.numeric(rep(NA,length(gene_name))),
+                                cs = as.numeric(rep(NA,length(gene_name))),
+                                pip = as.numeric(rep(NA,length(gene_name))),
+                                bhat_y = as.numeric(rep(NA,length(gene_name))),
+                                sbhat_y = as.numeric(rep(NA,length(gene_name))),
+                                stringsAsFactors = FALSE # Optional, to prevent factors
+                              )
     }
-    if (!is.null(names(cs_list))){
-         coverage_column_name <- paste0("cs_",coverage,sep = "")
-         susie_cs_result_formatted <- get_nested_element(susie_result,c("susie_results",condition, "top_loci"))%>%
-                                      mutate(gene_name = get_nested_element(susie_result,c("susie_results",condition,"region_info","name")))%>%
-                                      filter(coverage_column_name >= 1)%>%
+    gene_name <- get_nested_element(susie_result,c("susie_results",condition,"region_info","name"))
+    # Attempt to retrieve top_loci; if not found, return NULL or an empty data frame
+    top_loci <- tryCatch({
+        get_nested_element(susie_result, c("susie_results", condition, "top_loci"))
+      }, error = function() { # No parameter here
+       message("top_loci does not exist for the specified condition in susie_result.")
+       return(NULL)
+     })
+    if (is.data.frame(top_loci)){
+       if (all(unique(get_nested_element(top_loci,coverage))!=0)){
+            susie_cs_result_formatted <- top_loci%>%
+                                      mutate(gene_name = gene_name)%>%
+                                      filter(coverage >= 1)%>%
                                       mutate(variant = ifelse(grepl("^chr[0-9]+:", variant_id), gsub("^chr", "", variant_id), variant_id))%>%
-                                      select(gene_name, variant, betahat, sebetahat,all_of(coverage_column_name),pip)%>%
-                                      rename("bhat_x"="betahat","sbhat_x"="sebetahat","cs" = all_of(coverage_column_name))
+                                      select(gene_name, variant, betahat, sebetahat, all_of(coverage),pip)%>%
+                                      rename("bhat_x"="betahat","sbhat_x"="sebetahat","cs" = coverage)
         if(allele_qc == TRUE){
-            susie_cs_result_formatted <- allele_qc(susie_cs_result_formatted$variant, gwas_sumstats_db$variant_id,susie_cs_result_formatted,c("bhat_x","sbhat_x"))$target_data_qced[,c("gene_name","variant_id","bhat_x","sbhat_x","cs","pip")]
+            susie_cs_result_formatted <- allele_qc(susie_cs_result_formatted$variant, gwas_sumstats_db$variant_id, susie_cs_result_formatted,c("bhat_x","sbhat_x"))$target_data_qced[,c("gene_name","variant_id","bhat_x","sbhat_x","cs","pip")]
         }
             
         susie_cs_gwas_variants_merge <- intersect(susie_cs_result_formatted$variant, gwas_sumstats_db$variant_id)
@@ -41,13 +58,15 @@ mr_format<- function(susie_result, condition, gwas_sumstats_db, sets = "sets", c
         mr_format_input <- susie_cs_result_formatted[match(susie_cs_gwas_variants_merge, susie_cs_result_formatted$variant),] %>%
                              cbind(., gwas_sumstats_db[match(susie_cs_gwas_variants_merge, gwas_sumstats_db$variant_id), ] %>% 
                              select(beta, se) %>% 
-                             rename("bhat_y" = "beta", "sbhat_y" = "se"))
-        return(mr_format_input)                                      
+                             rename("bhat_y" = "beta", "sbhat_y" = "se"))                                      
         
-    } else {
-        gene_name = gene_name = get_nested_element(susie_result,c("susie_results",condition,"region_info","name"))
-        return(NULL)
-    } 
+        } else {
+        mr_format_input <- create_null_mr_input(gene_name)
+        }
+     } else {
+        mr_format_input <- create_null_mr_input(gene_name)
+     }
+   return(mr_format_input)
 }
 
 #' Mendelian Randomization (MR)
@@ -62,21 +81,34 @@ mr_format<- function(susie_result, condition, gwas_sumstats_db, sets = "sets", c
 #' @importFrom stats pnorm
 #' @export
 mr_analysis <- function(mr_formatted_input, cpip_cutoff=0.5) {
-    if(is.null(mr_formatted_input)){
-       output<- NULL
-    } else {
-       output = mr_formatted_input %>%
+    create_null_output <- function(gene_name) {
+         data.frame(
+                    gene_name = gene_name,
+                    num_CS = as.integer(rep(NA,length(gene_name))),
+                    num_IV = as.integer(rep(NA,length(gene_name))),
+                    cpip = as.numeric(rep(NA,length(gene_name))),
+                    meta_eff = as.numeric(rep(NA,length(gene_name))),
+                    se_meta_eff = as.numeric(rep(NA,length(gene_name))),
+                    meta_pval = as.numeric(rep(NA,length(gene_name))),
+                    Q = as.numeric(rep(NA,length(gene_name))),
+                    Q_pval = as.numeric(rep(NA,length(gene_name))),
+                    I2 = as.numeric(rep(NA,length(gene_name))),
+                    stringsAsFactors = FALSE
+                   )
+    }
+    if(all(is.na(mr_formatted_input[,-1]))){
+        return(create_null_output(unique(mr_formatted_input$gene_name)))
+    }
+        output = mr_formatted_input %>%
                 mutate(
                        bhat_x = bhat_x/sbhat_x,
                        sbhat_x = 1) %>%
                 group_by(gene_name,cs) %>%
                 mutate(cpip = sum(pip)) %>%
                 filter(cpip >= cpip_cutoff) # Cumulative pip greater than a user defined cumulative pip threshold
-    }
-    if(dim(output)[1]==0){
-        output<- NULL
-    } else {
-        output = output %>% 
+    
+    if(dim(output)[1]!=0){
+          output = output %>% 
                 group_by(gene_name, cs) %>%
                 mutate(
                       beta_yx = bhat_y/bhat_x,
@@ -110,6 +142,8 @@ mr_analysis <- function(mr_formatted_input, cpip_cutoff=0.5) {
                     Q_pval = round(Q_pval,3),
                     I2 = round(I2, 3)) %>%arrange(meta_pval)%>%
                 select(gene_name, num_CS, num_IV, cpip, meta_eff, se_meta_eff, meta_pval, Q, Q_pval,I2)
+    } else {
+      return(create_null_output(unique(mr_formatted_input$gene_name)))
     }
     output
 }

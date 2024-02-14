@@ -243,7 +243,8 @@ susie_rss_qc <- function(z, R, ref_panel, bhat=NULL, shat=NULL, var_y=NULL, n = 
 #' @export
 susie_post_processor <- function(susie_output, data_x, data_y, X_scalar, y_scalar, maf, 
                                 secondary_coverage = c(0.5, 0.7), signal_cutoff = 0.1, 
-                                other_quantities = NULL, prior_eff_tol = 1e-9, 
+                                other_quantities = NULL, prior_eff_tol = 1e-9, min_abs_corr= 0.5, 
+                                median_abs_corr = 0.8,
                                 mode = c("susie", "susie_rss")) {
     mode <- match.arg(mode)
     get_cs_index <- function(snps_idx, susie_cs) {
@@ -265,11 +266,11 @@ susie_post_processor <- function(susie_output, data_x, data_y, X_scalar, y_scala
     }
     get_cs_and_corr <- function(susie_output, coverage, data_x, mode = c("susie", "susie_rss")) {
         if (mode == "susie") {
-            susie_output_secondary <- list(sets = susie_get_cs(susie_output, X = data_x, coverage = coverage), pip = susie_output$pip)
+            susie_output_secondary <- list(sets = susie_get_cs(susie_output, X = data_x, coverage = coverage, min_abs_corr=min_abs_corr, median_abs_corr=median_abs_corr), pip = susie_output$pip)
             susie_output_secondary$cs_corr <- get_cs_correlation(susie_output_secondary, X = data_x)
             susie_output_secondary
         } else {
-            susie_output_secondary <- list(sets = susie_get_cs(susie_output, Xcorr = data_x, coverage = coverage), pip = susie_output$pip)
+            susie_output_secondary <- list(sets = susie_get_cs(susie_output, Xcorr = data_x, coverage = coverage, min_abs_corr=min_abs_corr, median_abs_corr=median_abs_corr), pip = susie_output$pip)
             susie_output_secondary$cs_corr <- get_cs_correlation(susie_output_secondary, Xcorr = data_x)
             susie_output_secondary
         }
@@ -293,8 +294,12 @@ susie_post_processor <- function(susie_output, data_x, data_y, X_scalar, y_scala
         # Processing specific to susie_rss_post_processor
         res$sumstats <- data_y
     }
-
-    eff_idx <- which(susie_output$V > prior_eff_tol)
+    if (!is.null(susie_output$V)) {
+      # for fSuSiE there is no V for now
+      eff_idx <- which(susie_output$V > prior_eff_tol)
+    } else {
+      eff_idx <- 1:nrow(susie_output$alpha)
+    }
     if (length(eff_idx) > 0) {
         # Prepare for top loci table
         top_variants_idx_pri <- get_top_variants_idx(susie_output, signal_cutoff)
@@ -341,7 +346,7 @@ susie_post_processor <- function(susie_output, data_x, data_y, X_scalar, y_scala
             lbf_variable = susie_output$lbf_variable[eff_idx, , drop = FALSE],
             mu = susie_output$mu[eff_idx, , drop = FALSE],
             mu2 = susie_output$mu2[eff_idx, , drop = FALSE],
-            V = susie_output$V[eff_idx],
+            V = if (!is.null(susie_output$V)) susie_output$V[eff_idx] else NULL,
             niter = susie_output$niter,
             X_column_scale_factors = if (mode == "susie") susie_output$X_column_scale_factors else NULL
         )
