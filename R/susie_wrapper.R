@@ -230,7 +230,7 @@ susie_rss_pipeline = function(sumstat, R, ref_panel, n, L, var_y, QC = TRUE, imp
             final_result$cond_noqc = conditional_noqc_post
             if(QC){
                 conditional_qc_only = susie_rss_wrapper(z = z, R = LD_extract, bhat = bhat, shat =shat, n = n, L = L, max_iter = 1, var_y = var_y)
-                conditional_qc_only_post = susie_post_processor(conditional_qced_impute, data_x = LD_extract, data_y = list(z = z), mode = "susie_rss")
+                conditional_qc_only_post = susie_post_processor(conditional_qc_only, data_x = LD_extract, data_y = list(z = z), mode = "susie_rss")
                 
                 if(impute){
                 conditional_qced_impute = susie_rss_wrapper(z = result_qced$qc_impute_result$z, R = R[var_impute_kept, var_impute_kept, drop = FALSE], bhat = bhat, shat =shat, n = n, L = L, max_iter = 1, var_y = var_y)
