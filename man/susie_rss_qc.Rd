@@ -5,7 +5,7 @@
 \title{SuSiE RSS Analysis with Quality Control and Imputation}
 \usage{
 susie_rss_qc(
-  z,
+  sumstat,
   R,
   ref_panel,
   bhat = NULL,
@@ -25,8 +25,6 @@ susie_rss_qc(
 )
 }
 \arguments{
-\item{z}{Numeric vector of z-scores corresponding to the effect size estimates, with names matching the reference panel's variant IDs.}
-
 \item{R}{Numeric matrix representing the LD (linkage disequilibrium) matrix.}
 
 \item{ref_panel}{Data frame with 'chrom', 'pos', 'variant_id', 'A0', 'A1' column that matches the names of z.}
@@ -56,6 +54,8 @@ susie_rss_qc(
 \item{impute}{Logical; if TRUE, performs imputation for outliers identified in the analysis.}
 
 \item{output_qc}{Logical; if TRUE, includes QC-only results in the output.}
+
+\item{z}{Numeric vector of z-scores corresponding to the effect size estimates, with names matching the reference panel's variant IDs.}
 }
 \value{
 A list containing the results of the SuSiE RSS analysis after applying quality control measures and optional imputation.

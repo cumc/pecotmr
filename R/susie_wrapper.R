@@ -366,7 +366,8 @@ susie_rss_qc <- function(sumstat, R, ref_panel, bhat=NULL, shat=NULL, var_y=NULL
 #' @export
 susie_post_processor <- function(susie_output, data_x, data_y, X_scalar, y_scalar, maf = NULL, 
                                 secondary_coverage = c(0.5, 0.7), signal_cutoff = 0.1, 
-                                other_quantities = NULL, prior_eff_tol = 1e-9, 
+                                other_quantities = NULL, prior_eff_tol = 1e-9, min_abs_corr= 0.5, 
+                                median_abs_corr = 0.8,
                                 mode = c("susie", "susie_rss")) {
     mode <- match.arg(mode)
     get_cs_index <- function(snps_idx, susie_cs) {
@@ -388,11 +389,11 @@ susie_post_processor <- function(susie_output, data_x, data_y, X_scalar, y_scala
     }
     get_cs_and_corr <- function(susie_output, coverage, data_x, mode = c("susie", "susie_rss")) {
         if (mode == "susie") {
-            susie_output_secondary <- list(sets = susie_get_cs(susie_output, X = data_x, coverage = coverage), pip = susie_output$pip)
+            susie_output_secondary <- list(sets = susie_get_cs(susie_output, X = data_x, coverage = coverage, min_abs_corr=min_abs_corr, median_abs_corr=median_abs_corr), pip = susie_output$pip)
             susie_output_secondary$cs_corr <- get_cs_correlation(susie_output_secondary, X = data_x)
             susie_output_secondary
         } else {
-            susie_output_secondary <- list(sets = susie_get_cs(susie_output, Xcorr = data_x, coverage = coverage), pip = susie_output$pip)
+            susie_output_secondary <- list(sets = susie_get_cs(susie_output, Xcorr = data_x, coverage = coverage, min_abs_corr=min_abs_corr, median_abs_corr=median_abs_corr), pip = susie_output$pip)
             susie_output_secondary$cs_corr <- get_cs_correlation(susie_output_secondary, Xcorr = data_x)
             susie_output_secondary
         }
