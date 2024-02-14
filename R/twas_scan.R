@@ -16,15 +16,18 @@ twas_analysis <- function(weights_matrix, gwas_sumstats_db, LD_matrix, extract_v
     # Extract gwas_sumstats
     gwas_sumstats_subset <- gwas_sumstats_db[match(extract_variants_objs,gwas_sumstats_db$variant_id),]
     # Validate that the GWAS subset is not empty
-    if (nrow(gwas_sumstats_subset) == 0) {
+    if (nrow(gwas_sumstats_subset) == 0| all(is.na(gwas_sumstats_subset))) {
     stop("No GWAS summary statistics found for the specified variants.")
     }
-    # Extract LD_matrix
-    LD_matrix_subset <- LD_matrix[extract_variants_objs,extract_variants_objs]
-    # Validate the LD matrix subset
-    if (is.null(LD_matrix_subset)) {
-     stop("LD matrix subset extraction failed.")
+    #Check if extract_variants_objs are in the rownames of LD_matrix
+    valid_indices <- extract_variants_objs %in% rownames(LD_matrix)
+    if (!any(valid_indices)) {
+        stop("None of the specified variants are present in the LD matrix.")
     }
+    # Extract only the valid indices from extract_variants_objs
+    valid_variants_objs <- extract_variants_objs[valid_indices]
+    # Extract LD_matrix subset using valid indices
+    LD_matrix_subset <- LD_matrix[valid_variants_objs, valid_variants_objs]
     # Caculate the z score and pvalue of each gene
     twas_z_pval <- apply(as.matrix(weights_matrix), 2, 
                      function(x) twas_z(x, gwas_sumstats_subset$z, R = LD_matrix_subset))

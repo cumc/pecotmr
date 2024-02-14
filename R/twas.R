@@ -415,12 +415,8 @@ susie_weights <- function(X=NULL, y=NULL, susie_fit=NULL, ...) {
 #' @param allele_qc Optional                   
 #' @return A list of adjusted xQTL coefficients and remained variants ids
 #' @export
-<<<<<<< HEAD
 
 adjust_susie_weights <- function(twas_weights_results, condition, keep_variants, allele_qc = TRUE) {
-=======
-adjust_susie_weights <- function(twas_weights_results, condition, keep_variants) {
->>>>>>> 45bc117e23160aad3652c1eb4b8035c5dae1c6f8
   # Intersect the rownames of weights with keep_variants
   twas_weights_variants <- get_nested_element(twas_weights_results, c("susie_results",condition, "variant_names"))
   # allele flip twas weights matrix variants name

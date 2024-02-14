@@ -149,13 +149,13 @@ generate_mock_mr_formatted_input <- function(num_variants = NULL, generate_full_
   } else {
     data.frame(
      gene_name = "Gene1",
-     variant_id = as.character(rep(NA,length(gene_name))),
-     bhat_x = as.numeric(rep(NA,length(gene_name))),
-     sbhat_x = as.numeric(rep(NA,length(gene_name))),
-     cs = as.numeric(rep(NA,length(gene_name))),
-     pip = as.numeric(rep(NA,length(gene_name))),
-     bhat_y = as.numeric(rep(NA,length(gene_name))),
-     sbhat_y = as.numeric(rep(NA,length(gene_name))),
+     variant_id = as.character(NA),
+     bhat_x = as.numeric(NA),
+     sbhat_x = as.numeric(NA),
+     cs = as.numeric(NA),
+     pip = as.numeric(NA),
+     bhat_y = as.numeric(NA),
+     sbhat_y = as.numeric(NA),
      stringsAsFactors = FALSE # Optional, to prevent factors
      )
     }
