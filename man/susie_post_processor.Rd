@@ -10,7 +10,7 @@ susie_post_processor(
   data_y,
   X_scalar,
   y_scalar,
-  maf,
+  maf = NULL,
   secondary_coverage = c(0.5, 0.7),
   signal_cutoff = 0.1,
   other_quantities = NULL,

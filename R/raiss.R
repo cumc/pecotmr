@@ -7,7 +7,7 @@
 #' statistics enhances evidence of functional enrichment", published in
 #' Bioinformatics in 2014.
 #' @param ref_panel A data frame containing 'chrom', 'pos', 'variant_id', 'A1', and 'A2'.
-#' @param known_zscores A data frame containing 'chrom', 'pos', 'variant_id', 'A1', 'A2', and 'Z' values.
+#' @param known_zscores A data frame containing 'chrom', 'pos', 'variant_id', 'A1', 'A2', and 'z' values.
 #' @param LD_matrix A square matrix of dimension equal to the number of rows in ref_panel.
 #' @param lamb Regularization term added to the diagonal of the LD_matrix in the RAImputation model.
 #' @param rcond Threshold for filtering eigenvalues in the pseudo-inverse computation in the RAImputation model.
@@ -35,7 +35,7 @@ raiss <- function(ref_panel, known_zscores, LD_matrix, lamb = 0.01, rcond = 0.01
         LD_matrix = as.matrix(LD_matrix)
     }
   # Extract zt, sig_t, and sig_i_t
-  zt <- known_zscores$Z
+  zt <- known_zscores$z
   sig_t <- LD_matrix[knowns, knowns, drop = FALSE]
   sig_i_t <- LD_matrix[unknowns, knowns, drop = FALSE]
 
@@ -49,12 +49,13 @@ raiss <- function(ref_panel, known_zscores, LD_matrix, lamb = 0.01, rcond = 0.01
   results <- filter_raiss_output(results, R2_threshold, minimum_ld)
 
   # Merge with known z-scores
-  results <- merge_raiss_df(results, known_zscores)
-
+  result_nofilter <- merge_raiss_df(results$zscores_nofilter, known_zscores) %>% arrange(pos)
+  result_filter <- merge_raiss_df(results$zscores, known_zscores)%>% arrange(pos)
+  results = list(result_nofilter = result_nofilter, result_filter  = result_filter )
   return(results)
 }
 
-#' @param zt Vector of known Z scores.
+#' @param zt Vector of known z scores.
 #' @param sig_t Matrix of known linkage disequilibrium (LD) correlation.
 #' @param sig_i_t Correlation matrix with rows corresponding to unknown SNPs (to impute)
 #'               and columns to known SNPs.
@@ -101,7 +102,7 @@ format_raiss_df <- function(imp, ref_panel, unknowns) {
     variant_id = ref_panel[unknowns, 'variant_id'],
     A1 = ref_panel[unknowns, 'A1'],
     A2 = ref_panel[unknowns, 'A2'],
-    Z = imp$mu,
+    z = imp$mu,
     Var = imp$var,
     ld_score = imp$ld_score,
     condition_number = imp$condition_number,
@@ -109,7 +110,7 @@ format_raiss_df <- function(imp, ref_panel, unknowns) {
   )
 
   # Specify the column order
-  column_order <- c('chrom', 'pos', 'variant_id', "A1", "A2", 'Z', 'Var', 'ld_score', 'condition_number', 
+  column_order <- c('chrom', 'pos', 'variant_id', "A1", "A2", 'z', 'Var', 'ld_score', 'condition_number', 
                     'correct_inversion')
 
   # Reorder the columns
@@ -122,25 +123,25 @@ merge_raiss_df <- function(raiss_df, known_zscores) {
   merged_df <- merge(raiss_df, known_zscores, by = c("chrom", "pos", "variant_id", "A1", "A2"), all = TRUE)
 
   # Identify rows that came from known_zscores
-  from_known <- !is.na(merged_df$Z.y) & is.na(merged_df$Z.x)
+  from_known <- !is.na(merged_df$z.y) & is.na(merged_df$z.x)
 
   # Set Var to -1 and ld_score to Inf for these rows
   merged_df$Var[from_known] <- -1
   merged_df$ld_score[from_known] <- Inf
 
-  # If there are overlapping columns (e.g., Z.x and Z.y), resolve them
-  # For example, use Z from known_zscores where available, otherwise use Z from raiss_df
-  merged_df$Z <- ifelse(from_known, merged_df$Z.y, merged_df$Z.x)
+  # If there are overlapping columns (e.g., z.x and z.y), resolve them
+  # For example, use z from known_zscores where available, otherwise use z from raiss_df
+  merged_df$z <- ifelse(from_known, merged_df$z.y, merged_df$z.x)
 
-  # Remove the extra columns resulted from the merge (e.g., Z.x, Z.y)
-  merged_df <- merged_df[, !colnames(merged_df) %in% c("Z.x", "Z.y")]
+  # Remove the extra columns resulted from the merge (e.g., z.x, z.y)
+  merged_df <- merged_df[, !colnames(merged_df) %in% c("z.x", "z.y")]
   merged_df = arrange(merged_df, pos)
   return(merged_df)
 }
 
 filter_raiss_output <- function(zscores, R2_threshold = 0.6, minimum_ld = 5) {
   # Reset the index and subset the data frame
-  zscores <- zscores[, c('chrom', 'pos', 'variant_id', 'A1', 'A2', 'Z', 'Var', 'ld_score')]
+  zscores <- zscores[, c('chrom', 'pos', 'variant_id', 'A1', 'A2', 'z', 'Var', 'ld_score')]
   zscores$imputation_R2 <- 1 - zscores$Var
 
   # Count statistics before filtering
@@ -151,6 +152,7 @@ filter_raiss_output <- function(zscores, R2_threshold = 0.6, minimum_ld = 5) {
   NSNPs_R2_filt <- sum(zscores$imputation_R2 < R2_threshold)
 
   # Apply filters
+  zscores_nofilter = zscores
   zscores <- zscores[zscores$imputation_R2 > R2_threshold & zscores$ld_score >= minimum_ld, ]
   NSNPs_af_filt <- nrow(zscores)
 
@@ -163,7 +165,7 @@ filter_raiss_output <- function(zscores, R2_threshold = 0.6, minimum_ld = 5) {
   cat("filtered because of ld:", NSNPs_ld_filt, "\n")
   cat("filtered because of R2:", NSNPs_R2_filt, "\n")
   cat("after filter:", NSNPs_af_filt, "\n")
-  return(zscores)
+  return(zscore_list = list(zscores_nofilter =zscores_nofilter, zscores = zscores))
 }
 
 compute_mu <- function(sig_i_t, sig_t_inv, zt) {
