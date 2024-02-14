@@ -294,8 +294,12 @@ susie_post_processor <- function(susie_output, data_x, data_y, X_scalar, y_scala
         # Processing specific to susie_rss_post_processor
         res$sumstats <- data_y
     }
-
-    eff_idx <- which(susie_output$V > prior_eff_tol)
+    if (!is.null(susie_output$V)) {
+      # for fSuSiE there is no V for now
+      eff_idx <- which(susie_output$V > prior_eff_tol)
+    } else {
+      eff_idx <- 1:nrow(susie_output$alpha)
+    }
     if (length(eff_idx) > 0) {
         # Prepare for top loci table
         top_variants_idx_pri <- get_top_variants_idx(susie_output, signal_cutoff)
@@ -342,7 +346,7 @@ susie_post_processor <- function(susie_output, data_x, data_y, X_scalar, y_scala
             lbf_variable = susie_output$lbf_variable[eff_idx, , drop = FALSE],
             mu = susie_output$mu[eff_idx, , drop = FALSE],
             mu2 = susie_output$mu2[eff_idx, , drop = FALSE],
-            V = susie_output$V[eff_idx],
+            V = if (!is.null(susie_output$V)) susie_output$V[eff_idx] else NULL,
             niter = susie_output$niter,
             X_column_scale_factors = if (mode == "susie") susie_output$X_column_scale_factors else NULL
         )
