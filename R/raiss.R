@@ -63,7 +63,7 @@ raiss <- function(ref_panel, known_zscores, LD_matrix, lamb = 0.01, rcond = 0.01
 #' @param rcond Threshold for filtering eigenvalues in the pseudo-inverse computation.
 #' @param batch Boolean indicating whether batch processing is used.
 #'
-#' @return A list containing the variance 'var', estimation 'mu', LD score 'ld_score',
+#' @return A list containing the variance 'var', estimation 'mu', LD score 'raiss_ld_score',
 #'         condition number 'condition_number', and correctness of inversion
 #'         'correct_inversion'.
 raiss_model <- function(zt, sig_t, sig_i_t, lamb=0.01, rcond=0.01, batch=TRUE, report_condition_number=FALSE) {
@@ -80,9 +80,9 @@ raiss_model <- function(zt, sig_t, sig_i_t, lamb=0.01, rcond=0.01, batch=TRUE, r
     correct_inversion <- check_inversion(sig_t, sig_t_inv)
   }
 
-  var_ld_score <- compute_var(sig_i_t, sig_t_inv, lamb, batch)
-  var <- var_ld_score$var
-  ld_score <- var_ld_score$ld_score
+  var_raiss_ld_score <- compute_var(sig_i_t, sig_t_inv, lamb, batch)
+  var <- var_raiss_ld_score$var
+  raiss_ld_score <- var_raiss_ld_score$raiss_ld_score
 
   mu <- compute_mu(sig_i_t, sig_t_inv, zt)
   var_norm <- var_in_boundaries(var, lamb)
@@ -90,7 +90,7 @@ raiss_model <- function(zt, sig_t, sig_i_t, lamb=0.01, rcond=0.01, batch=TRUE, r
   R2 <- ((1 + lamb) - var_norm)
   mu <- mu / sqrt(R2)
 
-  return(list(var=var_norm, mu=mu, ld_score=ld_score, condition_number=condition_number, correct_inversion=correct_inversion))
+  return(list(var=var_norm, mu=mu, raiss_ld_score=raiss_ld_score, condition_number=condition_number, correct_inversion=correct_inversion))
 }
 
 #' @param imp is the output of raiss_model()
@@ -104,13 +104,13 @@ format_raiss_df <- function(imp, ref_panel, unknowns) {
     A2 = ref_panel[unknowns, 'A2'],
     z = imp$mu,
     Var = imp$var,
-    ld_score = imp$ld_score,
+    raiss_ld_score = imp$raiss_ld_score,
     condition_number = imp$condition_number,
     correct_inversion = imp$correct_inversion
   )
 
   # Specify the column order
-  column_order <- c('chrom', 'pos', 'variant_id', "A1", "A2", 'z', 'Var', 'ld_score', 'condition_number', 
+  column_order <- c('chrom', 'pos', 'variant_id', "A1", "A2", 'z', 'Var', 'raiss_ld_score', 'condition_number', 
                     'correct_inversion')
 
   # Reorder the columns
@@ -125,9 +125,9 @@ merge_raiss_df <- function(raiss_df, known_zscores) {
   # Identify rows that came from known_zscores
   from_known <- !is.na(merged_df$z.y) & is.na(merged_df$z.x)
 
-  # Set Var to -1 and ld_score to Inf for these rows
+  # Set Var to -1 and raiss_ld_score to Inf for these rows
   merged_df$Var[from_known] <- -1
-  merged_df$ld_score[from_known] <- Inf
+  merged_df$raiss_ld_score[from_known] <- Inf
 
   # If there are overlapping columns (e.g., z.x and z.y), resolve them
   # For example, use z from known_zscores where available, otherwise use z from raiss_df
@@ -141,19 +141,19 @@ merge_raiss_df <- function(raiss_df, known_zscores) {
 
 filter_raiss_output <- function(zscores, R2_threshold = 0.6, minimum_ld = 5) {
   # Reset the index and subset the data frame
-  zscores <- zscores[, c('chrom', 'pos', 'variant_id', 'A1', 'A2', 'z', 'Var', 'ld_score')]
-  zscores$imputation_R2 <- 1 - zscores$Var
+  zscores <- zscores[, c('chrom', 'pos', 'variant_id', 'A1', 'A2', 'z', 'Var', 'raiss_ld_score')]
+  zscores$raiss_R2 <- 1 - zscores$Var
 
   # Count statistics before filtering
   NSNPs_bf_filt <- nrow(zscores)
-  NSNPs_initial <- sum(zscores$imputation_R2 == 2.0)
-  NSNPs_imputed <- sum(zscores$imputation_R2 != 2.0)
-  NSNPs_ld_filt <- sum(zscores$ld_score < minimum_ld)
-  NSNPs_R2_filt <- sum(zscores$imputation_R2 < R2_threshold)
+  NSNPs_initial <- sum(zscores$raiss_R2 == 2.0)
+  NSNPs_imputed <- sum(zscores$raiss_R2 != 2.0)
+  NSNPs_ld_filt <- sum(zscores$raiss_ld_score < minimum_ld)
+  NSNPs_R2_filt <- sum(zscores$raiss_R2 < R2_threshold)
 
   # Apply filters
   zscores_nofilter = zscores
-  zscores <- zscores[zscores$imputation_R2 > R2_threshold & zscores$ld_score >= minimum_ld, ]
+  zscores <- zscores[zscores$raiss_R2 > R2_threshold & zscores$raiss_ld_score >= minimum_ld, ]
   NSNPs_af_filt <- nrow(zscores)
 
   # Print report
@@ -175,12 +175,12 @@ compute_mu <- function(sig_i_t, sig_t_inv, zt) {
 compute_var <- function(sig_i_t, sig_t_inv, lamb, batch=TRUE) {
   if (batch) {
     var <- (1 + lamb) - rowSums((sig_i_t %*% sig_t_inv) * sig_i_t)
-    ld_score <- rowSums(sig_i_t^2)
+    raiss_ld_score <- rowSums(sig_i_t^2)
   } else {
     var <- (1 + lamb) - (sig_i_t %*% (sig_t_inv %*% t(sig_i_t)))
-    ld_score <- sum(sig_i_t^2)
+    raiss_ld_score <- sum(sig_i_t^2)
   }
-  return(list(var=var, ld_score=ld_score))
+  return(list(var=var, raiss_ld_score=raiss_ld_score))
 }
 
 check_inversion <- function(sig_t, sig_t_inv) {

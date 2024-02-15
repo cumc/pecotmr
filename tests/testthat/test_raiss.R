@@ -53,7 +53,7 @@ test_that("Test Default Parameters for raiss_model", {
   result <- raiss_model(zt, sig_t, sig_i_t)
 
   expect_is(result, "list")
-  expect_true(all(names(result) %in% c("var", "mu", "ld_score", "condition_number", "correct_inversion")))
+  expect_true(all(names(result) %in% c("var", "mu", "raiss_ld_score", "condition_number", "correct_inversion")))
 })
 
 test_that("Test with Different lamb Values for raiss_model", {
@@ -121,7 +121,7 @@ test_that("Test with Different rcond Values for raiss_model", {
   for (rcond in rcond_values) {
     result <- raiss_model(zt, sig_t, sig_i_t, lamb = 0.01, rcond = rcond)
     expect_is(result, "list")
-    expect_true(all(names(result) %in% c("var", "mu", "ld_score", "condition_number", "correct_inversion")))
+    expect_true(all(names(result) %in% c("var", "mu", "raiss_ld_score", "condition_number", "correct_inversion")))
   }
 })
 
@@ -129,7 +129,7 @@ test_that("format_raiss_df returns correctly formatted data frame", {
   imp <- list(
     mu = rnorm(5),
     var = runif(5),
-    ld_score = rnorm(5),
+    raiss_ld_score = rnorm(5),
     condition_number = runif(5),
     correct_inversion = sample(c(TRUE, FALSE), 5, replace = TRUE)
   )
@@ -148,12 +148,12 @@ test_that("format_raiss_df returns correctly formatted data frame", {
 
   expect_true(is.data.frame(result))
   expect_equal(ncol(result), 10)
-  expect_equal(colnames(result), c('chrom', 'pos', 'variant_id', 'A1', 'A2', 'z', 'Var', 'ld_score', 'condition_number', 'correct_inversion'))
+  expect_equal(colnames(result), c('chrom', 'pos', 'variant_id', 'A1', 'A2', 'z', 'Var', 'raiss_ld_score', 'condition_number', 'correct_inversion'))
 
   for (col in c('chrom', 'pos', 'variant_id', 'A1', 'A2')) {
     expect_equal(setNames(unlist(result[col]), NULL), unlist(ref_panel[unknowns, col, drop = TRUE]))
   }
-  for (col in c('z', 'Var', 'ld_score', 'condition_number', 'correct_inversion')) {
+  for (col in c('z', 'Var', 'raiss_ld_score', 'condition_number', 'correct_inversion')) {
     expected_col <- if (col == "z") "mu" else if (col == "Var") "var" else col
     expect_equal(setNames(unlist(result[col]), NULL), setNames(unlist(imp[expected_col]), NULL))
   }
@@ -168,8 +168,8 @@ test_that("Merge operation is correct for merge_raiss_df", {
         A2 = c("T", "A"),
         z = c(0.5, 1.5),
         Var = c(0.2, 0.3),
-        ld_score = c(10, 20),
-        imputation_R2 = c(0.8, 0.7))
+        raiss_ld_score = c(10, 20),
+        raiss_R2 = c(0.8, 0.7))
 
     known_zscores_example <- data.frame(
         chrom = c("chr21", "chr22"),
@@ -194,21 +194,21 @@ generate_fro_test_data <- function(seed=1) {
         A2 = rep("T", 10),
         z = rnorm(10),
         Var = runif(10, 0, 1),
-        ld_score = rnorm(10, 5, 2)
+        raiss_ld_score = rnorm(10, 5, 2)
     ))
 }
 
 test_that("Correct columns are selected in filter_raiss_output", {
     test_data <- generate_fro_test_data()
     output <- filter_raiss_output(test_data)$zscores
-    expect_true(all(c('variant_id', 'A1', 'A2', 'z', 'Var', 'ld_score') %in% names(output)))
+    expect_true(all(c('variant_id', 'A1', 'A2', 'z', 'Var', 'raiss_ld_score') %in% names(output)))
 })
 
-test_that("imputation_R2 is calculated correctly in filter_raiss_output", {
+test_that("raiss_R2 is calculated correctly in filter_raiss_output", {
     test_data <- generate_fro_test_data()
     output <- filter_raiss_output(test_data)$zscores
-    expected_R2 <- 1 - test_data[which(test_data$ld_score >= 5),]$Var
-    expect_equal(output$imputation_R2, expected_R2[which(expected_R2 > 0.6)])
+    expected_R2 <- 1 - test_data[which(test_data$raiss_ld_score >= 5),]$Var
+    expect_equal(output$raiss_R2, expected_R2[which(expected_R2 > 0.6)])
 })
 
 test_that("Filtering is applied correctly in filter_raiss_output", {
@@ -217,16 +217,16 @@ test_that("Filtering is applied correctly in filter_raiss_output", {
     minimum_ld <- 5
     output <- filter_raiss_output(test_data, R2_threshold, minimum_ld)$zscores
 
-    expect_true(all(output$imputation_R2 > R2_threshold))
-    expect_true(all(output$ld_score >= minimum_ld))
+    expect_true(all(output$raiss_R2 > R2_threshold))
+    expect_true(all(output$raiss_ld_score >= minimum_ld))
 })
 
 test_that("Function returns the correct subset in filter_raiss_output", {
     test_data <- generate_fro_test_data()
-    test_data$imputation_R2 <- 1 - test_data$Var
+    test_data$raiss_R2 <- 1 - test_data$Var
     output <- filter_raiss_output(test_data)$zscores
 
-    manual_filter <- test_data[test_data$imputation_R2 > 0.6 & test_data$ld_score >= 5, ]
+    manual_filter <- test_data[test_data$raiss_R2 > 0.6 & test_data$raiss_ld_score >= 5, ]
 
     expect_equal(nrow(output), nrow(manual_filter))
     expect_equal(sum(output$variant_id != manual_filter$variant_id), 0)
@@ -256,7 +256,7 @@ test_that("compute_var returns correct output for batch = TRUE", {
     expect_is(result, "list")
     expect_length(result, 2)
     expect_true("var" %in% names(result))
-    expect_true("ld_score" %in% names(result))
+    expect_true("raiss_ld_score" %in% names(result))
 })
 
 test_that("compute_var returns correct output for batch = FALSE", {
@@ -265,7 +265,7 @@ test_that("compute_var returns correct output for batch = FALSE", {
     expect_is(result, "list")
     expect_length(result, 2)
     expect_true("var" %in% names(result))
-    expect_true("ld_score" %in% names(result))
+    expect_true("raiss_ld_score" %in% names(result))
 })
 
 test_that("check_inversion correctly identifies inverse matrices in", {

@@ -124,7 +124,7 @@ susie_rss_wrapper <- function(z, R, bhat, shat, n = NULL, var_y = NULL, L = 10, 
 get_rss_input = function(sumstat_path, column_file_path, n_sample, n_case, n_control){
     var_y = NULL
     sumstats = fread(sumstat_path)
-        column_data <- read.table(column_file_path, header = FALSE, sep = ":", stringsAsFactors = FALSE)
+    column_data <- read.table(column_file_path, header = FALSE, sep = ":", stringsAsFactors = FALSE)
     colnames(column_data) = c("standard", "original")
     count = 1
     for (name in colnames(sumstats)){
@@ -134,6 +134,7 @@ get_rss_input = function(sumstat_path, column_file_path, n_sample, n_case, n_con
         }
         count = count + 1
     }
+
   
     ## if the data don't have z scores, derive by beta/se, so that allele flip function can run
     if(length(sumstats$z) == 0){
@@ -165,15 +166,26 @@ get_rss_input = function(sumstat_path, column_file_path, n_sample, n_case, n_con
       # 3. if no infomation related to sample size
           n = NULL
       }
-    }     
+    }
     return(rss_input = list(sumstats = sumstats, n = n, var_y = var_y))
 }
 
 
-rss_input_preprocess = function(sumstats, LD_data){
+rss_input_preprocess = function(sumstats, LD_data, skip_region = NULL){
     target_variants = sumstats[,c("chrom","pos","A1","A2")]
     ref_variants = LD_data$combined_LD_variants
     allele_flip = allele_qc(target_variants, ref_variants, sumstats, col_to_flip = c("beta", "z"), match.min.prop=0.2, remove_dups=FALSE, flip=TRUE, remove=TRUE)
+    
+        
+    if(length(skip_region) != 0){
+        skip_table = tibble(region = skip_region) %>% separate(region, into = c("chrom", "start", "end"), sep = "[:-]")
+        skip_variant = c()
+        for(i in 1:nrow(skip_table)){
+            variant = allele_flip$target_data_qced %>% filter(chrom == skip_table$chrom[i] & pos > skip_table$start[i] & pos < skip_table$end[i]) %>% pull(variant_id)
+            skip_variant = c(skip_variant, variant)
+        }
+        allele_flip$target_data_qced = allele_flip$target_data_qced %>% filter(!(variant_id) %in% skip_variant)
+    }
 
     sumstat_processed = allele_flip$target_data_qced %>% arrange(pos)
     return(sumstat_processed)
@@ -199,7 +211,7 @@ susie_rss_pipeline = function(sumstat, R, ref_panel, n, L, var_y, QC = TRUE, imp
         LD_extract = R[sumstat$variant_id, sumstat$variant_id, drop = FALSE]
         single_effect_res = susie_rss_wrapper(z = z, R = LD_extract, bhat = bhat, shat = shat, L = 1, n = n, var_y = var_y)
         single_effect_post = susie_post_processor(single_effect_res, data_x = LD_extract, data_y = list(z = z), mode = "susie_rss")
-        final_result$single_effect_result = single_effect_post
+        final_result$single_effect_regression = single_effect_post
     
         result_noqc = susie_rss_wrapper(z = z, R = LD_extract, bhat = bhat, shat = shat, n = n, L = L, var_y = var_y)
         result_noqc_post = susie_post_processor(result_noqc, data_x = LD_extract, data_y = list(z = z), mode = "susie_rss")
@@ -218,16 +230,16 @@ susie_rss_pipeline = function(sumstat, R, ref_panel, n, L, var_y, QC = TRUE, imp
             final_result$qc_impute_result = result_qced_impute_post
             final_result$qc_only_result = result_qced_only_post
             
-            result_qced$qc_impute_filter_table$chrom = as.numeric(result_qced$qc_impute_filter_table$chrom)
-            result_qced$qc_impute_nofilter_table$chrom = as.numeric(result_qced$qc_impute_nofilter_table$chrom)
-            final_result$qc_impute_filter_table = result_qced$qc_impute_filter_table %>% select(-beta, -se)
-            final_result$qc_impute_nofilter_table = result_qced$qc_impute_nofilter_table %>% select(-beta, -se)
+            result_qced$sumstats_qc_impute_filtered$chrom = as.numeric(result_qced$sumstats_qc_impute_filtered$chrom)
+            result_qced$sumstats_qc_impute$chrom = as.numeric(result_qced$sumstats_qc_impute$chrom)
+            final_result$sumstats_qc_impute_filtered = result_qced$sumstats_qc_impute_filtered %>% select(-beta, -se)
+            final_result$sumstats_qc_impute = result_qced$sumstats_qc_impute %>% select(-beta, -se)
         }
 
         if(bayesian_conditional_analysis){
             conditional_noqc = susie_rss_wrapper(z = z, R = LD_extract, bhat = bhat, shat = shat, n = n, L = L, max_iter = 1, var_y = var_y)
             conditional_noqc_post = susie_post_processor(conditional_noqc, data_x = LD_extract, data_y = list(z = z), mode = "susie_rss")
-            final_result$cond_noqc = conditional_noqc_post
+            final_result$conditional_regression_noqc = conditional_noqc_post
             if(QC){
                 conditional_qc_only = susie_rss_wrapper(z = z, R = LD_extract, bhat = bhat, shat =shat, n = n, L = L, max_iter = 1, var_y = var_y)
                 conditional_qc_only_post = susie_post_processor(conditional_qc_only, data_x = LD_extract, data_y = list(z = z), mode = "susie_rss")
@@ -235,11 +247,11 @@ susie_rss_pipeline = function(sumstat, R, ref_panel, n, L, var_y, QC = TRUE, imp
                 if(impute){
                 conditional_qced_impute = susie_rss_wrapper(z = result_qced$qc_impute_result$z, R = R[var_impute_kept, var_impute_kept, drop = FALSE], bhat = bhat, shat =shat, n = n, L = L, max_iter = 1, var_y = var_y)
                 conditional_qced_impute_post = susie_post_processor(conditional_qced_impute, data_x = R[var_impute_kept, var_impute_kept, drop = FALSE], data_y = list(z = result_qced$qc_impute_result$z), mode = "susie_rss")
-                final_result$cond_qc_impute = conditional_qced_impute_post
+                final_result$conditional_regression_qc_impute = conditional_qced_impute_post
                 
                 }
                 
-                final_result$cond_qc_only =  conditional_qc_only_post
+                final_result$conditional_regression_qc_only =  conditional_qc_only_post
             }
             
         
@@ -296,12 +308,16 @@ susie_rss_qc <- function(sumstat, R, ref_panel, bhat=NULL, shat=NULL, var_y=NULL
   result_final <- NULL
 
   ## Imputation for outliers if enabled and required
-  if (impute && !is.null(result$zR_outliers) && length(result$zR_outliers) > 0) {
+  if (impute) {
     ## Extracting known z-scores excluding outliers
-    outlier = result$zR_outliers
+    if(!is.null(result$zR_outliers) & length(result$zR_outliers) != 0){
+        outlier = result$zR_outliers
       
-    known_zscores = sumstat[-outlier,]
-    known_zscores = known_zscores %>% arrange(pos)
+        known_zscores = sumstat[-outlier,]
+        known_zscores = known_zscores %>% arrange(pos)
+    }else{
+        known_zscores = sumstat %>% arrange(pos)
+    }
     
     ## Imputation logic using RAiSS or other methods
 
@@ -325,8 +341,8 @@ susie_rss_qc <- function(sumstat, R, ref_panel, bhat=NULL, shat=NULL, var_y=NULL
     result_final$qc_impute_result <- susie_rss_wrapper(z=imputation_result_filter$z, R=LD_extract_filtered, bhat=bhat, shat=shat, var_y=var_y, 
                                       n=n, L=L, max_L=max_L, l_step=l_step, zR_discrepancy_correction=FALSE, ...)
     result_final$qc_impute_result$z = imputation_result_filter$z
-    result_final$qc_impute_filter_table = imputation_result_filter
-    result_final$qc_impute_nofilter_table = imputation_result_nofilter
+    result_final$sumstats_qc_impute_filtered = imputation_result_filter
+    result_final$sumstats_qc_impute = imputation_result_nofilter
   }
     if(output_qc){
     result_final$qc_only_result <- result
