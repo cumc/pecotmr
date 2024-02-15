@@ -275,7 +275,7 @@ prepare_X_matrix <- function(geno_bed, data_list, imiss_cutoff, maf_cutoff, mac_
 
   # To keep a log message
   variants <- as.data.frame(do.call(rbind, lapply(format_variant_id(colnames(X_filtered)), function(x) strsplit(x, ":")[[1]][1:2])), stringsAsFactors = FALSE)
-  message(paste0("Dimension of input genotype data is row: ", nrow(X_filtered), " column: ", ncol(X_filtered), " for genomic region of ", variants[1,1], ":", min(as.integer(variants[,2])), "-", max(as.integer(variants[,2]))))
+  message(paste0("Dimension of input genotype data is ", nrow(X_filtered), " rows and ", ncol(X_filtered), " columns for genomic region of ", variants[1,1], ":", min(as.integer(variants[,2])), "-", max(as.integer(variants[,2]))))
   return(X_filtered)
 }
 
