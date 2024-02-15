@@ -281,7 +281,7 @@ coloc_wrapper <- function(xqtl_file, gwas_files,
     region <- if (!is.null(xqtl_region_obj)) get_nested_element(xqtl_raw_data, xqtl_region_obj)$region %>% convert_to_string else NULL
 
     # COLOC function 
-    coloc_res <- coloc::coloc.bf_bf(xqtl_lbf_matrix, combined_gwas_lbf_matrix, p1 = p1, p2 = p2, p12 = p12, ...)
+    coloc_res <- coloc.bf_bf(xqtl_lbf_matrix, combined_gwas_lbf_matrix, p1 = p1, p2 = p2, p12 = p12, ...)
     return(c(coloc_res, analysis_region =  region))
 }
 
