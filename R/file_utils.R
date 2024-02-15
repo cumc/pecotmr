@@ -104,8 +104,6 @@ tabix_region <- function(file, region, tabix_header = "auto"){
         !!names(.)[1] := as.character(.[[1]]),
         !!names(.)[2] := as.numeric(.[[2]])
         ) 
-  colnames(cmd_output) <- colnames(read.table(file,head = TRUE, sep="\t", nrows = 1)) # put back colnames of the `file` to the output file
-  return(cmd_output)
 }
 #' Find Valid File Path
 find_valid_file_path <- function(reference_file_path, target_file_path) {
