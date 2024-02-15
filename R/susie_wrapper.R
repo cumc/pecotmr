@@ -215,7 +215,7 @@ susie_rss_pipeline = function(sumstat, R, ref_panel, n, L, var_y, QC = TRUE, imp
     
         result_noqc = susie_rss_wrapper(z = z, R = LD_extract, bhat = bhat, shat = shat, n = n, L = L, var_y = var_y)
         result_noqc_post = susie_post_processor(result_noqc, data_x = LD_extract, data_y = list(z = z), mode = "susie_rss")
-        final_result$noqc_result = result_noqc_post
+        final_result$noqc = result_noqc_post
 
 
         if(QC){
@@ -227,8 +227,8 @@ susie_rss_pipeline = function(sumstat, R, ref_panel, n, L, var_y, QC = TRUE, imp
 
             result_qced_only_post = susie_post_processor(result_qced$qc_only_result, data_x = LD_extract, data_y = list(z = z), mode = "susie_rss")
             
-            final_result$qc_impute_result = result_qced_impute_post
-            final_result$qc_only_result = result_qced_only_post
+            final_result$qc_impute = result_qced_impute_post
+            final_result$qc_only = result_qced_only_post
             
             result_qced$sumstats_qc_impute_filtered$chrom = as.numeric(result_qced$sumstats_qc_impute_filtered$chrom)
             result_qced$sumstats_qc_impute$chrom = as.numeric(result_qced$sumstats_qc_impute$chrom)
