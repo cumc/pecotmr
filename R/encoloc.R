@@ -173,7 +173,7 @@ process_coloc_results <- function(coloc_result, LD_meta_file_path,analysis_scrip
     if (is.null(median_abs_corr)) 
       is_pure = which(purity[,1] >= min_abs_corr)
     else
-      is_pure = which(purity[,1] >= min_abs_corr | purity[,2] >= median_abs_corr)
+      is_pure = which(purity[,1] >= min_abs_corr | purity[,3] >= median_abs_corr)
       
       
     # Finalize the result
@@ -256,9 +256,13 @@ coloc_wrapper <- function(xqtl_file, gwas_files,
 
     #add 'chr' in colnames 
     add_chr_prefix <- function(df) {
-      colnames(df) <- ifelse(grepl("chr", colnames(df)), colnames(df), paste0("chr", colnames(df)))
-      return(df)
+    if (any(grepl("chr", colnames(df)))) {
+        colnames(df) <- colnames(df)
+    } else {
+        colnames(df) <- paste0("chr", colnames(df))
     }
+    return(df)
+}
 
     combined_gwas_lbf_matrix <- add_chr_prefix(combined_gwas_lbf_matrix)
     xqtl_lbf_matrix <- add_chr_prefix(xqtl_lbf_matrix)
