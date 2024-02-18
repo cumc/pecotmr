@@ -53,6 +53,7 @@ open_bed <- function(bed){
     raw_s_ct <- nrow(read_fam(bed))
     return(NewPgen(bed, raw_sample_ct = raw_s_ct))
 }
+
 #' @importFrom pgenlibr GetVariantCt ReadList
 read_pgen <- function(pgen, variantidx = NULL, meanimpute = F ) {
   if (is.null(variantidx)){
