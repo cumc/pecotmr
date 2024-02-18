@@ -30,7 +30,7 @@ susie_rss_pipeline(
 
 \item{n}{Sample size.}
 
-\item{L}{Number of SuSiE components.}
+\item{L}{Initial number of causal configurations to consider in the analysis.}
 
 \item{var_y}{Variance of Y.}
 
@@ -40,13 +40,13 @@ susie_rss_pipeline(
 
 \item{bayesian_conditional_analysis}{Perform Bayesian conditional analysis (default: TRUE).}
 
-\item{rcond}{R-condition number threshold for QC.}
+\item{rcond}{Condition number for the RAiSS imputation method.}
 
-\item{R2_threshold}{R-squared threshold for QC.}
+\item{R2_threshold}{R-squared threshold for the RAiSS imputation method.}
 
 \item{max_L}{Maximum number of components for QC.}
 
-\item{l_step}{Step size for the number of components in QC.}
+\item{l_step}{Step size for increasing L when the limit is reached during dynamic adjustment.}
 
 \item{minimum_ld}{Minimum LD for QC.}
 }
