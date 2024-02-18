@@ -99,10 +99,21 @@ twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_
     
     if (is.vector(Y)) {
         Y <- matrix(Y, ncol = 1)
+        message(paste("Y converted to matrix of", nrow(Y), "rows and", ncol(Y), "columns."))
     }
     
     if (nrow(X) != nrow(Y)) {
         stop("The number of rows in X and Y must be the same.")
+    }
+
+    # Check if X has row names and Y does not
+    if (!is.null(rownames(X)) && is.null(rownames(Y))) {
+        rownames(Y) <- rownames(X)
+    }
+
+    # Check if Y has row names and X does not
+    if (!is.null(rownames(Y)) && is.null(rownames(X))) {
+        rownames(X) <- rownames(Y)
     }
 
     # Get sample names
@@ -164,7 +175,6 @@ twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_
     } else {
         stop("Either 'fold' or 'sample_partitions' must be provided.")
     }
-
 
     st = proc.time()
     if (is.null(weight_methods)) {

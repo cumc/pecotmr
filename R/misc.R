@@ -191,8 +191,10 @@ load_phenotype_data <- function(phenotype_path, region, extract_region_name = NU
     }
     if (!is.null(extract_region_name) && is.vector(extract_region_name) && !is.null(region_name_col) && (region_name_col%%1==0)) {
       if (region_name_col <= ncol(tabix_data)) {
-      region_col_name <- colnames(tabix_data)[region_name_col]
-      return(tabix_data %>% filter(.data[[region_col_name]] %in% extract_region_name) %>% t())
+        region_col_name <- colnames(tabix_data)[region_name_col]
+        tabix_data <- tabix_data %>% filter(.data[[region_col_name]] %in% extract_region_name) %>% t()
+        colnames(tabix_data) <- tabix_data[region_name_col,]
+        return(tabix_data)
       } else {
         stop("region_name_col is out of bounds for the number of columns in tabix_data.")
       }
@@ -275,7 +277,7 @@ prepare_X_matrix <- function(geno_bed, data_list, imiss_cutoff, maf_cutoff, mac_
 
   # To keep a log message
   variants <- as.data.frame(do.call(rbind, lapply(format_variant_id(colnames(X_filtered)), function(x) strsplit(x, ":")[[1]][1:2])), stringsAsFactors = FALSE)
-  message(paste0("Dimension of input genotype data is row: ", nrow(X_filtered), " column: ", ncol(X_filtered), " for genomic region of ", variants[1,1], ":", min(as.integer(variants[,2])), "-", max(as.integer(variants[,2]))))
+  message(paste0("Dimension of input genotype data is ", nrow(X_filtered), " rows and ", ncol(X_filtered), " columns for genomic region of ", variants[1,1], ":", min(as.integer(variants[,2])), "-", max(as.integer(variants[,2]))))
   return(X_filtered)
 }
 
@@ -298,7 +300,7 @@ add_X_residuals <- function(data_list, scale_residuals = FALSE) {
   return(data_list)
 }
 
-add_Y_residuals <- function(data_list, conditions, y_as_matrix = FALSE, scale_residuals = FALSE) {
+add_Y_residuals <- function(data_list, conditions, scale_residuals = FALSE) {
   # Compute residuals, their mean, and standard deviation, and add them to data_list
   data_list <- data_list %>%
     mutate(
@@ -314,17 +316,8 @@ add_Y_residuals <- function(data_list, conditions, y_as_matrix = FALSE, scale_re
       })
     )
 
-  if(y_as_matrix) {
-    # FIXME: double check the logic here see if NA is padded into it when there are missing data input
-    Y_resid_matrix = data_list %>%
-                     select(Y_resid) %>%
-                     unnest(Y_resid) %>%
-                     as.matrix()
-    colnames(Y_resid_matrix) <- conditions
-    data_list$Y_resid <- Y_resid_matrix
-  } else {
-    names(data_list$Y_resid) <- conditions
-  }
+  names(data_list$Y_resid) <- conditions
+
   return(data_list)
 }
 
@@ -344,7 +337,6 @@ load_regional_association_data <- function(genotype, # PLINK file
                                            xvar_cutoff = 0,
                                            imiss_cutoff = 0,
                                            cis_window = NULL, #  a string of chr:start-end for cis-window. If not provided all genotype data will be loaded
-                                           y_as_matrix = FALSE,
                                            extract_region_name = NULL, # a string of eg gene ID ENSG00000269699, this is helpful if we only want to keep a subset of the information when there are multiple regions available
                                            region_name_col = NULL,
                                            keep_indel = TRUE,
@@ -363,13 +355,13 @@ load_regional_association_data <- function(genotype, # PLINK file
                                     phenotype_header=phenotype_header, keep_samples=keep_samples)
     maf_list <- lapply(data_list$X, function(x) apply(x, 2, compute_maf))
     ## Get residue Y for each of condition and its mean and sd
-    data_list <- add_Y_residuals(data_list, conditions, y_as_matrix, scale_residuals)
+    data_list <- add_Y_residuals(data_list, conditions, scale_residuals)
     ## Get residue X for each of condition and its mean and sd
     data_list <- add_X_residuals(data_list, scale_residuals)
     # Get X matrix for union of samples
     X <- prepare_X_matrix(geno, data_list, imiss_cutoff, maf_cutoff, mac_cutoff, xvar_cutoff)
     region <- unlist(strsplit(region, ":", fixed = TRUE))
-    ## residual_Y: if y_as_matrix is true, then return a matrix of R conditions, with column names being the names of the conditions (phenotypes) and row names being sample names. Even for one condition it has to be a matrix with just one column. if y_as_matrix is false, then return a list of y either vector or matrix (CpG for example), and they need to match with residual_X in terms of which samples are missing.
+    ## residual_Y: a list of y either vector or matrix (CpG for example), and they need to match with residual_X in terms of which samples are missing.
     ## residual_X: is a list of R conditions each is a matrix, with list names being the names of conditions, column names being SNP names and row names being sample names.
     ## X: is the somewhat original genotype matrix output from `filter_X`, with column names being SNP names and row names being sample names. Sample names of X should match example sample names of residual_Y matrix form (not list); but the matrices inside residual_X would be subsets of sample name of residual_Y matrix form (not list).
     return (list(
@@ -392,7 +384,7 @@ load_regional_association_data <- function(genotype, # PLINK file
 #' @return A list
 #' @export
 load_regional_univariate_data <- function(...) {
-  dat <- load_regional_association_data(y_as_matrix = FALSE, ...)
+  dat <- load_regional_association_data(...)
   return (list(
           residual_Y = dat$residual_Y,
           residual_X = dat$residual_X,
@@ -420,11 +412,25 @@ load_regional_regression_data <- function(...) {
           ))
 }
 
+
+# return matrix of R conditions, with column names being the names of the conditions (phenotypes) and row names being sample names. Even for one condition it has to be a matrix with just one column. 
+#' @noRd 
+pheno_list_to_mat = function(data_list) {
+    # FIXME: double check the logic here see if NA is padded into it when there are missing data input
+    Y_resid_matrix = data_list %>%
+                     select(residual_Y) %>%
+                     unnest(residual_Y) %>%
+                     as.matrix()
+    colnames(Y_resid_matrix) <- names(data_list$residual_Y)
+    data_list$residual_Y <- Y_resid_matrix
+    return(data_list)
+}
+
 #' @return A list
 #' @export
 load_regional_multivariate_data <- function(matrix_y_min_complete = NULL, # when Y is saved as matrix, remove those with non-missing counts less than this cutoff
                                             ...) {
-  dat = load_regional_association_data(y_as_matrix = TRUE, ...)
+  dat = pheno_list_to_mat(load_regional_association_data(...))
   if (!is.null(matrix_y_min_complete)) {
     Y = filter_Y(dat$residual_Y, matrix_y_min_complete)
     if (length(Y$rm_rows)>0) {
