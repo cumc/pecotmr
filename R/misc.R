@@ -416,11 +416,7 @@ load_regional_regression_data <- function(...) {
 # return matrix of R conditions, with column names being the names of the conditions (phenotypes) and row names being sample names. Even for one condition it has to be a matrix with just one column. 
 #' @noRd 
 pheno_list_to_mat = function(data_list) {
-    # FIXME: double check the logic here see if NA is padded into it when there are missing data input
-    Y_resid_matrix = data_list %>%
-                     select(residual_Y) %>%
-                     unnest(residual_Y) %>%
-                     as.matrix()
+    Y_resid_matrix <- do.call(cbind, data_list$residual_Y)
     colnames(Y_resid_matrix) <- names(data_list$residual_Y)
     data_list$residual_Y <- Y_resid_matrix
     return(data_list)
