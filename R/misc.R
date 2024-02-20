@@ -360,7 +360,7 @@ load_regional_association_data <- function(genotype, # PLINK file
     data_list <- add_X_residuals(data_list, scale_residuals)
     # Get X matrix for union of samples
     X <- prepare_X_matrix(geno, data_list, imiss_cutoff, maf_cutoff, mac_cutoff, xvar_cutoff)
-    region <- unlist(strsplit(region, ":", fixed = TRUE))
+    region <- if (!is.null(region)) unlist(strsplit(region, ":", fixed = TRUE))
     ## residual_Y: a list of y either vector or matrix (CpG for example), and they need to match with residual_X in terms of which samples are missing.
     ## residual_X: is a list of R conditions each is a matrix, with list names being the names of conditions, column names being SNP names and row names being sample names.
     ## X: is the somewhat original genotype matrix output from `filter_X`, with column names being SNP names and row names being sample names. Sample names of X should match example sample names of residual_Y matrix form (not list); but the matrices inside residual_X would be subsets of sample name of residual_Y matrix form (not list).
@@ -376,7 +376,7 @@ load_regional_association_data <- function(genotype, # PLINK file
       X = X,
       maf = maf_list,
       chrom = region[1],
-      grange = unlist(strsplit(region[2], "-", fixed = TRUE)),
+      grange = if (!is.null(region)) unlist(strsplit(region[2], "-", fixed = TRUE)) else NULL,
 	    Y_coordinates = extract_phenotype_coordinates(pheno)
     ))
 }
