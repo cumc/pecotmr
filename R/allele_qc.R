@@ -125,6 +125,7 @@ allele_qc <- function(target_variants, ref_variants, target_data, col_to_flip,
     # we conclude that strand flip does not exists in the data at all
     # so we can bring back those previous marked to drop because of strand ambiguous
     snp[["keep"]][which(!strand_unambiguous)] <- TRUE
+    snp[["keep"]][!(exact_match | snp[["sign_flip"]])] <- FALSE
   }
 
   qc_summary <- matched %>%
