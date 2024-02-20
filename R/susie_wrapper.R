@@ -510,19 +510,21 @@ susie_post_processor <- function(susie_output, data_x, data_y, X_scalar, y_scala
             names(top_loci_list[[i]])[2] <- paste0("cs_", names(top_loci_list)[i])
             top_loci <- full_join(top_loci, top_loci_list[[i]], by = "variant_idx")
         }
-        top_loci[is.na(top_loci)] <- 0
-        variants <- res$variant_names[top_loci$variant_idx]
-        pip <- susie_output$pip[top_loci$variant_idx]
-        top_loci_cols <- c("variant_id" , if (!is.null(res$sumstats$betahat)) "betahat", if (!is.null(res$sumstats$sebetahat)) "sebetahat", if (!is.null(res$sumstats$z)) "z", if (!is.null(maf)) "maf", "pip" , colnames(top_loci)[-1])
-        res$top_loci <- data.frame(variants, stringsAsFactors = FALSE)
-        res$top_loci$betahat = if (!is.null(res$sumstats$betahat)) res$sumstats$betahat[top_loci$variant_idx] else NULL
-        res$top_loci$sebetahat = if (!is.null(res$sumstats$sebetahat)) res$sumstats$sebetahat[top_loci$variant_idx] else NULL
-        res$top_loci$z = if (!is.null(res$sumstats$z)) res$sumstats$z[top_loci$variant_idx] else NULL
-        res$top_loci$maf = if (!is.null(maf)) maf[top_loci$variant_idx] else NULL
-        res$top_loci$pip = pip
-        res$top_loci = cbind(res$top_loci, top_loci[,-1])
-        colnames(res$top_loci) <- top_loci_cols
-        rownames(res$top_loci) <- NULL
+        if (nrow(top_loci)>0) {
+          top_loci[is.na(top_loci)] <- 0
+          variants <- res$variant_names[top_loci$variant_idx]
+          pip <- susie_output$pip[top_loci$variant_idx]
+          top_loci_cols <- c("variant_id" , if (!is.null(res$sumstats$betahat)) "betahat", if (!is.null(res$sumstats$sebetahat)) "sebetahat", if (!is.null(res$sumstats$z)) "z", if (!is.null(maf)) "maf", "pip" , colnames(top_loci)[-1])
+          res$top_loci <- data.frame(variants, stringsAsFactors = FALSE)
+          res$top_loci$betahat = if (!is.null(res$sumstats$betahat)) res$sumstats$betahat[top_loci$variant_idx] else NULL
+          res$top_loci$sebetahat = if (!is.null(res$sumstats$sebetahat)) res$sumstats$sebetahat[top_loci$variant_idx] else NULL
+          res$top_loci$z = if (!is.null(res$sumstats$z)) res$sumstats$z[top_loci$variant_idx] else NULL
+          res$top_loci$maf = if (!is.null(maf)) maf[top_loci$variant_idx] else NULL
+          res$top_loci$pip = pip
+          res$top_loci = cbind(res$top_loci, top_loci[,-1])
+          colnames(res$top_loci) <- top_loci_cols
+          rownames(res$top_loci) <- NULL
+        }
         names(susie_output$pip) <- NULL
         res$susie_result_trimmed <- list(
             pip = susie_output$pip,
