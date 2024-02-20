@@ -435,14 +435,34 @@ susie_post_processor <- function(susie_output, data_x, data_y, X_scalar, y_scala
                                 mode = c("susie", "susie_rss")) {
     mode <- match.arg(mode)
     get_cs_index <- function(snps_idx, susie_cs) {
-        idx <- tryCatch(
-            which(
-                pmap(list(a = susie_cs), function(a) snps_idx %in% a) %>% unlist()
-            ),
-            error = function(e) NA_integer_
-        )
-        if(length(idx) == 0) return(NA_integer_)
-        return(idx)
+        # Use pmap to iterate over each vector in susie_cs
+        idx_lengths <- tryCatch(
+            {
+                pmap(list(x = susie_cs), function(x) {
+                    # Check if snps_idx is in the CS and return the length of the CS if it is
+                    if (snps_idx %in% x) {
+                        return(length(x))
+                    } else {
+                        return(NA_integer_)
+                    }
+                }) %>% unlist()
+                }, error = function(e) NA_integer_ 
+            )
+        idx <- which(!is.na(idx_lengths))
+        if (length(idx) > 0) {
+            if (length(idx) > 1) {
+                smallest_cs_idx <- which.min(idx_lengths[idx])
+                selected_cs <- idx[smallest_cs_idx]
+                selected_length <- idx_lengths[selected_cs]
+
+                warning(sprintf("Variable %d found in multiple CS: %s. Keeping smallest: CS %d (length %d).",
+                                snps_idx, paste(idx, collapse = ', '), selected_cs, selected_length))
+                idx <- selected_cs  # Keep index with smallest length
+            }
+            return(idx)
+        } else {
+            return(NA_integer_)
+        }
     }
     get_top_variants_idx <- function(susie_output, signal_cutoff) {
         c(which(susie_output$pip >= signal_cutoff), unlist(susie_output$sets$cs)) %>% unique %>% sort
@@ -510,7 +530,7 @@ susie_post_processor <- function(susie_output, data_x, data_y, X_scalar, y_scala
             names(top_loci_list[[i]])[2] <- paste0("cs_", names(top_loci_list)[i])
             top_loci <- full_join(top_loci, top_loci_list[[i]], by = "variant_idx")
         }
-        if (nrow(top_loci)>0) {
+        if (nrow(top_loci) > 0) {
           top_loci[is.na(top_loci)] <- 0
           variants <- res$variant_names[top_loci$variant_idx]
           pip <- susie_output$pip[top_loci$variant_idx]
