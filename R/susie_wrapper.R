@@ -449,6 +449,9 @@ susie_post_processor <- function(susie_output, data_x, data_y, X_scalar, y_scala
                 }, error = function(e) NA_integer_ 
             )
         idx <- which(!is.na(idx_lengths))
+        # idx length should be either 1 or 0
+        # But in some rare cases there will be a convergence issue resulting in a variant belong to multiple CS
+        # In which case we will keep one of them, with a warning
         if (length(idx) > 0) {
             if (length(idx) > 1) {
                 smallest_cs_idx <- which.min(idx_lengths[idx])
