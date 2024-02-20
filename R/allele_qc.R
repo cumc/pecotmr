@@ -82,10 +82,11 @@ allele_qc <- function(target_variants, ref_variants, target_data, col_to_flip,
   matched_indices <- target_variants %>%
                      mutate(index = row_number())%>%
                      inner_join(matched, by = c("chrom" = "chrom", "pos" = "pos", "A1" = "A1.target", "A2" = "A2.target")) %>%
-                     filter(duplicated(.) | !duplicated(.)) # this will keep all rows, duplicates and non-duplicates alike
+                     filter(duplicated(.) | !duplicated(.))   # this will keep all rows, duplicates and non-duplicates alike
+  variants_id_qced = matched_indices %>% pull(variants_id_qced)
   target_data_qced <- target_data[matched_indices$index, , drop = FALSE]%>%
-                      as.data.frame()%>%
-                      mutate(variant_id = matched$variants_id_qced)
+                      as.data.frame() %>%
+                      mutate(variant_id = variants_id_qced)
   
   a1 <- toupper(matched$A1.target)
   a2 <- toupper(matched$A2.target)
