@@ -368,7 +368,6 @@ susie_rss_qc <- function(sumstat, R, ref_panel, bhat=NULL, shat=NULL, var_y=NULL
     }
     
     ## Imputation logic using RAiSS or other methods
-
     imputation_res <- raiss(ref_panel, known_zscores, R, lamb = lamb, rcond = rcond, 
                                R2_threshold = R2_threshold, minimum_ld = minimum_ld)
       
