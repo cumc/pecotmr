@@ -246,7 +246,7 @@ rss_input_preprocess = function(sumstats, LD_data, skip_region = NULL) {
 #' @export
 susie_rss_pipeline = function(sumstat, R, ref_panel, n, L, var_y, QC = TRUE, impute = TRUE, bayesian_conditional_analysis = TRUE, rcond = 0.01, R2_threshold = 0.6,
                               max_L = 20, l_step = 5, minimum_ld = 5, coverage = 0.95,
-                              second_coverage = c(0.7, 0.5), signal_cutoff = 0.025) {
+                              secondary_coverage = c(0.7, 0.5), signal_cutoff = 0.025) {
     if (!is.null(sumstat$z)) {
         z = sumstat$z 
         bhat = NULL
