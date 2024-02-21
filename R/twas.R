@@ -60,12 +60,10 @@ twas_z <- function(weights, z, R=NULL, X=NULL) {
 #'     }
 #'   \item `time_elapsed`: The time taken to complete the cross-validation process.
 #' }
-#' @importFrom parallel makeCluster
-#' @importFrom parallel detectCores
-#' @importFrom parallel stopCluster
-#' @importFrom foreach foreach
-#' @importFrom foreach %dopar%
-#' @importFrom doParallel registerDoParallel
+#' @importFrom future plan
+#' @importFrom future multisession
+#' @importFrom furrr future_map
+#' @importFrom purrr map
 #' @export
 twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_methods = NULL, seed = NULL, max_num_variants = NULL, variants_to_keep = NULL, num_threads = 1, ...) {
     split_data <- function(X, Y, sample_partition, fold){
@@ -232,14 +230,10 @@ twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_
         }
 
         if (num_cores >= 2) {
-            cl <- makeCluster(num_cores)
-            registerDoParallel(cl)
-            fold_results <- foreach(j = 1:fold) %dopar% {
-                compute_method_predictions(j)
-            }
-            stopCluster(cl)
+            plan(multisession, workers = num_cores)
+            fold_results <- future_map(1:fold, compute_method_predictions)
         } else { 
-            fold_results <- lapply(1:fold, compute_method_predictions)
+            fold_results <- map(1:fold, compute_method_predictions)
         }
                                    
         # Reorganize into Y_pred
@@ -320,13 +314,11 @@ twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_
 #'        If set to 2 or more, parallel processing is enabled with that many threads.
 #' @return A list where each element is named after a method and contains the weight matrix produced by that method.
 #'
-#' @importFrom parallel makeCluster
-#' @importFrom parallel detectCores
-#' @importFrom parallel stopCluster
-#' @importFrom foreach foreach
-#' @importFrom foreach %dopar%
-#' @importFrom doParallel registerDoParallel
 #' @export
+#' @importFrom future plan
+#' @importFrom future multisession
+#' @importFrom furrr future_map
+#' @importFrom purrr map
 twas_weights <- function(X, Y, weight_methods, num_threads = 1, seed = NULL) {
     if (!is.matrix(X) || (!is.matrix(Y) && !is.vector(Y))) {
         stop("X must be a matrix and Y must be a matrix or a vector.")
@@ -375,14 +367,10 @@ twas_weights <- function(X, Y, weight_methods, num_threads = 1, seed = NULL) {
 
     if (num_cores >= 2) {
         # Set up parallel backend to use multiple cores
-        cl <- makeCluster(num_cores)
-        registerDoParallel(cl)
-        weights_list <- foreach(method_name = names(weight_methods)) %dopar% {
-            compute_method_weights(method_name)
-        }
-        stopCluster(cl)
+        plan(multisession, workers = num_cores)
+        weights_list <- names(weight_methods) %>% future_map(compute_method_weights)
     } else {
-        weights_list <- lapply(names(weight_methods), compute_method_weights)
+        weights_list <- names(weight_methods) %>% map(compute_method_weights)
     }
     names(weights_list) <- names(weight_methods)
 
