@@ -21,6 +21,7 @@ susie_rss_qc(
   minimum_ld = 5,
   impute = TRUE,
   output_qc = TRUE,
+  coverage = 0.95,
   ...
 )
 }
