@@ -92,19 +92,19 @@ susie_wrapper = function(X, y, init_L = 10, max_L = 30, l_step = 5, ...) {
 #' @importFrom susieR susie_rss
 #' @export
 susie_rss_wrapper <- function(z, R, bhat, shat, n = NULL, var_y = NULL, L = 10, max_L = 30, l_step = 5, 
-                              zR_discrepancy_correction = FALSE, ...) {
+                              zR_discrepancy_correction = FALSE, coverage = 0.95, ...) {
   if (L == 1) {
     return(susie_rss(z = z, R = R, bhat = bhat, shat = shat, var_y = var_y, n = n, 
-                    L = 1, max_iter = 1, median_abs_corr = 0.8, correct_zR_discrepancy = FALSE, ...))
+                    L = 1, max_iter = 1, median_abs_corr = 0.8, correct_zR_discrepancy = FALSE, coverage = coverage, ...))
   }
   if (L == max_L) {
     return(susie_rss(z = z, R = R, bhat = bhat, shat = shat, var_y = var_y, n = n, L = L, median_abs_corr = 0.8,
-                                    correct_zR_discrepancy = zR_discrepancy_correction, ...))
+                                    correct_zR_discrepancy = zR_discrepancy_correction, coverage = coverage, ...))
   }
   while (TRUE) {
       st = proc.time()
       susie_rss_result <- susie_rss(z = z, R = R, bhat = bhat, shat = shat, var_y = var_y, n = n, L = L, median_abs_corr = 0.8,
-                                    correct_zR_discrepancy = zR_discrepancy_correction, ...)
+                                    correct_zR_discrepancy = zR_discrepancy_correction,coverage = coverage, ...)
       susie_rss_result$time_elapsed <- proc.time() - st
     # Check for convergence and adjust L if necessary
     if (!is.null(susie_rss_result$sets$cs)) {
@@ -245,7 +245,8 @@ rss_input_preprocess = function(sumstats, LD_data, skip_region = NULL) {
 #' @import tibble
 #' @export
 susie_rss_pipeline = function(sumstat, R, ref_panel, n, L, var_y, QC = TRUE, impute = TRUE, bayesian_conditional_analysis = TRUE, rcond = 0.01, R2_threshold = 0.6,
-                              max_L = 20, l_step = 5, minimum_ld = 5) {
+                              max_L = 20, l_step = 5, minimum_ld = 5, coverage = 0.95,
+                              second_coverage = c(0.7, 0.5), signal_cutoff = 0.025) {
     if (!is.null(sumstat$z)) {
         z = sumstat$z 
         bhat = NULL
@@ -261,22 +262,22 @@ susie_rss_pipeline = function(sumstat, R, ref_panel, n, L, var_y, QC = TRUE, imp
     final_result = list()
 
     LD_extract = R[sumstat$variant_id, sumstat$variant_id, drop = FALSE]
-    single_effect_res = susie_rss_wrapper(z = z, R = LD_extract, bhat = bhat, shat = shat, L = 1, n = n, var_y = var_y)
-    single_effect_post = susie_post_processor(single_effect_res, data_x = LD_extract, data_y = list(z = z), mode = "susie_rss")
+    single_effect_res = susie_rss_wrapper(z = z, R = LD_extract, bhat = bhat, shat = shat, L = 1, n = n, var_y = var_y, coverage = coverage)
+    single_effect_post = susie_post_processor(single_effect_res, data_x = LD_extract, data_y = list(z = z), signal_cutoff = signal_cutoff, secondary_coverage = secondary_coverage, mode = "susie_rss")
     final_result$single_effect_regression = single_effect_post
 
-    result_noqc = susie_rss_wrapper(z = z, R = LD_extract, bhat = bhat, shat = shat, n = n, L = L, var_y = var_y)
-    result_noqc_post = susie_post_processor(result_noqc, data_x = LD_extract, data_y = list(z = z), mode = "susie_rss")
+    result_noqc = susie_rss_wrapper(z = z, R = LD_extract, bhat = bhat, shat = shat, n = n, L = L, var_y = var_y, coverage = coverage)
+    result_noqc_post = susie_post_processor(result_noqc, data_x = LD_extract, data_y = list(z = z), signal_cutoff = signal_cutoff,  secondary_coverage = secondary_coverage, mode = "susie_rss")
     final_result$noqc = result_noqc_post
 
     if (QC) {
         result_qced = susie_rss_qc(sumstat, ref_panel = ref_panel, R = R, n = n, L = L, impute = impute,
-            rcond = rcond, R2_threshold = R2_threshold, max_L = max_L, minimum_ld = minimum_ld, l_step = l_step, var_y = var_y)  
+            rcond = rcond, R2_threshold = R2_threshold, max_L = max_L, minimum_ld = minimum_ld, l_step = l_step, var_y = var_y, coverage = coverage)  
         var_impute_kept = names(result_qced$qc_impute_result$pip)
             
-        result_qced_impute_post = susie_post_processor(result_qced$qc_impute_result, data_x = R[var_impute_kept, var_impute_kept, drop = FALSE], data_y = list(z = result_qced$qc_impute_result$z), mode = "susie_rss")
+        result_qced_impute_post = susie_post_processor(result_qced$qc_impute_result, data_x = R[var_impute_kept, var_impute_kept, drop = FALSE], data_y = list(z = result_qced$qc_impute_result$z), signal_cutoff = signal_cutoff, secondary_coverage = secondary_coverage, mode = "susie_rss")
 
-        result_qced_only_post = susie_post_processor(result_qced$qc_only_result, data_x = LD_extract, data_y = list(z = z), mode = "susie_rss")
+        result_qced_only_post = susie_post_processor(result_qced$qc_only_result, data_x = LD_extract, data_y = list(z = z), signal_cutoff = signal_cutoff, secondary_coverage = secondary_coverage, mode = "susie_rss")
             
         final_result$qc_impute = result_qced_impute_post
         final_result$qc_only = result_qced_only_post
@@ -288,16 +289,16 @@ susie_rss_pipeline = function(sumstat, R, ref_panel, n, L, var_y, QC = TRUE, imp
     }
 
     if (bayesian_conditional_analysis) {
-        conditional_noqc = susie_rss_wrapper(z = z, R = LD_extract, bhat = bhat, shat = shat, n = n, L = L, max_iter = 1, var_y = var_y)
-        conditional_noqc_post = susie_post_processor(conditional_noqc, data_x = LD_extract, data_y = list(z = z), mode = "susie_rss")
+        conditional_noqc = susie_rss_wrapper(z = z, R = LD_extract, bhat = bhat, shat = shat, n = n, L = L, max_iter = 1, var_y = var_y, coverage = coverage)
+        conditional_noqc_post = susie_post_processor(conditional_noqc, data_x = LD_extract, data_y = list(z = z), signal_cutoff = signal_cutoff, secondary_coverage = secondary_coverage, mode = "susie_rss")
         final_result$conditional_regression_noqc = conditional_noqc_post
         if (QC) {
-            conditional_qc_only = susie_rss_wrapper(z = z, R = LD_extract, bhat = bhat, shat = shat, n = n, L = L, max_iter = 1, var_y = var_y)
-            conditional_qc_only_post = susie_post_processor(conditional_qc_only, data_x = LD_extract, data_y = list(z = z), mode = "susie_rss")
+            conditional_qc_only = susie_rss_wrapper(z = z, R = LD_extract, bhat = bhat, shat = shat, n = n, L = L, max_iter = 1, var_y = var_y, coverage = coverage)
+            conditional_qc_only_post = susie_post_processor(conditional_qc_only, data_x = LD_extract, data_y = list(z = z), signal_cutoff = signal_cutoff, secondary_coverage = secondary_coverage, mode = "susie_rss")
             
             if (impute) {
-                conditional_qced_impute = susie_rss_wrapper(z = result_qced$qc_impute_result$z, R = R[var_impute_kept, var_impute_kept, drop = FALSE], bhat = bhat, shat = shat, n = n, L = L, max_iter = 1, var_y = var_y)
-                conditional_qced_impute_post = susie_post_processor(conditional_qced_impute, data_x = R[var_impute_kept, var_impute_kept, drop = FALSE], data_y = list(z = result_qced$qc_impute_result$z), mode = "susie_rss")
+                conditional_qced_impute = susie_rss_wrapper(z = result_qced$qc_impute_result$z, R = R[var_impute_kept, var_impute_kept, drop = FALSE], bhat = bhat, shat = shat, n = n, L = L, max_iter = 1, var_y = var_y, coverage = coverage)
+                conditional_qced_impute_post = susie_post_processor(conditional_qced_impute, data_x = R[var_impute_kept, var_impute_kept, drop = FALSE], data_y = list(z = result_qced$qc_impute_result$z), signal_cutoff = signal_cutoff, secondary_coverage = secondary_coverage, mode = "susie_rss")
                 final_result$conditional_regression_qc_impute = conditional_qced_impute_post
             }
                 
@@ -336,7 +337,7 @@ susie_rss_pipeline = function(sumstat, R, ref_panel, n, L, var_y, QC = TRUE, imp
 #' @import dplyr
 #' @export
 susie_rss_qc <- function(sumstat, R, ref_panel, bhat=NULL, shat=NULL, var_y=NULL, n = NULL, L = 10, max_L = 20, l_step = 5, 
-                        lamb = 0.01, rcond = 0.01, R2_threshold = 0.6, minimum_ld = 5, impute = TRUE, output_qc = TRUE, ...) {
+                        lamb = 0.01, rcond = 0.01, R2_threshold = 0.6, minimum_ld = 5, impute = TRUE, output_qc = TRUE, coverage = 0.95, ...) {
   z = sumstat$z
   ## Input validation for z-scores and reference panel
   
@@ -350,7 +351,7 @@ susie_rss_qc <- function(sumstat, R, ref_panel, bhat=NULL, shat=NULL, var_y=NULL
   ## FIXME: should parse ...  directly and use do.call  for function calls
   LD_extract = R[sumstat$variant_id, sumstat$variant_id, drop = FALSE]
   result <- susie_rss(z=z, R=LD_extract, bhat=bhat, shat=shat, var_y=var_y, n=n, L=max_L,  
-                     correct_zR_discrepancy=TRUE, track_fit = TRUE, max_iter = 100)
+                     correct_zR_discrepancy=TRUE, track_fit = TRUE, max_iter = 100, coverage = coverage)
 
   ## Initialize result_final
   result_final <- NULL
@@ -386,7 +387,7 @@ susie_rss_qc <- function(sumstat, R, ref_panel, bhat=NULL, shat=NULL, var_y=NULL
 
     ## Re-run SuSiE RSS with imputed z-scores and updated LD matrix
     result_final$qc_impute_result <- susie_rss_wrapper(z=imputation_result_filter$z, R=LD_extract_filtered, bhat=bhat, shat=shat, var_y=var_y, 
-                                      n=n, L=L, max_L=max_L, l_step=l_step, zR_discrepancy_correction=FALSE, ...)
+                                      n=n, L=L, max_L=max_L, l_step=l_step, zR_discrepancy_correction=FALSE, coverage = coverage, ...)
     result_final$qc_impute_result$z = imputation_result_filter$z
     result_final$sumstats_qc_impute_filtered = imputation_result_filter
     result_final$sumstats_qc_impute = imputation_result_nofilter
@@ -428,9 +429,9 @@ susie_rss_qc <- function(sumstat, R, ref_panel, bhat=NULL, shat=NULL, var_y=NULL
 #' @importFrom stringr str_replace
 #' @export
 susie_post_processor <- function(susie_output, data_x, data_y, X_scalar, y_scalar, maf = NULL, 
-                                secondary_coverage = c(0.5, 0.7), signal_cutoff = 0.1, 
+                                secondary_coverage = c(0.5, 0.7), signal_cutoff = 0.025, 
                                 other_quantities = NULL, prior_eff_tol = 1e-9, min_abs_corr= 0.5, 
-                                median_abs_corr = 0.8,
+                                median_abs_corr = 0.95,
                                 mode = c("susie", "susie_rss")) {
     mode <- match.arg(mode)
     get_cs_index <- function(snps_idx, susie_cs) {
