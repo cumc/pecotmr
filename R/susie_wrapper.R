@@ -431,7 +431,7 @@ susie_rss_qc <- function(sumstat, R, ref_panel, bhat=NULL, shat=NULL, var_y=NULL
 susie_post_processor <- function(susie_output, data_x, data_y, X_scalar, y_scalar, maf = NULL, 
                                 secondary_coverage = c(0.5, 0.7), signal_cutoff = 0.025, 
                                 other_quantities = NULL, prior_eff_tol = 1e-9, min_abs_corr= 0.5, 
-                                median_abs_corr = 0.95,
+                                median_abs_corr = 0.8,
                                 mode = c("susie", "susie_rss")) {
     mode <- match.arg(mode)
     get_cs_index <- function(snps_idx, susie_cs) {
