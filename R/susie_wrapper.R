@@ -269,11 +269,11 @@ susie_rss_pipeline = function(sumstat, R, ref_panel, n, L, var_y, QC = TRUE, imp
   LD_extract = R[sumstat$variant_id, sumstat$variant_id, drop = FALSE]
   single_effect_res = susie_rss_wrapper(z = z, R = LD_extract, bhat = bhat, shat = shat, L = 1, n = n, var_y = var_y, coverage = coverage)
   if (max(single_effect_res$pip) < pip_cutoff_to_skip) {
-    cat(paste0("No PIP larger than ", pip_cutoff_to_skip, "in this region."))
+    cat(paste0("No PIP larger than ", pip_cutoff_to_skip, " in this region."))
     if (impute) {
       z = sumstat$z
       known_zscores = sumstat %>% arrange(pos)
-      final_result$sumstats_qc_impute = raiss(ref_panel, known_zscores, R = R, lamb = lamb, rcond = rcond, R2_threshold = R2_threshold, minimum_ld = minimum_ld)
+      final_result$sumstats_qc_impute = raiss(ref_panel, known_zscores, R, lamb = lamb, rcond = rcond, R2_threshold = R2_threshold, minimum_ld = minimum_ld)
       final_result$sumstats_qc_impute$chrom = as.numeric(final_result$sumstats_qc_impute$chrom)
     }
   } else {
