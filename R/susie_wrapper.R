@@ -232,6 +232,7 @@ rss_input_preprocess = function(sumstats, LD_data, skip_region = NULL) {
 #' @param QC Perform quality control (default: TRUE).
 #' @param impute Perform imputation (default: TRUE).
 #' @param bayesian_conditional_analysis Perform Bayesian conditional analysis (default: TRUE).
+#' @param lamb Regularization parameter for the RAiSS imputation method.
 #' @param rcond Condition number for the RAiSS imputation method.
 #' @param R2_threshold R-squared threshold for the RAiSS imputation method.
 #' @param max_L Maximum number of components for QC.
@@ -248,7 +249,7 @@ rss_input_preprocess = function(sumstats, LD_data, skip_region = NULL) {
 #' @import susieR 
 #' @import tibble
 #' @export
-susie_rss_pipeline = function(sumstat, R, ref_panel, n, L, var_y, QC = TRUE, impute = TRUE, bayesian_conditional_analysis = TRUE, rcond = 0.01, R2_threshold = 0.6,
+susie_rss_pipeline = function(sumstat, R, ref_panel, n, L, var_y, QC = TRUE, impute = TRUE, bayesian_conditional_analysis = TRUE, lamb = 0.01, rcond = 0.01, R2_threshold = 0.6,
                               max_L = 20, l_step = 5, minimum_ld = 5, coverage = 0.95,
                               secondary_coverage = c(0.7, 0.5), pip_cutoff_to_skip = 0.025, signal_cutoff = 0.025) {
   
@@ -284,8 +285,7 @@ susie_rss_pipeline = function(sumstat, R, ref_panel, n, L, var_y, QC = TRUE, imp
     final_result$noqc = result_noqc_post
     
     if (QC) {
-      result_qced = susie_rss_qc(sumstat, ref_panel = ref_panel, R = R, n = n, L = L, impute = impute,
-                                  rcond = rcond, R2_threshold = R2_threshold, max_L = max_L, minimum_ld = minimum_ld, l_step = l_step, var_y = var_y, coverage = coverage)  
+      result_qced = susie_rss_qc(sumstat, ref_panel = ref_panel, R = R, n = n, L = L, impute = impute, lamb = lamb, rcond = rcond, R2_threshold = R2_threshold, max_L = max_L, minimum_ld = minimum_ld, l_step = l_step, var_y = var_y, coverage = coverage)  
       var_impute_kept = names(result_qced$qc_impute_result$pip)
       result_qced_impute_post = susie_post_processor(result_qced$qc_impute_result, data_x = R[var_impute_kept, var_impute_kept, drop = FALSE], data_y = list(z = result_qced$qc_impute_result$z), signal_cutoff = signal_cutoff, secondary_coverage = secondary_coverage, mode = "susie_rss")
       result_qced_only_post = susie_post_processor(result_qced$qc_only_result, data_x = LD_extract, data_y = list(z = z), signal_cutoff = signal_cutoff, secondary_coverage = secondary_coverage, mode = "susie_rss")
