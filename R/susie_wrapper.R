@@ -258,9 +258,9 @@ susie_rss_pipeline = function(sumstat, R, ref_panel, n, L, var_y, QC = TRUE, imp
     bhat = NULL
     shat = NULL
   } else if ((!is.null(sumstat$beta)) && (!is.null(sumstat$se))) {
-    z = NULL
-    bhat = sumstat$beta
-    shat = sumstat$se
+    z = sumstat$beta / sumstat$se
+    bhat = NULL
+    shat = NULL
   } else {
     stop("Sumstat should have z or (bhat and shat)")
   }
@@ -305,8 +305,16 @@ susie_rss_pipeline = function(sumstat, R, ref_panel, n, L, var_y, QC = TRUE, imp
       final_result$conditional_regression_noqc = conditional_noqc_post
       
       if (QC) {
-        conditional_qc_only = susie_rss_wrapper(z = z, R = LD_extract, bhat = bhat, shat = shat, n = n, L = L, max_iter = 1, var_y = var_y, coverage = coverage)
-        conditional_qc_only_post = susie_post_processor(conditional_qc_only, data_x = LD_extract, data_y = list(z = z), signal_cutoff = signal_cutoff, secondary_coverage = secondary_coverage, mode = "susie_rss")
+        outlier = final_result$qc_only$zR_outliers
+        if(!is.null(outlier) & length(outlier) != 0){
+            z_rmoutlier = z[-outlier]
+            LD_rmoutlier = LD_extract[-outlier, -outlier, drop = FALSE]
+        }else{
+            z_rmoutlier = z
+            LD_rmoutlier = LD_extract
+        }
+        conditional_qc_only = susie_rss_wrapper(z = z_rmoutlier , R = LD_rmoutlier, bhat = bhat, shat = shat, n = n, L = L, max_iter = 1, var_y = var_y, coverage = coverage)
+        conditional_qc_only_post = susie_post_processor(conditional_qc_only, data_x = LD_rmoutlier, data_y = list(z = z_rmoutlier), signal_cutoff = signal_cutoff, secondary_coverage = secondary_coverage, mode = "susie_rss")
         
         if (impute) {
           conditional_qced_impute = susie_rss_wrapper(z = result_qced$qc_impute_result$z, R = R[var_impute_kept, var_impute_kept, drop = FALSE], bhat = bhat, shat = shat, n = n, L = L, max_iter = 1, var_y = var_y, coverage = coverage)
