@@ -292,6 +292,7 @@ susie_rss_pipeline = function(sumstat, R, ref_panel, n, L, var_y, QC = TRUE, imp
       
       final_result$qc_impute = result_qced_impute_post
       final_result$qc_only = result_qced_only_post
+      final_result$qc_only$outlier = result_qced$qc_only_result$zR_outliers
       
       result_qced$sumstats_qc_impute_filtered$chrom = as.numeric(result_qced$sumstats_qc_impute_filtered$chrom)
       result_qced$sumstats_qc_impute$chrom = as.numeric(result_qced$sumstats_qc_impute$chrom)
@@ -305,7 +306,7 @@ susie_rss_pipeline = function(sumstat, R, ref_panel, n, L, var_y, QC = TRUE, imp
       final_result$conditional_regression_noqc = conditional_noqc_post
       
       if (QC) {
-        outlier = final_result$qc_only$zR_outliers
+        outlier = result_qced$qc_only_result$zR_outliers
         if(!is.null(outlier) & length(outlier) != 0){
             z_rmoutlier = z[-outlier]
             LD_rmoutlier = LD_extract[-outlier, -outlier, drop = FALSE]
