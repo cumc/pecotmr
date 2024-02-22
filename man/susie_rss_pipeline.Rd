@@ -14,6 +14,7 @@ susie_rss_pipeline(
   QC = TRUE,
   impute = TRUE,
   bayesian_conditional_analysis = TRUE,
+  lamb = 0.01,
   rcond = 0.01,
   R2_threshold = 0.6,
   max_L = 20,
@@ -43,6 +44,8 @@ susie_rss_pipeline(
 \item{impute}{Perform imputation (default: TRUE).}
 
 \item{bayesian_conditional_analysis}{Perform Bayesian conditional analysis (default: TRUE).}
+
+\item{lamb}{Regularization parameter for the RAiSS imputation method.}
 
 \item{rcond}{Condition number for the RAiSS imputation method.}
 
