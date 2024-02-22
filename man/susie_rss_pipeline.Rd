@@ -21,6 +21,7 @@ susie_rss_pipeline(
   minimum_ld = 5,
   coverage = 0.95,
   secondary_coverage = c(0.7, 0.5),
+  pip_cutoff_to_skip = 0.025,
   signal_cutoff = 0.025
 )
 }
@@ -52,6 +53,14 @@ susie_rss_pipeline(
 \item{l_step}{Step size for increasing L when the limit is reached during dynamic adjustment.}
 
 \item{minimum_ld}{Minimum LD for QC.}
+
+\item{coverage}{Coverage level for susie_rss analysis (default: 0.95).}
+
+\item{secondary_coverage}{Secondary coverage levels for susie_rss analysis (default: c(0.7, 0.5)).}
+
+\item{pip_cutoff_to_skip}{PIP cutoff to skip imputation (default: 0.025).}
+
+\item{signal_cutoff}{Signal cutoff for susie_post_processor (default: 0.025).}
 }
 \value{
 A list containing the results of various SuSiE RSS analyses.
