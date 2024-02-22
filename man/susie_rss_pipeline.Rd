@@ -18,7 +18,10 @@ susie_rss_pipeline(
   R2_threshold = 0.6,
   max_L = 20,
   l_step = 5,
-  minimum_ld = 5
+  minimum_ld = 5,
+  coverage = 0.95,
+  secondary_coverage = c(0.7, 0.5),
+  signal_cutoff = 0.025
 )
 }
 \arguments{

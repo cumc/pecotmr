@@ -15,6 +15,7 @@ susie_rss_wrapper(
   max_L = 30,
   l_step = 5,
   zR_discrepancy_correction = FALSE,
+  coverage = 0.95,
   ...
 )
 }
