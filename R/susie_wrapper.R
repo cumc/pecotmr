@@ -274,7 +274,7 @@ susie_rss_pipeline = function(sumstat, R, ref_panel, n, L, var_y, QC = TRUE, imp
     if (impute) {
       z = sumstat$z
       known_zscores = sumstat %>% arrange(pos)
-      final_result$sumstats_qc_impute = raiss(ref_panel, known_zscores, R, lamb = lamb, rcond = rcond, R2_threshold = R2_threshold, minimum_ld = minimum_ld)
+      final_result$sumstats_qc_impute = raiss(ref_panel, known_zscores, R, lamb = lamb, rcond = rcond, R2_threshold = R2_threshold, minimum_ld = minimum_ld)$result_nofilter
       final_result$sumstats_qc_impute$chrom = as.numeric(final_result$sumstats_qc_impute$chrom)
     }
   } else {
