@@ -14,11 +14,16 @@ susie_rss_pipeline(
   QC = TRUE,
   impute = TRUE,
   bayesian_conditional_analysis = TRUE,
+  lamb = 0.01,
   rcond = 0.01,
   R2_threshold = 0.6,
   max_L = 20,
   l_step = 5,
-  minimum_ld = 5
+  minimum_ld = 5,
+  coverage = 0.95,
+  secondary_coverage = c(0.7, 0.5),
+  pip_cutoff_to_skip = 0.025,
+  signal_cutoff = 0.1
 )
 }
 \arguments{
@@ -40,6 +45,8 @@ susie_rss_pipeline(
 
 \item{bayesian_conditional_analysis}{Perform Bayesian conditional analysis (default: TRUE).}
 
+\item{lamb}{Regularization parameter for the RAiSS imputation method.}
+
 \item{rcond}{Condition number for the RAiSS imputation method.}
 
 \item{R2_threshold}{R-squared threshold for the RAiSS imputation method.}
@@ -49,6 +56,14 @@ susie_rss_pipeline(
 \item{l_step}{Step size for increasing L when the limit is reached during dynamic adjustment.}
 
 \item{minimum_ld}{Minimum LD for QC.}
+
+\item{coverage}{Coverage level for susie_rss analysis (default: 0.95).}
+
+\item{secondary_coverage}{Secondary coverage levels for susie_rss analysis (default: c(0.7, 0.5)).}
+
+\item{pip_cutoff_to_skip}{PIP cutoff to skip imputation (default: 0.025).}
+
+\item{signal_cutoff}{Signal cutoff for susie_post_processor (default: 0.1).}
 }
 \value{
 A list containing the results of various SuSiE RSS analyses.
