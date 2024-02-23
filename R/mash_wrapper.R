@@ -169,7 +169,60 @@ load_multitrait_tensorqtl_sumstat <- function(sumstats_paths,
   out$top_variants <- lapply(Y, function(x) x$top_variants)
   return(out)
 }
+#' @export
+merge_susie_cs <- function(susie_file, coverage = "cs_coverage_0.95"){
+# Read susie rds file
+dat <- readRDS(susie_file)[[1]]
+# Initialize an empty list for the results
+results <- list()
+# Loop through each condition and their credible sets
+for (i in 1:length(names(dat))) {
+  if (!is.null(dat[[i]][["top_loci"]])){
+  num_cs <- length(which(unique(get_nested_element(dat[[i]],c("top_loci",coverage)))>0))
 
+  if (num_cs > 0) {
+    for (j in 1:num_cs) {
+      variants_df <- get_nested_element(dat[[i]],c("top_loci")) %>%
+                     filter(!!sym(coverage) == j) %>%
+                     select(variant_id, pip)
+
+      # Iterate through the rows of the variants_df
+      for (row in 1:nrow(variants_df)) {
+        variant_id <- variants_df$variant_id[row]
+        variant_pip <- variants_df$pip[row]
+
+        # Prepare the set name
+        set_name <- paste0("cs_", i, "_", j)
+
+        # If the variant_id is not in the results list, add it with the current set_name and pip
+        if (!variant_id %in% names(results)) {
+          results[[variant_id]] <- list(sets = set_name, pips = variant_pip)
+        } else {
+          # If the variant_id is already in the results, append the current set_name and pip
+          results[[variant_id]]$sets <- paste(results[[variant_id]]$sets, set_name, sep = ",")
+          results[[variant_id]]$pips <- c(results[[variant_id]]$pips, variant_pip)
+        }
+      }
+    }
+  }
+}
+}
+# Convert the results list to a data frame with maximum and median pip values
+top_loci_df <- do.call(rbind, lapply(names(results), function(variant_id) {
+  max_pip <- max(unlist(results[[variant_id]]$pips))
+  median_pip <- median(unlist(results[[variant_id]]$pips))
+  data.frame(
+    variant_id = variant_id,
+    credible_set_names = results[[variant_id]]$sets,
+    max_pip = max_pip,
+    median_pip = median_pip,
+    stringsAsFactors = FALSE  # Avoid factors for strings
+  )
+}))
+rownames(top_loci_df) <- NULL  # Clean up row names
+return(top_loci_df)
+}
+                             
 #' @export
 load_multitrait_R_sumstat <- function(rds_files, top_loci = FALSE, filter_file = NULL, remove_any_missing = TRUE, max_rows_selected = 300, nan_remove=FALSE) {
   
