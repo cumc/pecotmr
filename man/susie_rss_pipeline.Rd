@@ -23,7 +23,7 @@ susie_rss_pipeline(
   coverage = 0.95,
   secondary_coverage = c(0.7, 0.5),
   pip_cutoff_to_skip = 0.025,
-  signal_cutoff = 0.025
+  signal_cutoff = 0.1
 )
 }
 \arguments{
@@ -63,7 +63,7 @@ susie_rss_pipeline(
 
 \item{pip_cutoff_to_skip}{PIP cutoff to skip imputation (default: 0.025).}
 
-\item{signal_cutoff}{Signal cutoff for susie_post_processor (default: 0.025).}
+\item{signal_cutoff}{Signal cutoff for susie_post_processor (default: 0.1).}
 }
 \value{
 A list containing the results of various SuSiE RSS analyses.

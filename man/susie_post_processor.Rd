@@ -12,7 +12,7 @@ susie_post_processor(
   y_scalar,
   maf = NULL,
   secondary_coverage = c(0.5, 0.7),
-  signal_cutoff = 0.025,
+  signal_cutoff = 0.1,
   other_quantities = NULL,
   prior_eff_tol = 1e-09,
   min_abs_corr = 0.5,
