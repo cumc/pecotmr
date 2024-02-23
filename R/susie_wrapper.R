@@ -241,7 +241,7 @@ rss_input_preprocess = function(sumstats, LD_data, skip_region = NULL) {
 #' @param coverage Coverage level for susie_rss analysis (default: 0.95).
 #' @param secondary_coverage Secondary coverage levels for susie_rss analysis (default: c(0.7, 0.5)).
 #' @param pip_cutoff_to_skip PIP cutoff to skip imputation (default: 0.025).
-#' @param signal_cutoff Signal cutoff for susie_post_processor (default: 0.025).
+#' @param signal_cutoff Signal cutoff for susie_post_processor (default: 0.1).
 #'
 #' @return A list containing the results of various SuSiE RSS analyses.
 #'
@@ -251,7 +251,7 @@ rss_input_preprocess = function(sumstats, LD_data, skip_region = NULL) {
 #' @export
 susie_rss_pipeline = function(sumstat, R, ref_panel, n, L, var_y, QC = TRUE, impute = TRUE, bayesian_conditional_analysis = TRUE, lamb = 0.01, rcond = 0.01, R2_threshold = 0.6,
                               max_L = 20, l_step = 5, minimum_ld = 5, coverage = 0.95,
-                              secondary_coverage = c(0.7, 0.5), pip_cutoff_to_skip = 0.025, signal_cutoff = 0.025) {
+                              secondary_coverage = c(0.7, 0.5), pip_cutoff_to_skip = 0.025, signal_cutoff = 0.1) {
   
   if (!is.null(sumstat$z)) {
     z = sumstat$z 
@@ -453,7 +453,7 @@ susie_rss_qc <- function(sumstat, R, ref_panel, bhat=NULL, shat=NULL, var_y=NULL
 #' @importFrom stringr str_replace
 #' @export
 susie_post_processor <- function(susie_output, data_x, data_y, X_scalar, y_scalar, maf = NULL, 
-                                secondary_coverage = c(0.5, 0.7), signal_cutoff = 0.025, 
+                                secondary_coverage = c(0.5, 0.7), signal_cutoff = 0.1, 
                                 other_quantities = NULL, prior_eff_tol = 1e-9, min_abs_corr= 0.5, 
                                 median_abs_corr = 0.8,
                                 mode = c("susie", "susie_rss")) {
