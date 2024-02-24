@@ -186,7 +186,7 @@ load_phenotype_data <- function(phenotype_path, region, extract_region_name = NU
   phenotype_data <- compact(map(phenotype_path, ~ {
     tabix_data <- if (!is.null(region)) tabix_region(.x, region, tabix_header = tabix_header) else read_delim(.x, "\t", col_types = cols())
     if (nrow(tabix_data) == 0) { # Check if tabix_region returns empty
-      message("Phenotype file ", .x, " is empty for the specified region.")
+      message(paste("Phenotype file ", .x, " is empty for the specified region", if (!is.null(region)) "" else region))
       return(NULL) # Exclude empty results and report
     }
     if (!is.null(extract_region_name) && is.vector(extract_region_name) && !is.null(region_name_col) && (region_name_col%%1==0)) {
@@ -205,7 +205,7 @@ load_phenotype_data <- function(phenotype_path, region, extract_region_name = NU
 
   # Check if all phenotype files are empty
   if (length(phenotype_data) == 0) {
-    stop(NoPhenotypeError("All phenotype files are empty for the specified region."))
+    stop(NoPhenotypeError(paste("All phenotype files are empty for the specified region", if (!is.null(region)) "" else region)))
   }
   return(phenotype_data)
 }
