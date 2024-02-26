@@ -53,7 +53,7 @@
 #' @importFrom data.table fread read_delim
 #' @importFrom readr read_delim
 #' @importFrom reshape2 melt 
-#' @importFrom foreach foreach
+#' @importFrom purrr map
 
 # work in progress 
 # library("biomaRt")
@@ -63,7 +63,7 @@
 # library("ctwas")
 # library("reshape2")
 # library("readr")
-# library("foreach")
+# library("map")
 #
 ## raw example 
 # z_snp <- data.table::fread("/mnt/vast/hpc/csg/cl4215/mrmash/workflow/ctwas_gwas.tsv", 
@@ -132,35 +132,7 @@ ctwas_wrapper <- function(weight_matrices,
     lds <- list.files(path=ld_dir, pattern="*.cor.xz.bim", all.files=TRUE, full.names=FALSE)
     lds <- strsplit(lds, "*.cor.xz.bim")
 
-    foreach (i = lds) %do% {
-        rvar_file <- data.table::fread(paste0(ld_dir, "/" ,i,".cor.xz.bim"), header=FALSE)
-        colnames(rvar_file) <- c("chrom", "id","posg", "pos", "alt", "ref") 
-        rvar_file <- rvar_file[,c("chrom", "id", "pos", "alt", "ref")]
-        indx <- which(rvar_file$id %in% all_snps)
-    
-        if (length(indx) >=2){
-            rvar <- rvar_file[indx, ]
-            rvar$variance <- 1 
-            rvar$chrom <- as.integer(rvar$chrom)
-            
-            ld_fname <- paste0(ld_dir, "/", i,".cor")
-            if (!file.exists(ld_fname)){
-                system(paste("xz -dk", paste0(ld_fname, ".xz")))
-                }
-            ld <- data.table::fread(paste0(ld_dir, "/", i,".cor"), sep=" ")
-            ld <- as.matrix(ld)
-            ld <- ld[indx, indx]
-            ld[upper.tri(ld)] <- t(ld)[upper.tri(ld)] 
-            start <- min(rvar$pos)
-            stop <-  max(rvar$pos)
-            CHR <- as.integer(unique(rvar$chrom))
-            if(length(CHR)>=2) {stop("has more than one chromosome provided in the LD file")}
-
-            saveRDS(ld, paste0(ld_R_dir, "/ld_chr",CHR, ".R_snp.",start,"_",stop,".RDS"))
-            data.table::fwrite(rvar, file = paste0(ld_R_dir, "/ld_chr",CHR, ".R_snp.",start,"_",stop, ".Rvar"), 
-                               sep="\t", quote = F)
-            }
-    }
+    map(lds, write_ld_matrix, ld_dir, ld_R_dir, all_snps)
     
     # get pair-wise covariance /LD for harmonization
     ls <- list.files(path=ld_R_dir, pattern="*.RDS", all.files=TRUE, full.names=FALSE)
@@ -240,3 +212,34 @@ get_extra <- function(wgt_list, region_list){
         )
     return(extra)  
 }
+
+write_ld_matrix <- function(ld_dir, ld_R_dir, all_snps) {
+    rvar_file <- data.table::fread(paste0(ld_dir, "/" ,i,".cor.xz.bim"), header=FALSE)
+    colnames(rvar_file) <- c("chrom", "id","posg", "pos", "alt", "ref") 
+    rvar_file <- rvar_file[,c("chrom", "id", "pos", "alt", "ref")]
+    indx <- which(rvar_file$id %in% all_snps)
+
+    if (length(indx) >=2){
+        rvar <- rvar_file[indx, ]
+        rvar$variance <- 1 
+        rvar$chrom <- as.integer(rvar$chrom)
+        
+        ld_fname <- paste0(ld_dir, "/", i,".cor")
+        if (!file.exists(ld_fname)){
+            system(paste("xz -dk", paste0(ld_fname, ".xz")))
+            }
+        ld <- data.table::fread(paste0(ld_dir, "/", i,".cor"), sep=" ")
+        ld <- as.matrix(ld)
+        ld <- ld[indx, indx]
+        ld[upper.tri(ld)] <- t(ld)[upper.tri(ld)] 
+        start <- min(rvar$pos)
+        stop <-  max(rvar$pos)
+        CHR <- as.integer(unique(rvar$chrom))
+        if(length(CHR)>=2) {stop("has more than one chromosome provided in the LD file")}
+
+        saveRDS(ld, paste0(ld_R_dir, "/ld_chr",CHR, ".R_snp.",start,"_",stop,".RDS"))
+        data.table::fwrite(rvar, file = paste0(ld_R_dir, "/ld_chr",CHR, ".R_snp.",start,"_",stop, ".Rvar"), 
+                           sep="\t", quote = F)
+    }
+}
+

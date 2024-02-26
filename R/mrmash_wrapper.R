@@ -95,7 +95,6 @@
 #' 
 #' 
 #' @importFrom mr.mash.alpha compute_canonical_covs mr.mash expand_covs compute_univariate_sumstats
-#' @importFrom foreach foreach %do%
 #' @export
 #'
 
