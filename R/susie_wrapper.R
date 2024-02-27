@@ -342,7 +342,7 @@ susie_rss_pipeline = function(sumstat, R, ref_panel, n, L, var_y, QC = TRUE, imp
 #'
 #' @param z Numeric vector of z-scores corresponding to the effect size estimates, with names matching the reference panel's variant IDs.
 #' @param R Numeric matrix representing the LD (linkage disequilibrium) matrix.
-#' @param ref_panel Data frame with 'chrom', 'pos', 'variant_id', 'A0', 'A1' column that matches the names of z.
+#' @param ref_panel Data frame with 'chrom', 'pos', 'variant_id', 'A1', 'A2' column that matches the names of z.
 #' @param bhat Optional numeric vector of effect size estimates.
 #' @param shat Optional numeric vector of standard errors associated with the effect size estimates.
 #' @param var_y Optional numeric value representing the total phenotypic variance.

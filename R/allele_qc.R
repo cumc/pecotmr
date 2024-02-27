@@ -1,7 +1,7 @@
 #' Converted  Variant ID into a properly structured data frame
 #' @param variant_id A data frame or character vector representing variant IDs.
 #'   Expected formats are a data frame with columns "chrom", "pos", "A1", "A2",
-#'   or a character vector in "chr:pos:A1:A2" or "chr:pos_A1_A2" format.
+#'   or a character vector in "chr:pos:A2:A1" or "chr:pos_A2_A1" format.
 #' @return A data frame with columns "chrom", "pos", "A1", "A2", where 'chrom' 
 #'   and 'pos' are integers, and 'A1' and 'A2' are allele identifiers.
 #' @noRd
@@ -9,7 +9,7 @@ convert_to_dataframe <- function(variant_id) {
   # Check if target_variants is already a data.frame with the required columns
   if (is.data.frame(variant_id)){
     if (!all(c("chrom", "pos", "A1", "A2") %in% names(variant_id))) {
-        names(variant_id) <- c("chrom", "pos", "A1", "A2")
+        names(variant_id) <- c("chrom", "pos", "A2", "A1")
       }
     # Ensure that 'chrom' values are integers
     variant_id$chrom <- ifelse(grepl("^chr", variant_id$chrom), 
@@ -26,7 +26,7 @@ convert_to_dataframe <- function(variant_id) {
     }
     parts <- strsplit(string, ":", fixed = TRUE)
     data <- data.frame(do.call(rbind, parts),stringsAsFactors = FALSE)
-    colnames(data) <- c("chrom", "pos", "A1", "A2")
+    colnames(data) <- c("chrom", "pos", "A2", "A1")
     #Ensure that 'chrom' values are integers
     data$chrom <- ifelse(grepl("^chr", data$chrom), 
                        as.integer(sub("^chr", "", data$chrom)), # Remove 'chr' and convert to integer
@@ -53,8 +53,8 @@ convert_to_dataframe <- function(variant_id) {
 #' Match by ("chrom", "A1", "A2" and "pos"), accounting for possible
 #' strand flips and major/minor allele flips (opposite effects and zscores).
 #'
-#' @param target_variants A data frame with columns "chrom", "pos", "A1", "A2" or strings in the format of "chr:pos:A1:A2"/"chr:pos_A1_A2".
-#' @param ref_variants A data frame with columns "chrom", "pos", "A1", "A2" or strings in the format of "chr:pos:A1:A2"/"chr:pos_A1_A2".
+#' @param target_variants A data frame with columns "chrom", "pos", "A1", "A2" or strings in the format of "chr:pos:A2:A1"/"chr:pos_A2_A1".
+#' @param ref_variants A data frame with columns "chrom", "pos", "A2", "A1" or strings in the format of "chr:pos:A2:A1"/"chr:pos_A2_A1".
 #' @param target_data A data frame on which QC procedures will be applied..
 #' @param col_to_flip The name of the column in target_data where flips are to be applied.
 #' @param match_min_prop Minimum proportion of variants in the smallest data
@@ -77,7 +77,7 @@ allele_qc <- function(target_variants, ref_variants, target_data, col_to_flip,
   
   matched <- merge(target_variants, ref_variants, by = c("chrom", "pos"), all = FALSE, suffixes = c(".target", ".ref")) %>%
     as.data.frame() %>%
-    mutate(variants_id_qced = paste(chrom, pos, A1.ref, A2.ref, sep = ":"))
+    mutate(variants_id_qced = paste(chrom, pos, A2.ref, A1.ref, sep = ":"))
   
   matched_indices <- target_variants %>%
                      mutate(index = row_number())%>%
@@ -161,6 +161,6 @@ allele_qc <- function(target_variants, ref_variants, target_data, col_to_flip,
     stop("Not enough variants have been matched.")
   }
     # change A1 and A2 so that it can fit the reference, and rearrange the columns so that the four are at the very front
-    target_data_qced = target_data_qced %>% tidyr::separate(variant_id, into = c("chrom", "pos", "A1", "A2"), sep = ":", remove = FALSE) %>% select(chrom, pos, A1, A2, everything()) %>% mutate(chrom = as.integer(chrom), pos = as.integer(pos))
+    target_data_qced = target_data_qced %>% tidyr::separate(variant_id, into = c("chrom", "pos", "A2", "A1"), sep = ":", remove = FALSE) %>% select(chrom, pos, A1, A2, everything()) %>% mutate(chrom = as.integer(chrom), pos = as.integer(pos))
   return(list(target_data_qced = target_data_qced, qc_summary = qc_summary))
 }

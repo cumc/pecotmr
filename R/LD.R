@@ -174,7 +174,7 @@ process_LD_matrix <- function(LD_file_path, bim_file_path) {
     # Process variant names from file paths
     LD_variants <- bim_file_name %>%
               read.table(.) %>%
-              setNames(c("chrom","variants","GD","pos","A2","A1"))%>%
+              setNames(c("chrom","variants","GD","pos","A1","A2"))%>%
               mutate(chrom = ifelse(grepl("^chr[0-9]+", chrom), sub("^chr", "", chrom), chrom)) %>%
               mutate(variants =format_variant_id(variants)) %>%
               mutate(variants = ifelse(grepl("^chr[0-9]+:", variants), gsub("^chr", "", variants), variants))
@@ -212,7 +212,7 @@ extract_LD_for_region <- function(LD_matrix, variants, region, extract_coordinat
                       # Merge with 'extract_coordinate' after 'chrom' adjustment
                        merge(extract_coordinates, by = c("chrom", "pos")) %>%
                       # Select the desired columns, assuming 'variants' column is equivalent to the 'variants' in 'LD_variants_region_selected'
-                       select(chrom, variants, pos, GD, A1, A2)
+                       select(chrom, variants, pos, GD, A2, A1)
         
     }
     # Extract LD matrix 
@@ -310,7 +310,7 @@ load_LD_matrix <- function(LD_meta_file_path, region, extract_coordinates = NULL
     combined_LD_matrix <- create_combined_LD_matrix(extracted_LD_matrices_list, extracted_LD_variants_list)
                                          
     ref_panel <- do.call(rbind, lapply(strsplit(rownames(combined_LD_matrix),":"), function(x) {
-       data.frame(chrom = x[1], pos = as.integer(x[2]), A1 = x[3], A2 = x[4])
+       data.frame(chrom = x[1], pos = as.integer(x[2]), A2 = x[3], A1 = x[4])
     }))                       
     ref_panel$variant_id = rownames(combined_LD_matrix)                                      
     
