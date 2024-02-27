@@ -26,13 +26,12 @@ Imports:
     matrixStats,
     readr,
     glmnet,
+    furrr,
     purrr,
     tidyr,
     Rfast,
     doMC,
     pgenlibr,
-    doParallel,
-    foreach,
     snpStats,
     vctrs
 Suggests: 
