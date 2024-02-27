@@ -28,9 +28,7 @@ requirements:
     - r-coloc
     - r-data.table
     - r-domc
-    - r-doparallel
     - r-dplyr
-    - r-foreach
     - r-gbj
     - r-ggplot2
     - r-ggnewscale
@@ -47,6 +45,7 @@ requirements:
     - r-pgenlibr
     - r-plink2r
     - bioconductor-snpstats
+    - r-furrr
     - r-purrr
     - r-rcpp
     - r-readr
@@ -60,13 +59,11 @@ requirements:
   run:
     - bioconductor-qvalue
     - r-bedtoolsr
-    - r-base=4.2
+    - r-base>=4.2
     - r-coloc
     - r-data.table
     - r-domc
-    - r-doparallel
     - r-dplyr
-    - r-foreach
     - r-gbj
     - r-ggplot2
     - r-ggnewscale
@@ -83,6 +80,7 @@ requirements:
     - r-pgenlibr
     - r-plink2r
     - bioconductor-snpstats
+    - r-furrr
     - r-purrr
     - r-rcpp
     - r-readr
