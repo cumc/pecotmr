@@ -21,6 +21,7 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           workflow: ci.yml
           name: coverage_${{ github.event.pull_request.head.sha }}
+          path: coverage
           search_artifacts: true
           if_no_artifact_found: warn
 

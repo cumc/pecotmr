@@ -41,6 +41,7 @@ jobs:
         uses: actions/upload-artifact@v3
         with:
           name: coverage-${{github.event.pull_request.head.sha}}
+          path: coverage
 
       #- name: Run R CMD CHECK
         #shell: micromamba-shell {0}
