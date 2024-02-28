@@ -179,21 +179,30 @@ NoPhenotypeError <- function(message) {
   structure(list(message = message), class = c("NoPhenotypeError", "error", "condition"))
 }
 
-#' @importFrom purrr map compact
+#' @importFrom purrr map2 compact
 #' @noRd 
 load_phenotype_data <- function(phenotype_path, region, extract_region_name = NULL, region_name_col = NULL, tabix_header = TRUE) {
-  # `compact` should remove all NULL elements
-  phenotype_data <- compact(map(phenotype_path, ~ {
+  if (is.null(extract_region_name)) {
+    extract_region_name <- rep(list(NULL), length(phenotype_path))
+  } else if (is.list(extract_region_name) && length(extract_region_name) != length(phenotype_path)) {
+    stop("extract_region_name must be NULL or a list with the same length as phenotype_path.")
+  } else if (!is.null(extract_region_name) && !is.list(extract_region_name)) {
+    stop("extract_region_name must be NULL or a list.")
+  }
+
+  # Use `map2` to iterate over `phenotype_path` and `extract_region_name` simultaneously
+  # `compact` should remove all NULL element
+  phenotype_data <- compact(map2(phenotype_path, extract_region_name, ~ {
     tabix_data <- if (!is.null(region)) tabix_region(.x, region, tabix_header = tabix_header) else read_delim(.x, "\t", col_types = cols())
-    if (nrow(tabix_data) == 0) { # Check if tabix_region returns empty
+    if (nrow(tabix_data) == 0) {
       message(paste("Phenotype file ", .x, " is empty for the specified region", if (!is.null(region)) "" else region))
-      return(NULL) # Exclude empty results and report
+      return(NULL)
     }
-    if (!is.null(extract_region_name) && is.vector(extract_region_name) && !is.null(region_name_col) && (region_name_col%%1==0)) {
+    if (!is.null(.y) && is.vector(.y) && !is.null(region_name_col) && (region_name_col%%1==0)) {
       if (region_name_col <= ncol(tabix_data)) {
         region_col_name <- colnames(tabix_data)[region_name_col]
-        tabix_data <- tabix_data %>% filter(.data[[region_col_name]] %in% extract_region_name) %>% t()
-        colnames(tabix_data) <- tabix_data[region_name_col,]
+        tabix_data <- tabix_data %>% dplyr::filter(.data[[region_col_name]] %in% .y) %>% t()
+        colnames(tabix_data) <- tabix_data[region_name_col, ]
         return(tabix_data)
       } else {
         stop("region_name_col is out of bounds for the number of columns in tabix_data.")
@@ -211,6 +220,8 @@ load_phenotype_data <- function(phenotype_path, region, extract_region_name = NU
 }
 
 ## extract phenotype coordiate information (first three col for each element in the list) 
+#' @importFrom purrr map
+#' @noRd 
 extract_phenotype_coordinates <- function(phenotype_list){ 
 	return(map(phenotype_list,~t(.x[1:3,])%>%as_tibble%>%mutate(start = as.numeric(start),end = as.numeric(end)))) 
 }
