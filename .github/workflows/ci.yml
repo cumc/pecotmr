@@ -5,6 +5,7 @@ on:
     paths-ignore:
       - .github
       - .gitignore
+      - README.md
 
 jobs:
   ci:
@@ -33,7 +34,15 @@ jobs:
 
       - name: Check unit test code coverage
         shell: micromamba-shell {0}
-        run: R -e "covr::package_coverage()"
+        run: |
+          .github/workflows/get_package_coverage.R
+          tar cf coverage.tar coverage
+
+      - name: Upload coverage artifact to GitHub Actions
+        uses: actions/upload-artifact@v3
+        with:
+          name: coverage-${{github.event.pull_request.head.sha}}
+          path: coverage
 
       #- name: Run R CMD CHECK
         #shell: micromamba-shell {0}
