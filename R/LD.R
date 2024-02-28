@@ -212,7 +212,7 @@ extract_LD_for_region <- function(LD_matrix, variants, region, extract_coordinat
                       # Merge with 'extract_coordinate' after 'chrom' adjustment
                        merge(extract_coordinates, by = c("chrom", "pos")) %>%
                       # Select the desired columns, assuming 'variants' column is equivalent to the 'variants' in 'LD_variants_region_selected'
-                       select(chrom, variants, pos, GD, A2, A1)
+                       select(chrom, variants, pos, GD, A1, A2)
         
     }
     # Extract LD matrix 

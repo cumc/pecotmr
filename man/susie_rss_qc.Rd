@@ -28,7 +28,7 @@ susie_rss_qc(
 \arguments{
 \item{R}{Numeric matrix representing the LD (linkage disequilibrium) matrix.}
 
-\item{ref_panel}{Data frame with 'chrom', 'pos', 'variant_id', 'A0', 'A1' column that matches the names of z.}
+\item{ref_panel}{Data frame with 'chrom', 'pos', 'variant_id', 'A1', 'A2' column that matches the names of z.}
 
 \item{bhat}{Optional numeric vector of effect size estimates.}
 
