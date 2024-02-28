@@ -1,4 +1,4 @@
-# pecotmr
+# pecotmr [![cov](https://raw.githubusercontent.com/cumc/pecotmr/gh-pages/badges/coverage.svg)](https://github.com/cumc/pecotmr/actions)
 
 This R package, `pecotmr` implements **p**air-wise **e**nrichment, **co**localization, **T**WAS and **M**endelian **R**andomization to integrate QTL and GWAS analysis based on fine-mapped single effects model.
 `pecotmr` also stands for a **p**robabilistic **eco**system consolidating a range of established and new models into a streamlined, user-friendly interface complete with well-documented examples that will help getting your analysis done by **t**o**m**o**r**row if you start working on it today!
