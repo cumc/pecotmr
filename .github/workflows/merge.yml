@@ -1,0 +1,29 @@
+name: Post-merge actions
+
+on:
+  pull_request_target:
+    types: [closed]
+
+jobs:
+  update_coverage_badge:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Download coverage artifact
+        id: download-coverage
+        uses: dawidd6/action-download-artifact@v2
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          workflow: ci.yml
+          name: coverage_${{ github.event.pull_request.head.sha }}
+          path: coverage
+          search_artifacts: true
+          if_no_artifact_found: warn
+
+      - name: Update Coverage Badge
+        uses: we-cli/coverage-badge-action@main
