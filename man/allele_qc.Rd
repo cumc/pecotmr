@@ -16,9 +16,9 @@ allele_qc(
 )
 }
 \arguments{
-\item{target_variants}{A data frame with columns "chrom", "pos", "A1", "A2" or strings in the format of "chr:pos:A1:A2"/"chr:pos_A1_A2".}
+\item{target_variants}{A data frame with columns "chrom", "pos", "A1", "A2" or strings in the format of "chr:pos:A2:A1"/"chr:pos_A2_A1".}
 
-\item{ref_variants}{A data frame with columns "chrom", "pos", "A1", "A2" or strings in the format of "chr:pos:A1:A2"/"chr:pos_A1_A2".}
+\item{ref_variants}{A data frame with columns "chrom", "pos", "A1", "A2" or strings in the format of "chr:pos:A2:A1"/"chr:pos_A2_A1".}
 
 \item{target_data}{A data frame on which QC procedures will be applied..}
 
