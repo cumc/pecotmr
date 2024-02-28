@@ -348,7 +348,7 @@ load_regional_association_data <- function(genotype, # PLINK file
                                            mac_cutoff = 0,
                                            xvar_cutoff = 0,
                                            imiss_cutoff = 0,
-                                           cis_window = NULL, #  a string of chr:start-end for cis-window. If not provided all genotype data will be loaded
+                                           association_window = NULL, #  a string of chr:start-end for association analysis window (cis or trans). If not provided all genotype data will be loaded
                                            extract_region_name = NULL, # a string of eg gene ID ENSG00000269699, this is helpful if we only want to keep a subset of the information when there are multiple regions available
                                            region_name_col = NULL,
                                            keep_indel = TRUE,
@@ -357,7 +357,7 @@ load_regional_association_data <- function(genotype, # PLINK file
                                            scale_residuals = FALSE,
                                            tabix_header = TRUE) {
     ## Load genotype
-    geno <- load_genotype_region(genotype, cis_window, keep_indel)
+    geno <- load_genotype_region(genotype, association_window, keep_indel)
     ## Load phenotype and covariates and perform some pre-processing
     covar <- load_covariate_data(covariate)
     pheno <- load_phenotype_data(phenotype, region, extract_region_name=extract_region_name, region_name_col=region_name_col, tabix_header=tabix_header)
