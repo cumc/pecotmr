@@ -183,6 +183,7 @@ twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_
 
         # Determine the number of cores to use
         num_cores <- ifelse(num_threads == -1, detectCores(), num_threads)
+        num_cores <- min(num_cores, detectCores())
         
         # Perform CV with parallel processing
         compute_method_predictions <- function(j) { 
@@ -334,6 +335,7 @@ twas_weights <- function(X, Y, weight_methods, num_threads = 1, seed = NULL) {
 
     # Determine number of cores to use
     num_cores <- ifelse(num_threads == -1, detectCores(), num_threads)
+    num_cores <- min(num_cores, detectCores())
 
     compute_method_weights <- function(method_name) {
         # Hardcoded vector of multivariate methods
