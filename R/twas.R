@@ -60,8 +60,7 @@ twas_z <- function(weights, z, R=NULL, X=NULL) {
 #'     }
 #'   \item `time_elapsed`: The time taken to complete the cross-validation process.
 #' }
-#' @importFrom future plan
-#' @importFrom future multisession
+#' @importFrom future plan multisession availableCores
 #' @importFrom furrr future_map furrr_options
 #' @importFrom purrr map
 #' @export
@@ -182,8 +181,8 @@ twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_
         multivariate_weight_methods <- c('mrmash_weights')
 
         # Determine the number of cores to use
-        num_cores <- ifelse(num_threads == -1, detectCores(), num_threads)
-        num_cores <- min(num_cores, detectCores())
+        num_cores <- ifelse(num_threads == -1, availableCores(), num_threads)
+        num_cores <- min(num_cores, availableCores())
         
         # Perform CV with parallel processing
         compute_method_predictions <- function(j) { 
@@ -316,8 +315,7 @@ twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_
 #' @return A list where each element is named after a method and contains the weight matrix produced by that method.
 #'
 #' @export
-#' @importFrom future plan
-#' @importFrom future multisession
+#' @importFrom future plan multisession availableCores
 #' @importFrom furrr future_map furrr_options
 #' @importFrom purrr map
 twas_weights <- function(X, Y, weight_methods, num_threads = 1, seed = NULL) {
@@ -334,8 +332,8 @@ twas_weights <- function(X, Y, weight_methods, num_threads = 1, seed = NULL) {
     }
 
     # Determine number of cores to use
-    num_cores <- ifelse(num_threads == -1, detectCores(), num_threads)
-    num_cores <- min(num_cores, detectCores())
+    num_cores <- ifelse(num_threads == -1, availableCores(), num_threads)
+    num_cores <- min(num_cores, availableCores())
 
     compute_method_weights <- function(method_name) {
         # Hardcoded vector of multivariate methods
