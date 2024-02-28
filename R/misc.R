@@ -180,6 +180,7 @@ NoPhenotypeError <- function(message) {
 }
 
 #' @importFrom purrr map2 compact
+#' @importFrom dplyr filter
 #' @noRd 
 load_phenotype_data <- function(phenotype_path, region, extract_region_name = NULL, region_name_col = NULL, tabix_header = TRUE) {
   if (is.null(extract_region_name)) {
@@ -201,7 +202,7 @@ load_phenotype_data <- function(phenotype_path, region, extract_region_name = NU
     if (!is.null(.y) && is.vector(.y) && !is.null(region_name_col) && (region_name_col%%1==0)) {
       if (region_name_col <= ncol(tabix_data)) {
         region_col_name <- colnames(tabix_data)[region_name_col]
-        tabix_data <- tabix_data %>% dplyr::filter(.data[[region_col_name]] %in% .y) %>% t()
+        tabix_data <- tabix_data %>% filter(.data[[region_col_name]] %in% .y) %>% t()
         colnames(tabix_data) <- tabix_data[region_name_col, ]
         return(tabix_data)
       } else {
