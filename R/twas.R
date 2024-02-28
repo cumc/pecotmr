@@ -62,7 +62,7 @@ twas_z <- function(weights, z, R=NULL, X=NULL) {
 #' }
 #' @importFrom future plan
 #' @importFrom future multisession
-#' @importFrom furrr future_map
+#' @importFrom furrr future_map furrr_options
 #' @importFrom purrr map
 #' @export
 twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_methods = NULL, seed = NULL, max_num_variants = NULL, variants_to_keep = NULL, num_threads = 1, ...) {
@@ -232,7 +232,7 @@ twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_
 
         if (num_cores >= 2) {
             plan(multisession, workers = num_cores)
-            fold_results <- future_map(1:fold, compute_method_predictions)
+            fold_results <- future_map(1:fold, compute_method_predictions, .options = furrr_options(seed = T))
         } else { 
             fold_results <- map(1:fold, compute_method_predictions)
         }
@@ -318,7 +318,7 @@ twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_
 #' @export
 #' @importFrom future plan
 #' @importFrom future multisession
-#' @importFrom furrr future_map
+#' @importFrom furrr future_map furrr_options
 #' @importFrom purrr map
 twas_weights <- function(X, Y, weight_methods, num_threads = 1, seed = NULL) {
     if (!is.matrix(X) || (!is.matrix(Y) && !is.vector(Y))) {
@@ -370,7 +370,7 @@ twas_weights <- function(X, Y, weight_methods, num_threads = 1, seed = NULL) {
     if (num_cores >= 2) {
         # Set up parallel backend to use multiple cores
         plan(multisession, workers = num_cores)
-        weights_list <- names(weight_methods) %>% future_map(compute_method_weights)
+        weights_list <- names(weight_methods) %>% future_map(compute_method_weights, .options = furrr_options(seed = T))
     } else {
         weights_list <- names(weight_methods) %>% map(compute_method_weights)
     }
