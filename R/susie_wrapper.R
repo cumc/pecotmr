@@ -514,9 +514,9 @@ susie_post_processor <- function(susie_output, data_x, data_y, X_scalar, y_scala
     res <- list(other_quantities = other_quantities,
                 analysis_script = load_script(),
                 variant_names = format_variant_id(names(susie_output$pip)))
-
-    # Mode-specific processing
-    if (mode == "susie") {
+    if (!is.null(data_y)) {
+      # Mode-specific processing
+      if (mode == "susie") {
         # Processing specific to susie_post_processor
         res$sumstats <- univariate_regression(data_x, data_y)
         y_scalar <- if (is.null(y_scalar) || all(y_scalar == 1)) 1 else y_scalar
@@ -524,9 +524,10 @@ susie_post_processor <- function(susie_output, data_x, data_y, X_scalar, y_scala
         res$sumstats$betahat <- res$sumstats$betahat * y_scalar / X_scalar
         res$sumstats$sebetahat <- res$sumstats$sebetahat * y_scalar / X_scalar
         res$sample_names <- rownames(data_y)
-    } else if (mode == "susie_rss") {
+      } else if (mode == "susie_rss") {
         # Processing specific to susie_rss_post_processor
         res$sumstats <- data_y
+      }
     }
     if (!is.null(susie_output$V)) {
       # for fSuSiE there is no V for now
