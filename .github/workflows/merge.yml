@@ -17,7 +17,7 @@ jobs:
       - name: Checkout main
         uses: actions/checkout@v4
         with:
-          - ref: main 
+          ref: main 
 
       - name: Create YAML from recipe
         run: |
