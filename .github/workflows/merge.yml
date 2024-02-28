@@ -10,20 +10,26 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
+    env:
+      CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 
     steps:
-      - uses: actions/checkout@v3
-
-      - name: Download coverage artifact
-        id: download-coverage
-        uses: dawidd6/action-download-artifact@v2
+      - name: Checkout main
+        uses: actions/checkout@v4
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          workflow: ci.yml
-          name: coverage-${{ github.event.pull_request.head.sha }}
-          path: coverage
-          search_artifacts: true
-          if_no_artifact_found: warn
+          ref: main 
 
-      - name: Update Coverage Badge
-        uses: we-cli/coverage-badge-action@main
+      - name: Create YAML from recipe
+        run: |
+          cp .github/environment/environment.yaml /tmp/environment.yaml
+          grep -v '{%' < .github/recipe/meta.yaml | yq .requirements.host | sed 's/^/  /' >> /tmp/environment.yaml
+
+      - name: Setup micromamba
+        uses: mamba-org/setup-micromamba@v1
+        with:
+          environment-file: /tmp/environment.yaml
+          generate-run-shell: true
+
+      - name: Check unit test code coverage
+        shell: micromamba-shell {0}
+        run: R -e "covr::codecov()"
