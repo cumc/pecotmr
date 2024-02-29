@@ -5,6 +5,7 @@ on:
     paths-ignore:
       - .github/*
       - .gitignore
+      - README.md
 
 jobs:
   update_documentation:
