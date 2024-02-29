@@ -3,6 +3,11 @@ name: Post-merge actions
 on:
   pull_request_target:
     types: [closed]
+    paths-ignore:
+      - .github/*
+      - .gitignore
+      - README.md
+
 
 jobs:
   update_coverage_badge:
