@@ -231,7 +231,7 @@ twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_
 
         if (num_cores >= 2) {
             plan(multisession, workers = num_cores)
-            fold_results <- future_map(1:fold, compute_method_predictions, .options = furrr_options(seed = T))
+            fold_results <- future_map(1:fold, compute_method_predictions, .options = furrr_options(seed = seed))
         } else { 
             fold_results <- map(1:fold, compute_method_predictions)
         }
@@ -368,7 +368,7 @@ twas_weights <- function(X, Y, weight_methods, num_threads = 1, seed = NULL) {
     if (num_cores >= 2) {
         # Set up parallel backend to use multiple cores
         plan(multisession, workers = num_cores)
-        weights_list <- names(weight_methods) %>% future_map(compute_method_weights, .options = furrr_options(seed = T))
+        weights_list <- names(weight_methods) %>% future_map(compute_method_weights, .options = furrr_options(seed = seed))
     } else {
         weights_list <- names(weight_methods) %>% map(compute_method_weights)
     }
