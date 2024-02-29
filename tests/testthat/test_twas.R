@@ -114,7 +114,7 @@ test_that("twas_weights_cv handles errors appropriately", {
 })
 
 test_that("twas_weights_cv handles parallel processing", {
-    # Mocks don't work while parallel processing
+    RNGkind("L'Ecuyer-CMRG")
     sim <- generate_X_Y(seed=1, num_samples=30)
     X <- sim$X
     y = sim$Y
@@ -126,6 +126,7 @@ test_that("twas_weights_cv handles parallel processing", {
     expect_is(result_single, "list")
     expect_equal(result_parallel$sample_partition, result_single$sample_partition)
     expect_equal(result_parallel$prediction$glmnet_predicted, result_single$prediction$glmnet_predicted)
+    RNGkind("default")
 })
 
 test_that("Check twas_weights works with minimum data", {
@@ -155,6 +156,7 @@ test_that("twas_weights handles errors appropriately", {
 })
 
 test_that("twas_weights handles parallel processing", {
+    RNGkind("L'Ecuyer-CMRG")
     sim <- generate_X_Y(seed=1, num_samples=30)
     X <- sim$X
     y = sim$Y
@@ -163,6 +165,7 @@ test_that("twas_weights handles parallel processing", {
     result_parallel <- twas_weights(X, y, weight_methods = weight_methods_test, num_threads = 2, seed = 1)
     result_single <- twas_weights(X, y, weight_methods = weight_methods_test, num_threads = 1, seed = 1)
     expect_equal(result_parallel, result_single)
+    RNGkind("default")
 })
 
 test_that("Check susie_weights susie_fit works as expected", {
