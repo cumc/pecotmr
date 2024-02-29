@@ -1,6 +1,5 @@
 #' Function to Check if Regions are in increasing order and remove duplicated rows
 #' @import dplyr
-#' @importFrom stats lag
 check_consecutive_regions <- function(df) {
   # Ensure that 'chrom' values are integers, df can be genomic_data or regions_of_interest
   df$chrom <- ifelse(grepl("^chr", df$chrom), 
@@ -14,9 +13,11 @@ check_consecutive_regions <- function(df) {
     arrange(chrom, start)
     
   # Group by chromosome and check if start positions are in ascending order
+  # use stats::lag here explicitly to avoid warning message
+  # due to a dplyr issue: https://github.com/tidyverse/dplyr/issues/2195
   start_ordered_check <- df %>% 
     group_by(chrom) %>% 
-    mutate(start_order = start >= lag(start, default = first(start))) %>% 
+    mutate(start_order = start >= stats::lag(start, default = first(start))) %>% 
     ungroup()
 
   if (any(!start_ordered_check$start_order, na.rm = TRUE)) {
