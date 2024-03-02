@@ -141,99 +141,110 @@ void oneIteration(const arma::mat& LDmat, const std::vector<uint>& idx, const st
     }
 }
 
-
-
 // Adapted DENTIST function to RcppArmadillo, including all necessary steps and logic
 // [[Rcpp::export]]
-List DENTIST(arma::mat& LDmat, unsigned int markerSize, unsigned int nSample, arma::vec& zScore,
-             arma::vec imputedZ, arma::vec rsq, arma::vec zScore_e, arma::ivec iterID,
-             double pValueThreshold, arma::ivec interested, float propSVD, bool gcControl, int nIter,
-             double groupingPvalue_thresh, int ncpus)
+List DENTIST(const arma::mat& LDmat, uint markerSize, uint nSample, const arma::vec& zScore,
+             double pValueThreshold, float propSVD, bool gcControl, int nIter,
+             double groupingPvalue_thresh, int ncpus, int seed) {
 
+    // Set number of threads for parallel processing
     omp_set_num_threads(ncpus);
 
-    std::vector<size_t> randOrder = generateSetOfNumbers(markerSize, 10); // Example seed
-    std::vector<uint> idx, idx2, fullIdx = randOrder;
-    for (uint i = 0; i < markerSize; i++) {
+    // Initialization based on the seed input
+    std::vector<size_t> randOrder = generateSetOfNumbers(markerSize, seed);
+    std::vector<uint> idx, idx2, fullIdx(randOrder.begin(), randOrder.end());
+
+    // Determining indices for partitioning
+    for (uint i = 0; i < markerSize; ++i) {
         if (randOrder[i] > markerSize / 2) idx.push_back(i);
         else idx2.push_back(i);
     }
 
     std::vector<uint> groupingGWAS(markerSize, 0);
-    for (uint i = 0; i < markerSize; i++) {
-        if (minusLogPvalueChisq2(zScore[i] * zScore[i]) > -log10(groupingPvalue_thresh)) {
+    for (uint i = 0; i < markerSize; ++i) {
+        if (minusLogPvalueChisq2(zScore(i) * zScore(i)) > -log10(groupingPvalue_thresh)) {
             groupingGWAS[i] = 1;
         }
     }
 
-    for (int t = 0; t < nIter; t++) {
+    arma::vec imputedZ = arma::zeros<arma::vec>(markerSize);
+    arma::vec rsq = arma::zeros<arma::vec>(markerSize);
+    arma::vec zScore_e = arma::zeros<arma::vec>(markerSize);
+    arma::ivec iterID = arma::zeros<arma::ivec>(markerSize);
+
+    for (int t = 0; t < nIter; ++t) {
         std::vector<uint> idx2_QCed;
-        std::vector<size_t> fullIdx_tmp;
-        std::vector<double> diff, chisq;
+        std::vector<double> diff;
         std::vector<uint> grouping_tmp;
 
+        // Perform iteration with current subsets
         oneIteration(LDmat, idx, idx2, zScore, imputedZ, rsq, zScore_e, nSample, propSVD, ncpus);
 
+        // Assess differences and grouping for thresholding
         diff.resize(idx2.size());
         grouping_tmp.resize(idx2.size());
-        for(size_t i = 0; i < idx2.size(); i++) {
+        for (size_t i = 0; i < idx2.size(); ++i) {
             diff[i] = std::abs(zScore_e[idx2[i]]);
             grouping_tmp[i] = groupingGWAS[idx2[i]];
         }
 
         double threshold = getQuantile(diff, 0.995);
         double threshold1 = getQuantile2(diff, grouping_tmp, 0.995);
-        double threshold0 = getQuantile2(diff, grouping_tmp, 0.995, false); // Assuming a modified version of getQuantile2 that accepts a flag for inverse grouping
+        double threshold0 = getQuantile2(diff, !grouping_tmp, 0.995); // Adapt based on the actual logic for inverse grouping
 
-        for(size_t i = 0; i < diff.size(); i++) {
-            if ((grouping_tmp[i] == 1 && diff[i] <= threshold1) || (grouping_tmp[i] == 0 && diff[i] <= threshold0)) {
+        // Apply threshold-based filtering for QC
+        for (size_t i = 0; i < diff.size(); ++i) {
+            if ((grouping_tmp[i] == 1 && diff[i] <= threshold1) ||
+                (grouping_tmp[i] == 0 && diff[i] <= threshold0)) {
                 idx2_QCed.push_back(idx2[i]);
             }
         }
 
+        // Re-evaluate for the next iteration
         oneIteration(LDmat, idx, idx2_QCed, zScore, imputedZ, rsq, zScore_e, nSample, propSVD, ncpus);
 
-        // Recalculate diff and grouping_tmp for the fullIdx
-        diff.resize(fullIdx.size());
-        grouping_tmp.resize(fullIdx.size());
-        for(size_t i = 0; i < fullIdx.size(); i++) {
-            diff[i] = std::abs(zScore_e[fullIdx[i]]);
-            grouping_tmp[i] = groupingGWAS[fullIdx[i]];
-        }
-
-        threshold = getQuantile(diff, 0.995);
-        threshold1 = getQuantile2(diff, grouping_tmp, 0.995);
-        threshold0 = getQuantile2(diff, grouping_tmp, 0.995, false);
-
-        // Adjust for inflation factor if gcControl is true
-        if(gcControl) {
-            double inflationFactor = calculateInflationFactor(chisq, pValueThreshold); // Assuming a function for inflation factor calculation
-
-            for(size_t i = 0; i < diff.size(); i++) {
-                if (!(diff[i] > threshold && minusLogPvalueChisq2(diff[i] * diff[i] / inflationFactor) > -log10(pValueThreshold))) {
-                    fullIdx_tmp.push_back(fullIdx[i]);
-                }
-            }
-        } else {
-            for(size_t i = 0; i < diff.size(); i++) {
-                if (minusLogPvalueChisq2(diff[i] * diff[i]) < -log10(pValueThreshold)) {
-                    fullIdx_tmp.push_back(fullIdx[i]);
-                }
+        // Prepare indices and data for the next iteration
+        std::vector<size_t> fullIdx_tmp;
+        for (size_t i : fullIdx) {
+            double currentDiff = std::abs(zScore_e[i]);
+            if ((groupingGWAS[i] == 1 && currentDiff <= threshold1) ||
+                (groupingGWAS[i] == 0 && currentDiff <= threshold0)) {
+                fullIdx_tmp.push_back(i);
+                iterID[i]++;
             }
         }
 
+        // Adjust for genetic control if necessary
+        if (gcControl) {
+            // Calculate median chi-squared statistic as an inflation factor
+            std::nth_element(chisq.begin(), chisq.begin() + chisq.size() / 2, chisq.end());
+            double medianChisq = chisq[chisq.size() / 2];
+            double inflationFactor = medianChisq / 0.456; // Example median value for a chi-squared distribution with 1 df
+
+            // Adjust z-scores based on inflation factor
+            for (size_t i = 0; i < fullIdx.size(); ++i) {
+                if (std::pow(zScore_e[fullIdx[i]], 2) / inflationFactor < pValueThreshold) {
+                    // Adjusted condition based on the inflation factor
+                    fullIdx_tmp.push_back(fullIdx[i]);
+                }
+            }
+        }
+
+        // Update indices for the next iteration
         fullIdx = fullIdx_tmp;
-        randOrder = generateSetOfNumbers(fullIdx.size(), 20000 + t * 20000); // Update seed for randomness
+        randOrder = generateSetOfNumbers(fullIdx.size(), 20000 + t * 20000); // Refresh random order with a new seed
         idx.clear();
         idx2.clear();
-        for(size_t i = 0; i < fullIdx.size(); i++) {
-            if (randOrder[i] > fullIdx.size() / 2) idx.push_back(fullIdx[i]);
-            else idx2.push_back(fullIdx[i]);
+        for (uint i : fullIdx) {
+            if (randOrder[i] > fullIdx.size() / 2) idx.push_back(i);
+            else idx2.push_back(i);
         }
     }
-        return List::create(Named("imputedZ") = imputedZ,
+
+    // Prepare and return results
+    return List::create(Named("imputedZ") = imputedZ,
                         Named("rsq") = rsq,
                         Named("zScore_e") = zScore_e,
                         Named("iterID") = iterID,
-                        Named("groupingGWAS") = wrap(groupingGWAS)); // Convert std::vector<uint> to Rcpp::NumericVector
+                        Named("groupingGWAS") = wrap(groupingGWAS));
 }
