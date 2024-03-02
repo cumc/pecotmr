@@ -149,41 +149,36 @@ void oneIteration(const arma::mat& LDmat, const std::vector<uint>& idx, const st
 }
 
 /**
- * @brief DENTIST: Detecting Errors in Analyses of Summary Statistics
+ * @brief Executes DENTIST algorithm for quality control in GWAS summary data.
  *
- * DENTIST (Detecting Errors iN analyses of summary staTISTics) is a 
- * quality control tool for summary-level data from genome-wide association 
- * studies (GWASs). It identifies and removes problematic variants by leveraging 
- * the difference between observed GWAS statistics and predicted values using 
- * linkage disequilibrium data from a reference panel. It is useful for enhancing 
- * the accuracy of various GWAS analyses, including conditional and joint 
- * association analysis, LD score regression, and more.
+ * DENTIST (Detecting Errors iN analyses of summary staTISTics) identifies and removes problematic variants
+ * in GWAS summary data by comparing observed GWAS statistics to predicted values based on linkage disequilibrium (LD)
+ * information from a reference panel. It helps detect genotyping/imputation errors, allelic errors, and heterogeneity
+ * between GWAS and LD reference samples, improving the reliability of subsequent analyses.
  *
- * @param LDmat A matrix representing linkage disequilibrium data from a 
- * reference panel. Must be an arma::mat.
- * @param markerSize Total number of markers. Must be an unsigned integer.
- * @param nSample Sample size used in the GWAS. Must be an unsigned integer.
- * @param zScore Vector of GWAS Z-scores. Must be an arma::vec.
- * @param pValueThreshold GWAS P-value threshold for variant filtering. 
- * Must be a double.
- * @param propSVD Proportion of singular value decomposition truncation. 
- * Must be a float.
- * @param gcControl Boolean flag for genetic control adjustment. Must be a boolean.
- * @param nIter Number of iterations for the DENTIST algorithm. Must be an integer.
- * @param groupingPvalue_thresh Threshold for grouping p-values. Must be a double.
- * @param ncpus Number of CPU cores to use for computation. Must be an integer.
- * @param seed Seed for random number generation. Must be an integer.
+ * @param LDmat The linkage disequilibrium (LD) matrix from a reference panel, as an arma::mat object.
+ * @param markerSize The total number of markers (SNPs) to be analyzed.
+ * @param nSample The sample size used in the GWAS whose summary statistics are being analyzed.
+ * @param zScore A vector of Z-scores from GWAS summary statistics.
+ * @param pValueThreshold Threshold for the p-value below which variants are considered for quality control.
+ * @param propSVD Proportion of singular value decomposition (SVD) components retained in the analysis.
+ * @param gcControl A boolean flag to apply genetic control corrections.
+ * @param nIter The number of iterations to run the DENTIST algorithm.
+ * @param groupingPvalue_thresh P-value threshold for grouping variants into significant and null categories.
+ * @param ncpus The number of CPU cores to use for parallel processing.
+ * @param seed Seed for random number generation, affecting the selection of variants for analysis.
  *
- * @return Returns a List containing several objects including imputed Z-scores,
- * r-squared values, adjusted Z-scores, iteration IDs, and grouping GWAS results.
- * - imputedZ: Imputed Z-scores for each marker.
- * - rsq: R-squared values for each marker.
- * - zScore_e: Adjusted Z-scores after error detection.
- * - iterID: Iteration ID for each marker indicating the iteration in which
- * the marker passed the QC.
- * - groupingGWAS: Binary vector indicating whether each marker is considered
- * problematic (1) or not (0).
+ * @return A List object containing:
+ * - imputedZ: A vector of imputed Z-scores for each marker.
+ * - rsq: A vector of R-squared values for each marker, indicating goodness of fit.
+ * - zScore_e: A vector of adjusted Z-scores after error detection.
+ * - iterID: An integer vector indicating the iteration in which each marker passed the quality control.
+ * - groupingGWAS: A binary vector indicating whether each marker is considered problematic (1) or not (0).
+ *
+ * @note The function is designed for use in Rcpp and requires Armadillo for matrix operations and OpenMP for parallel processing.
  */
+
+
 // [[Rcpp::export]]
 List dentist(const arma::mat& LDmat, uint markerSize, uint nSample, const arma::vec& zScore,
              double pValueThreshold, float propSVD, bool gcControl, int nIter,
