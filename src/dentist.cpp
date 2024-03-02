@@ -1,3 +1,10 @@
+// This function implements, to our knowledge, the methods decribed in the DENTIST paper
+// https://github.com/Yves-CHEN/DENTIST/tree/master#Citations
+// Some codes are adapted and rewritten from https://github.com/Yves-CHEN/DENTIST/tree/master
+// to fit the Rcpp implementation.
+// The code reflects our understanding and interpretation of DENTIST method which may difer in details
+// from the author's original proposal, although in various tests we find that our implementation and the
+// original results are mostly identical
 #include <RcppArmadillo.h>
 #include <omp.h> // Required for parallel processing
 #include <algorithm>
@@ -141,12 +148,46 @@ void oneIteration(const arma::mat& LDmat, const std::vector<uint>& idx, const st
     }
 }
 
-// Adapted DENTIST function to RcppArmadillo, including all necessary steps and logic
+/**
+ * @brief DENTIST: Detecting Errors in Analyses of Summary Statistics
+ *
+ * DENTIST (Detecting Errors iN analyses of summary staTISTics) is a 
+ * quality control tool for summary-level data from genome-wide association 
+ * studies (GWASs). It identifies and removes problematic variants by leveraging 
+ * the difference between observed GWAS statistics and predicted values using 
+ * linkage disequilibrium data from a reference panel. It is useful for enhancing 
+ * the accuracy of various GWAS analyses, including conditional and joint 
+ * association analysis, LD score regression, and more.
+ *
+ * @param LDmat A matrix representing linkage disequilibrium data from a 
+ * reference panel. Must be an arma::mat.
+ * @param markerSize Total number of markers. Must be an unsigned integer.
+ * @param nSample Sample size used in the GWAS. Must be an unsigned integer.
+ * @param zScore Vector of GWAS Z-scores. Must be an arma::vec.
+ * @param pValueThreshold GWAS P-value threshold for variant filtering. 
+ * Must be a double.
+ * @param propSVD Proportion of singular value decomposition truncation. 
+ * Must be a float.
+ * @param gcControl Boolean flag for genetic control adjustment. Must be a boolean.
+ * @param nIter Number of iterations for the DENTIST algorithm. Must be an integer.
+ * @param groupingPvalue_thresh Threshold for grouping p-values. Must be a double.
+ * @param ncpus Number of CPU cores to use for computation. Must be an integer.
+ * @param seed Seed for random number generation. Must be an integer.
+ *
+ * @return Returns a List containing several objects including imputed Z-scores,
+ * r-squared values, adjusted Z-scores, iteration IDs, and grouping GWAS results.
+ * - imputedZ: Imputed Z-scores for each marker.
+ * - rsq: R-squared values for each marker.
+ * - zScore_e: Adjusted Z-scores after error detection.
+ * - iterID: Iteration ID for each marker indicating the iteration in which
+ * the marker passed the QC.
+ * - groupingGWAS: Binary vector indicating whether each marker is considered
+ * problematic (1) or not (0).
+ */
 // [[Rcpp::export]]
-List DENTIST(const arma::mat& LDmat, uint markerSize, uint nSample, const arma::vec& zScore,
+List dentist(const arma::mat& LDmat, uint markerSize, uint nSample, const arma::vec& zScore,
              double pValueThreshold, float propSVD, bool gcControl, int nIter,
              double groupingPvalue_thresh, int ncpus, int seed) {
-
     // Set number of threads for parallel processing
     omp_set_num_threads(ncpus);
 
