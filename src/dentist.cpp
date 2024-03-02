@@ -122,9 +122,8 @@ void oneIteration(const arma::mat& LDmat, const std::vector<uint>& idx, const st
     if (K <= 1) {
         Rcpp::stop("Rank of eigen matrix <= 1");
     }
-
-    arma::mat ui = arma::mat(eigvec.n_rows, K, arma::fill::zeros);
-    arma::mat wi = arma::mat(K, K, arma::fill::zeros);
+    arma::mat ui = arma::eye(eigvec.n_rows, K);
+    arma::mat wi = arma::eye(K, K);
     for (uint m = 0; m < K; ++m) {
         int j = eigvec.n_rows - m - 1;
         ui.col(m) = eigvec.col(j);
