@@ -1,17 +1,29 @@
 matxMax <- function(mtx) {
   return(arrayInd(which.max(mtx), dim(mtx)))
 }
-
-handle_invalid_summary_stat = function(x, bhat="beta", sbhat="se") { 
-  x$bhat <- x$bhat %>%
-    mutate(across(starts_with(bhat), as.numeric)) %>%
-    mutate(across(starts_with(bhat), ~replace(., is.nan(.), 0)))
-  x$sbhat <- x$sbhat %>%
-    mutate(across(starts_with(sbhat), as.numeric)) %>%
-    mutate(across(starts_with(sbhat), ~replace(., is.nan(.) | is.infinite(.), 1E3)))
-  return(x)
+##### FIXME
+#' @export
+handle_invalid_summary_stat <- function(list_of_dfs, bhat = NULL, sbhat = NULL, z = TRUE){
+  replace_values <- function(df, replace_with) {
+        df <- df %>%
+        mutate(across(everything(), as.numeric)) %>%
+        mutate(across(everything(), ~replace(., is.nan(.) | is.infinite(.), replace_with)))
+   }
+   if (all(c(bhat, sbhat) %in% names(list_of_dfs))){
+        # If the element is a list with 'bhat' and 'sbhat'
+        list_of_dfs[[bhat]] <- replace_values(list_of_dfs[[bhat]], 0)
+        list_of_dfs[[sbhat]] <- replace_values(list_of_dfs[[sbhat]], 1E3)
+     }
+     if (z) {
+         if(any(grepl("\\.b$",bhat))|any(grepl("\\.s$",sbhat))){
+            condition<- sub("\\.b$", "", bhat)
+            list_of_dfs[[paste0(condition,".z")]]<- list_of_dfs[[bhat]]/list_of_dfs[[sbhat]]
+         } else {
+            list_of_dfs[["z"]]<- list_of_dfs[[bhat]]/list_of_dfs[[sbhat]]
+         }
+     }
+   return(list_of_dfs)
 }
-
 # This function extracts tensorQTL results for given region for multiple summary statistics files
 #' @import dplyr
 #' @importFrom data.table fread
@@ -161,10 +173,10 @@ load_multitrait_tensorqtl_sumstat <- function(sumstats_paths,
   out$bhat <- out$bhat[var_idx,]
   out$sbhat <- out$sbhat[var_idx,]
 
-  if (nan_remove) out <- handle_invalid_summary_stat(out, bhat="beta", sbhat="se")
+  if (nan_remove) out <- handle_invalid_summary_stat(out, bhat="beta", sbhat="se",nan_remove)
 
   rownames(out$bhat) <- rownames(out$sbhat) <- variants
-  colnames(out$bhat)[which(startsWith(colnames(out$bhat), "beta"))] <- colnames(out$sbhat)[which(startsWith(colnames(out$sbhat),  "se"))] <- trait_names
+  colnames(out$bhat)[which(startsWith(colnames(out$bhat), "beta"))] <- colnames(out$sbhat)     [which(startsWith(colnames(out$sbhat),  "se"))] <- trait_names
   out$region = region
   out$top_variants <- lapply(Y, function(x) x$top_variants)
   return(out)
@@ -268,23 +280,22 @@ for (variant_id in names(variants_sets_and_pips_list)) {
 }                       
 # Loop through each condition and their credible sets
 for (i in 1:length(names(susie_fit[[1]]))) {
-  if (!is.null(susie_fit[[1]][[i]][["top_loci"]])){
-  num_cs <- length(which(unique(get_nested_element(susie_fit[[1]][[i]],c("top_loci",coverage)))>0))
-
+  if (!is.null(susie_fit[[1]][[i]][["top_loci"]])&&nrow(susie_fit[[1]][[i]][["top_loci"]])!=0){
+  set_num <- unique(get_nested_element(susie_fit[[1]][[i]],c("top_loci",coverage)))
+  num_cs <- length(which(set_num>0))
   if (num_cs > 0) {
     for (j in 1:num_cs) {
       variants_df <- get_nested_element(susie_fit[[1]][[i]],c("top_loci")) %>%
-                     filter(!!sym(coverage) == j) %>%
+                     filter(!!sym(coverage) == set_num[j]) %>%
                      select(variant_id, pip)
-
       # Iterate through the rows of the variants_df
       for (row in 1:nrow(variants_df)) {
         variant_id <- variants_df$variant_id[row]
         variant_pip <- variants_df$pip[row]
 
         # Prepare the set name
-        set_name <- paste0("cs_", i, "_", j)
-
+        set_name <- paste0("cs_", i, "_", set_num[j])
+        
         # If the variant_id is not in the results list, add it with the current set_name and pip
         if (!variant_id %in% names(results)) {
           results[[variant_id]] <- list(sets = set_name, pips = variant_pip)
@@ -324,9 +335,10 @@ return(top_loci_df)
 
 
 
-                             
+#' @import dplyr
+#' @import data.table
 #' @export
-load_multitrait_R_sumstat <- function(susie_fit, sumstats_db, coverage = "cs_coverage_0.95", top_loci = FALSE, filter_file = NULL, remove_any_missing = TRUE, max_rows_selected = 300, nan_remove=FALSE) {
+load_multitrait_R_sumstat <- function(susie_fit,sumstats_db, coverage = NULL, top_loci = FALSE, filter_file = NULL, remove_any_missing = TRUE, max_rows_selected = 300, nan_remove=FALSE, exclude_condition) {
   
    extract_data <- function(sumstats_db) {
       bhat <- as.data.table(cbind(sumstats_db$variant_names, sumstats_db$sumstats$betahat))
@@ -399,7 +411,7 @@ load_multitrait_R_sumstat <- function(susie_fit, sumstats_db, coverage = "cs_cov
     return(merged_df)
   }
   
-  results <- lapply(sumstats_db_list[[1]], function(data) extract_data(data))
+  results <- lapply(sumstats_db[[1]], function(data) extract_data(data))
   # results <- do.call("c", results)
   trait_names <- names(results)
   
@@ -419,11 +431,15 @@ load_multitrait_R_sumstat <- function(susie_fit, sumstats_db, coverage = "cs_cov
   
   if (top_loci) {
     union_top_loci <- merge_susie_cs(susie_fit,coverage)
+    if(!is.null(union_top_loci)){
     strong_signal_df <- union_top_loci %>% 
                  group_by(credible_set_names) %>%
                  filter(median_pip == max(median_pip)) %>%
                  slice(1) %>% ungroup()
     var_idx <- which(out$bhat$variants %in% strong_signal_df$variant_id)
+    } else {
+      var_idx <- NULL
+    }
   }
 
   
@@ -432,18 +448,32 @@ load_multitrait_R_sumstat <- function(susie_fit, sumstats_db, coverage = "cs_cov
   out$bhat <- out$bhat[var_idx,]
   out$sbhat <- out$sbhat[var_idx,]
   
-   if (nan_remove) out <- handle_invalid_summary_stat(out)
+  if (nan_remove) out <- handle_invalid_summary_stat(out,bhat = "bhat", sbhat = "sbhat", z = nan_remove)
   #out$z <- out$bhat / out$sbhat
   #rownames(out$bhat) <- rownames(out$sbhat) <- rownames(out$z) <- variants
   #colnames(out$bhat) <- colnames(out$sbhat) <- colnames(out$z) <- trait_names
    rownames(out$bhat) <- rownames(out$sbhat) <- variants
    colnames(out$bhat)[2:ncol(out$bhat)] <- colnames(out$sbhat)[2:ncol(out$bhat)] <- trait_names
+   out$bhat <- out$bhat[,-which(names(out$bhat)=="variants")]
+   out$sbhat <- out$sbhat[,-which(names(out$sbhat)=="variants")]
+   out$region = names(susie_fit)
+                    
+   if (length(exclude_condition) > 0) {
+     if(all(exclude_condition %in% colnames(out$bhat))){
+      out$bhat <- out$bhat[,-exclude_condition]
+      out$sbhat <- out$sbhat[,-exclude_condition]
+     } else {
+     # Handle the case where exclude_condition names do not exist in column names of dat
+     # This could be an error
+      stop(paste("Error: exclude_condition are not present in", out$region))
+     }
+   }
    #out$region = rds_files
    return(out)
  }
 
 #' @export
-mash_ran_null_sample <- function(dat, n_random, n_null, expected_ncondition, exclude_condition, z_only = FALSE, seed=NULL) {
+mash_rand_null_sample <- function(dat, n_random, n_null, exclude_condition, seed=NULL) {
   # Function to extract one data set
   extract_one_data <- function(dat, n_random, n_null) {
     if (is.null(dat)) return(NULL)
@@ -463,31 +493,60 @@ mash_ran_null_sample <- function(dat, n_random, n_null, expected_ncondition, exc
     return(dat)
   }
 
-  # Function to reformat data
-  reformat_data <- function(dat, z_only) {
-    res <- list(random.z = dat$random$bhat / dat$random$sbhat, 
-                null.z = dat$null$bhat / dat$null$sbhat)
-    if (!z_only) {
-      res <- c(res, list(random.b = dat$random$bhat,
-                         null.b = dat$null$bhat,
-                         null.s = dat$null$sbhat,
-                         random.s = dat$random$sbhat))
-    }
-    return(res)
-  }
-
   if (!is.null(seed)) set.seed(seed)
-
-  # Main processing logic
-  if (expected_ncondition > 0 && (ncol(dat$bhat) != expected_ncondition || ncol(dat$sbhat) != expected_ncondition)) {
-    stop(paste("Input data has", ncol(dat$bhat), "columns different from required", expected_ncondition))
-  }
-
-  if (length(exclude_condition) > 0) {
+  # FIXME check the exclude_condition %in% conditions
+  if (length(exclude_condition) > 0){
+    if (all(exclude_condition %in% colnames(dat$bhat))) {
     dat$bhat <- dat$bhat[,-exclude_condition]
     dat$sbhat <- dat$sbhat[,-exclude_condition]
-  }
-
-  result <- reformat_data(extract_one_data(dat, n_random, n_null), z_only)
+    } else {
+      # Handle the case where exclude_condition names do not exist in column names of dat
+      # This could be an error
+      stop(paste("Error: exclude_condition are not present in", dat$region))
+    } 
+   }
+  result <- extract_one_data(dat, n_random, n_null)
   return(result)
+}
+
+
+#' @export
+merge_data <- function(res_data, one_data) {
+  combined_data <- list()
+  if (length(res_data) == 0) {
+    return(one_data)
+  } else if (is.null(one_data)) {
+    return(res_data)
+  } else {
+    for (d in names(one_data)) {
+      if (is.null(one_data[[d]])) {
+        next
+      } else {
+        # Check if the number of columns matches
+        if (ncol(res_data[[d]]) != ncol(one_data[[d]])) {
+          # Get all column names from both data frames
+          all_cols <- union(colnames(res_data[[d]]), colnames(one_data[[d]]))
+          
+          # Align res[[d]]
+          res_aligned <- setNames(as.data.frame(matrix(NaN, nrow = nrow(res_data[[d]]), ncol = length(all_cols))), all_cols)
+          rownames(res_aligned)<- rownames(res_data[[d]])
+          common_cols_res <- intersect(colnames(res_data[[d]]), all_cols)
+          res_aligned[common_cols_res] <- res_data[[d]][common_cols_res]
+          
+          # Align one_data[[d]]
+          one_data_aligned <- setNames(as.data.frame(matrix(NaN, nrow = nrow(one_data[[d]]), ncol = length(all_cols))), all_cols)
+          rownames(one_data_aligned) <- rownames(one_data[[d]])
+          common_cols_one_data <- intersect(colnames(one_data[[d]]), all_cols)
+          one_data_aligned[common_cols_one_data] <- one_data[[d]][common_cols_one_data]
+          
+          # Now both have the same columns, we can rbind them
+          combined_data[[d]] <- rbind(res_aligned, one_data_aligned)
+        } else {
+          # If they already have the same number of columns, just rbind
+          combined_data[[d]] <- rbind(as.data.frame(res_data[[d]]), as.data.frame(one_data[[d]]))
+        }
+      }
+    }
+    return(combined_data)
+  }
 }
