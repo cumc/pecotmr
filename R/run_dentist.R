@@ -1,4 +1,4 @@
-#' @title run_dentist: Detecting Errors iN analyses of summary staTISTics
+#' @title Detecting Errors iN analyses of summary staTISTics
 #'
 #' @description DENTIST (Detecting Errors iN analyses of summary staTISTics) is a quality control
 #' tool for GWAS summary data. It uses linkage disequilibrium (LD) information from a reference
@@ -6,9 +6,9 @@
 #' predicted values. It can detect errors in genotyping/imputation, allelic errors, and
 #' heterogeneity between GWAS and LD reference samples.
 #'
+#' @param zScore A numeric vector of Z-scores from the GWAS summary statistics.
 #' @param LDmat A square matrix of linkage disequilibrium (LD) values where the dimensions equal the length of the \code{zScore} vector.
 #' @param nSample The number of samples used in the GWAS whose summary statistics are being analyzed.
-#' @param zScore A numeric vector of Z-scores from the GWAS summary statistics.
 #' @param pValueThreshold A numeric threshold for the p-value, below which variants are considered significant for quality control. Default is 5e-8.
 #' @param propSVD A numeric value specifying the proportion of SVD components to retain in the analysis. Default is 0.5.
 #' @param gcControl Logical; if \code{TRUE}, applies genomic control corrections. Default is FALSE.
@@ -35,11 +35,11 @@
 #' diag(LDmat) <- 1 # Ensure the diagonal is 1 for LD matrix
 #' zScore <- rnorm(nMarkers)
 #' zhat <- zScore %*% LDmat
-#' results <- run_dentist(LDmat = LDmat, nSample = 5000, zScore = zhat)
+#' results <- dentist(LDmat = LDmat, nSample = 5000, zScore = zhat)
 #' }
 #'
 #' @export
-run_dentist <- function(LDmat, nSample, zScore,
+dentist <- function(zScore, LDmat, nSample, 
                         pValueThreshold = 5e-8, propSVD = 0.4, gcControl = FALSE,
                         nIter = 10, gPvalueThreshold = 0.05, ncpus = 1, seed = 999) {
   # Check that LDmat dimensions match the length of zScore
