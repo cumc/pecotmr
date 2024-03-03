@@ -60,6 +60,7 @@ convert_to_dataframe <- function(variant_id) {
 #' @param match_min_prop Minimum proportion of variants in the smallest data
 #'   to be matched, otherwise stops with an error. Default is 20%.
 #' @param remove_dups Whether to remove duplicates, default is TRUE.
+#' @param remove_indels Whether to remove INDELs, default is FALSE.
 #' @param flip Whether the alleles must be flipped: A <--> T & C <--> G, in which case 
 #'   corresponding `col_to_flip` are multiplied by -1. Default is `TRUE`.
 #' @param remove_strand_ambiguous Whether to remove strand SNPs (if any). Default is `TRUE`.
@@ -70,7 +71,7 @@ convert_to_dataframe <- function(variant_id) {
 #' @export
 allele_qc <- function(target_variants, ref_variants, target_data, col_to_flip, 
                       match.min.prop = 0.2, remove_dups = TRUE, flip = TRUE, 
-                      remove_strand_ambiguous = TRUE) {
+                      remove_indels = FALSE, remove_strand_ambiguous = TRUE) {
   
   target_variants <- convert_to_dataframe(target_variants)
   ref_variants <- convert_to_dataframe(ref_variants)
@@ -92,47 +93,84 @@ allele_qc <- function(target_variants, ref_variants, target_data, col_to_flip,
   a2 <- toupper(matched$A2.target)
   ref1 <- toupper(matched$A1.ref)
   ref2 <- toupper(matched$A2.ref)
-  
-  # Strand flip function
-  strand_flip <- function(ref) {
-    flip <- ref
-    flip[ref == "A"] <- "T"
-    flip[ref == "T"] <- "A"
-    flip[ref == "G"] <- "C"
-    flip[ref == "C"] <- "G"
-    return(flip)
-  }
-  
-  flip1 <- strand_flip(ref1)
-  flip2 <- strand_flip(ref2)
-  
-  snp <- list()
-  if (remove_strand_ambiguous) {
-    strand_unambiguous <- !((a1 == "A" & a2 == "T") | (a1 == "T" & a2 == "A") | 
-                     (a1 == "C" & a2 == "G") | (a1 == "G" & a2 == "C"))
-  } else {
-    strand_unambiguous <- rep(TRUE, length(a1))
-  }
-  snp[["keep"]] <- strand_unambiguous
-  # Remove non-ATCG coding
-  non_ATCG <- !(a1 %in% c("A", "T", "G", "C") & a2 %in% c("A", "T", "G", "C"))
+    
+    strand_flip <- function(ref) {
+      # Define a mapping for complementary bases
+      base_mapping <- c("A" = "T", "T" = "A", "G" = "C", "C" = "G")
+
+      # Function to complement a single base
+      complement_base <- function(base) {
+        complement <- base_mapping[base]
+        return(complement)
+      }
+
+      # Function to reverse and complement a DNA sequence
+      reverse_complement <- function(sequence) {
+        reversed <- rev(strsplit(sequence, NULL)[[1]])
+        complemented <- sapply(reversed, complement_base, USE.NAMES = FALSE)
+        return(paste(complemented, collapse = ""))
+      }
+
+      complemented_sequence <- sapply(ref, reverse_complement, USE.NAMES = FALSE)
+
+      return(complemented_sequence)
+    }
+
+    flip1 <- strand_flip(ref1)
+    flip2 <- strand_flip(ref2)
+    remove_strand_ambiguous = TRUE
+    snp <- list()
+
+    if (remove_strand_ambiguous) {
+      strand_unambiguous <- !((a1 == "A" & a2 == "T") | (a1 == "T" & a2 == "A") | 
+                               (a1 == "C" & a2 == "G") | (a1 == "G" & a2 == "C"))
+    } else {
+      strand_unambiguous <- rep(TRUE, length(a1))
+    }
+
+    snp[["keep"]] <- strand_unambiguous
+
+    # Remove non-ATCG coding
+    check_ATCG <- function(vec) {
+      pattern <- "^[ATCGDI]+$"
+
+      # Function to check if a single element matches the pattern
+      check_element <- function(element) {
+        grepl(pattern, element)
+      }
+
+      result <- sapply(vec, check_element, USE.NAMES = FALSE)
+      return(result)
+    }
+
+    non_ATCG <- !(check_ATCG(a1) & check_ATCG(a2))
+
+    
   snp[["keep"]][non_ATCG] <- FALSE
   snp[["sign_flip"]] <- ((a1 == ref2 & a2 == ref1) | (a1 == flip2 & a2 == flip1)) & (a1 != ref1 & a2 != ref2)
-  snp[["strand_flip"]] <- ((a1 == flip1 & a2 == flip2) | (a1 == flip2 & a2 == flip1)) & (a1 != ref1 & a2 != ref2)  
+  snp[["strand_flip"]] <- ((a1 == flip1 & a2 == flip2) | (a1 == flip2 & a2 == flip1)) & (a1 != ref1 & a2 != ref2)
+  snp[["INDEL"]] <- (a2 == "I" | a2 == "D" | nchar(a2) > 1 | nchar(a1) > 1)
   exact_match <- (a1 == ref1 & a2 == ref2)
-  snp[["keep"]][!(exact_match | snp[["sign_flip"]] | snp[["strand_flip"]])] <- FALSE
+  ID_match <- ((a2 == "D" | a2 == "I") & (nchar(ref1) > 1 | nchar(ref2) > 1))
+    
+  snp[["keep"]][!(exact_match | snp[["sign_flip"]] | snp[["strand_flip"]] | ID_match)] <- FALSE
 
   if (!any(snp[["strand_flip"]][which(strand_unambiguous)])) {
     # we conclude that strand flip does not exists in the data at all
     # so we can bring back those previous marked to drop because of strand ambiguous
     snp[["keep"]][which(!strand_unambiguous)] <- TRUE
-    snp[["keep"]][!(exact_match | snp[["sign_flip"]])] <- FALSE
+    snp[["keep"]][!(exact_match | snp[["sign_flip"]] | ID_match )] <- FALSE
+  }
+    
+  if (remove_indels) {
+    snp[["keep"]][snp[["INDEL"]]] <- FALSE
   }
 
   qc_summary <- matched %>%
     mutate(keep = snp[["keep"]],
            sign_flip = snp[["sign_flip"]],
-           strand_flip = snp[["strand_flip"]])
+           strand_flip = snp[["strand_flip"]],
+            indel = snp[["INDEL"]])
   
   # Apply allele flip if required
   if (flip) {

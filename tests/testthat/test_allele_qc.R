@@ -122,7 +122,7 @@ test_that("Check that we correctly remove stand ambiguous SNPs",{
   res <- create_allele_data(1, n=100, match_min_prop=0.8, ambiguous=TRUE)
   output <- allele_qc(
     res$target_variants, res$ref_variants, res$target_data, "beta", match.min.prop = 0.2,
-    TRUE, TRUE, TRUE)
+    TRUE, TRUE, FALSE, TRUE)
   expect_equal(nrow(output$target_data_qced), 80)
 })
 
@@ -130,7 +130,7 @@ test_that("Check that we correctly remove non-ACTG coding SNPs",{
   res <- create_allele_data(1, n=100, match_min_prop=0.4, non_actg=TRUE)
   output <- allele_qc(
     res$target_variants, res$ref_variants, res$target_data, "beta", match.min.prop = 0.2,
-    TRUE, TRUE, TRUE)
+    TRUE, TRUE, FALSE, TRUE)
   expect_equal(nrow(output$target_data_qced), 40)
 })
 
@@ -138,5 +138,5 @@ test_that("Check that execution stops if not enough variants are matched",{
   res <- create_allele_data(1, n=100, match_min_prop=0.1, ambiguous=TRUE)
   expect_error(allele_qc(
     res$target_variants, res$ref_variants, res$target_data, "beta", match.min.prop = 0.2,
-    TRUE, TRUE, TRUE), "Not enough variants have been matched.")
+    TRUE, TRUE, FALSE, TRUE), "Not enough variants have been matched.")
 })

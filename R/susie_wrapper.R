@@ -201,7 +201,7 @@ get_rss_input = function(sumstat_path, column_file_path, n_sample, n_case, n_con
 rss_input_preprocess = function(sumstats, LD_data, skip_region = NULL) {
     target_variants = sumstats[, c("chrom", "pos", "A1", "A2")]
     ref_variants = LD_data$combined_LD_variants
-    allele_flip = allele_qc(target_variants, ref_variants, sumstats, col_to_flip = c("beta", "z"), match.min.prop = 0.2, remove_dups = FALSE, flip = TRUE, remove = TRUE)
+    allele_flip = allele_qc(target_variants, ref_variants, sumstats, col_to_flip = c("beta", "z"), match.min.prop = 0.2, remove_dups = TRUE, flip = TRUE, remove_indels = FALSE, remove_strand_ambiguous = TRUE)
 
     if (length(skip_region) != 0) {
         skip_table = tibble(region = skip_region) %>% separate(region, into = c("chrom", "start", "end"), sep = "[:-]")

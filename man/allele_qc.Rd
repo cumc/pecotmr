@@ -12,6 +12,7 @@ allele_qc(
   match.min.prop = 0.2,
   remove_dups = TRUE,
   flip = TRUE,
+  remove_indels = FALSE,
   remove_strand_ambiguous = TRUE
 )
 }
@@ -28,6 +29,8 @@ allele_qc(
 
 \item{flip}{Whether the alleles must be flipped: A <--> T & C <--> G, in which case 
 corresponding `col_to_flip` are multiplied by -1. Default is `TRUE`.}
+
+\item{remove_indels}{Whether to remove INDELs, default is FALSE.}
 
 \item{remove_strand_ambiguous}{Whether to remove strand SNPs (if any). Default is `TRUE`.}
 
