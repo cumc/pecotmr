@@ -46,7 +46,7 @@ run_dentist <- function(LDmat, nSample, zScore,
     stop("LDmat must be a square matrix with dimensions equal to the length of zScore.")
   }
 
-  results <- .Call("dentist", LDmat, nSample, zScore,
+  results <- dentist_rcpp(LDmat, nSample, zScore,
                    pValueThreshold, propSVD, gcControl, nIter,
                    gPvalueThreshold, ncpus, seed)
 

@@ -12,9 +12,9 @@ Rcpp::Rostream<true>&  Rcpp::Rcout = Rcpp::Rcpp_cout_get();
 Rcpp::Rostream<false>& Rcpp::Rcerr = Rcpp::Rcpp_cerr_get();
 #endif
 
-// dentist
-List dentist(const arma::mat& LDmat, uint nSample, const arma::vec& zScore, double pValueThreshold, float propSVD, bool gcControl, int nIter, double gPvalueThreshold, int ncpus, int seed);
-RcppExport SEXP _pecotmr_dentist(SEXP LDmatSEXP, SEXP nSampleSEXP, SEXP zScoreSEXP, SEXP pValueThresholdSEXP, SEXP propSVDSEXP, SEXP gcControlSEXP, SEXP nIterSEXP, SEXP gPvalueThresholdSEXP, SEXP ncpusSEXP, SEXP seedSEXP) {
+// dentist_rcpp
+List dentist_rcpp(const arma::mat& LDmat, uint nSample, const arma::vec& zScore, double pValueThreshold, float propSVD, bool gcControl, int nIter, double gPvalueThreshold, int ncpus, int seed);
+RcppExport SEXP _pecotmr_dentist_rcpp(SEXP LDmatSEXP, SEXP nSampleSEXP, SEXP zScoreSEXP, SEXP pValueThresholdSEXP, SEXP propSVDSEXP, SEXP gcControlSEXP, SEXP nIterSEXP, SEXP gPvalueThresholdSEXP, SEXP ncpusSEXP, SEXP seedSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -28,7 +28,7 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< double >::type gPvalueThreshold(gPvalueThresholdSEXP);
     Rcpp::traits::input_parameter< int >::type ncpus(ncpusSEXP);
     Rcpp::traits::input_parameter< int >::type seed(seedSEXP);
-    rcpp_result_gen = Rcpp::wrap(dentist(LDmat, nSample, zScore, pValueThreshold, propSVD, gcControl, nIter, gPvalueThreshold, ncpus, seed));
+    rcpp_result_gen = Rcpp::wrap(dentist_rcpp(LDmat, nSample, zScore, pValueThreshold, propSVD, gcControl, nIter, gPvalueThreshold, ncpus, seed));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -50,12 +50,9 @@ BEGIN_RCPP
 END_RCPP
 }
 
-RcppExport SEXP dentist(SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP);
-
 static const R_CallMethodDef CallEntries[] = {
-    {"_pecotmr_dentist", (DL_FUNC) &_pecotmr_dentist, 10},
+    {"_pecotmr_dentist_rcpp", (DL_FUNC) &_pecotmr_dentist_rcpp, 10},
     {"_pecotmr_qtl_enrichment_rcpp", (DL_FUNC) &_pecotmr_qtl_enrichment_rcpp, 7},
-    {"dentist", (DL_FUNC) &dentist, 10},
     {NULL, NULL, 0}
 };
 

@@ -188,7 +188,7 @@ void oneIteration(const arma::mat& LDmat, const std::vector<uint>& idx, const st
  */
 
 // [[Rcpp::export]]
-List dentist(const arma::mat& LDmat, uint nSample, const arma::vec& zScore,
+List dentist_rcpp(const arma::mat& LDmat, uint nSample, const arma::vec& zScore,
              double pValueThreshold, float propSVD, bool gcControl, int nIter,
              double gPvalueThreshold, int ncpus, int seed) {
 	// Set number of threads for parallel processing
