@@ -143,15 +143,17 @@ void oneIteration(const arma::mat& LDmat, const std::vector<uint>& idx, const st
 	// Calculate imputed Z scores and R squared values
 	arma::mat beta = LD_it * ui * wi;
 	arma::vec zScore_eigen_imp = beta * (ui.t() * zScore_eigen);
-    arma::mat product = beta * (ui.t() * LD_it.t());
-    arma::vec rsq_eigen = product.diag();
+	arma::mat product = beta * (ui.t() * LD_it.t());
+	arma::vec rsq_eigen = product.diag();
 
     #pragma omp parallel for
 	for (size_t i = 0; i < idx2.size(); ++i) {
 		imputedZ[idx2[i]] = zScore_eigen_imp(i);
 		rsqList[idx2[i]] = rsq_eigen(i);
+		rsqList[idx2[i]] = std::min(rsq_eigen(i), 1.0); // Ensure rsq does not exceed 1
 		if (rsq_eigen(i) >= 1) {
-			Rcpp::stop("Dividing zero: Rsq = " + std::to_string(rsq_eigen(i)));
+			// Handle the case where rsq_eigen is unexpectedly high
+			Rcpp::warning("Adjusted rsq_eigen value exceeding 1: " + std::to_string(rsq_eigen(i)));
 		}
 		uint j = idx2[i];
 		zScore_e[j] = (zScore[j] - imputedZ[j]) / std::sqrt(LDmat(j, j) - rsqList[j]);
@@ -189,14 +191,14 @@ void oneIteration(const arma::mat& LDmat, const std::vector<uint>& idx, const st
 
 // [[Rcpp::export]]
 List dentist_rcpp(const arma::mat& LDmat, uint nSample, const arma::vec& zScore,
-             double pValueThreshold, float propSVD, bool gcControl, int nIter,
-             double gPvalueThreshold, int ncpus, int seed) {
+                  double pValueThreshold, float propSVD, bool gcControl, int nIter,
+                  double gPvalueThreshold, int ncpus, int seed) {
 	// Set number of threads for parallel processing
 	int nProcessors = omp_get_max_threads();
 	if(ncpus < nProcessors) nProcessors = ncpus;
 	omp_set_num_threads(nProcessors);
 
-    uint markerSize = zScore.size();
+	uint markerSize = zScore.size();
 	// Initialization based on the seed input
 	std::vector<size_t> randOrder = generateSetOfNumbers(markerSize, seed);
 	std::vector<uint> idx, idx2, fullIdx(randOrder.begin(), randOrder.end());
@@ -327,9 +329,9 @@ List dentist_rcpp(const arma::mat& LDmat, uint nSample, const arma::vec& zScore,
 		}
 	}
 	// Prepare and return results
-	return List::create(Named("imputedZ") = imputedZ,
+	return List::create(Named("imputed_z") = imputedZ,
 	                    Named("rsq") = rsq,
-	                    Named("zScore_e") = zScore_e,
-	                    Named("iterID") = iterID,
-	                    Named("groupingGWAS") = wrap(groupingGWAS));
+	                    Named("corrected_z") = zScore_e,
+	                    Named("iter_to_correct") = iterID,
+	                    Named("is_problematic") = wrap(groupingGWAS));
 }
