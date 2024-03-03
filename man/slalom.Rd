@@ -5,45 +5,47 @@
 \title{Slalom Function for Summary Statistics QC for Fine-Mapping Analysis}
 \usage{
 slalom(
-  dat,
-  LD,
+  zScore,
+  LDmat,
+  standard_error = rep(1, length(zScore)),
   abf_prior_variance = 0.4,
   nlog10p_dentist_s_threshold = 4,
-  r2_threshold = 0.6
+  r2_threshold = 0.6,
+  lead_variant_choice = "pvalue"
 )
 }
 \arguments{
-\item{dat}{A data frame containing the fine-mapping results. Must include columns
-for variant identifiers, z-scores, and, optionally, standard errors (se) and p-values.}
+\item{zScore}{Numeric vector of z-scores corresponding to each variant.}
 
-\item{LD}{A matrix or data frame representing linkage disequilibrium (LD) information
-between variants. The structure and indexing should match the 'variant' column in `dat`.}
+\item{LDmat}{Square matrix representing linkage disequilibrium (LD) information
+between variants. Must have dimensions matching the length of `zScore`.}
+
+\item{standard_error}{Optional numeric vector of standard errors corresponding
+to each z-score. If not provided, a default value of 1 is assumed for all variants.}
 
 \item{abf_prior_variance}{Numeric, the prior effect size variance for ABF calculations.
-Default is 0.4, aligning with the default in the Python implementation.}
+Default is 0.4.}
 
 \item{nlog10p_dentist_s_threshold}{Numeric, the -log10 DENTIST-S P value threshold
 for identifying outlier variants for prediction. Default is 4.}
 
 \item{r2_threshold}{Numeric, the r2 threshold for DENTIST-S outlier variants
 for prediction. Default is 0.6.}
+
+\item{lead_variant_choice}{Character, method to choose the lead variant, either
+"pvalue" or "abf", with default "pvalue".}
 }
 \value{
-A list containing two elements: `dat`, the input dataframe annotated with ABF
-  results, credible sets, lead variant, and DENTIST-S statistics; and `dat_summary`, a
-  summary dataframe with aggregate statistics.
+A list containing the annotated LD matrix with ABF results, credible sets,
+  lead variant, and DENTIST-S statistics; and a summary dataframe with aggregate statistics.
 }
 \description{
 Performs Approximate Bayesian Factor (ABF) analysis, identifies credible sets,
-and annotates lead variants and DENTIST-S QC based on fine-mapping results.
-}
-\details{
-The function calculates the approximate Bayesian factor (ABF) for each variant,
-  identifies credible sets at 95% and 99% coverage, and annotates the lead variant based
-  on specified criteria. It also calculates and annotates DENTIST-S statistics to mark zOutliers.
+and annotates lead variants based on fine-mapping results. It computes p-values 
+from z-scores assuming a two-sided standard normal distribution.
 }
 \examples{
-# Assuming `dat` is your dataframe with columns 'variant', 'z', 'se', and 'pvalue',
-# and `LD` is your linkage disequilibrium matrix/dataframe:
-results <- slalom(dat, LD)
+# Assuming `zScore` is your vector of z-scores, `LDmat` is your LD matrix,
+# and optionally `standard_error` is your vector of standard errors:
+results <- slalom(zScore, LDmat, standard_error)
 }
