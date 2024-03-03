@@ -60,9 +60,8 @@ twas_z <- function(weights, z, R=NULL, X=NULL) {
 #'     }
 #'   \item `time_elapsed`: The time taken to complete the cross-validation process.
 #' }
-#' @importFrom future plan
-#' @importFrom future multisession
-#' @importFrom furrr future_map
+#' @importFrom future plan multisession availableCores
+#' @importFrom furrr future_map furrr_options
 #' @importFrom purrr map
 #' @export
 twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_methods = NULL, seed = NULL, max_num_variants = NULL, variants_to_keep = NULL, num_threads = 1, ...) {
@@ -182,7 +181,8 @@ twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_
         multivariate_weight_methods <- c('mrmash_weights')
 
         # Determine the number of cores to use
-        num_cores <- ifelse(num_threads == -1, detectCores(), num_threads)
+        num_cores <- ifelse(num_threads == -1, availableCores(), num_threads)
+        num_cores <- min(num_cores, availableCores())
         
         # Perform CV with parallel processing
         compute_method_predictions <- function(j) { 
@@ -231,7 +231,7 @@ twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_
 
         if (num_cores >= 2) {
             plan(multisession, workers = num_cores)
-            fold_results <- future_map(1:fold, compute_method_predictions)
+            fold_results <- future_map(1:fold, compute_method_predictions, .options = furrr_options(seed = seed))
         } else { 
             fold_results <- map(1:fold, compute_method_predictions)
         }
@@ -315,9 +315,8 @@ twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_
 #' @return A list where each element is named after a method and contains the weight matrix produced by that method.
 #'
 #' @export
-#' @importFrom future plan
-#' @importFrom future multisession
-#' @importFrom furrr future_map
+#' @importFrom future plan multisession availableCores
+#' @importFrom furrr future_map furrr_options
 #' @importFrom purrr map
 twas_weights <- function(X, Y, weight_methods, num_threads = 1, seed = NULL) {
     if (!is.matrix(X) || (!is.matrix(Y) && !is.vector(Y))) {
@@ -333,7 +332,8 @@ twas_weights <- function(X, Y, weight_methods, num_threads = 1, seed = NULL) {
     }
 
     # Determine number of cores to use
-    num_cores <- ifelse(num_threads == -1, detectCores(), num_threads)
+    num_cores <- ifelse(num_threads == -1, availableCores(), num_threads)
+    num_cores <- min(num_cores, availableCores())
 
     compute_method_weights <- function(method_name) {
         # Hardcoded vector of multivariate methods
@@ -368,7 +368,7 @@ twas_weights <- function(X, Y, weight_methods, num_threads = 1, seed = NULL) {
     if (num_cores >= 2) {
         # Set up parallel backend to use multiple cores
         plan(multisession, workers = num_cores)
-        weights_list <- names(weight_methods) %>% future_map(compute_method_weights)
+        weights_list <- names(weight_methods) %>% future_map(compute_method_weights, .options = furrr_options(seed = seed))
     } else {
         weights_list <- names(weight_methods) %>% map(compute_method_weights)
     }
