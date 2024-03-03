@@ -8,7 +8,7 @@ slalom(
   zScore,
   LDmat,
   standard_error = rep(1, length(zScore)),
-  abf_prior_variance = 0.4,
+  abf_prior_variance = 0.04,
   nlog10p_dentist_s_threshold = 4,
   r2_threshold = 0.6,
   lead_variant_choice = "pvalue"
@@ -24,10 +24,10 @@ between variants. Must have dimensions matching the length of `zScore`.}
 to each z-score. If not provided, a default value of 1 is assumed for all variants.}
 
 \item{abf_prior_variance}{Numeric, the prior effect size variance for ABF calculations.
-Default is 0.4.}
+Default is 0.04.}
 
 \item{nlog10p_dentist_s_threshold}{Numeric, the -log10 DENTIST-S P value threshold
-for identifying outlier variants for prediction. Default is 4.}
+for identifying outlier variants for prediction. Default is 4.0.}
 
 \item{r2_threshold}{Numeric, the r2 threshold for DENTIST-S outlier variants
 for prediction. Default is 0.6.}
