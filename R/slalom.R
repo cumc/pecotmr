@@ -87,7 +87,7 @@ slalom <- function(zScore, LDmat, standard_error = rep(1, length(zScore)), abf_p
     n_dentist_s_outlier = n_dentist_s_outlier,
     fraction = ifelse(n_r2 > 0, n_dentist_s_outlier / n_r2, 0), 
     max_pip = max_pip,
-    cs = cs,
+    cs_95 = cs,
     cs_99 = cs_99 
   ) 
   result <- as.data.frame(list(original_z = zScore, prob = prob, pvalue = pvalue, outliers = outliers, nlog10p_dentist_s = nlog10p_dentist_s))
