@@ -10,9 +10,9 @@
 #' @param standard_error Optional numeric vector of standard errors corresponding
 #'   to each z-score. If not provided, a default value of 1 is assumed for all variants.
 #' @param abf_prior_variance Numeric, the prior effect size variance for ABF calculations.
-#'   Default is 0.4.
+#'   Default is 0.04.
 #' @param nlog10p_dentist_s_threshold Numeric, the -log10 DENTIST-S P value threshold
-#'   for identifying outlier variants for prediction. Default is 4.
+#'   for identifying outlier variants for prediction. Default is 4.0.
 #' @param r2_threshold Numeric, the r2 threshold for DENTIST-S outlier variants
 #'   for prediction. Default is 0.6.
 #' @param lead_variant_choice Character, method to choose the lead variant, either
@@ -25,8 +25,8 @@
 #' results <- slalom(zScore, LDmat, standard_error)
 #' @export
 #'
-slalom <- function(zScore, LDmat, standard_error = rep(1, length(zScore)), abf_prior_variance = 0.4, 
-                   nlog10p_dentist_s_threshold = 4, r2_threshold = 0.6, lead_variant_choice = "pvalue") { 
+slalom <- function(zScore, LDmat, standard_error = rep(1, length(zScore)), abf_prior_variance = 0.04, 
+                   nlog10p_dentist_s_threshold = 4.0, r2_threshold = 0.6, lead_variant_choice = "pvalue") { 
   
   if (!is.matrix(LDmat) || nrow(LDmat) != ncol(LDmat) || nrow(LDmat) != length(zScore)) { 
     stop("LDmat must be a square matrix matching the length of zScore.")
