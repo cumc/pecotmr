@@ -11,6 +11,7 @@
 #include <random>
 #include <vector>
 #include <numeric> // For std::iota
+#include <gsl/gsl_cdf.h>
 
 // Enable C++11 via this plugin (Rcpp 0.10.3 or later)
 // [[Rcpp::depends(RcppArmadillo)]]
@@ -85,13 +86,13 @@ double getQuantile2(const std::vector<double>& dat, const std::vector<uint>& gro
 
 // Calculate minus log p-value of chi-squared statistic
 double minusLogPvalueChisq2(double stat) {
-	double p = 1.0 - arma::chi2cdf(stat, 1.0);
+	double p = 1.0 - gsl_cdf_chisq_P(stat, 1.0);
 	return -log10(p);
 }
 
 // Perform one iteration of the algorithm, assuming LDmat is an arma::mat
 void oneIteration(const arma::mat& LDmat, const std::vector<uint>& idx, const std::vector<uint>& idx2,
-                  arma::vec& zScore, arma::vec& imputedZ, arma::vec& rsqList, arma::vec& zScore_e,
+                  const arma::vec& zScore, arma::vec& imputedZ, arma::vec& rsqList, arma::vec& zScore_e,
                   uint nSample, float probSVD, int ncpus) {
 	int nProcessors = omp_get_max_threads();
 	if(ncpus < nProcessors) nProcessors = ncpus;
@@ -142,7 +143,8 @@ void oneIteration(const arma::mat& LDmat, const std::vector<uint>& idx, const st
 	// Calculate imputed Z scores and R squared values
 	arma::mat beta = LD_it * ui * wi;
 	arma::vec zScore_eigen_imp = beta * (ui.t() * zScore_eigen);
-	arma::vec rsq_eigen = (beta * (ui.t() * LD_it.t())).diag();
+    arma::mat product = beta * (ui.t() * LD_it.t());
+    arma::vec rsq_eigen = product.diag();
 
     #pragma omp parallel for
 	for (size_t i = 0; i < idx2.size(); ++i) {
@@ -165,14 +167,13 @@ void oneIteration(const arma::mat& LDmat, const std::vector<uint>& idx, const st
  * between GWAS and LD reference samples, improving the reliability of subsequent analyses.
  *
  * @param LDmat The linkage disequilibrium (LD) matrix from a reference panel, as an arma::mat object.
- * @param markerSize The total number of markers (SNPs) to be analyzed.
  * @param nSample The sample size used in the GWAS whose summary statistics are being analyzed.
  * @param zScore A vector of Z-scores from GWAS summary statistics.
  * @param pValueThreshold Threshold for the p-value below which variants are considered for quality control.
  * @param propSVD Proportion of singular value decomposition (SVD) components retained in the analysis.
  * @param gcControl A boolean flag to apply genetic control corrections.
  * @param nIter The number of iterations to run the DENTIST algorithm.
- * @param groupingPvalue_thresh P-value threshold for grouping variants into significant and null categories.
+ * @param gPvalueThreshold P-value threshold for grouping variants into significant and null categories.
  * @param ncpus The number of CPU cores to use for parallel processing.
  * @param seed Seed for random number generation, affecting the selection of variants for analysis.
  *
@@ -187,14 +188,15 @@ void oneIteration(const arma::mat& LDmat, const std::vector<uint>& idx, const st
  */
 
 // [[Rcpp::export]]
-List dentist(const arma::mat& LDmat, uint markerSize, uint nSample, const arma::vec& zScore,
+List dentist(const arma::mat& LDmat, uint nSample, const arma::vec& zScore,
              double pValueThreshold, float propSVD, bool gcControl, int nIter,
-             double groupingPvalue_thresh, int ncpus, int seed) {
+             double gPvalueThreshold, int ncpus, int seed) {
 	// Set number of threads for parallel processing
 	int nProcessors = omp_get_max_threads();
 	if(ncpus < nProcessors) nProcessors = ncpus;
 	omp_set_num_threads(nProcessors);
 
+    uint markerSize = zScore.size();
 	// Initialization based on the seed input
 	std::vector<size_t> randOrder = generateSetOfNumbers(markerSize, seed);
 	std::vector<uint> idx, idx2, fullIdx(randOrder.begin(), randOrder.end());
@@ -207,7 +209,7 @@ List dentist(const arma::mat& LDmat, uint markerSize, uint nSample, const arma::
 
 	std::vector<uint> groupingGWAS(markerSize, 0);
 	for (uint i = 0; i < markerSize; ++i) {
-		if (minusLogPvalueChisq2(std::pow(zScore(i),2)) > -log10(groupingPvalue_thresh)) {
+		if (minusLogPvalueChisq2(std::pow(zScore(i),2)) > -log10(gPvalueThreshold)) {
 			groupingGWAS[i] = 1;
 		}
 	}
@@ -292,27 +294,25 @@ List dentist(const arma::mat& LDmat, uint markerSize, uint nSample, const arma::
 		double medianChisq = chisq[chisq.size() / 2];
 		double inflationFactor = medianChisq / 0.46;
 
-#ifdef DEBUG
 		std::cout << "Max Chisq = " << *std::max_element(chisq.begin(), chisq.end()) << std::endl;
-#endif
-		std::vector<size_t> fullIdx_tmp;
+		std::vector<uint> fullIdx_tmp;
 		for (size_t i = 0; i < fullIdx.size(); ++i) {
 			double currentDiffSquared = std::pow(diff[i], 2);
 
 			if (gcControl) {
 				// When gcControl is true, check if the variant passes the adjusted threshold
 				if (!(diff[i] > threshold && minusLogPvalueChisq2(currentDiffSquared / inflationFactor) > -log10(pValueThreshold))) {
-                    fullIdx_tmp.push_back(fullIdx[i]);
+					fullIdx_tmp.push_back(fullIdx[i]);
 				}
 			} else {
 				// When gcControl is false, simply check if the variant passes the basic threshold
 				if (minusLogPvalueChisq2(currentDiffSquared) < -log10(pValueThreshold)) {
-				    if ((groupingGWAS[fullIdx[i]] == 1 && diff[i] <= threshold1) ||
-				        (groupingGWAS[fullIdx[i]] == 0 && diff[i] <= threshold0)) {
-					    fullIdx_tmp.push_back(fullIdx[i]);
-					    iterID[fullIdx[i]]++;
-				    }
-                }
+					if ((groupingGWAS[fullIdx[i]] == 1 && diff[i] <= threshold1) ||
+					    (groupingGWAS[fullIdx[i]] == 0 && diff[i] <= threshold0)) {
+						fullIdx_tmp.push_back(fullIdx[i]);
+						iterID[fullIdx[i]]++;
+					}
+				}
 			}
 		}
 
