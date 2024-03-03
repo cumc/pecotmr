@@ -180,11 +180,11 @@ void oneIteration(const arma::mat& LDmat, const std::vector<uint>& idx, const st
  * @param seed Seed for random number generation, affecting the selection of variants for analysis.
  *
  * @return A List object containing:
- * - imputedZ: A vector of imputed Z-scores for each marker.
+ * - imputed_z: A vector of imputed Z-scores for each marker.
  * - rsq: A vector of R-squared values for each marker, indicating goodness of fit.
- * - zScore_e: A vector of adjusted Z-scores after error detection.
- * - iterID: An integer vector indicating the iteration in which each marker passed the quality control.
- * - groupingGWAS: A binary vector indicating whether each marker is considered problematic (1) or not (0).
+ * - corrected_z: A vector of adjusted Z-scores after error detection.
+ * - iter_to_correct: An integer vector indicating the iteration in which each marker passed the quality control.
+ * - is_problematic: A binary vector indicating whether each marker is considered problematic (1) or not (0).
  *
  * @note The function is designed for use in Rcpp and requires Armadillo for matrix operations and OpenMP for parallel processing.
  */
@@ -296,7 +296,6 @@ List dentist_rcpp(const arma::mat& LDmat, uint nSample, const arma::vec& zScore,
 		double medianChisq = chisq[chisq.size() / 2];
 		double inflationFactor = medianChisq / 0.46;
 
-		std::cout << "Max Chisq = " << *std::max_element(chisq.begin(), chisq.end()) << std::endl;
 		std::vector<uint> fullIdx_tmp;
 		for (size_t i = 0; i < fullIdx.size(); ++i) {
 			double currentDiffSquared = std::pow(diff[i], 2);
