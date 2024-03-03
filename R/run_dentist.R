@@ -64,6 +64,6 @@ run_dentist <- function(LDmat, nSample, zScore,
                  gPvalueThreshold, ncpus, seed)
   }, warning = warning_handler)
   results <- as.data.frame(results)
-  results_df$original_z <- zScore
+  results$original_z <- zScore
   return(results)
 }
