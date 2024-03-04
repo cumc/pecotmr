@@ -73,7 +73,7 @@ slalom <- function(zScore, LDmat, standard_error = rep(1, length(zScore)), abf_p
   r2 <- LDmat^2
   t_dentist_s <- (zScore - LDmat[, lead_idx] * zScore[lead_idx])^2 / (1 - r2[, lead_idx])
   t_dentist_s[t_dentist_s < 0] <- Inf 
-  nlog10p_dentist_s <- -log10(2 * pchisq(t_dentist_s, df = 1, lower.tail = FALSE)) 
+  nlog10p_dentist_s <- -log10(1 - pchisq(t_dentist_s, df = 1))
   outliers <- (r2[, lead_idx] > r2_threshold) & (nlog10p_dentist_s > nlog10p_dentist_s_threshold)
   
   n_r2 <- sum(r2[, lead_idx] > r2_threshold)
