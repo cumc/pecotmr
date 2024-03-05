@@ -178,7 +178,7 @@ twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_
         return(list(sample_partition = sample_partition))
     } else {
         # Hardcoded vector of multivariate weight_methods
-        multivariate_weight_methods <- c('mrmash_weights')
+        multivariate_weight_methods <- c('mrmash_weights', 'mvsusie_weights')
 
         # Determine the number of cores to use
         num_cores <- ifelse(num_threads == -1, availableCores(), num_threads)
@@ -203,8 +203,12 @@ twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_
                     
                     prior_matrices <- arg$mrmash_weights_prior_matrices
                     prior_matrices <- prior_matrices[[paste0("fold_", j)]]
-                    
-                    weights_matrix <- do.call(method, c(list(X = X_train, Y = Y_train, prior_data_driven_matrices=prior_matrices, args)))
+                    cannonical_matrices <- arg$prior_canonical_matrices
+                    max_iter <- arg$mrmash_max_iter
+                    mvsusie_fit <- arg$mvsusie_fit
+                    prior_matrices <- prior_matrices[[paste0("fold_", j)]]
+                    weights_matrix <- do.call(method, c(list(X = X_train, Y = Y_train), arg))
+                  
                     # Adjust the weights matrix to include zeros for invalid columns
                     full_weights_matrix <- matrix(0, nrow = ncol(X), ncol = ncol(Y))
                     rownames(full_weights_matrix) <- rownames(weights_matrix)
@@ -337,7 +341,7 @@ twas_weights <- function(X, Y, weight_methods, num_threads = 1, seed = NULL) {
 
     compute_method_weights <- function(method_name) {
         # Hardcoded vector of multivariate methods
-        multivariate_weight_methods <- c('mrmash_weights')
+        multivariate_weight_methods <- c('mrmash_weights', 'mvsusie_weights')
         args <- weight_methods[[method_name]]
         # Remove columns with zero standard error
         valid_columns <- apply(X, 2, function(col) sd(col) != 0)
@@ -452,6 +456,12 @@ mrmash_weights <- function(...) {
     res <- mrmash_wrapper(...)
     return(coef.mr.mash(res)[-1,])
 }
+                   
+#' @importFrom mvsusieR coef.mvsusie
+#' @export               
+mvsusie_weights <- function(mvsusie_fit=NULL,...) {
+    return(coef.mvsusie(mvsusie_fit)[-1,])
+}    
 
 # Get a reasonable setting for the standard deviations of the mixture
 # components in the mixture-of-normals prior based on the data (X, y).

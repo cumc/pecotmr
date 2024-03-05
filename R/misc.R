@@ -458,7 +458,9 @@ load_regional_multivariate_data <- function(matrix_y_min_complete = NULL, # when
   }
   return (list(
         residual_Y = Y,
+        residual_X = dat$residual_X, #added
         residual_Y_scalar = Y_scalar,
+        residual_X_scalar = dat$residual_X_scalar,#added
         dropped_sample = dropped_sample,
         X = X,
         maf = dat$maf,
