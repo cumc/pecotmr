@@ -389,7 +389,7 @@ load_regional_association_data <- function(genotype, # PLINK file
       maf = maf_list,
       chrom = region[1],
       grange = if (!is.null(region)) unlist(strsplit(region[2], "-", fixed = TRUE)) else NULL,
-	    Y_coordinates = extract_phenotype_coordinates(pheno)
+	    Y_coordinates = if (!is.null(region)) extract_phenotype_coordinates(pheno) else NULL
     ))
 }
 
