@@ -445,8 +445,8 @@ load_multitrait_R_sumstat <- function(susie_fit,sumstats_db, coverage = NULL, to
   
   # Extract only subset of data
   variants <- out$bhat$variants[var_idx]
-  out$bhat <- out$bhat[var_idx,]
-  out$sbhat <- out$sbhat[var_idx,]
+  out$bhat <- out$bhat[var_idx,,drop=FALSE]
+  out$sbhat <- out$sbhat[var_idx,,drop=FALSE]
   
   if (nan_remove) out <- handle_invalid_summary_stat(out,bhat = "bhat", sbhat = "sbhat", z = nan_remove)
   #out$z <- out$bhat / out$sbhat
@@ -454,14 +454,14 @@ load_multitrait_R_sumstat <- function(susie_fit,sumstats_db, coverage = NULL, to
   #colnames(out$bhat) <- colnames(out$sbhat) <- colnames(out$z) <- trait_names
    rownames(out$bhat) <- rownames(out$sbhat) <- variants
    colnames(out$bhat)[2:ncol(out$bhat)] <- colnames(out$sbhat)[2:ncol(out$bhat)] <- trait_names
-   out$bhat <- out$bhat[,-which(names(out$bhat)=="variants")]
-   out$sbhat <- out$sbhat[,-which(names(out$sbhat)=="variants")]
+   out$bhat <- out$bhat[,-which(names(out$bhat)=="variants"),drop=FALSE]
+   out$sbhat <- out$sbhat[,-which(names(out$sbhat)=="variants"),drop=FALSE]
    out$region = names(susie_fit)
                     
    if (length(exclude_condition) > 0) {
      if(all(exclude_condition %in% colnames(out$bhat))){
-      out$bhat <- out$bhat[,-exclude_condition]
-      out$sbhat <- out$sbhat[,-exclude_condition]
+      out$bhat <- out$bhat[,-exclude_condition,drop=FALSE]
+      out$sbhat <- out$sbhat[,-exclude_condition,drop=FALSE]
      } else {
      # Handle the case where exclude_condition names do not exist in column names of dat
      # This could be an error
@@ -497,8 +497,8 @@ mash_rand_null_sample <- function(dat, n_random, n_null, exclude_condition, seed
   # FIXME check the exclude_condition %in% conditions
   if (length(exclude_condition) > 0){
     if (all(exclude_condition %in% colnames(dat$bhat))) {
-    dat$bhat <- dat$bhat[,-exclude_condition]
-    dat$sbhat <- dat$sbhat[,-exclude_condition]
+    dat$bhat <- dat$bhat[,-exclude_condition,drop=FALSE]
+    dat$sbhat <- dat$sbhat[,-exclude_condition,drop=FALSE]
     } else {
       # Handle the case where exclude_condition names do not exist in column names of dat
       # This could be an error
@@ -523,7 +523,7 @@ merge_data <- function(res_data, one_data) {
         next
       } else {
         # Check if the number of columns matches
-        if (ncol(res_data[[d]]) != ncol(one_data[[d]])) {
+        if (!identical(colnames(res_data[[d]]), colnames(one_data[[d]]))) {
           # Get all column names from both data frames
           all_cols <- union(colnames(res_data[[d]]), colnames(one_data[[d]]))
           
