@@ -1,28 +1,28 @@
 matxMax <- function(mtx) {
   return(arrayInd(which.max(mtx), dim(mtx)))
 }
-##### FIXME
+
 #' @export
-handle_invalid_summary_stat <- function(list_of_dfs, bhat = NULL, sbhat = NULL, z = TRUE){
+handle_invalid_summary_stat <- function(dat_list, bhat = NULL, sbhat = NULL, z = TRUE){
   replace_values <- function(df, replace_with) {
         df <- df %>%
         mutate(across(everything(), as.numeric)) %>%
         mutate(across(everything(), ~replace(., is.nan(.) | is.infinite(.), replace_with)))
    }
-   if (all(c(bhat, sbhat) %in% names(list_of_dfs))){
+   if (all(c(bhat, sbhat) %in% names(dat_list))){
         # If the element is a list with 'bhat' and 'sbhat'
-        list_of_dfs[[bhat]] <- as.matrix(replace_values(list_of_dfs[[bhat]], 0))
-        list_of_dfs[[sbhat]] <- as.matrix(replace_values(list_of_dfs[[sbhat]], 1E3))
+        dat_list[[bhat]] <- as.matrix(replace_values(dat_list[[bhat]], 0))
+        dat_list[[sbhat]] <- as.matrix(replace_values(dat_list[[sbhat]], 1E3))
      }
      if (z) {
          if(any(grepl("\\.b$",bhat))|any(grepl("\\.s$",sbhat))){
             condition<- sub("\\.b$", "", bhat)
-            list_of_dfs[[paste0(condition,".z")]]<- as.matrix(list_of_dfs[[bhat]]/list_of_dfs[[sbhat]])
+            dat_list[[paste0(condition,".z")]]<- as.matrix(dat_list[[bhat]]/dat_list[[sbhat]])
          } else {
-            list_of_dfs[["z"]]<- as.matrix(list_of_dfs[[bhat]]/list_of_dfs[[sbhat]])
+            dat_list[["z"]]<- as.matrix(dat_list[[bhat]]/dat_list[[sbhat]])
          }
      }
-   return(list_of_dfs)
+   return(dat_list)
 }
 # This function extracts tensorQTL results for given region for multiple summary statistics files
 #' @import dplyr
@@ -162,7 +162,6 @@ load_multitrait_tensorqtl_sumstat <- function(sumstats_paths,
     var_idx = split_variants_and_match(out$bhat$variants, filter_file, max_rows_selected)
   }
   
-  
   if (top_loci) {
     union_top_loci <- unique(unlist(lapply(Y, function(item) item$top_variants)))
     var_idx <- which(variants %in% union_top_loci) #var_idx may end up empty if max_rows_selected number too small
@@ -199,6 +198,7 @@ identify_overlap_sets <- function(variants_sets_and_pips_list) {
   }
   return(overlap_sets)
 }
+
 #Merge overlapping credible sets and update the credible sets in variants_list
 merge_and_update_overlap_sets <- function(variants_sets_and_pips_list,overlap_sets) {
   # Combine and identify unique combined sets
@@ -332,8 +332,6 @@ top_loci_df <- top_loci_df[!duplicated(top_loci_df$variant_id), ]
 rownames(top_loci_df) <- NULL  # Clean up row names
 return(top_loci_df)
 }
-
-
 
 #' @import dplyr
 #' @import data.table
@@ -494,7 +492,6 @@ mash_rand_null_sample <- function(dat, n_random, n_null, exclude_condition, seed
   }
 
   if (!is.null(seed)) set.seed(seed)
-  # FIXME check the exclude_condition %in% conditions
   if (length(exclude_condition) > 0){
     if (all(exclude_condition %in% colnames(dat$bhat))) {
     dat$bhat <- dat$bhat[,-exclude_condition,drop=FALSE]
