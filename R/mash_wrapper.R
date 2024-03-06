@@ -11,15 +11,15 @@ handle_invalid_summary_stat <- function(list_of_dfs, bhat = NULL, sbhat = NULL, 
    }
    if (all(c(bhat, sbhat) %in% names(list_of_dfs))){
         # If the element is a list with 'bhat' and 'sbhat'
-        list_of_dfs[[bhat]] <- replace_values(list_of_dfs[[bhat]], 0)
-        list_of_dfs[[sbhat]] <- replace_values(list_of_dfs[[sbhat]], 1E3)
+        list_of_dfs[[bhat]] <- as.matrix(replace_values(list_of_dfs[[bhat]], 0))
+        list_of_dfs[[sbhat]] <- as.matrix(replace_values(list_of_dfs[[sbhat]], 1E3))
      }
      if (z) {
          if(any(grepl("\\.b$",bhat))|any(grepl("\\.s$",sbhat))){
             condition<- sub("\\.b$", "", bhat)
-            list_of_dfs[[paste0(condition,".z")]]<- list_of_dfs[[bhat]]/list_of_dfs[[sbhat]]
+            list_of_dfs[[paste0(condition,".z")]]<- as.matrix(list_of_dfs[[bhat]]/list_of_dfs[[sbhat]])
          } else {
-            list_of_dfs[["z"]]<- list_of_dfs[[bhat]]/list_of_dfs[[sbhat]]
+            list_of_dfs[["z"]]<- as.matrix(list_of_dfs[[bhat]]/list_of_dfs[[sbhat]])
          }
      }
    return(list_of_dfs)
