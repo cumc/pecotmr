@@ -182,163 +182,177 @@ load_multitrait_tensorqtl_sumstat <- function(sumstats_paths,
 }
                              
 #' @export
-merge_susie_cs <- function(susie_fit, coverage = "cs_coverage_0.95"){
-# Initialize an empty list for the results
-results <- list()
-combined_sets <- list()
+merge_susie_cs <- function(susie_fit, coverage = "cs_coverage_0.95",complementary = FALSE){
+  # Initialize an empty list for the combined_sets
+  combined_sets <- list()
 
-#Identify variant IDs that are associated with more than one credible set
-identify_overlap_sets <- function(variants_sets_and_pips_list) {
-  overlap_sets <- list()
-  for (variant_id in names(variants_sets_and_pips_list)) {
-    sets <- variants_sets_and_pips_list[[variant_id]][["sets"]]
-    if (length(sets) > 1) {
-      overlap_sets[[variant_id]] <- sets
-    }
-  }
-  return(overlap_sets)
-}
-
-#Merge overlapping credible sets and update the credible sets in variants_list
-merge_and_update_overlap_sets <- function(variants_sets_and_pips_list,overlap_sets) {
-  # Combine and identify unique combined sets
-  combined_sets <- unique(unlist(lapply(overlap_sets, function(x) paste(sort(x), collapse = ","))))
-  unique_combined_sets <- unique(combined_sets)
-
-  # Split each combined set into individual sets
-  split_sets <- lapply(unique_combined_sets, function(x) strsplit(x, ",")[[1]])
-
-  #Identify and merge overlapping credible sets
- if(length(split_sets)!=1){
-  for (i in 1:(length(split_sets) - 1)) {
-   for (j in (i + 1):length(split_sets)) {
-    if (!is.null(split_sets[[i]]) && !is.null(split_sets[[j]])) { # Check both sets exist
-      if (length(intersect(split_sets[[i]], split_sets[[j]])) > 0) {
-        # Merge overlapping sets
-        # Update both i-th and j-th elements with the merged set
-        split_sets[[i]] <- unique(c(split_sets[[i]], split_sets[[j]]))
-        split_sets[[j]] <- unique(c(split_sets[[i]], split_sets[[j]]))
+  #Identify variant IDs that are associated with more than one credible set
+  identify_overlap_sets <- function(variants_sets_and_pips_list) {
+    overlap_sets <- list()
+    for (variant_id in names(variants_sets_and_pips_list)) {
+      sets <- variants_sets_and_pips_list[[variant_id]][["sets"]]
+      if (length(sets) > 1) {
+         overlap_sets[[variant_id]] <- sets
       }
     }
+    return(overlap_sets)
   }
- }
-}
-# Eliminate duplicates from the list of sets
-# Convert each set into a string to facilitate comparison
-set_strings <- sapply(split_sets, function(set) paste(sort(set), collapse = ","))
-# Identify unique sets based on their string representation
-unique_set_strings <- unique(set_strings)
-# Retain only the largest combined sets
-  final_combined_sets <- character()
-  for (set in unique_set_strings) {
-    if(length(unique_set_strings)==1){
-      final_combined_sets <- unique_set_strings[[1]]
-    } else {
-      included_in_other_set <- FALSE
-      set_elements <- unlist(strsplit(set, ","))
-      for (other_set in unique_set_strings) {
-        if (set != other_set && all(set_elements %in% unlist(strsplit(other_set, ",")))) {
-          included_in_other_set <- TRUE
-           break
+  #Merge overlapping credible sets and update the credible sets in variants_list
+  merge_and_update_overlap_sets <- function(variants_sets_and_pips_list,overlap_sets) {
+    # Combine and identify unique combined sets
+    combined_sets <- unique(unlist(lapply(overlap_sets, function(x) paste(sort(x), collapse = ","))))
+    unique_combined_sets <- unique(combined_sets)
+                                          
+    # Split each combined set into individual sets
+    split_sets <- lapply(unique_combined_sets, function(x) strsplit(x, ",")[[1]])
+
+    #Identify and merge overlapping credible sets
+    if (length(split_sets)!=1) {
+      for (i in 1:(length(split_sets) - 1)) {
+         for (j in (i + 1):length(split_sets)) {
+            if (!is.null(split_sets[[i]]) && !is.null(split_sets[[j]])) { # Check both sets exist
+              if (length(intersect(split_sets[[i]], split_sets[[j]])) > 0) {
+                 # Merge overlapping sets
+                 # Update both i-th and j-th elements with the merged set
+                 split_sets[[i]] <- unique(c(split_sets[[i]], split_sets[[j]]))
+                 split_sets[[j]] <- unique(c(split_sets[[i]], split_sets[[j]]))
+              }
+            }
+          }
         }
       }
-    if (!included_in_other_set) {
-      final_combined_sets <- c(final_combined_sets, set)
+    # Eliminate duplicates from the list of sets
+    # Convert each set into a string to facilitate comparison
+    set_strings <- sapply(split_sets, function(set) paste(sort(set), collapse = ","))
+    # Identify unique sets based on their string representation
+    unique_set_strings <- unique(set_strings)
+    # Retain only the largest combined sets
+    final_combined_sets <- character()
+    for (set in unique_set_strings) {
+       if (length(unique_set_strings)==1) {
+          final_combined_sets <- unique_set_strings[[1]]
+       } else {
+          included_in_other_set <- FALSE
+          set_elements <- unlist(strsplit(set, ","))
+          for (other_set in unique_set_strings) {
+             if (set != other_set && all(set_elements %in% unlist(strsplit(other_set, ",")))) {
+                included_in_other_set <- TRUE
+                break
+             }
+          }
+      if (!included_in_other_set) {
+         final_combined_sets <- c(final_combined_sets, set)
+      }
     }
-   }
   }
  
- # Create a mapping from original set names to combined set names
-set_name_map <- list()
-for (combined_set in final_combined_sets) {
-  original_sets <- unlist(strsplit(combined_set, ","))
-  for (set in original_sets) {
-    set_name_map[[set]] <- combined_set
+  # Create a mapping from original set names to combined set names
+  set_name_map <- list()
+  for (combined_set in final_combined_sets) {
+      original_sets <- unlist(strsplit(combined_set, ","))
+     for (set in original_sets) {
+        set_name_map[[set]] <- combined_set
+     }
   }
-}
 
-# Update the credible_set_names in variants_sets_and_pips_list for each variant_id                                      
-updated_credible_sets <- list()
-for (variant_id in names(variants_sets_and_pips_list)) {
-    current_sets <- variants_sets_and_pips_list[[variant_id]][["sets"]] # All credible sets for the current variant_id
-    combined_set_found <- FALSE
-    # Check if any of the current variant_id's credible sets exist in the set_name_map
-    for (set_name in current_sets) {
-        if (set_name %in% names(set_name_map)) {
-            # If at least one credible set corresponds to a combined credible set, update accordingly
-            updated_credible_sets[[variant_id]] <- set_name_map[[set_name]]
-            combined_set_found <- TRUE
-            break # Exit the loop once the combined credible set is found
-        }
-    }
-    # If no combined credible set is found, keep the original credible sets unchanged
-    if (!combined_set_found) {
+  # Update the credible_set_names in variants_sets_and_pips_list for each variant_id                                      
+  updated_credible_sets <- list()
+  for (variant_id in names(variants_sets_and_pips_list)) {
+      current_sets <- variants_sets_and_pips_list[[variant_id]][["sets"]] # All credible sets for the current variant_id
+      combined_set_found <- FALSE
+      # Check if any of the current variant_id's credible sets exist in the set_name_map
+      for (set_name in current_sets) {
+          if (set_name %in% names(set_name_map)) {
+             # If at least one credible set corresponds to a combined credible set, update accordingly
+             updated_credible_sets[[variant_id]] <- set_name_map[[set_name]]
+             combined_set_found <- TRUE
+             break # Exit the loop once the combined credible set is found
+          }
+      }
+     # If no combined credible set is found, keep the original credible sets unchanged
+     if (!combined_set_found) {
         updated_credible_sets[[variant_id]] <- current_sets
-    }
-  }
- return(updated_credible_sets)
-}                       
-# Loop through each condition and their credible sets
-for (i in 1:length(names(susie_fit[[1]]))) {
-  if (!is.null(susie_fit[[1]][[i]][["top_loci"]])&&nrow(susie_fit[[1]][[i]][["top_loci"]])!=0){
-  set_num <- unique(get_nested_element(susie_fit[[1]][[i]],c("top_loci",coverage)))
-  num_cs <- length(which(set_num>0))
-  if (num_cs > 0) {
-    for (j in 1:num_cs) {
-      variants_df <- get_nested_element(susie_fit[[1]][[i]],c("top_loci")) %>%
+     }
+   }
+  return(updated_credible_sets)
+ }                       
+ # Loop through each condition and their credible sets
+ extract_top_loci <- function(susie_fit, complementary) {
+   results <- list()
+   for (i in 1:length(names(susie_fit[[1]]))) {
+      if (!is.null(susie_fit[[1]][[i]][["top_loci"]])&&nrow(susie_fit[[1]][[i]][["top_loci"]])!=0) {
+         if (!complementary) {
+            set_num <- unique(get_nested_element(susie_fit[[1]][[i]],c("top_loci",coverage)))
+            set_num <- set_num[set_num!=0]
+         } else {
+           set_num <- 0
+         }
+         num_cs <- length(set_num)
+        if (num_cs > 0) {
+          for (j in 1:num_cs) {
+             variants_df <- get_nested_element(susie_fit[[1]][[i]],c("top_loci")) %>%
                      filter(!!sym(coverage) == set_num[j]) %>%
                      select(variant_id, pip)
-      # Iterate through the rows of the variants_df
-      for (row in 1:nrow(variants_df)) {
-        variant_id <- variants_df$variant_id[row]
-        variant_pip <- variants_df$pip[row]
+        # Iterate through the rows of the variants_df
+             if (dim(variants_df)[1]!=0) {
+               for (row in 1:nrow(variants_df)) {
+                   variant_id <- variants_df$variant_id[row]
+                   variant_pip <- variants_df$pip[row]
 
-        # Prepare the set name
-        set_name <- paste0("cs_", i, "_", set_num[j])
+                   # Prepare the set name
+                   set_name <- paste0("cs_", i, "_", set_num[j])
         
-        # If the variant_id is not in the results list, add it with the current set_name and pip
-        if (!variant_id %in% names(results)) {
-          results[[variant_id]] <- list(sets = set_name, pips = variant_pip)
-        } else {
-          # If the variant_id is already in the results, append the current set_name and pip
-          results[[variant_id]]$sets <- c(results[[variant_id]]$sets, set_name)
-          results[[variant_id]]$pips <- c(results[[variant_id]]$pips, variant_pip)
-          
+                   # If the variant_id is not in the results list, add it with the current set_name and pip
+                   if (!variant_id %in% names(results)) {
+                     results[[variant_id]] <- list(sets = set_name, pips = variant_pip)
+                   } else {
+                     # If the variant_id is already in the results, append the current set_name and pip
+                     results[[variant_id]]$sets <- c(results[[variant_id]]$sets, set_name)
+                     results[[variant_id]]$pips <- c(results[[variant_id]]$pips, variant_pip)
+                  }
+                }
+              }
+            }
+          }
         }
       }
-    }
-  }
- }
-}
-top_loci_df <- do.call(rbind, lapply(names(results), function(variant_id) {
-    max_pip <- max(unlist(results[[variant_id]]$pips))
-    median_pip <- median(unlist(results[[variant_id]]$pips))
-    if(length(identify_overlap_sets(results))!=0){                                   
-    credible_set_names <- merge_and_update_overlap_sets(results,overlap_sets = identify_overlap_sets(results))[[variant_id]]
-    } else {
-    credible_set_names <- paste(sort(unique(unlist(results[[variant_id]]$sets))), collapse = ",")
-    }
-    data.frame(
-      variant_id = variant_id,
-      credible_set_names = credible_set_names,
-      max_pip = max_pip,
-      median_pip = median_pip,
-      stringsAsFactors = FALSE  # Avoid factors for strings
-    )
-}))
+     return(results)
+   }
 
-# Clean up row names and make sure variant_id is unique
-top_loci_df <- top_loci_df[!duplicated(top_loci_df$variant_id), ]
-rownames(top_loci_df) <- NULL  # Clean up row names
-return(top_loci_df)
+  combine_top_loci <- function(extracted_result){
+     top_loci_df <- do.call(rbind, lapply(names(extracted_result), function(variant_id) {
+     max_pip <- max(unlist(extracted_result[[variant_id]]$pips))
+     median_pip <- median(unlist(extracted_result[[variant_id]]$pips))
+     if (length(identify_overlap_sets(extracted_result))!=0) {                                   
+        credible_set_names <- merge_and_update_overlap_sets(extracted_result,overlap_sets = identify_overlap_sets(extracted_result))[[variant_id]]
+     } else {
+       credible_set_names <- paste(sort(unique(unlist(extracted_result[[variant_id]]$sets))), collapse = ",")
+     }
+     data.frame(
+       variant_id = variant_id,
+       credible_set_names = credible_set_names,
+       max_pip = max_pip,
+       median_pip = median_pip,
+       stringsAsFactors = FALSE  # Avoid factors for strings
+     )
+   }))
+   return(top_loci_df)
+ }
+                          
+  extracted_top_loci <-  extract_top_loci(susie_fit, complementary)
+  combined_top_loci_df <- combine_top_loci(results)                     
+  # Clean up row names and make sure variant_id is unique
+  combined_top_loci_df <- combined_top_loci_df[!duplicated(combined_top_loci_df$variant_id), ]
+  rownames(combined_top_loci_df) <- NULL  # Clean up row names
+  return(top_loci_df)
 }
 
 #' @import dplyr
 #' @import data.table
 #' @export
-load_multitrait_R_sumstat <- function(susie_fit,sumstats_db, coverage = NULL, top_loci = FALSE, filter_file = NULL, remove_any_missing = TRUE, max_rows_selected = 300, nan_remove=FALSE, exclude_condition) {
-  
-   extract_data <- function(sumstats_db) {
+load_multitrait_R_sumstat <- function(susie_fit, sumstats_db, coverage = NULL, top_loci = FALSE, filter_file = NULL, remove_any_missing = TRUE, max_rows_selected = 300, nan_remove=FALSE, exclude_condition, complementary = FALSE) {
+   
+    extract_data <- function(sumstats_db) {
       bhat <- as.data.table(cbind(sumstats_db$variant_names, sumstats_db$sumstats$betahat))
       sbhat <- as.data.table(cbind(sumstats_db$variant_names, sumstats_db$sumstats$sebetahat))
       setnames(bhat, c("variants", "bhat"))
@@ -350,7 +364,8 @@ load_multitrait_R_sumstat <- function(susie_fit,sumstats_db, coverage = NULL, to
         sbhat = sbhat$sbhat,
         variants = bhat$variants
       )
-    }  
+    }
+
   split_variants_and_match <- function(variant, filter_file, max_rows_selected) {
     if (!file.exists(filter_file)) {
       stop("Filter file does not exist.")
@@ -410,14 +425,13 @@ load_multitrait_R_sumstat <- function(susie_fit,sumstats_db, coverage = NULL, to
   }
   
   results <- lapply(sumstats_db[[1]], function(data) extract_data(data))
-  # results <- do.call("c", results)
   trait_names <- names(results)
   
   bhat = merge_matrices(results, value_column="bhat",  id_column = "variants", remove_any_missing)
   sbhat = merge_matrices(results, value_column="sbhat", id_column = "variants", remove_any_missing)
   out <- list(bhat = bhat, sbhat = sbhat)
   
-  # Check if variants are the same in both bhat and sbhat
+  #Check if variants are the same in both bhat and sbhat
   if (!identical(out$bhat$variants, out$sbhat$variants)) {
     stop("Error: Variants in bhat and sbhat are not the same.")
   }
@@ -428,13 +442,13 @@ load_multitrait_R_sumstat <- function(susie_fit,sumstats_db, coverage = NULL, to
   }
   
   if (top_loci) {
-    union_top_loci <- merge_susie_cs(susie_fit,coverage)
+    union_top_loci <- merge_susie_cs(susie_fit,coverage,complementary)
     if(!is.null(union_top_loci)){
-    strong_signal_df <- union_top_loci %>% 
+      strong_signal_df <- union_top_loci %>% 
                  group_by(credible_set_names) %>%
                  filter(median_pip == max(median_pip)) %>%
                  slice(1) %>% ungroup()
-    var_idx <- which(out$bhat$variants %in% strong_signal_df$variant_id)
+      var_idx <- which(out$bhat$variants %in% strong_signal_df$variant_id)
     } else {
       var_idx <- NULL
     }
@@ -447,27 +461,23 @@ load_multitrait_R_sumstat <- function(susie_fit,sumstats_db, coverage = NULL, to
   out$sbhat <- out$sbhat[var_idx,,drop=FALSE]
   
   if (nan_remove) out <- handle_invalid_summary_stat(out,bhat = "bhat", sbhat = "sbhat", z = nan_remove)
-  #out$z <- out$bhat / out$sbhat
-  #rownames(out$bhat) <- rownames(out$sbhat) <- rownames(out$z) <- variants
-  #colnames(out$bhat) <- colnames(out$sbhat) <- colnames(out$z) <- trait_names
-   rownames(out$bhat) <- rownames(out$sbhat) <- variants
-   colnames(out$bhat)[2:ncol(out$bhat)] <- colnames(out$sbhat)[2:ncol(out$bhat)] <- trait_names
-   out$bhat <- out$bhat[,-which(names(out$bhat)=="variants"),drop=FALSE]
-   out$sbhat <- out$sbhat[,-which(names(out$sbhat)=="variants"),drop=FALSE]
-   out$region = names(susie_fit)
+  rownames(out$bhat) <- rownames(out$sbhat) <- variants
+  colnames(out$bhat)[2:ncol(out$bhat)] <- colnames(out$sbhat)[2:ncol(out$bhat)] <- trait_names
+  out$bhat <- out$bhat[,-which(names(out$bhat)=="variants"),drop=FALSE]
+  out$sbhat <- out$sbhat[,-which(names(out$sbhat)=="variants"),drop=FALSE]
+  out$region = names(susie_fit)
                     
-   if (length(exclude_condition) > 0) {
-     if(all(exclude_condition %in% colnames(out$bhat))){
-      out$bhat <- out$bhat[,-exclude_condition,drop=FALSE]
-      out$sbhat <- out$sbhat[,-exclude_condition,drop=FALSE]
+  if (length(exclude_condition) > 0) {
+     if (all(exclude_condition %in% colnames(out$bhat))) {
+       out$bhat <- out$bhat[,-exclude_condition,drop=FALSE]
+       out$sbhat <- out$sbhat[,-exclude_condition,drop=FALSE]
      } else {
-     # Handle the case where exclude_condition names do not exist in column names of dat
-     # This could be an error
-      stop(paste("Error: exclude_condition are not present in", out$region))
+       # Handle the case where exclude_condition names do not exist in column names of dat
+       # This could be an error
+       stop(paste("Error: exclude_condition are not present in", out$region))
      }
    }
-   #out$region = rds_files
-   return(out)
+  return(out)
  }
 
 #' @export
