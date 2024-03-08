@@ -37,6 +37,7 @@ run_multivariate_pipeline <- function(X, y, maf,
                                       signal_cutoff = 0.025, #based on the susie_twas pipeline
                                       secondary_coverage = c(0.5, 0.7), 
                                       mrmash_weights_prior_matrices=NULL,
+                                      mrmash_weights_prior_matrices_cv=NULL,
                                       prior_canonical_matrices=TRUE,
                                       sample_partition = NULL, 
                                       mrmash_max_iter=5000,
@@ -44,7 +45,7 @@ run_multivariate_pipeline <- function(X, y, maf,
                                       max_cv_variants=5000, 
                                       cv_folds=5, 
                                       cv_threads = 1,
-                                      cv_seed = 999){
+                                      cv_seed = 999,...){
     for(r in 1:ncol(y)){
       if (pip_cutoff_to_skip[r]>0) {
           top_model_pip <- susie(X, y[, r],L=1)$pip
@@ -64,7 +65,15 @@ run_multivariate_pipeline <- function(X, y, maf,
         maf <- maf[-drop_indx]
         X_scalar <- X_scalar[-drop_indx]
         y_scalar <- y_scalar[-drop_indx]
-        dropped_sample <- lapply(dropped_sample, function(x) x[-drop_indx])                    
+        dropped_sample <- lapply(dropped_sample, function(x) x[-drop_indx])  
+        # filter prior_matrices                        
+        if(!is.null(mrmash_weights_prior_matrices)) {
+          mrmash_weights_prior_matrices = lapply(prior_matrices, function(x) x[colnames(y), colnames(y)])
+        }
+        if(!is.null(mrmash_weights_prior_matrices_cv)){ 
+          mrmash_weights_prior_matrices_cv=lapply(prior_matrices_cv, function(j){lapply(j, function(r){r[colnames(y), colnames(y)]})})
+        }
+                                                 
     }
                                  
     # convert into per condition dropped_sample list with $X, $Y, $covar
@@ -109,7 +118,10 @@ run_multivariate_pipeline <- function(X, y, maf,
                                                   ld_reference_meta_file=ld_reference_meta_file, max_cv_variants=max_cv_variants, 
                                                   mvsusie_max_iter=mvsusie_max_iter, mrmash_max_iter=mrmash_max_iter,signal_cutoff=signal_cutoff,
                                                   pip_cutoff_to_skip =pip_cutoff_to_skip, secondary_coverage=secondary_coverage,
-                                                  prior_canonical_matrices = prior_canonical_matrices, cv_seed=cv_seed)  
+                                                  prior_canonical_matrices = prior_canonical_matrices, 
+                                                  mrmash_weights_prior_matrices=mrmash_weights_prior_matrices,
+                                                  mrmash_weights_prior_matrices_cv=mrmash_weights_prior_matrices_cv,
+                                                  cv_seed=cv_seed)  
     return(result)         
                              
 }
@@ -122,8 +134,10 @@ twas_multivariate_weights_pipeline <- function(X, y, maf, mvsusie_prefit, mvsusi
                                                max_cv_variants=5000, mvsusie_max_iter=200, mrmash_max_iter=5000, 
                                                pip_cutoff_to_skip = 0, signal_cutoff = 0.025,
                                                secondary_coverage = c(0.5, 0.7), ld_reference_meta_file=NULL,
-                                               cv_folds=5, sample_partition = NULL, mrmash_weights_prior_matrices=NULL,
-                                               prior_canonical_matrices = FALSE,cv_seed = 999, cv_threads = 1){ 
+                                               cv_folds=5, sample_partition = NULL, 
+                                               mrmash_weights_prior_matrices=NULL,
+                                               mrmash_weights_prior_matrices_cv=NULL,
+                                               prior_canonical_matrices = FALSE,cv_seed = 999, cv_threads = 1,...){ 
 
     max_L <- c()
     for (r in 1:ncol(y)){ 
@@ -191,6 +205,7 @@ twas_multivariate_weights_pipeline <- function(X, y, maf, mvsusie_prefit, mvsusi
 
     # Twas with Cross Validation
     # Select variants for cv by pip values - top `max_cv_variants` number of high pip variants get selected 
+    if (max_cv_variants>length(mvsusie_fitted$pip))  max_cv_variants=length(mvsusie_fitted$pip)
     top_sig_idx <- which(mvsusie_fitted$pip %in% mvsusie_fitted$pip[order(-mvsusie_fitted$pip)[1:max_cv_variants]])
     mvsusie_fitted$coef <- mvsusie_fitted$coef[c(1, top_sig_idx+1), ] #first row is intercept - which will later handled in mvsusie.coef()
 
@@ -198,11 +213,16 @@ twas_multivariate_weights_pipeline <- function(X, y, maf, mvsusie_prefit, mvsusi
         weight_methods <- list(mrmash_weights = list(), mvsusie_weights= list())
         message(paste0("Performing cross validation with ", length(top_sig_idx), " variants. "))
         
-        twas_cv_result <- twas_weights_cv(X=X[, top_sig_idx],Y=y, fold=cv_folds, weight_methods=weight_methods, 
-                sample_partition=sample_partition, mrmash_weights_prior_matrices=mrmash_weights_prior_matrices, 
-                mrmash_max_iter=mrmash_max_iter, seed = cv_seed, prior_canonical_matrices=prior_canonical_matrices, 
-                mvsusie_fit=mvsusie_fitted, residual_variance=resid_Y, L=max_L, mvsusie_max_iter=mvsusie_max_iter, 
-                num_threads = cv_threads) 
+        twas_cv_result <- twas_weights_cv(X=X[, top_sig_idx],Y=y, 
+                fold=cv_folds, 
+                weight_methods=weight_methods, 
+                sample_partition=sample_partition, 
+                mrmash_weights_prior_matrices=mrmash_weights_prior_matrices_cv, 
+                mrmash_max_iter=mrmash_max_iter, 
+                prior_canonical_matrices=prior_canonical_matrices, 
+                mvsusie_fit=mvsusie_fitted, residual_variance=resid_Y, L=max_L, 
+                mvsusie_max_iter=mvsusie_max_iter, 
+                num_threads = cv_threads, seed = cv_seed) 
                 # if no mvsusie_fit were provided, mvsusie_weights will need to use all other parameters in the list 
                 # to fit mvSuSiE to get mvsusie weight matrix. 
 

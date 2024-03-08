@@ -200,14 +200,11 @@ twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_
                 args <- weight_methods[[method]]
                 if (method %in% multivariate_weight_methods) {
                     # Apply multivariate method to entire Y for this fold
-                    
                     prior_matrices <- arg$mrmash_weights_prior_matrices
                     prior_matrices <- prior_matrices[[paste0("fold_", j)]]
-                    cannonical_matrices <- arg$prior_canonical_matrices
-                    max_iter <- arg$mrmash_max_iter
-                    mvsusie_fit <- arg$mvsusie_fit
-                    weights_matrix <- do.call(method, c(list(X = X_train, Y = Y_train), arg))
-                  
+                    weights_matrix <- do.call(method, c(list(X = X_train, Y = Y_train, prior_data_driven_matrices=prior_matrices, 
+                                                             cannonical_matrices=arg$prior_canonical_matrices,  
+                                                             max_iter=arg$mrmash_max_iter), arg))
                     # Adjust the weights matrix to include zeros for invalid columns
                     full_weights_matrix <- matrix(0, nrow = ncol(X), ncol = ncol(Y))
                     rownames(full_weights_matrix) <- rownames(weights_matrix)
@@ -460,6 +457,7 @@ mrmash_weights <- function(...) {
 #' @export               
 mvsusie_weights <- function(mvsusie_fit=NULL, X=NULL, Y=NULL, prior_variance=NULL, residual_variance=NULL, L=30, mvsusie_max_iter=200, ...) {
     if (is.null(mvsusie_fit)) {
+        message("Did not provide mvsusie_fit, fitting mvSuSiE now")
         if (is.null(X) || is.null(Y)) {
             stop("Both X and Y must be provided if mvsusie_fit is NULL.")
         }
