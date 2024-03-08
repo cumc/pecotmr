@@ -25,9 +25,11 @@ twas_multivariate_weights_pipeline(
   cv_folds = 5,
   sample_partition = NULL,
   mrmash_weights_prior_matrices = NULL,
+  mrmash_weights_prior_matrices_cv = NULL,
   prior_canonical_matrices = FALSE,
   cv_seed = 999,
-  cv_threads = 1
+  cv_threads = 1,
+  ...
 )
 }
 \description{

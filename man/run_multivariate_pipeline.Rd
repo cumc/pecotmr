@@ -17,6 +17,7 @@ run_multivariate_pipeline(
   signal_cutoff = 0.025,
   secondary_coverage = c(0.5, 0.7),
   mrmash_weights_prior_matrices = NULL,
+  mrmash_weights_prior_matrices_cv = NULL,
   prior_canonical_matrices = TRUE,
   sample_partition = NULL,
   mrmash_max_iter = 5000,
@@ -24,7 +25,8 @@ run_multivariate_pipeline(
   max_cv_variants = 5000,
   cv_folds = 5,
   cv_threads = 1,
-  cv_seed = 999
+  cv_seed = 999,
+  ...
 )
 }
 \arguments{
