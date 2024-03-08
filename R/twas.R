@@ -178,7 +178,7 @@ twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_
         return(list(sample_partition = sample_partition))
     } else {
         # Hardcoded vector of multivariate weight_methods
-        multivariate_weight_methods <- c('mrmash_weights')
+        multivariate_weight_methods <- c('mrmash_weights', 'mvsusie_weights')
 
         # Determine the number of cores to use
         num_cores <- ifelse(num_threads == -1, availableCores(), num_threads)
@@ -200,11 +200,11 @@ twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_
                 args <- weight_methods[[method]]
                 if (method %in% multivariate_weight_methods) {
                     # Apply multivariate method to entire Y for this fold
-                    
                     prior_matrices <- arg$mrmash_weights_prior_matrices
                     prior_matrices <- prior_matrices[[paste0("fold_", j)]]
-                    
-                    weights_matrix <- do.call(method, c(list(X = X_train, Y = Y_train, prior_data_driven_matrices=prior_matrices, args)))
+                    weights_matrix <- do.call(method, c(list(X = X_train, Y = Y_train, prior_data_driven_matrices=prior_matrices, 
+                                                             cannonical_matrices=arg$prior_canonical_matrices,  
+                                                             max_iter=arg$mrmash_max_iter), arg))
                     # Adjust the weights matrix to include zeros for invalid columns
                     full_weights_matrix <- matrix(0, nrow = ncol(X), ncol = ncol(Y))
                     rownames(full_weights_matrix) <- rownames(weights_matrix)
@@ -337,7 +337,7 @@ twas_weights <- function(X, Y, weight_methods, num_threads = 1, seed = NULL) {
 
     compute_method_weights <- function(method_name) {
         # Hardcoded vector of multivariate methods
-        multivariate_weight_methods <- c('mrmash_weights')
+        multivariate_weight_methods <- c('mrmash_weights', 'mvsusie_weights')
         args <- weight_methods[[method_name]]
         # Remove columns with zero standard error
         valid_columns <- apply(X, 2, function(col) sd(col) != 0)
@@ -452,6 +452,26 @@ mrmash_weights <- function(...) {
     res <- mrmash_wrapper(...)
     return(coef.mr.mash(res)[-1,])
 }
+                   
+#' @importFrom mvsusieR coef.mvsusie mvsusie create_mixture_prior
+#' @export               
+mvsusie_weights <- function(mvsusie_fit=NULL, X=NULL, Y=NULL, prior_variance=NULL, residual_variance=NULL, L=30, mvsusie_max_iter=200, ...) {
+    if (is.null(mvsusie_fit)) {
+        message("Did not provide mvsusie_fit, fitting mvSuSiE now")
+        if (is.null(X) || is.null(Y)) {
+            stop("Both X and Y must be provided if mvsusie_fit is NULL.")
+        }
+        if (is.null(prior_variance)) prior_variance = create_mixture_prior(R=ncol(Y)) 
+        if (is.null(residual_variance)) residual_variance = mr.mash.alpha:::compute_cov_flash(Y)
+        
+        mvsusie_fit = mvsusie(X=X, Y=Y, L=L, prior_variance=prior_variance, 
+                            residual_variance=residual_variance, precompute_covariances=F, 
+                            compute_objective=T, estimate_residual_variance=F, estimate_prior_variance=T, 
+                            estimate_prior_method='EM', max_iter=mvsusie_max_iter, 
+                            n_thread=1, approximate=F)
+    }
+    return(coef.mvsusie(mvsusie_fit)[-1,])
+} 
 
 # Get a reasonable setting for the standard deviations of the mixture
 # components in the mixture-of-normals prior based on the data (X, y).

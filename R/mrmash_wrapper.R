@@ -112,7 +112,7 @@ mrmash_wrapper <- function(X,
                            B_init_method="enet",
                            max_iter=5000, 
                            tol = 0.01, 
-                           verbose = FALSE){
+                           verbose = FALSE, ...){
 
   if (is.null(prior_data_driven_matrices) && !isTRUE(prior_canonical_matrices)) {
     stop("Please provide prior_data_driven_matrices or set prior_canonical_matrices=TRUE.")
