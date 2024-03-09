@@ -66,7 +66,7 @@
 #'                   update_w0 = TRUE, update_sigma = TRUE, compute_ELBO = TRUE,
 #'                   standardize = FALSE)
 #' # Run PRS CS
-#' sumstats = list(BETA=b.hat, MAF=rep(0.5, length(b.hat)))
+#' sumstats <- list(BETA=b.hat, MAF=rep(0.5, length(b.hat)))
 #' LD <- list(blk1 = R.hat)
 #' out2 <- prs_cs(sumstats, LD, n, verbose = TRUE)
 #'
