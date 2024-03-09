@@ -1,7 +1,7 @@
 matxMax <- function(mtx) {
   return(arrayInd(which.max(mtx), dim(mtx)))
 }
-
+#' @import dplyr
 #' @export
 handle_invalid_summary_stat <- function(dat_list, bhat = NULL, sbhat = NULL, z = TRUE){
   replace_values <- function(df, replace_with) {
@@ -180,7 +180,8 @@ load_multitrait_tensorqtl_sumstat <- function(sumstats_paths,
   out$top_variants <- lapply(Y, function(x) x$top_variants)
   return(out)
 }
-                             
+
+#' @importFrom dplyr select filter
 #' @export
 merge_susie_cs <- function(susie_fit, coverage = "cs_coverage_0.95",complementary = FALSE){
   # Initialize an empty list for the combined_sets
@@ -348,7 +349,7 @@ merge_susie_cs <- function(susie_fit, coverage = "cs_coverage_0.95",complementar
 }
 
 #' @import dplyr
-#' @import data.table
+#' @importFrom data.table as.data.table
 #' @export
 load_multitrait_R_sumstat <- function(susie_fit, sumstats_db, coverage = NULL, top_loci = FALSE, filter_file = NULL, remove_any_missing = TRUE, max_rows_selected = 300, nan_remove=FALSE, exclude_condition, complementary = FALSE) {
    
@@ -516,7 +517,7 @@ mash_rand_null_sample <- function(dat, n_random, n_null, exclude_condition, seed
   return(result)
 }
 
-
+#' @import dplyr
 #' @export
 merge_data <- function(res_data, one_data) {
   combined_data <- list()
@@ -559,7 +560,7 @@ merge_data <- function(res_data, one_data) {
 }
 #' @importFrom udr ud_init ud_fit
 #' @import stringr
-#' @import mashr
+#' @importFrom mashr mash_set_data cov_canonical estimate_null_correlation_simple
 #' @export
 mash_pipeline <- function(mash_input, alpha, unconstrained.update = "ted", set_seed = 999) {
     vhat <- estimate_null_correlation_simple(mash_set_data(mash_input$random.b, Shat=mash_input$random.s, alpha, zero_Bhat_Shat_reset = 1E3))
