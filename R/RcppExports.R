@@ -9,6 +9,10 @@ rcpp_mr_ash_rss <- function(bhat, shat, z, R, var_y, n, sigma2_e, s0, w0, mu1_in
     .Call('_pecotmr_rcpp_mr_ash_rss', PACKAGE = 'pecotmr', bhat, shat, z, R, var_y, n, sigma2_e, s0, w0, mu1_init, tol, max_iter, update_w0, update_sigma, compute_ELBO, standardize)
 }
 
+prs_cs_rcpp <- function(a, b, phi, sumstats, n, ld_blk, n_iter, n_burnin, thin, beta_std, verbose, seed) {
+    .Call('_pecotmr_prs_cs_rcpp', PACKAGE = 'pecotmr', a, b, phi, sumstats, n, ld_blk, n_iter, n_burnin, thin, beta_std, verbose, seed)
+}
+
 qtl_enrichment_rcpp <- function(r_gwas_pip, r_qtl_susie_fit, pi_gwas = 0, pi_qtl = 0, ImpN = 25L, shrinkage_lambda = 1.0, num_threads = 1L) {
     .Call('_pecotmr_qtl_enrichment_rcpp', PACKAGE = 'pecotmr', r_gwas_pip, r_qtl_susie_fit, pi_gwas, pi_qtl, ImpN, shrinkage_lambda, num_threads)
 }

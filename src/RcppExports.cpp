@@ -58,6 +58,28 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// prs_cs_rcpp
+Rcpp::List prs_cs_rcpp(double a, double b, Rcpp::Nullable<double> phi, Rcpp::List sumstats, int n, Rcpp::List ld_blk, int n_iter, int n_burnin, int thin, bool beta_std, bool verbose, Rcpp::Nullable<int> seed);
+RcppExport SEXP _pecotmr_prs_cs_rcpp(SEXP aSEXP, SEXP bSEXP, SEXP phiSEXP, SEXP sumstatsSEXP, SEXP nSEXP, SEXP ld_blkSEXP, SEXP n_iterSEXP, SEXP n_burninSEXP, SEXP thinSEXP, SEXP beta_stdSEXP, SEXP verboseSEXP, SEXP seedSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< double >::type a(aSEXP);
+    Rcpp::traits::input_parameter< double >::type b(bSEXP);
+    Rcpp::traits::input_parameter< Rcpp::Nullable<double> >::type phi(phiSEXP);
+    Rcpp::traits::input_parameter< Rcpp::List >::type sumstats(sumstatsSEXP);
+    Rcpp::traits::input_parameter< int >::type n(nSEXP);
+    Rcpp::traits::input_parameter< Rcpp::List >::type ld_blk(ld_blkSEXP);
+    Rcpp::traits::input_parameter< int >::type n_iter(n_iterSEXP);
+    Rcpp::traits::input_parameter< int >::type n_burnin(n_burninSEXP);
+    Rcpp::traits::input_parameter< int >::type thin(thinSEXP);
+    Rcpp::traits::input_parameter< bool >::type beta_std(beta_stdSEXP);
+    Rcpp::traits::input_parameter< bool >::type verbose(verboseSEXP);
+    Rcpp::traits::input_parameter< Rcpp::Nullable<int> >::type seed(seedSEXP);
+    rcpp_result_gen = Rcpp::wrap(prs_cs_rcpp(a, b, phi, sumstats, n, ld_blk, n_iter, n_burnin, thin, beta_std, verbose, seed));
+    return rcpp_result_gen;
+END_RCPP
+}
 // qtl_enrichment_rcpp
 Rcpp::List qtl_enrichment_rcpp(SEXP r_gwas_pip, SEXP r_qtl_susie_fit, double pi_gwas, double pi_qtl, int ImpN, double shrinkage_lambda, int num_threads);
 RcppExport SEXP _pecotmr_qtl_enrichment_rcpp(SEXP r_gwas_pipSEXP, SEXP r_qtl_susie_fitSEXP, SEXP pi_gwasSEXP, SEXP pi_qtlSEXP, SEXP ImpNSEXP, SEXP shrinkage_lambdaSEXP, SEXP num_threadsSEXP) {
@@ -79,6 +101,7 @@ END_RCPP
 static const R_CallMethodDef CallEntries[] = {
     {"_pecotmr_dentist_rcpp", (DL_FUNC) &_pecotmr_dentist_rcpp, 10},
     {"_pecotmr_rcpp_mr_ash_rss", (DL_FUNC) &_pecotmr_rcpp_mr_ash_rss, 16},
+    {"_pecotmr_prs_cs_rcpp", (DL_FUNC) &_pecotmr_prs_cs_rcpp, 12},
     {"_pecotmr_qtl_enrichment_rcpp", (DL_FUNC) &_pecotmr_qtl_enrichment_rcpp, 7},
     {NULL, NULL, 0}
 };

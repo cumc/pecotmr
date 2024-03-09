@@ -122,22 +122,20 @@ double gigrnd(double p, double a, double b) {
  * @param a Shape parameter for the prior distribution of psi.
  * @param b Scale parameter for the prior distribution of psi.
  * @param phi Global shrinkage parameter. If nullptr, it will be estimated automatically.
- * @param sst_dict Dictionary containing summary statistics.
+ * @param sumstats Dictionary containing summary statistics.
  * @param n Sample size.
  * @param ld_blk List of LD blocks.
- * @param blk_size List of block sizes.
  * @param n_iter Number of MCMC iterations.
  * @param n_burnin Number of burn-in iterations.
  * @param thin Thinning interval.
- * @param chrom Chromosome number.
  * @param beta_std Whether to standardize the effect sizes.
  * @param verbose Whether to print verbose output.
  * @param seed Random seed. If nullptr, no seed is set.
  * @return A map containing the posterior estimates.
  */
-std::map<std::string, arma::vec> prs_cs(double a, double b, double* phi, const std::vector<std::vector<double>>& sst_dict,
-                                        int n, const std::vector<arma::mat>& ld_blk, const std::vector<int>& blk_size,
-                                        int n_iter, int n_burnin, int thin, int chrom,
+std::map<std::string, arma::vec> prs_cs_mcmc(double a, double b, double* phi, const std::vector<std::vector<double>>& sumstats,
+                                        int n, const std::vector<arma::mat>& ld_blk, 
+                                        int n_iter, int n_burnin, int thin,
                                         bool beta_std, bool verbose, int* seed) {
     if (verbose) {
         std::cout << "Running Markov Chain Monte Carlo (MCMC) sampler..." << std::endl;
@@ -149,14 +147,14 @@ std::map<std::string, arma::vec> prs_cs(double a, double b, double* phi, const s
     }
 
     // Derived statistics
-    arma::vec beta_mrg(sst_dict[0].size());
-    arma::vec maf(sst_dict[0].size());
-    for (size_t i = 0; i < sst_dict[0].size(); ++i) {
-        beta_mrg(i) = sst_dict[1][i];
-        maf(i) = sst_dict[2][i];
+    arma::vec beta_mrg(sumstats[0].size());
+    arma::vec maf(sumstats[0].size());
+    for (size_t i = 0; i < sumstats[0].size(); ++i) {
+        beta_mrg(i) = sumstats[1][i];
+        maf(i) = sumstats[2][i];
     }
     int n_pst = (n_iter - n_burnin) / thin;
-    int p = sst_dict[0].size();
+    int p = sumstats[0].size();
     int n_blk = ld_blk.size();
 
     // Initialization
@@ -182,18 +180,18 @@ std::map<std::string, arma::vec> prs_cs(double a, double b, double* phi, const s
         int mm = 0;
         double quad = 0.0;
         for (int kk = 0; kk < n_blk; ++kk) {
-            if (blk_size[kk] == 0) {
+            if (ld_blk[kk].n_rows == 0) {
                 continue;
             }
 
-            arma::uvec idx_blk = arma::regspace<arma::uvec>(mm, mm + blk_size[kk] - 1);
+            arma::uvec idx_blk = arma::regspace<arma::uvec>(mm, mm + ld_blk[kk].n_rows - 1);
             arma::mat dinvt = ld_blk[kk] + arma::diagmat(1.0 / psi(idx_blk));
             arma::mat dinvt_chol = arma::chol(dinvt);
             arma::vec beta_tmp = arma::solve(arma::trimatl(dinvt_chol.t()), beta_mrg(idx_blk), arma::solve_opts::fast) +
-                                 arma::randn<arma::vec>(blk_size[kk]) * std::sqrt(sigma / n);
+                                 arma::randn<arma::vec>(ld_blk[kk].n_rows) * std::sqrt(sigma / n);
             beta(idx_blk) = arma::solve(arma::trimatu(dinvt_chol), beta_tmp, arma::solve_opts::fast);
             quad += arma::as_scalar(beta(idx_blk).t() * dinvt * beta(idx_blk));
-            mm += blk_size[kk];
+            mm += ld_blk[kk].n_rows;
         }
 
         double err = std::max(n / 2.0 * (1.0 - 2.0 * arma::sum(beta % beta_mrg) + quad),

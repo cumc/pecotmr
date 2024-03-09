@@ -1,0 +1,68 @@
+#' Run PRS-CS: a polygenic prediction method that infers posterior SNP effect sizes under continuous shrinkage (CS) priors
+#'
+#' This function is a wrapper for the PRS-CS method implemented in C++. It takes GWAS summary statistics and an external LD reference panel
+#' and infers posterior SNP effect sizes using Bayesian regression with continuous shrinkage priors.
+#'
+#' @param sumstats A named list containing the summary statistics. It should have the following elements:
+#'   - SNP: A vector of SNP names.
+#'   - BETA: A vector of effect sizes.
+#'   - MAF: A vector of minor allele frequencies.
+#'   - BP: A vector of base pair positions.
+#'   - A1: A vector of effect alleles.
+#'   - A2: A vector of non-effect alleles.
+#' @param LD A list of LD blocks, where each element is a matrix representing an LD block.
+#' @param n Sample size of the GWAS.
+#' @param a Shape parameter for the prior distribution of psi. Default is 1.
+#' @param b Scale parameter for the prior distribution of psi. Default is 0.5.
+#' @param phi Global shrinkage parameter. If NULL, it will be estimated automatically. Default is NULL.
+#' @param n_iter Number of MCMC iterations. Default is 1000.
+#' @param n_burnin Number of burn-in iterations. Default is 500.
+#' @param thin Thinning factor for MCMC. Default is 5.
+#' @param beta_std Whether to standardize the effect sizes. Default is FALSE.
+#' @param verbose Whether to print verbose output. Default is FALSE.
+#' @param seed Random seed for reproducibility. Default is NULL.
+#'
+#' @return A list containing the posterior estimates:
+#'   - beta_est: Posterior estimates of SNP effect sizes.
+#'   - psi_est: Posterior estimates of psi (shrinkage parameters).
+#'   - sigma_est: Posterior estimate of the residual variance.
+#'   - phi_est: Posterior estimate of the global shrinkage parameter.
+#'
+#' @import Rcpp
+#' @import RcppArmadillo
+#'
+#' @examples
+#' \dontrun{
+#'   result <- run_prc_cs(sumstats = sum_stats,
+#'                        LD = ld_blocks,
+#'                        n = 100000)
+#' }
+#'
+#' @export
+run_prc_cs <- function(sumstats, LD, n,
+                       a = 1, b = 0.5, phi = NULL, n_iter = 1000, n_burnin = 500,
+                       thin = 5, beta_std = FALSE, verbose = FALSE, seed = NULL) {
+  # Check input parameters
+  if (missing(sumstats) || !is.list(sumstats) || 
+      !all(c("BETA", "MAF") %in% names(sumstats))) {
+    stop("Please provide a valid summary statistics list object using 'sumstats' with at least two items: BETA and MAF.")
+  }
+  if (missing(LD) || !is.list(LD)) {
+    stop("Please provide a valid list of LD blocks using 'LD'.")
+  }
+  if (missing(n) || n <= 0) {
+    stop("Please provide a valid GWAS sample size using 'n'.")
+  }
+  
+  # Run PRS-CS
+  result <- prs_cs_rcpp(a = a, b = b, phi = phi, sumstats = list(BETA = sumstats$BETA, MAF = sumstats$MAF),
+                        n = n, ld_blk = LD,
+                        n_iter = n_iter, n_burnin = n_burnin, thin = thin,
+                        beta_std = beta_std, verbose = verbose, seed = seed)
+  
+  # Return the result as a list
+  list(beta_est = result$beta_est,
+       psi_est = result$psi_est,
+       sigma_est = result$sigma_est,
+       phi_est = result$phi_est)
+}
