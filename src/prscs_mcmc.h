@@ -106,11 +106,12 @@ double gigrnd(double p, double a, double b) {
     double sd = s - p_r * theta;
     double q = td + sd;
 
+    gsl_rng* rng = gsl_rng_alloc(gsl_rng_default);
     double rnd = 0.0;
     while (true) {
-        double U = gsl_rng_uniform(gsl_rng_default);
-        double V = gsl_rng_uniform(gsl_rng_default);
-        double W = gsl_rng_uniform(gsl_rng_default);
+        double U = gsl_rng_uniform(rng);
+        double V = gsl_rng_uniform(rng);
+        double W = gsl_rng_uniform(rng);
 
         if (U < q / (p_r + q + r)) {
             rnd = -sd + q * V;
@@ -126,6 +127,7 @@ double gigrnd(double p, double a, double b) {
             break;
         }
     }
+    gsl_rng_free(rng);
 
     rnd = std::exp(rnd) * (lambda / omega + std::sqrt(1.0 + std::pow(lambda / omega, 2)));
     if (swap) {
@@ -161,9 +163,9 @@ std::map<std::string, arma::vec> prs_cs_mcmc(double a, double b, double* phi, co
     }
 
     // Seed the random number generator
+    gsl_rng* rng = gsl_rng_alloc(gsl_rng_default);
     if (seed != nullptr) {
-        gsl_rng_env_setup();
-        gsl_rng_set(gsl_rng_default, *seed);
+        gsl_rng_set(rng, *seed);
     }
 
     // Derived statistics
@@ -212,11 +214,11 @@ std::map<std::string, arma::vec> prs_cs_mcmc(double a, double b, double* phi, co
 
         double err = std::max(n / 2.0 * (1.0 - 2.0 * arma::dot(beta, beta_mrg) + quad),
                               n / 2.0 * arma::sum(arma::pow(beta, 2) / psi));
-        sigma = 1.0 / gsl_ran_gamma(gsl_rng_default, (n + p) / 2.0, 1.0 / err);
+        sigma = 1.0 / gsl_ran_gamma(rng, (n + p) / 2.0, 1.0 / err);
 
         arma::vec delta = arma::vec(p);
         for (int jj = 0; jj < p; ++jj) {
-            delta(jj) = gsl_ran_gamma(gsl_rng_default, a + b, 1.0 / (psi(jj) + *phi));
+            delta(jj) = gsl_ran_gamma(rng, a + b, 1.0 / (psi(jj) + *phi));
         }
 
         for (int jj = 0; jj < p; ++jj) {
@@ -225,8 +227,8 @@ std::map<std::string, arma::vec> prs_cs_mcmc(double a, double b, double* phi, co
         psi.elem(arma::find(psi > 1)).fill(1.0);
 
         if (phi_updt) {
-            double w = gsl_ran_gamma(gsl_rng_default, 1.0, 1.0 / (*phi + 1.0));
-            *phi = gsl_ran_gamma(gsl_rng_default, p * b + 0.5, 1.0 / (arma::sum(delta) + w));
+            double w = gsl_ran_gamma(rng, 1.0, 1.0 / (*phi + 1.0));
+            *phi = gsl_ran_gamma(rng, p * b + 0.5, 1.0 / (arma::sum(delta) + w));
         }
 
         // Posterior
@@ -237,6 +239,8 @@ std::map<std::string, arma::vec> prs_cs_mcmc(double a, double b, double* phi, co
             phi_est += *phi / n_pst;
         }
     }
+
+    gsl_rng_free(rng);
 
     // Convert standardized beta to per-allele beta
     if (!beta_std) {
@@ -261,5 +265,4 @@ std::map<std::string, arma::vec> prs_cs_mcmc(double a, double b, double* phi, co
 
     return output;
 }
-
 #endif // MCMC_HPP
