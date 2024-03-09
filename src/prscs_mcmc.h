@@ -13,6 +13,54 @@
 #include <cmath>
 #include <map>
 #include <iomanip>
+#include <gsl/gsl_randist.h>
+#include <gsl/gsl_cdf.h>
+
+/**
+ * @brief Evaluate the function psi(x, alpha, lambda).
+ *
+ * @param x Input value.
+ * @param alpha Shape parameter.
+ * @param lambda Scale parameter.
+ * @return Value of psi(x, alpha, lambda).
+ */
+double psi(double x, double alpha, double lambda) {
+    double f = -alpha * (std::cosh(x) - 1.0) - lambda * (std::exp(x) - x - 1.0);
+    return f;
+}
+
+/**
+ * @brief Evaluate the derivative of psi(x, alpha, lambda).
+ *
+ * @param x Input value.
+ * @param alpha Shape parameter.
+ * @param lambda Scale parameter.
+ * @return Value of dpsi(x, alpha, lambda).
+ */
+double dpsi(double x, double alpha, double lambda) {
+    double f = -alpha * std::sinh(x) - lambda * (std::exp(x) - 1.0);
+    return f;
+}
+
+/**
+ * @brief Evaluate the function g(x, sd, td, f1, f2).
+ *
+ * @param x Input value.
+ * @param sd Parameter sd.
+ * @param td Parameter td.
+ * @param f1 Parameter f1.
+ * @param f2 Parameter f2.
+ * @return Value of g(x, sd, td, f1, f2).
+ */
+double g(double x, double sd, double td, double f1, double f2) {
+    if (x >= -sd && x <= td) {
+        return 1.0;
+    } else if (x > td) {
+        return f1;
+    } else {
+        return f2;
+    }
+}
 
 /**
  * @brief Generate random variates from the generalized inverse Gaussian distribution.
@@ -23,57 +71,33 @@
  * @return Random variate from the generalized inverse Gaussian distribution.
  */
 double gigrnd(double p, double a, double b) {
-    double lam = p;
+    double lambda = p;
     double omega = std::sqrt(a * b);
 
     bool swap = false;
-    if (lam < 0) {
-        lam = -lam;
+    if (lambda < 0) {
+        lambda = -lambda;
         swap = true;
     }
 
-    double alpha = std::sqrt(std::pow(omega, 2) + std::pow(lam, 2)) - lam;
+    double alpha = std::sqrt(std::pow(omega, 2) + std::pow(lambda, 2)) - lambda;
 
-    double x = -psi(1.0, alpha, lam);
-    double t = 1.0;
-    if (x > 2.0) {
-        if (alpha == 0 && lam == 0) {
-            t = 1.0;
-        } else {
-            t = std::sqrt(2.0 / (alpha + lam));
-        }
-    } else if (x < 0.5) {
-        if (alpha == 0 && lam == 0) {
-            t = 1.0;
-        } else {
-            t = std::log(4.0 / (alpha + 2.0 * lam));
-        }
+    double x = -psi(1.0, alpha, lambda);
+    double t = x >= 0.5 && x <= 2.0 ? 1.0 : (alpha == 0 && lambda == 0 ? 1.0 : std::sqrt(2.0 / (alpha + lambda)));
+    if (x < 0.5) {
+        t = alpha == 0 && lambda == 0 ? 1.0 : std::log(4.0 / (alpha + 2.0 * lambda));
     }
 
-    x = -psi(-1.0, alpha, lam);
-    double s = 1.0;
-    if (x > 2.0) {
-        if (alpha == 0 && lam == 0) {
-            s = 1.0;
-        } else {
-            s = std::sqrt(4.0 / (alpha * std::cosh(1) + lam));
-        }
-    } else if (x < 0.5) {
-        if (alpha == 0 && lam == 0) {
-            s = 1.0;
-        } else if (alpha == 0) {
-            s = 1.0 / lam;
-        } else if (lam == 0) {
-            s = std::log(1.0 + 1.0 / alpha + std::sqrt(1.0 / std::pow(alpha, 2) + 2.0 / alpha));
-        } else {
-            s = std::min(1.0 / lam, std::log(1.0 + 1.0 / alpha + std::sqrt(1.0 / std::pow(alpha, 2) + 2.0 / alpha)));
-        }
+    x = -psi(-1.0, alpha, lambda);
+    double s = x >= 0.5 && x <= 2.0 ? 1.0 : (alpha == 0 && lambda == 0 ? 1.0 : std::sqrt(4.0 / (alpha * std::cosh(1) + lambda)));
+    if (x < 0.5) {
+        s = alpha == 0 && lambda == 0 ? 1.0 : (alpha == 0 ? 1.0 / lambda : (lambda == 0 ? std::log(1.0 + 1.0 / alpha + std::sqrt(1.0 / std::pow(alpha, 2) + 2.0 / alpha)) : std::min(1.0 / lambda, std::log(1.0 + 1.0 / alpha + std::sqrt(1.0 / std::pow(alpha, 2) + 2.0 / alpha)))));
     }
 
-    double eta = -psi(t, alpha, lam);
-    double zeta = -dpsi(t, alpha, lam);
-    double theta = -psi(-s, alpha, lam);
-    double xi = dpsi(-s, alpha, lam);
+    double eta = -psi(t, alpha, lambda);
+    double zeta = -dpsi(t, alpha, lambda);
+    double theta = -psi(-s, alpha, lambda);
+    double xi = dpsi(-s, alpha, lambda);
 
     double p_r = 1.0 / xi;
     double r = 1.0 / zeta;
@@ -82,16 +106,12 @@ double gigrnd(double p, double a, double b) {
     double sd = s - p_r * theta;
     double q = td + sd;
 
-    std::random_device rd;
-    std::mt19937 gen(rd());
-    std::uniform_real_distribution<> dis(0.0, 1.0);
-
+    double rnd = 0.0;
     while (true) {
-        double U = dis(gen);
-        double V = dis(gen);
-        double W = dis(gen);
+        double U = gsl_rng_uniform(gsl_rng_default);
+        double V = gsl_rng_uniform(gsl_rng_default);
+        double W = gsl_rng_uniform(gsl_rng_default);
 
-        double rnd;
         if (U < q / (p_r + q + r)) {
             rnd = -sd + q * V;
         } else if (U < (q + r) / (p_r + q + r)) {
@@ -102,18 +122,17 @@ double gigrnd(double p, double a, double b) {
 
         double f1 = std::exp(-eta - zeta * (rnd - t));
         double f2 = std::exp(-theta + xi * (rnd + s));
-        if (W * g(rnd, sd, td, f1, f2) <= std::exp(psi(rnd, alpha, lam))) {
+        if (W * g(rnd, sd, td, f1, f2) <= std::exp(psi(rnd, alpha, lambda))) {
             break;
         }
     }
 
-    rnd = std::exp(rnd) * (lam / omega + std::sqrt(1.0 + std::pow(lam, 2) / std::pow(omega, 2)));
+    rnd = std::exp(rnd) * (lambda / omega + std::sqrt(1.0 + std::pow(lambda / omega, 2)));
     if (swap) {
         rnd = 1.0 / rnd;
     }
 
-    rnd = rnd / std::sqrt(a / b);
-    return rnd;
+    return rnd / std::sqrt(a / b);
 }
 
 /**
@@ -143,18 +162,15 @@ std::map<std::string, arma::vec> prs_cs_mcmc(double a, double b, double* phi, co
 
     // Seed the random number generator
     if (seed != nullptr) {
-        std::srand(*seed);
+        gsl_rng_env_setup();
+        gsl_rng_set(gsl_rng_default, *seed);
     }
 
     // Derived statistics
-    arma::vec beta_mrg(sumstats[0].size());
-    arma::vec maf(sumstats[0].size());
-    for (size_t i = 0; i < sumstats[0].size(); ++i) {
-        beta_mrg(i) = sumstats[1][i];
-        maf(i) = sumstats[2][i];
-    }
+    arma::vec beta_mrg(sumstats[1]);
+    arma::vec maf(sumstats[2]);
     int n_pst = (n_iter - n_burnin) / thin;
-    int p = sumstats[0].size();
+    int p = beta_mrg.n_elem;
     int n_blk = ld_blk.size();
 
     // Initialization
@@ -194,11 +210,14 @@ std::map<std::string, arma::vec> prs_cs_mcmc(double a, double b, double* phi, co
             mm += ld_blk[kk].n_rows;
         }
 
-        double err = std::max(n / 2.0 * (1.0 - 2.0 * arma::sum(beta % beta_mrg) + quad),
+        double err = std::max(n / 2.0 * (1.0 - 2.0 * arma::dot(beta, beta_mrg) + quad),
                               n / 2.0 * arma::sum(arma::pow(beta, 2) / psi));
-        sigma = 1.0 / std::gamma_distribution<double>((n + p) / 2.0, 1.0 / err)(std::mt19937(std::random_device{}()));
+        sigma = 1.0 / gsl_ran_gamma(gsl_rng_default, (n + p) / 2.0, 1.0 / err);
 
-        arma::vec delta = arma::randg<arma::vec>(p, arma::distr_param(a + b, 1.0 / (psi + *phi)));
+        arma::vec delta = arma::vec(p);
+        for (int jj = 0; jj < p; ++jj) {
+            delta(jj) = gsl_ran_gamma(gsl_rng_default, a + b, 1.0 / (psi(jj) + *phi));
+        }
 
         for (int jj = 0; jj < p; ++jj) {
             psi(jj) = gigrnd(a - 0.5, 2.0 * delta(jj), n * std::pow(beta(jj), 2) / sigma);
@@ -206,8 +225,8 @@ std::map<std::string, arma::vec> prs_cs_mcmc(double a, double b, double* phi, co
         psi.elem(arma::find(psi > 1)).fill(1.0);
 
         if (phi_updt) {
-            double w = std::gamma_distribution<double>(1.0, 1.0 / (*phi + 1.0))(std::mt19937(std::random_device{}()));
-            *phi = std::gamma_distribution<double>(p * b + 0.5, 1.0 / (arma::sum(delta) + w))(std::mt19937(std::random_device{}()));
+            double w = gsl_ran_gamma(gsl_rng_default, 1.0, 1.0 / (*phi + 1.0));
+            *phi = gsl_ran_gamma(gsl_rng_default, p * b + 0.5, 1.0 / (arma::sum(delta) + w));
         }
 
         // Posterior
