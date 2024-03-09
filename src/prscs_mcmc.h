@@ -24,20 +24,20 @@
  * @param lambda Scale parameter.
  * @return Value of psi(x, alpha, lambda).
  */
-double psi(double x, double alpha, double lambda) {
+double fpsi(double x, double alpha, double lambda) {
 	double f = -alpha * (std::cosh(x) - 1.0) - lambda * (std::exp(x) - x - 1.0);
 	return f;
 }
 
 /**
- * @brief Evaluate the derivative of psi(x, alpha, lambda).
+ * @brief Evaluate the derivative of fpsi(x, alpha, lambda).
  *
  * @param x Input value.
  * @param alpha Shape parameter.
  * @param lambda Scale parameter.
- * @return Value of dpsi(x, alpha, lambda).
+ * @return Value of fdpsi(x, alpha, lambda).
  */
-double dpsi(double x, double alpha, double lambda) {
+double fdpsi(double x, double alpha, double lambda) {
 	double f = -alpha * std::sinh(x) - lambda * (std::exp(x) - 1.0);
 	return f;
 }
@@ -82,7 +82,7 @@ double gigrnd(double p, double a, double b) {
 	double alpha = std::sqrt(std::pow(omega, 2) + std::pow(lambda, 2)) - lambda;
 
 // find t
-	double x = -psi(1.0, alpha, lambda);
+	double x = -fpsi(1.0, alpha, lambda);
 	double t;
 	if (x >= 0.5 && x <= 2.0) {
 		t = 1.0;
@@ -101,7 +101,7 @@ double gigrnd(double p, double a, double b) {
 	}
 
 // find s
-	x = -psi(-1.0, alpha, lambda);
+	x = -fpsi(-1.0, alpha, lambda);
 	double s;
 	if (x >= 0.5 && x <= 2.0) {
 		s = 1.0;
@@ -125,10 +125,10 @@ double gigrnd(double p, double a, double b) {
 
 
 
-	double eta = -psi(t, alpha, lambda);
-	double zeta = -dpsi(t, alpha, lambda);
-	double theta = -psi(-s, alpha, lambda);
-	double xi = dpsi(-s, alpha, lambda);
+	double eta = -fpsi(t, alpha, lambda);
+	double zeta = -fdpsi(t, alpha, lambda);
+	double theta = -fpsi(-s, alpha, lambda);
+	double xi = fdpsi(-s, alpha, lambda);
 
 	double p_r = 1.0 / xi;
 	double r = 1.0 / zeta;
@@ -154,7 +154,7 @@ double gigrnd(double p, double a, double b) {
 		}
 		double f1 = std::exp(-eta - zeta * (rnd - t));
 		double f2 = std::exp(-theta + xi * (rnd + s));
-		if (W * g(rnd, sd, td, f1, f2) <= std::exp(psi(rnd, alpha, lambda))) {
+		if (W * g(rnd, sd, td, f1, f2) <= std::exp(fpsi(rnd, alpha, lambda))) {
 			break;
 		}
 	}
@@ -235,6 +235,8 @@ std::map<std::string, arma::vec> prs_cs_mcmc(double a, double b, double* phi, co
 
 			arma::uvec idx_blk = arma::regspace<arma::uvec>(mm, mm + ld_blk[kk].n_rows - 1);
 			arma::mat dinvt = ld_blk[kk] + arma::diagmat(1.0 / psi(idx_blk));
+            // FIXME: there are inf in dinvt in the @example which causes quad to be nan and break the code
+            std::cout << dinvt << std::endl;
 			arma::mat dinvt_chol = arma::chol(dinvt);
 			arma::vec beta_tmp = arma::solve(arma::trimatl(dinvt_chol.t()), beta_mrg(idx_blk), arma::solve_opts::fast) +
 			                     arma::randn<arma::vec>(ld_blk[kk].n_rows) * std::sqrt(sigma / n);
