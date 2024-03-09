@@ -113,17 +113,19 @@ List mr_ash_sufficient(const vec& XTy, const mat& XTX, double yTy, int n, double
   int p = XTX.n_cols;
   int K = sigma2_0.n_elem;
   vec mu1_t = mu1_init;
-  vec sigma2_1_t(p);
-  mat w1_t(p, K);
-  mat mu1_k_t(p, K);
-  mat sigma2_1_k_t(p, K);
+  vec sigma2_1_t(p, fill::zeros);
+  mat w1_t(p, K, fill::zeros);
+  mat mu1_k_t(p, K, fill::zeros);
+  mat sigma2_1_k_t(p, K, fill::zeros);
   vec err(p, fill::inf);
   int t = 0;
-  double ELBO = -datum::inf;
+  double ELBO = 0;
   
   // Iterate until convergence
   while (any(err > tol)) {
     double ELBO0 = ELBO;
+    double var_part_ERSS = 0;
+    double neg_KL = 0;
     
     // Update iterator
     t++;
@@ -157,11 +159,10 @@ List mr_ash_sufficient(const vec& XTy, const mat& XTX, double yTy, int n, double
       mu1_k_t.row(j) = as<rowvec>(bfit["mu1_k"]);
       sigma2_1_k_t.row(j) = as<rowvec>(bfit["sigma2_1_k"]);
       
+      // Compute ELBO parameters
       if (compute_ELBO) {
-        // Compute ELBO parameters
-        double var_part_ERSS = sigma2_1_t[j] * xTx;
-        double neg_KL = as<double>(bfit["logbf"]) + (1 / (2 * sigma2_e)) * (-2 * xTrbar_j * mu1_t[j] + (xTx * (sigma2_1_t[j] + pow(mu1_t[j], 2))));
-        ELBO += var_part_ERSS + neg_KL;
+        var_part_ERSS += sigma2_1_t[j] * xTx;
+        neg_KL += as<double>(bfit["logbf"]) + (1 / (2 * sigma2_e)) * (-2 * xTrbar_j * mu1_t[j] + (xTx * (sigma2_1_t[j] + pow(mu1_t[j], 2))));
       }
       
       // Update expected residuals
@@ -176,11 +177,10 @@ List mr_ash_sufficient(const vec& XTy, const mat& XTX, double yTy, int n, double
     // Compute distance in mu1 between two successive iterations
     err = abs(mu1_t - mu1_tminus1);
     
+    // Compute ERSS and ELBO
+    double ERSS = yTy - 2 * dot(XTy, mu1_t) + as_scalar(mu1_t.t() * XTX * mu1_t) + var_part_ERSS;
     if (compute_ELBO) {
-      // Compute ELBO
-      double ERSS = yTy - 2 * dot(XTy, mu1_t) + as_scalar(mu1_t.t() * XTX * mu1_t) + accu(sigma2_1_t % XTX.diag());
-      ELBO = -0.5 * log(n) - 0.5 * n * log(2 * datum::pi * sigma2_e) - (1 / (2 * sigma2_e)) * ERSS;
-      
+      ELBO = -0.5 * log(n) - 0.5 * n * log(2 * datum::pi * sigma2_e) - (1 / (2 * sigma2_e)) * ERSS + neg_KL;
       // Print out useful info
       Rcout << "Iteration: " << t << ", Max beta diff: " << max(err) << ", ELBO diff: " << ELBO - ELBO0 << ", ELBO: " << ELBO << std::endl;
     } else {
@@ -190,34 +190,28 @@ List mr_ash_sufficient(const vec& XTy, const mat& XTX, double yTy, int n, double
     
     // Update residual variance if requested
     if (update_sigma) {
-      double ERSS = yTy - 2 * dot(XTy, mu1_t) + as_scalar(mu1_t.t() * XTX * mu1_t) + accu(sigma2_1_t % XTX.diag());
       sigma2_e = ERSS / n;
     }
   }
   
   // Return the posterior assignment probabilities (w1), the posterior mean (mu1) and variance (sigma2_1) of the coefficients,
   // the error variance (sigma2_e), the mixture weights (w0), and optionally the ELBO
-  if (compute_ELBO) {
-    return List::create(Named("mu1") = mu1_t, Named("sigma2_1") = sigma2_1_t, Named("w1") = w1_t,
-                        Named("sigma2_e") = sigma2_e, Named("w0") = w0, Named("ELBO") = ELBO);
-  } else {
-    return List::create(Named("mu1") = mu1_t, Named("sigma2_1") = sigma2_1_t, Named("w1") = w1_t,
-                        Named("sigma2_e") = sigma2_e, Named("w0") = w0);
-  }
+  return List::create(Named("mu1") = mu1_t, Named("sigma2_1") = sigma2_1_t, Named("w1") = w1_t,
+                      Named("sigma2_e") = sigma2_e, Named("w0") = w0, Named("ELBO") = ELBO);
 }
 
 /**
  * Rescale posterior mean and covariance
  *
  * @param mu1 Posterior mean vector
- * @param S1 Posterior covariance matrix
+ * @param sigma2_1 Posterior covariance matrix
  * @param sx Scaling vector
- * @return List containing the rescaled posterior mean (mu1_orig) and covariance (S1_orig)
+ * @return List containing the rescaled posterior mean (mu1_orig) and covariance (sigma2_1_orig)
  */
-List rescale_post_mean_covar(const vec& mu1, const mat& S1, const vec& sx) {
+List rescale_post_mean_covar(const vec& mu1, const mat& sigma2_1, const vec& sx) {
   vec mu1_orig = mu1 / sx;
-  mat S1_orig = diagmat(1 / sx) * S1 * diagmat(1 / sx);
-  return List::create(Named("mu1_orig") = mu1_orig, Named("S1_orig") = S1_orig);
+  mat sigma2_1_orig = diagmat(1 / sx) * sigma2_1 * diagmat(1 / sx);
+  return List::create(Named("mu1_orig") = mu1_orig, Named("sigma2_1_orig") = sigma2_1_orig);
 }
 
 /**
@@ -239,7 +233,7 @@ List rescale_post_mean_covar(const vec& mu1, const mat& S1, const vec& sx) {
  * @param update_sigma Whether to update the error variance
  * @param compute_ELBO Whether to compute the Evidence Lower Bound (ELBO)
  * @param standardize Whether to standardize the input data
- * @return List containing the posterior mean (mu1) and covariance (S1) of the coefficients, the posterior assignment probabilities (w1), the error variance (sigma2_e), the mixture weights (w0), and optionally the ELBO
+ * @return List containing the posterior mean (mu1) and covariance (sigma2_1) of the coefficients, the posterior assignment probabilities (w1), the error variance (sigma2_e), the mixture weights (w0), and optionally the ELBO
  */
 // [[Rcpp::export]]
 List mr_ash_rss(const vec& bhat, const vec& shat, const vec& z, const mat& R, double var_y, int n,
@@ -262,7 +256,7 @@ List mr_ash_rss(const vec& bhat, const vec& shat, const vec& z, const mat& R, do
   }
   
   // Compute PVE-adjusted Z-scores if sample size is provided
-  vec adj(p, fill::ones);
+  vec adj(p);
   if (!R_IsNA(n)) {
     adj = (n - 1) / (square(z_use) + n - 2);
     z_use %= sqrt(adj);
@@ -293,17 +287,17 @@ List mr_ash_rss(const vec& bhat, const vec& shat, const vec& z, const mat& R, do
     Xty /= sx;
     mu1_init_use %= sx;
   }
-  
+
   // Run variational inference
-  List out = mr_ash_sufficient(Xty, XtX, var_y * (n - 1), n, sigma2_e, s0, w0, mu1_init_use,
-                               tol, max_iter, update_w0, update_sigma, compute_ELBO);
-  
+  List result = mr_ash_sufficient(Xty, XtX, var_y * (n - 1), n, sigma2_e, s0, w0, mu1_init_use,
+  tol, max_iter, update_w0, update_sigma, compute_ELBO);
+
   // Rescale posterior mean and covariance if X was standardized
   if (standardize) {
-    List out_adj = rescale_post_mean_covar(out["mu1"], out["sigma2_1"], sx);
-    out["mu1"] = out_adj["mu1_orig"];
-    out["sigma2_1"] = out_adj["S1_orig"];
+    List out_adj = rescale_post_mean_covar(result["mu1"], result["sigma2_1"], sx);
+    result["mu1"] = out_adj["mu1_orig"];
+    result["sigma2_1"] = out_adj["sigma2_1_orig"];
   }
-  
-  return out;
+
+  return result;
 }
