@@ -15,7 +15,6 @@ Imports:
     magrittr,
     susieR,
     mr.ash.alpha,
-    mr.mash.alpha,
     coloc,
     data.table,
     stringr,

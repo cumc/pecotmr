@@ -2,7 +2,9 @@
 # Generator token: 10BE3573-1514-4C36-9D1C-5A225CD40393
 
 dentist_rcpp <- function(LDmat, nSample, zScore, pValueThreshold, propSVD, gcControl, nIter, gPvalueThreshold, ncpus, seed) {
-    .Call('_pecotmr_dentist_rcpp', PACKAGE = 'pecotmr', LDmat, nSample, zScore, pValueThreshold, propSVD, gcControl, nIter, gPvalueThreshold, ncpus, seed)
+    # .Call('_pecotmr_dentist_rcpp', PACKAGE = 'pecotmr', LDmat, nSample, zScore, pValueThreshold, propSVD, gcControl, nIter, gPvalueThreshold, ncpus, seed)
+     # source the self-defined function during development of the code
+    .Call('_pecotmr_dentist_rcpp', LDmat, nSample, zScore, pValueThreshold, propSVD, gcControl, nIter, gPvalueThreshold, ncpus, seed)
 }
 
 qtl_enrichment_rcpp <- function(r_gwas_pip, r_qtl_susie_fit, pi_gwas = 0, pi_qtl = 0, ImpN = 25L, shrinkage_lambda = 1.0, num_threads = 1L) {

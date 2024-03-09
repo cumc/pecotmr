@@ -12,6 +12,9 @@
 #include <vector>
 #include <numeric> // For std::iota
 #include <gsl/gsl_cdf.h>
+#include <fstream> // Include the header for file operations
+#include <iostream>
+#include <string>
 
 // Enable C++11 via this plugin (Rcpp 0.10.3 or later)
 // [[Rcpp::depends(RcppArmadillo)]]
@@ -93,7 +96,7 @@ double minusLogPvalueChisq2(double stat) {
 // Perform one iteration of the algorithm, assuming LDmat is an arma::mat
 void oneIteration(const arma::mat& LDmat, const std::vector<uint>& idx, const std::vector<uint>& idx2,
                   const arma::vec& zScore, arma::vec& imputedZ, arma::vec& rsqList, arma::vec& zScore_e,
-                  uint nSample, float probSVD, int ncpus) {
+                  uint nSample, float probSVD, int ncpus, int t, int rrr) {
 	int nProcessors = omp_get_max_threads();
 	if(ncpus < nProcessors) nProcessors = ncpus;
 	omp_set_num_threads(nProcessors);
@@ -111,7 +114,34 @@ void oneIteration(const arma::mat& LDmat, const std::vector<uint>& idx, const st
 			LD_it(i, k) = LDmat(idx2[i], idx[k]);
 		}
 	}
+    
 
+    /* 
+    ============= Generate the output LD_it ============
+    add by Rui on 20240308 (start)
+    */
+    // Add this code snippet within the oneIteration function after populating LD_it matrix
+    // arguments:
+    // t:   the index of interaction
+    // rrr: the first (1) or second (2) time that the oneIteraction function is called within each iteraction
+    std::string outputFileName = "/home/rd2972/private_data/20240300_rss_qc_imputation/DENTIST/per_iteration/dentist_Rcpp/DENTIST_Rcpp_output_" + std::to_string(t) +  std::to_string(rrr) + ".txt";
+    std::ofstream outputFile(outputFileName);
+    if (!outputFile.is_open()) {
+        std::cerr << "Error opening output file: " << outputFileName << std::endl;
+        return;
+    }
+
+    // Write LD_it matrix to the output file for this iteration
+    outputFile << LD_it << std::endl;
+
+    // Close the output file
+    outputFile.close();
+    
+    /* 
+    ============= Generate the output LD_it ============
+    add by Rui on 20240308 (end)
+    */
+    
     #pragma omp parallel for
 	for (size_t i = 0; i < idx.size(); i++) {
 		zScore_eigen(i) = zScore[idx[i]];
@@ -193,6 +223,7 @@ void oneIteration(const arma::mat& LDmat, const std::vector<uint>& idx, const st
 List dentist_rcpp(const arma::mat& LDmat, uint nSample, const arma::vec& zScore,
                   double pValueThreshold, float propSVD, bool gcControl, int nIter,
                   double gPvalueThreshold, int ncpus, int seed) {
+    
 	// Set number of threads for parallel processing
 	int nProcessors = omp_get_max_threads();
 	if(ncpus < nProcessors) nProcessors = ncpus;
@@ -227,7 +258,9 @@ List dentist_rcpp(const arma::mat& LDmat, uint nSample, const arma::vec& zScore,
 		std::vector<uint> grouping_tmp;
 
 		// Perform iteration with current subsets
-		oneIteration(LDmat, idx, idx2, zScore, imputedZ, rsq, zScore_e, nSample, propSVD, ncpus);
+        // define rrr as the first time we run the oneIteration function during No.t iteraction, and initialize as 1
+        int rrr = 1;
+		oneIteration(LDmat, idx, idx2, zScore, imputedZ, rsq, zScore_e, nSample, propSVD, ncpus, t, rrr);
 
 		// Assess differences and grouping for thresholding
 		diff.resize(idx2.size());
@@ -260,7 +293,9 @@ List dentist_rcpp(const arma::mat& LDmat, uint nSample, const arma::vec& zScore,
 		}
 
 		// Perform another iteration with updated sets of indices (idx and idx2_QCed)
-		oneIteration(LDmat, idx, idx2_QCed, zScore, imputedZ, rsq, zScore_e, nSample, propSVD, ncpus);
+        // this is the second time we run the oneIteration function during No.t iteraction, so we switch the value of rrr from 1 to 2
+        rrr = 2;
+		oneIteration(LDmat, idx, idx2_QCed, zScore, imputedZ, rsq, zScore_e, nSample, propSVD, ncpus, t, rrr);
 
 		// Recalculate differences and groupings after the iteration
 		diff.resize(fullIdx.size());
