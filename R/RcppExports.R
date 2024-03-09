@@ -2,9 +2,7 @@
 # Generator token: 10BE3573-1514-4C36-9D1C-5A225CD40393
 
 dentist_rcpp <- function(LDmat, nSample, zScore, pValueThreshold, propSVD, gcControl, nIter, gPvalueThreshold, ncpus, seed) {
-    # .Call('_pecotmr_dentist_rcpp', PACKAGE = 'pecotmr', LDmat, nSample, zScore, pValueThreshold, propSVD, gcControl, nIter, gPvalueThreshold, ncpus, seed)
-     # source the self-defined function during development of the code
-    .Call('_pecotmr_dentist_rcpp', LDmat, nSample, zScore, pValueThreshold, propSVD, gcControl, nIter, gPvalueThreshold, ncpus, seed)
+    .Call('_pecotmr_dentist_rcpp', PACKAGE = 'pecotmr', LDmat, nSample, zScore, pValueThreshold, propSVD, gcControl, nIter, gPvalueThreshold, ncpus, seed)
 }
 
 rcpp_mr_ash_rss <- function(bhat, shat, z, R, var_y, n, sigma2_e, s0, w0, mu1_init, tol = 1e-8, max_iter = 1e5L, update_w0 = TRUE, update_sigma = TRUE, compute_ELBO = TRUE, standardize = FALSE) {
