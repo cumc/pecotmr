@@ -143,7 +143,7 @@ double gigrnd(double p, double a, double b) {
  * @param a Shape parameter for the prior distribution of psi.
  * @param b Scale parameter for the prior distribution of psi.
  * @param phi Global shrinkage parameter. If nullptr, it will be estimated automatically.
- * @param sumstats Dictionary containing summary statistics.
+ * @param sumstats Two vectors containing BETA and MAF summary statistics.
  * @param n Sample size.
  * @param ld_blk List of LD blocks.
  * @param n_iter Number of MCMC iterations.
@@ -169,8 +169,8 @@ std::map<std::string, arma::vec> prs_cs_mcmc(double a, double b, double* phi, co
     }
 
     // Derived statistics
-    arma::vec beta_mrg(sumstats[1]);
-    arma::vec maf(sumstats[2]);
+    arma::vec beta_mrg(sumstats[0]);
+    arma::vec maf(sumstats[1]);
     int n_pst = (n_iter - n_burnin) / thin;
     int p = beta_mrg.n_elem;
     int n_blk = ld_blk.size();

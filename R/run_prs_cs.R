@@ -27,21 +27,53 @@
 #'   - psi_est: Posterior estimates of psi (shrinkage parameters).
 #'   - sigma_est: Posterior estimate of the residual variance.
 #'   - phi_est: Posterior estimate of the global shrinkage parameter.
-#'
-#' @import Rcpp
-#' @import RcppArmadillo
-#'
 #' @examples
-#' \dontrun{
-#'   result <- run_prc_cs(sumstats = sum_stats,
-#'                        LD = ld_blocks,
-#'                        n = 100000)
-#' }
+#' # Generate example data
+#' set.seed(985115)
+#' n <- 350
+#' p <- 16
+#' sigmasq_error <- 0.5
+#' zeroes <- rbinom(p, 1, 0.6)
+#' beta.true <- rnorm(p, 1, sd = 4)
+#' beta.true[zeroes] <- 0
+#'
+#' X <- cbind(matrix(rnorm(n * p), nrow = n))
+#' X <- scale(X, center = TRUE, scale = FALSE)
+#' y <- X %*% matrix(beta.true, ncol = 1) + rnorm(n, 0, sqrt(sigmasq_error))
+#' y <- scale(y, center = TRUE, scale = FALSE)
+#'
+#' # Calculate sufficient statistics
+#' XtX <- t(X) %*% X
+#' Xty <- t(X) %*% y
+#' yty <- t(y) %*% y
+#'
+#' # Set the prior
+#' K <- 9
+#' sigma0 <- c(0.001, .1, .5, 1, 5, 10, 20, 30, .005)
+#' omega0 <- rep(1/K, K)
+#'
+#' # Calculate summary statistics
+#' b.hat <- sapply(1:p, function(j) { summary(lm(y ~ X[, j]))$coefficients[-1, 1] })
+#' s.hat <- sapply(1:p, function(j) { summary(lm(y ~ X[, j]))$coefficients[-1, 2] })
+#' R.hat <- cor(X)
+#' var_y <- var(y)
+#' sigmasq_init <- 1.5
+#'
+#' # Run mr_ash_rss as a comparison
+#' out1 <- mr_ash_rss(b.hat, s.hat, R = R.hat, var_y = var_y, n = n,
+#'                   sigma2_e = sigmasq_init, s0 = sigma0, w0 = omega0,
+#'                   mu1_init = rep(0, ncol(X)), tol = 1e-8, max_iter = 1e5,
+#'                   update_w0 = TRUE, update_sigma = TRUE, compute_ELBO = TRUE,
+#'                   standardize = FALSE)
+#' # Run PRS CS
+#' sumstats = list(BETA=b.hat, MAF=rep(0.5, length(b.hat)))
+#' LD <- list(blk1 = R.hat)
+#' out2 <- prs_cs(sumstats, LD, n, verbose = TRUE)
 #'
 #' @export
-run_prc_cs <- function(sumstats, LD, n,
-                       a = 1, b = 0.5, phi = NULL, n_iter = 1000, n_burnin = 500,
-                       thin = 5, beta_std = FALSE, verbose = FALSE, seed = NULL) {
+prs_cs <- function(sumstats, LD, n,
+                    a = 1, b = 0.5, phi = NULL, n_iter = 1000, n_burnin = 500,
+                    thin = 5, beta_std = FALSE, verbose = FALSE, seed = NULL) {
   # Check input parameters
   if (missing(sumstats) || !is.list(sumstats) || 
       !all(c("BETA", "MAF") %in% names(sumstats))) {
