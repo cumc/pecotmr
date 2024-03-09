@@ -19,7 +19,8 @@ mrmash_wrapper(
   B_init_method = "enet",
   max_iter = 5000,
   tol = 0.01,
-  verbose = FALSE
+  verbose = FALSE,
+  ...
 )
 }
 \arguments{

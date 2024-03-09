@@ -1,10 +1,10 @@
 Encoding: UTF-8
 Type: Package
 Package: pecotmr
-Version: 0.1.39
-Date: 2024-03-03
+Version: 0.1.41
+Date: 2024-03-08
 Title: Pair-wise enrichment, colocalization, TWAS and Mendelian Randomization to integrate molecular QTL and GWAS.
-Description: The majority of the statistical models in pecotmr are based on fine-mapped single effects described in Wang G et al (2020) JRSS-B. It also incoporates several other TWAS methods as well as utility functions for QTL and GWAS integration.
+Description: The majority of the statistical models in pecotmr are based on fine-mapped single effects described in Wang G et al (2020) JRSS-B. It also incorporates wrappers to a series of useful TWAS methods as well as utility functions for QTL and GWAS integration.
 URL: https://github.com/cumc/pecotmr
 BugReports: https://github.com/cumc/pecotmr/issues
 Authors@R: person("Gao Wang",role = c("cre","aut"),
@@ -30,6 +30,8 @@ Imports:
     tidyr,
     Rfast,
     doMC,
+    udr,
+    mashr,
     pgenlibr,
     snpStats,
     vctrs
