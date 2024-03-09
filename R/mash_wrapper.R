@@ -1,6 +1,3 @@
-matxMax <- function(mtx) {
-  return(arrayInd(which.max(mtx), dim(mtx)))
-}
 #' @import dplyr
 #' @export
 handle_invalid_summary_stat <- function(dat_list, bhat = NULL, sbhat = NULL, z = TRUE){
@@ -24,6 +21,7 @@ handle_invalid_summary_stat <- function(dat_list, bhat = NULL, sbhat = NULL, z =
      }
    return(dat_list)
 }
+
 # This function extracts tensorQTL results for given region for multiple summary statistics files
 #' @import dplyr
 #' @importFrom data.table fread
@@ -563,6 +561,7 @@ merge_data <- function(res_data, one_data) {
 #' @importFrom mashr mash_set_data cov_canonical estimate_null_correlation_simple
 #' @export
 mash_pipeline <- function(mash_input, alpha, unconstrained.update = "ted", set_seed = 999) {
+    set.seed(set_seed)
     vhat <- estimate_null_correlation_simple(mash_set_data(mash_input$random.b, Shat=mash_input$random.s, alpha, zero_Bhat_Shat_reset = 1E3))
 
     # mash data 
@@ -571,7 +570,6 @@ mash_pipeline <- function(mash_input, alpha, unconstrained.update = "ted", set_s
     # Canonical matrices
     U.can = cov_canonical(mash_data)    
 
-    set.seed(set_seed)
     # Penalty strength
     lambda = ncol(mash_input$strong.z)
     # Initialize udr
