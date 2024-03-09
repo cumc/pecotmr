@@ -25,45 +25,54 @@ run_multivariate_pipeline(
   max_cv_variants = 5000,
   cv_folds = 5,
   cv_threads = 1,
-  cv_seed = 999,
-  ...
+  cv_seed = 999
 )
 }
 \arguments{
 \item{X}{A matrix of genotype data where rows represent samples and columns represent genetic variants.}
 
-\item{y}{A matrix of phenotype measurements, represent samples and columns represent condidtions.}
+\item{y}{A matrix of phenotype measurements, representing samples and columns represent conditions.}
 
-\item{maf}{A list of vectors for minor allele frequencies for each variant in X}
+\item{maf}{A list of vectors for minor allele frequencies for each variant in X.}
 
-\item{dropped_sample}{A list of list with X, Y, and covar, each list contains list of dropped samples as a list of vectors for each condition. Can be obtained from the output from load_regional_multivariate_data.}
+\item{dropped_sample}{A list of lists with X, Y, and covar, each list contains a list of dropped samples as vectors for each condition. Can be obtained from the output of load_regional_multivariate_data.}
+
+\item{max_L}{The maximum number of components in mvSuSiE. Default is 30.}
 
 \item{ld_reference_meta_file}{An optional path to a file containing linkage disequilibrium reference data. If provided, variants in X are filtered based on this reference.}
 
-\item{X_scalar}{Scalar for the genotype data, used in residual scaling at the step of susie_post_processor. Defaults to 1 (no scaling).}
+\item{X_scalar}{Scalar for the genotype data, used in residual scaling at the step of mvsusie_post_processor. Defaults to 1 (no scaling).}
 
-\item{y_scalar}{Scalar for the phenotype data, used in residual scaling at the step of susie_post_processor. Defaults to 1 (no scaling).}
+\item{y_scalar}{Scalar for the phenotype data, used in residual scaling at the step of mvsusie_post_processor. Defaults to 1 (no scaling).}
 
-\item{signal_cutoff}{Cutoff value for signal identification in PIP values for susie_post_processor.}
+\item{pip_cutoff_to_skip}{Cutoff value for skipping conditions based on PIP values. Default is 0.}
+
+\item{signal_cutoff}{Cutoff value for signal identification in PIP values for mvsusie_post_processor. Default is 0.025.}
 
 \item{secondary_coverage}{A vector of secondary coverage probabilities for credible set refinement. Defaults to c(0.7, 0.5).}
 
-\item{mrmash_weights_prior_matrices}{A list of data-driven covariance matrices.}
+\item{mrmash_weights_prior_matrices}{A list of data-driven covariance matrices for mr.mash weights.}
 
-\item{prior_canonical_matrices}{If set to TRUE, will compute canonical covariance matrices add into prior covariance matrice list in mrmash_wrapper.}
+\item{mrmash_weights_prior_matrices_cv}{A list of data-driven covariance matrices for mr.mash weights in cross-validation.}
+
+\item{prior_canonical_matrices}{If set to TRUE, will compute canonical covariance matrices and add them into the prior covariance matrix list in mrmash_wrapper. Default is TRUE.}
+
+\item{sample_partition}{Sample partition for cross-validation.}
+
+\item{mrmash_max_iter}{The maximum number of iterations for mr.mash. Default is 5000.}
+
+\item{mvsusie_max_iter}{The maximum number of iterations for mvSuSiE. Default is 200.}
 
 \item{max_cv_variants}{The maximum number of variants to be included in cross-validation. Defaults to 5000.}
 
-\item{cv_folds}{The number of folds to use for cross-validation. Set to 0 to skip cross-validation.}
+\item{cv_folds}{The number of folds to use for cross-validation. Set to 0 to skip cross-validation. Default is 5.}
 
 \item{cv_threads}{The number of threads to use for parallel computation in cross-validation. Defaults to 1.}
 
 \item{cv_seed}{The seed for random number generation in cross-validation. Defaults to 999.}
-
-\item{mvsusie_fit}{An object returned by the mvSuSiE function, containing the mvSuSiE model fit.}
 }
 \description{
-This function performs weights computation for Transcriptome-Wide Association Study (TWAS) with fitting 
-models using mvSuSiE and mr.mash with the option of using limited number of variants selected from 
-mvSuSiE fine-mapping for computing TWAS weights with cross validation.
+This function performs weights computation for Transcriptome-Wide Association Study (TWAS) with fitting
+models using mvSuSiE and mr.mash with the option of using a limited number of variants selected from
+mvSuSiE fine-mapping for computing TWAS weights with cross-validation.
 }
