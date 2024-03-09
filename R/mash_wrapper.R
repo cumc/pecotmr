@@ -340,11 +340,11 @@ merge_susie_cs <- function(susie_fit, coverage = "cs_coverage_0.95",complementar
  }
                           
   extracted_top_loci <-  extract_top_loci(susie_fit, complementary)
-  combined_top_loci_df <- combine_top_loci(results)                     
+  combined_top_loci_df <- combine_top_loci(extracted_top_loci)                     
   # Clean up row names and make sure variant_id is unique
   combined_top_loci_df <- combined_top_loci_df[!duplicated(combined_top_loci_df$variant_id), ]
   rownames(combined_top_loci_df) <- NULL  # Clean up row names
-  return(top_loci_df)
+  return(combined_top_loci_df)
 }
 
 #' @import dplyr
@@ -557,3 +557,30 @@ merge_data <- function(res_data, one_data) {
     return(combined_data)
   }
 }
+#' @importFrom udr ud_init ud_fit
+#' @import stringr
+#' @import mashr
+#' @export
+mash_pipeline <- function(mash_input, alpha, unconstrained.update = "ted", set_seed = 999) {
+    vhat <- estimate_null_correlation_simple(mash_set_data(mash_input$random.b, Shat=mash_input$random.s, alpha, zero_Bhat_Shat_reset = 1E3))
+
+    # mash data 
+    # Fit mixture model using udr package
+    mash_data = mash_set_data(mash_input$strong.b, Shat=mash_input$strong.s, V=vhat, alpha, zero_Bhat_Shat_reset = 1E3)
+    # Canonical matrices
+    U.can = cov_canonical(mash_data)    
+
+    set.seed(set_seed)
+    # Penalty strength
+    lambda = ncol(mash_input$strong.z)
+    # Initialize udr
+    fit0 <- ud_init(mash_data, n_unconstrained = 50, U_scaled = U.can)
+    # Fit udr and use penalty as default as suggested by Yunqi
+    # penalty is necessary in small sample size case, and there won't be a difference in large sample size 
+    fit2 = ud_fit(fit0, control = list(unconstrained.update, scaled.update = "fa", resid.update = 'none', 
+                                       lambda =lambda, penalty.type = "iw", maxiter=1e3, tol = 1e-2, tol.lik = 1e-2))
+
+    # extract data-driven covariance from udr model. (A list of covariance matrices)
+    U.ud <- lapply(fit2$U,function (e) "[["(e,"mat")) 
+    return (mixture_prior = list(U = U.ud, w = fit2$w, loglik = fit2$loglik))
+  }
