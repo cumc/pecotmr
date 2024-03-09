@@ -11,7 +11,8 @@
 #include <string>
 #include <random>
 #include <cmath>
-#include <fstream>
+#include <map>
+#include <iomanip>
 
 /**
  * @brief Generate random variates from the generalized inverse Gaussian distribution.
@@ -129,16 +130,18 @@ double gigrnd(double p, double a, double b) {
  * @param n_burnin Number of burn-in iterations.
  * @param thin Thinning interval.
  * @param chrom Chromosome number.
- * @param out_dir Output directory.
  * @param beta_std Whether to standardize the effect sizes.
- * @param write_psi Whether to write the posterior estimates of psi to a file.
+ * @param verbose Whether to print verbose output.
  * @param seed Random seed. If nullptr, no seed is set.
+ * @return A map containing the posterior estimates.
  */
-void prs_cs(double a, double b, double* phi, const std::vector<std::vector<double>>& sst_dict,
-            int n, const std::vector<arma::mat>& ld_blk, const std::vector<int>& blk_size,
-            int n_iter, int n_burnin, int thin, int chrom, const std::string& out_dir,
-            bool beta_std, bool write_psi, int* seed) {
-    std::cout << "... MCMC ..." << std::endl;
+std::map<std::string, arma::vec> prs_cs(double a, double b, double* phi, const std::vector<std::vector<double>>& sst_dict,
+                                        int n, const std::vector<arma::mat>& ld_blk, const std::vector<int>& blk_size,
+                                        int n_iter, int n_burnin, int thin, int chrom,
+                                        bool beta_std, bool verbose, int* seed) {
+    if (verbose) {
+        std::cout << "Running Markov Chain Monte Carlo (MCMC) sampler..." << std::endl;
+    }
 
     // Seed the random number generator
     if (seed != nullptr) {
@@ -172,8 +175,8 @@ void prs_cs(double a, double b, double* phi, const std::vector<std::vector<doubl
 
     // MCMC
     for (int itr = 1; itr <= n_iter; ++itr) {
-        if (itr % 100 == 0) {
-            std::cout << "--- iter-" << itr << " ---" << std::endl;
+        if (verbose && itr % 100 == 0) {
+            std::cout << "Iteration " << std::setw(4) << itr << " of " << n_iter << std::endl;
         }
 
         int mm = 0;
@@ -223,43 +226,23 @@ void prs_cs(double a, double b, double* phi, const std::vector<std::vector<doubl
         beta_est /= arma::sqrt(2.0 * maf % (1.0 - maf));
     }
 
-    // Write posterior effect sizes
-    std::string eff_file;
-    if (phi_updt) {
-        eff_file = out_dir + "_pst_eff_a" + std::to_string(a) + "_b" + std::to_string(b) + "_phiauto_chr" + std::to_string(chrom) + ".txt";
-    } else {
-        eff_file = out_dir + "_pst_eff_a" + std::to_string(a) + "_b" + std::to_string(b) + "_phi" + std::to_string(*phi) + "_chr" + std::to_string(chrom) + ".txt";
-    }
-
-    std::ofstream eff_out(eff_file);
-    for (size_t i = 0; i < sst_dict[0].size(); ++i) {
-        eff_out << chrom << "\t" << sst_dict[0][i] << "\t" << sst_dict[3][i] << "\t"
-                << sst_dict[4][i] << "\t" << sst_dict[5][i] << "\t" << beta_est(i) << "\n";
-    }
-    eff_out.close();
-
-    // Write posterior estimates of psi
-    if (write_psi) {
-        std::string psi_file;
-        if (phi_updt) {
-            psi_file = out_dir + "_pst_psi_a" + std::to_string(a) + "_b" + std::to_string(b) + "_phiauto_chr" + std::to_string(chrom) + ".txt";
-        } else {
-            psi_file = out_dir + "_pst_psi_a" + std::to_string(a) + "_b" + std::to_string(b) + "_phi" + std::to_string(*phi) + "_chr" + std::to_string(chrom) + ".txt";
-        }
-
-        std::ofstream psi_out(psi_file);
-        for (size_t i = 0; i < sst_dict[0].size(); ++i) {
-            psi_out << sst_dict[0][i] << "\t" << psi_est(i) << "\n";
-        }
-        psi_out.close();
-    }
+    // Prepare the output map
+    std::map<std::string, arma::vec> output;
+    output["beta_est"] = beta_est;
+    output["psi_est"] = psi_est;
+    output["sigma_est"] = arma::vec(1, sigma_est);
+    output["phi_est"] = arma::vec(1, phi_est);
 
     // Print estimated phi
-    if (phi_updt) {
-        std::cout << "... Estimated global shrinkage parameter: " << phi_est << " ..." << std::endl;
+    if (verbose && phi_updt) {
+        std::cout << "Estimated global shrinkage parameter: " << phi_est << std::endl;
     }
 
-    std::cout << "... Done ..." << std::endl;
+    if (verbose) {
+        std::cout << "MCMC sampling completed." << std::endl;
+    }
+
+    return output;
 }
 
 #endif // MCMC_HPP
