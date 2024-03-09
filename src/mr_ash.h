@@ -1,10 +1,12 @@
-#include <RcppArmadillo.h>
+#include <armadillo>
 #include <cmath>
 #include <vector>
+#include <string>
 #include <algorithm>
+#include <unordered_map>
 
-using namespace Rcpp;
 using namespace arma;
+using namespace std;
 
 /**
  * Softmax function
@@ -24,9 +26,9 @@ vec softmax(const vec& x) {
  * @param xTy X'y (scalar)
  * @param sigma2_e Error variance
  * @param sigma2_0 Prior variance
- * @return List containing the least-squares estimate (bhat, s2), the posterior mean and standard deviation (mu1, sigma2_1), and the log-Bayes factor (logbf)
+ * @return An unordered_map containing the least-squares estimate (bhat, s2), the posterior mean and standard deviation (mu1, sigma2_1), and the log-Bayes factor (logbf)
  */
-List bayes_ridge_sufficient(double xTx, double xTy, double sigma2_e, double sigma2_0) {
+unordered_map<string, double> bayes_ridge_sufficient(double xTx, double xTy, double sigma2_e, double sigma2_0) {
   // Compute the least-squares estimate and its variance
   double bhat = xTy / xTx;
   double s2 = sigma2_e / xTx;
@@ -39,7 +41,7 @@ List bayes_ridge_sufficient(double xTx, double xTy, double sigma2_e, double sigm
   double logbf = log(s2 / (sigma2_0 + s2)) / 2 + (pow(bhat, 2) / s2 - pow(bhat, 2) / (sigma2_0 + s2)) / 2;
   
   // Return the least-squares estimate (bhat, s2), the posterior mean and standard deviation (mu1, sigma2_1), and the log-Bayes factor (logbf)
-  return List::create(Named("bhat") = bhat, Named("s2") = s2, Named("mu1") = mu1, Named("sigma2_1") = sigma2_1, Named("logbf") = logbf);
+  return {{"bhat", bhat}, {"s2", s2}, {"mu1", mu1}, {"sigma2_1", sigma2_1}, {"logbf", logbf}};
 }
 
 /**
@@ -50,16 +52,16 @@ List bayes_ridge_sufficient(double xTx, double xTy, double sigma2_e, double sigm
  * @param sigma2_e Error variance
  * @param w0 Mixture weights
  * @param sigma2_0 Mixture variances
- * @return List containing the log-Bayes factor (logbf), the posterior assignment probabilities (w1), the posterior mean (mu1) and variance (sigma2_1) of the coefficients, and the posterior mean (mu1_k) and variance (sigma2_1_k) for each mixture component
+ * @return An unordered_map containing the log-Bayes factor (logbf), the posterior assignment probabilities (w1), the posterior mean (mu1) and variance (sigma2_1) of the coefficients, and the posterior mean (mu1_k) and variance (sigma2_1_k) for each mixture component
  */
-List bayes_mix_sufficient(double xTx, double xTy, double sigma2_e, const vec& w0, const vec& sigma2_0) {
+unordered_map<string, vec> bayes_mix_sufficient(double xTx, double xTy, double sigma2_e, const vec& w0, const vec& sigma2_0) {
   // Get the number of mixture components (K)
   int K = sigma2_0.n_elem;
   
   // Compute the Bayes factors and posterior statistics separately for each mixture component
   mat out(K, 5);
   for (int i = 0; i < K; i++) {
-    List ridge_out = bayes_ridge_sufficient(xTx, xTy, sigma2_e, sigma2_0[i]);
+    unordered_map<string, double> ridge_out = bayes_ridge_sufficient(xTx, xTy, sigma2_e, sigma2_0[i]);
     out(i, 0) = ridge_out["bhat"];
     out(i, 1) = ridge_out["s2"];
     out(i, 2) = ridge_out["mu1"];
@@ -83,8 +85,8 @@ List bayes_mix_sufficient(double xTx, double xTy, double sigma2_e, const vec& w0
   
   // Return the posterior assignment probabilities (w1), the posterior mean (mu1) and variance (sigma2_1) of the coefficients,
   // and the posterior mean (mu1_k) and variance (sigma2_1_k) for each mixture component, and the log-Bayes factor (logbf)
-  return List::create(Named("w1") = w1, Named("mu1") = mu1, Named("sigma2_1") = sigma2_1,
-                      Named("mu1_k") = mu1_k_vec, Named("sigma2_1_k") = sigma2_1_k_vec, Named("logbf") = logbf);
+  return {{"w1", w1}, {"mu1", vec(1, fill::value(mu1))}, {"sigma2_1", vec(1, fill::value(sigma2_1))},
+          {"mu1_k", mu1_k_vec}, {"sigma2_1_k", sigma2_1_k_vec}, {"logbf", vec(1, fill::value(logbf))}};
 }
 
 /**
@@ -103,9 +105,9 @@ List bayes_mix_sufficient(double xTx, double xTy, double sigma2_e, const vec& w0
  * @param update_w0 Whether to update w0
  * @param update_sigma Whether to update sigma2_e
  * @param compute_ELBO Whether to compute the Evidence Lower Bound (ELBO)
- * @return List containing the posterior assignment probabilities (w1), the posterior mean (mu1) and variance (sigma2_1) of the coefficients, the error variance (sigma2_e), the mixture weights (w0), and optionally the ELBO
+ * @return An unordered_map containing the posterior assignment probabilities (w1), the posterior mean (mu1) and variance (sigma2_1) of the coefficients, the error variance (sigma2_e), the mixture weights (w0), and optionally the ELBO
  */
-List mr_ash_sufficient(const vec& XTy, const mat& XTX, double yTy, int n, double& sigma2_e,
+unordered_map<string, mat> mr_ash_sufficient(const vec& XTy, const mat& XTX, double yTy, int n, double& sigma2_e,
                        const vec& sigma2_0, vec& w0, const vec& mu1_init, double tol = 1e-8,
                        int max_iter = 1e5, bool update_w0 = true, bool update_sigma = true,
                        bool compute_ELBO = true) {
@@ -117,7 +119,7 @@ List mr_ash_sufficient(const vec& XTy, const mat& XTX, double yTy, int n, double
   mat w1_t(p, K, fill::zeros);
   mat mu1_k_t(p, K, fill::zeros);
   mat sigma2_1_k_t(p, K, fill::zeros);
-  vec err(p, fill::inf);
+  vec err(p, fill::value(datum::inf));
   int t = 0;
   double ELBO = 0;
   
@@ -132,7 +134,7 @@ List mr_ash_sufficient(const vec& XTy, const mat& XTX, double yTy, int n, double
     
     // Exit loop if maximum number of iterations is reached
     if (t > max_iter) {
-      warning("Max number of iterations reached. Try increasing max_iter.");
+      cerr << "Max number of iterations reached. Try increasing max_iter." << endl;
       break;
     }
     
@@ -150,19 +152,19 @@ List mr_ash_sufficient(const vec& XTy, const mat& XTX, double yTy, int n, double
       double xTx = XTX(j, j);
       
       // Run Bayesian SLR
-      List bfit = bayes_mix_sufficient(xTx, xTrbar_j, sigma2_e, w0, sigma2_0);
+      unordered_map<string, vec> bfit = bayes_mix_sufficient(xTx, xTrbar_j, sigma2_e, w0, sigma2_0);
       
       // Update variational parameters
-      mu1_t[j] = bfit["mu1"];
-      sigma2_1_t[j] = bfit["sigma2_1"];
-      w1_t.row(j) = as<rowvec>(bfit["w1"]);
-      mu1_k_t.row(j) = as<rowvec>(bfit["mu1_k"]);
-      sigma2_1_k_t.row(j) = as<rowvec>(bfit["sigma2_1_k"]);
+      mu1_t[j] = bfit["mu1"][0];
+      sigma2_1_t[j] = bfit["sigma2_1"][0];
+      w1_t.row(j) = bfit["w1"].t();
+      mu1_k_t.row(j) = bfit["mu1_k"].t();
+      sigma2_1_k_t.row(j) = bfit["sigma2_1_k"].t();
       
       // Compute ELBO parameters
       if (compute_ELBO) {
         var_part_ERSS += sigma2_1_t[j] * xTx;
-        neg_KL += as<double>(bfit["logbf"]) + (1 / (2 * sigma2_e)) * (-2 * xTrbar_j * mu1_t[j] + (xTx * (sigma2_1_t[j] + pow(mu1_t[j], 2))));
+        neg_KL += bfit["logbf"][0] + (1 / (2 * sigma2_e)) * (-2 * xTrbar_j * mu1_t[j] + (xTx * (sigma2_1_t[j] + pow(mu1_t[j], 2))));
       }
       
       // Update expected residuals
@@ -182,10 +184,10 @@ List mr_ash_sufficient(const vec& XTy, const mat& XTX, double yTy, int n, double
     if (compute_ELBO) {
       ELBO = -0.5 * log(n) - 0.5 * n * log(2 * datum::pi * sigma2_e) - (1 / (2 * sigma2_e)) * ERSS + neg_KL;
       // Print out useful info
-      Rcout << "Iteration: " << t << ", Max beta diff: " << max(err) << ", ELBO diff: " << ELBO - ELBO0 << ", ELBO: " << ELBO << std::endl;
+      cout << "Iteration: " << t << ", Max beta diff: " << max(err) << ", ELBO diff: " << ELBO - ELBO0 << ", ELBO: " << ELBO << endl;
     } else {
       // Print out useful info
-      Rcout << "Iteration: " << t << ", Max beta diff: " << max(err) << std::endl;
+      cout << "Iteration: " << t << ", Max beta diff: " << max(err) << endl;
     }
     
     // Update residual variance if requested
@@ -196,8 +198,8 @@ List mr_ash_sufficient(const vec& XTy, const mat& XTX, double yTy, int n, double
   
   // Return the posterior assignment probabilities (w1), the posterior mean (mu1) and variance (sigma2_1) of the coefficients,
   // the error variance (sigma2_e), the mixture weights (w0), and optionally the ELBO
-  return List::create(Named("mu1") = mu1_t, Named("sigma2_1") = sigma2_1_t, Named("w1") = w1_t,
-                      Named("sigma2_e") = sigma2_e, Named("w0") = w0, Named("ELBO") = ELBO);
+  return {{"mu1", mat(mu1_t)}, {"sigma2_1", mat(sigma2_1_t)}, {"w1", w1_t},
+          {"sigma2_e", mat(1, 1, fill::value(sigma2_e))}, {"w0", mat(w0)}, {"ELBO", mat(1, 1, fill::value(ELBO))}};
 }
 
 /**
@@ -206,12 +208,12 @@ List mr_ash_sufficient(const vec& XTy, const mat& XTX, double yTy, int n, double
  * @param mu1 Posterior mean vector
  * @param sigma2_1 Posterior covariance matrix
  * @param sx Scaling vector
- * @return List containing the rescaled posterior mean (mu1_orig) and covariance (sigma2_1_orig)
+ * @return An unordered_map containing the rescaled posterior mean (mu1_orig) and covariance (sigma2_1_orig)
  */
-List rescale_post_mean_covar(const vec& mu1, const mat& sigma2_1, const vec& sx) {
+unordered_map<string, mat> rescale_post_mean_covar(const vec& mu1, const mat& sigma2_1, const vec& sx) {
   vec mu1_orig = mu1 / sx;
   mat sigma2_1_orig = diagmat(1 / sx) * sigma2_1 * diagmat(1 / sx);
-  return List::create(Named("mu1_orig") = mu1_orig, Named("sigma2_1_orig") = sigma2_1_orig);
+  return {{"mu1_orig", mat(mu1_orig)}, {"sigma2_1_orig", sigma2_1_orig}};
 }
 
 /**
@@ -233,11 +235,10 @@ List rescale_post_mean_covar(const vec& mu1, const mat& sigma2_1, const vec& sx)
  * @param update_sigma Whether to update the error variance
  * @param compute_ELBO Whether to compute the Evidence Lower Bound (ELBO)
  * @param standardize Whether to standardize the input data
- * @return List containing the posterior mean (mu1) and covariance (sigma2_1) of the coefficients, the posterior assignment probabilities (w1), the error variance (sigma2_e), the mixture weights (w0), and optionally the ELBO
+ * @return An unordered_map containing the posterior mean (mu1) and covariance (sigma2_1) of the coefficients, the posterior assignment probabilities (w1), the error variance (sigma2_e), the mixture weights (w0), and optionally the ELBO
  */
-// [[Rcpp::export]]
-List mr_ash_rss(const vec& bhat, const vec& shat, const vec& z, const mat& R, double var_y, int n,
-                double sigma2_e, const vec& s0, const vec& w0, const vec& mu1_init, double tol = 1e-8,
+unordered_map<string, mat> mr_ash_rss(const vec& bhat, const vec& shat, const vec& z, const mat& R, double var_y, int n,
+                double sigma2_e, const vec& s0, vec& w0, const vec& mu1_init, double tol = 1e-8,
                 int max_iter = 1e5, bool update_w0 = true, bool update_sigma = true, bool compute_ELBO = true,
                 bool standardize = false) {
   // Get number of variables
@@ -256,8 +257,8 @@ List mr_ash_rss(const vec& bhat, const vec& shat, const vec& z, const mat& R, do
   }
   
   // Compute PVE-adjusted Z-scores if sample size is provided
-  vec adj(p);
-  if (!R_IsNA(n)) {
+  vec adj(p, fill::ones);
+  if (std::isfinite(n)) {
     adj = (n - 1) / (square(z_use) + n - 2);
     z_use %= sqrt(adj);
   }
@@ -265,7 +266,7 @@ List mr_ash_rss(const vec& bhat, const vec& shat, const vec& z, const mat& R, do
   // Compute X'X and X'y
   mat XtX;
   vec Xty;
-  if (!R_IsNA(var_y) && !shat.is_empty()) {
+  if (std::isfinite(var_y) && !shat.is_empty()) {
     vec XtXdiag = var_y * adj / square(shat);
     XtX = diagmat(sqrt(XtXdiag)) * R * diagmat(sqrt(XtXdiag));
     XtX = 0.5 * (XtX + XtX.t());
@@ -276,7 +277,7 @@ List mr_ash_rss(const vec& bhat, const vec& shat, const vec& z, const mat& R, do
     Xty = z_use * sqrt(n - 1);
     var_y = 1.0;
   }
-  
+
   // Adjust X'X and X'y if X is standardized
   vec sx(p, fill::ones);
   if (standardize) {
@@ -289,15 +290,16 @@ List mr_ash_rss(const vec& bhat, const vec& shat, const vec& z, const mat& R, do
   }
 
   // Run variational inference
-  List result = mr_ash_sufficient(Xty, XtX, var_y * (n - 1), n, sigma2_e, s0, w0, mu1_init_use,
+  unordered_map<string, mat> result = mr_ash_sufficient(Xty, XtX, var_y * (n - 1), n, sigma2_e, s0, w0, mu1_init_use,
   tol, max_iter, update_w0, update_sigma, compute_ELBO);
 
   // Rescale posterior mean and covariance if X was standardized
   if (standardize) {
-    List out_adj = rescale_post_mean_covar(result["mu1"], result["sigma2_1"], sx);
+    unordered_map<string, mat> out_adj = rescale_post_mean_covar(vectorise(result["mu1"]), result["sigma2_1"], sx);
     result["mu1"] = out_adj["mu1_orig"];
     result["sigma2_1"] = out_adj["sigma2_1_orig"];
   }
 
-  return result;
+  return {{"mu1", result["mu1"]}, {"sigma2_1", result["sigma2_1"]}, {"w1", result["w1"]},
+{"sigma2_e", result["sigma2_e"]}, {"w0", result["w0"]}, {"ELBO", result["ELBO"]}};
 }

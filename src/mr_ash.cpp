@@ -1,4 +1,10 @@
+#include <RcppArmadillo.h>
 #include "mr_ash.h"
+
+using namespace Rcpp;
+using namespace arma;
+using namespace std;
+
 // [[Rcpp::export]]
 List rcpp_mr_ash_rss(const NumericVector& bhat, const NumericVector& shat, const NumericVector& z,
                      const NumericMatrix& R, double var_y, int n, double sigma2_e, const NumericVector& s0,
@@ -15,10 +21,15 @@ List rcpp_mr_ash_rss(const NumericVector& bhat, const NumericVector& shat, const
   vec mu1_init_vec = as<vec>(mu1_init);
   
   // Call the C++ function
-  List result = mr_ash_rss(bhat_vec, shat_vec, z_vec, R_mat, var_y, n, sigma2_e, s0_vec, w0_vec,
-                           mu1_init_vec, tol, max_iter, update_w0, update_sigma, compute_ELBO,
-                           standardize);
+  unordered_map<string, mat> result = mr_ash_rss(bhat_vec, shat_vec, z_vec, R_mat, var_y, n, sigma2_e, s0_vec, w0_vec,
+                                                 mu1_init_vec, tol, max_iter, update_w0, update_sigma, compute_ELBO,
+                                                 standardize);
   
-  // Return the result
-  return result;
+  // Convert the result to a list
+  List ret;
+  for (const auto& item : result) {
+    ret[item.first] = wrap(item.second);
+  }
+  
+  return ret;
 }
