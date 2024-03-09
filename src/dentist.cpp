@@ -87,24 +87,26 @@ void oneIteration(const arma::mat& LDmat, const std::vector<uint>& idx, const st
 
 	uint K = std::min(static_cast<uint>(idx.size()), nSample) * probSVD;
 
-	arma::mat LD_it(idx2.size(), idx.size());
 	arma::vec zScore_eigen(idx.size());
+	arma::mat LD_it(idx2.size(), idx.size());
 	arma::mat VV(idx.size(), idx.size());
+
+    #pragma omp parallel for
+	for (size_t i = 0; i < idx.size(); i++) {
+		zScore_eigen(i) = zScore[idx[i]];
+	}
 
 	// Fill LD_it and VV matrices using a single loop
     #pragma omp parallel for collapse(2)
 	for (size_t i = 0; i < idx2.size(); i++) {
 		for (size_t k = 0; k < idx.size(); k++) {
-			LD_it(i, k) = LDmat(idx2[i], idx[k]);
+			LD_it(i, k) = LDmat.at(idx[k] * LDmat.n_rows + idx2[i]);
+			// LD_it(i, k) = LDmat.at(idx2[i] * LDmat.n_cols + idx[k]); // Try this line if the above is not correct
 			if (i < idx.size() && k < idx.size()) {
-				VV(i, k) = LDmat(idx[i], idx[k]);
+				VV(i, k) = LDmat.at(idx[k] * LDmat.n_rows + idx[i]);
+				// VV(i, k) = LDmat.at(idx[i] * LDmat.n_rows + idx[k]); // Try this line if the above is not correct 
 			}
 		}
-	}
-
-    #pragma omp parallel for
-	for (size_t i = 0; i < idx.size(); i++) {
-		zScore_eigen(i) = zScore[idx[i]];
 	}
 
 	// Eigen decomposition
