@@ -7,33 +7,37 @@
 #include "prscs_mcmc.h"
 
 // [[Rcpp::depends(RcppArmadillo)]]
-
 /**
  * @brief Rcpp wrapper for the prs_cs function.
  *
  * @param a Shape parameter for the prior distribution of psi.
  * @param b Scale parameter for the prior distribution of psi.
  * @param phi Global shrinkage parameter. If nullptr, it will be estimated automatically.
- * @param sumstats Dictionary containing summary statistics.
+ * @param bhat Vector of effect sizes.
+ * @param maf Vector of minor allele frequencies. If nullptr, it is assumed to be a vector of zeros.
  * @param n Sample size.
  * @param ld_blk List of LD blocks.
  * @param n_iter Number of MCMC iterations.
  * @param n_burnin Number of burn-in iterations.
  * @param thin Thinning interval.
- * @param beta_std Whether to standardize the effect sizes.
  * @param verbose Whether to print verbose output.
  * @param seed Random seed. If nullptr, no seed is set.
  * @return A list containing the posterior estimates.
  */
 // [[Rcpp::export]]
-Rcpp::List prs_cs_rcpp(double a, double b, Rcpp::Nullable<double> phi, Rcpp::List sumstats,
+Rcpp::List prs_cs_rcpp(double a, double b, Rcpp::Nullable<double> phi,
+                       Rcpp::NumericVector bhat, Rcpp::Nullable<Rcpp::NumericVector> maf,
                        int n, Rcpp::List ld_blk,
                        int n_iter, int n_burnin, int thin,
-                       bool beta_std, bool verbose, Rcpp::Nullable<unsigned int> seed) {
+                       bool verbose, Rcpp::Nullable<unsigned int> seed) {
 	// Convert Rcpp types to C++ types
-	std::vector<std::vector<double> > sumstats_vec;
-	sumstats_vec.push_back(Rcpp::as<std::vector<double> >(sumstats["BETA"]));
-	sumstats_vec.push_back(Rcpp::as<std::vector<double> >(sumstats["MAF"]));
+	std::vector<double> bhat_vec = Rcpp::as<std::vector<double> >(bhat);
+	std::vector<double> maf_vec;
+	if (maf.isNotNull()) {
+		maf_vec = Rcpp::as<std::vector<double> >(maf.get());
+	} else {
+		maf_vec = std::vector<double>(bhat_vec.size(), 0.0); // Populate with zeros if maf is NULL
+	}
 
 	std::vector<arma::mat> ld_blk_vec;
 	for (int i = 0; i < ld_blk.size(); ++i) {
@@ -52,9 +56,8 @@ Rcpp::List prs_cs_rcpp(double a, double b, Rcpp::Nullable<double> phi, Rcpp::Lis
 		seed_val = std::random_device{}();
 	}
 
-	// Call the prs_cs function
-	std::map<std::string, arma::vec> output = prs_cs_mcmc(a, b, phi_ptr, sumstats_vec, n, ld_blk_vec,
-	                                                      n_iter, n_burnin, thin, beta_std, verbose, seed_val);
+	std::map<std::string, arma::vec> output = prs_cs_mcmc(a, b, phi_ptr, bhat_vec, maf_vec, n, ld_blk_vec,
+	                                                      n_iter, n_burnin, thin, verbose, seed_val);
 
 	// Convert the output to an Rcpp::List
 	Rcpp::List result;
@@ -65,6 +68,5 @@ Rcpp::List prs_cs_rcpp(double a, double b, Rcpp::Nullable<double> phi, Rcpp::Lis
 
 	// Clean up dynamically allocated memory
 	delete phi_ptr;
-
 	return result;
 }

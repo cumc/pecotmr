@@ -29,12 +29,13 @@
      sigmasq_init <- 1.5
      
      # Run PRS CS
-     sumstats = list(BETA=b.hat, MAF=rep(0.5, length(b.hat)))
+     maf = rep(0.5, length(b.hat)) # fake MAF
      LD <- list(blk1 = R.hat)
+     sumstats <- list(BETA=b.hat, MAF=maf)
      write.table(data.frame(sumstats), "sumstats.txt", sep = "\t", row.names = FALSE, col.names = TRUE)
      write.table(LD$blk1, "LD.txt", sep = "\t", row.names = FALSE, col.names = FALSE)
 
-     out2 <- pecotmr::prs_cs(sumstats, LD, n, verbose = TRUE, seed=999)
+     out2 <- pecotmr::prs_cs(b.hat, LD, n, maf=maf, verbose = TRUE, seed=999)
      print(out2$beta_est)
 
 

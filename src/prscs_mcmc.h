@@ -181,29 +181,29 @@ double gigrnd(double p, double a, double b, std::mt19937& rng) {
  * @param a Shape parameter for the prior distribution of psi.
  * @param b Scale parameter for the prior distribution of psi.
  * @param phi Global shrinkage parameter. If nullptr, it will be estimated automatically.
- * @param sumstats Two vectors containing BETA and MAF summary statistics.
+ * @param bhat Vector of effect sizes.
+ * @param maf Vector of minor allele frequencies.
  * @param n Sample size.
  * @param ld_blk List of LD blocks.
  * @param n_iter Number of MCMC iterations.
  * @param n_burnin Number of burn-in iterations.
  * @param thin Thinning interval.
- * @param beta_std Whether to standardize the effect sizes.
  * @param verbose Whether to print verbose output.
  * @param seed Random seed. If nullptr, no seed is set.
  * @return A map containing the posterior estimates.
  */
-std::map<std::string, arma::vec> prs_cs_mcmc(double a, double b, double* phi, const std::vector<std::vector<double> >& sumstats,
+std::map<std::string, arma::vec> prs_cs_mcmc(double a, double b, double* phi,
+                                             const std::vector<double>& bhat, const std::vector<double>& maf,
                                              int n, const std::vector<arma::mat>& ld_blk,
                                              int n_iter, int n_burnin, int thin,
-                                             bool beta_std, bool verbose, unsigned int seed) {
+                                             bool verbose, unsigned int seed) {
 	if (verbose) {
 		std::cout << "Running Markov Chain Monte Carlo (MCMC) sampler..." << std::endl;
 	}
 
 	// Derived statistics
-	arma::vec beta_mrg(sumstats[0]);
+	arma::vec beta_mrg(bhat);
 	// std::cout << "beta_mrg " << beta_mrg << std::endl;
-	arma::vec maf(sumstats[1]);
 	int n_pst = (n_iter - n_burnin) / thin;
 	int p = beta_mrg.n_elem;
 
@@ -293,11 +293,11 @@ std::map<std::string, arma::vec> prs_cs_mcmc(double a, double b, double* phi, co
 		delete phi;
 	}
 
-	// Convert standardized beta to per-allele beta
-	if (!beta_std) {
-		beta_est /= arma::sqrt(2.0 * maf % (1.0 - maf));
+	// Convert standardized beta to per-allele beta only if not all maf are zeros
+	arma::vec maf_vec(maf);
+	if (arma::max(maf_vec) > 0) {
+		beta_est /= arma::sqrt(2.0 * maf_vec % (1.0 - maf_vec));
 	}
-
 	// Prepare the output map
 	std::map<std::string, arma::vec> output;
 	output["beta_est"] = beta_est;
