@@ -9,7 +9,6 @@
 #include <armadillo>
 #include <vector>
 #include <string>
-#include <random>
 #include <cmath>
 #include <map>
 #include <iomanip>
@@ -137,7 +136,7 @@ double gigrnd(double p, double a, double b) {
 	double sd = s - p_r * theta;
 	double q = td + sd;
 
-	gsl_rng* rng = gsl_rng_alloc(gsl_rng_default);
+	gsl_rng* rng = gsl_rng_alloc(gsl_rng_mt19937);
 	double rnd = 0.0;
 	while (true) {
 		double U = gsl_rng_uniform(rng);
@@ -174,6 +173,9 @@ double gigrnd(double p, double a, double b) {
 	if (result == 0.0) {
 		result = std::numeric_limits<double>::min();
 	}
+	if (result > 1.0) {
+		result = 1.0;
+	}
 
 	return result;
 }
@@ -204,7 +206,7 @@ std::map<std::string, arma::vec> prs_cs_mcmc(double a, double b, double* phi, co
 	}
 
 	// Seed the random number generator
-	gsl_rng* rng = gsl_rng_alloc(gsl_rng_default);
+	gsl_rng* rng = gsl_rng_alloc(gsl_rng_mt19937);
 	if (seed != nullptr) {
 		gsl_rng_set(rng, *seed);
 	}
@@ -244,13 +246,29 @@ std::map<std::string, arma::vec> prs_cs_mcmc(double a, double b, double* phi, co
 
 			arma::uvec idx_blk = arma::regspace<arma::uvec>(mm, mm + ld_blk[kk].n_rows - 1);
 			mm += ld_blk[kk].n_rows;
+
+			//std::cout << psi << std::endl;
+			//std::cout << idx_blk << std::endl;
+			//std::cout << ld_blk[kk] << std::endl;
+
 			arma::mat dinvt = ld_blk[kk] + arma::diagmat(1.0 / psi.elem(idx_blk));
+			//std::cout << "dinvt " << dinvt << std::endl;
+
 			arma::mat dinvt_chol = arma::chol(dinvt);
+
+			//std::cout << "dinvt chol " << dinvt_chol << std::endl;
+
 			arma::vec beta_tmp = arma::solve(arma::trimatl(dinvt_chol.t()), beta_mrg(idx_blk)) +
-			                     arma::randn<arma::vec>(ld_blk[kk].n_rows) * std::sqrt(sigma / n);
+			                     arma::vec(ld_blk[kk].n_rows).transform([&](double) {
+				return gsl_ran_gaussian(rng, 1.0);
+			}) * std::sqrt(sigma / n);
+			std::cout << "beta_tmp " << beta_tmp << std::endl;
 			beta(idx_blk) = arma::solve(arma::trimatu(dinvt_chol), beta_tmp);
+
 			quad += arma::as_scalar(beta(idx_blk).t() * dinvt * beta(idx_blk));
+			std::cout << "quad " << quad << std::endl;
 		}
+		std::cout << "beta " << beta << std::endl;
 
 		double err = std::max(n / 2.0 * (1.0 - 2.0 * arma::dot(beta, beta_mrg) + quad),
 		                      n / 2.0 * arma::sum(arma::pow(beta, 2) / psi));
@@ -265,12 +283,10 @@ std::map<std::string, arma::vec> prs_cs_mcmc(double a, double b, double* phi, co
 		// FIXME: psi can be so small (close to zero) as in the @example data demo which causes inf in dinvt and solve() to break
 		// This happens when beta are all very small and delta all very big
 		// std::cout << "sigma " << sigma << std::endl;
-		// std::cout << "beta " << beta << std::endl;
 		// std::cout << "delta " << delta << std::endl;
 		for (int jj = 0; jj < p; ++jj) {
 			psi(jj) = gigrnd(a - 0.5, 2.0 * delta(jj), n * std::pow(beta(jj), 2) / sigma);
 		}
-		psi.elem(arma::find(psi > 1)).fill(1.0);
 
 		if (phi_updt) {
 			double w = gsl_ran_gamma(rng, 1.0, 1.0 / (*phi + 1.0));
@@ -301,8 +317,8 @@ std::map<std::string, arma::vec> prs_cs_mcmc(double a, double b, double* phi, co
 	std::map<std::string, arma::vec> output;
 	output["beta_est"] = beta_est;
 	output["psi_est"] = psi_est;
-	output["sigma_est"] = arma::vec(1, sigma_est);
-	output["phi_est"] = arma::vec(1, phi_est);
+	output["sigma_est"] = arma::vec(1).fill(sigma_est);
+	output["phi_est"] = arma::vec(1).fill(phi_est);
 
 	// Print estimated phi
 	if (verbose && phi_updt) {
