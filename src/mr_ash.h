@@ -315,4 +315,3 @@ unordered_map<string, mat> mr_ash_rss(const vec& bhat, const vec& shat, const ve
 	return {{"mu1", result["mu1"]}, {"sigma2_1", result["sigma2_1"]}, {"w1", result["w1"]},
 		{"sigma2_e", result["sigma2_e"]}, {"w0", result["w0"]}, {"ELBO", result["ELBO"]}};
 };
-
