@@ -41,6 +41,7 @@ requirements:
     - r-matrixstats
     - r-mr.ash.alpha
     - r-mr.mash.alpha
+    - r-mvsusier
     - r-udr
     - r-fsusier
     - r-pgenlibr
@@ -88,7 +89,6 @@ requirements:
     - r-rlab
     - r-stringr
     - r-susier
-    - r-mvsusier
     - r-tidyr
     - r-vctrs
 
