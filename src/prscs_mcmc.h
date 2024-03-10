@@ -233,7 +233,7 @@ std::map<std::string, arma::vec> prs_cs_mcmc(double a, double b, double* phi, co
 
 		int mm = 0;
 		double quad = 0.0;
-		for (int kk = 0; kk < ld_blk.size(); ++kk) {
+		for (std::size_t kk = 0; kk < ld_blk.size(); ++kk) {
 			if (ld_blk[kk].n_rows == 0) {
 				continue;
 			}
