@@ -33,8 +33,8 @@ BEGIN_RCPP
 END_RCPP
 }
 // rcpp_mr_ash_rss
-List rcpp_mr_ash_rss(const NumericVector& bhat, const NumericVector& shat, const NumericVector& z, const NumericMatrix& R, double var_y, int n, double sigma2_e, const NumericVector& s0, const NumericVector& w0, const NumericVector& mu1_init, double tol, int max_iter, bool update_w0, bool update_sigma, bool compute_ELBO, bool standardize);
-RcppExport SEXP _pecotmr_rcpp_mr_ash_rss(SEXP bhatSEXP, SEXP shatSEXP, SEXP zSEXP, SEXP RSEXP, SEXP var_ySEXP, SEXP nSEXP, SEXP sigma2_eSEXP, SEXP s0SEXP, SEXP w0SEXP, SEXP mu1_initSEXP, SEXP tolSEXP, SEXP max_iterSEXP, SEXP update_w0SEXP, SEXP update_sigmaSEXP, SEXP compute_ELBOSEXP, SEXP standardizeSEXP) {
+List rcpp_mr_ash_rss(const NumericVector& bhat, const NumericVector& shat, const NumericVector& z, const NumericMatrix& R, double var_y, int n, double sigma2_e, const NumericVector& s0, const NumericVector& w0, const NumericVector& mu1_init, double tol, int max_iter, bool update_w0, bool update_sigma, bool compute_ELBO, bool standardize, int ncpus);
+RcppExport SEXP _pecotmr_rcpp_mr_ash_rss(SEXP bhatSEXP, SEXP shatSEXP, SEXP zSEXP, SEXP RSEXP, SEXP var_ySEXP, SEXP nSEXP, SEXP sigma2_eSEXP, SEXP s0SEXP, SEXP w0SEXP, SEXP mu1_initSEXP, SEXP tolSEXP, SEXP max_iterSEXP, SEXP update_w0SEXP, SEXP update_sigmaSEXP, SEXP compute_ELBOSEXP, SEXP standardizeSEXP, SEXP ncpusSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -54,7 +54,8 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< bool >::type update_sigma(update_sigmaSEXP);
     Rcpp::traits::input_parameter< bool >::type compute_ELBO(compute_ELBOSEXP);
     Rcpp::traits::input_parameter< bool >::type standardize(standardizeSEXP);
-    rcpp_result_gen = Rcpp::wrap(rcpp_mr_ash_rss(bhat, shat, z, R, var_y, n, sigma2_e, s0, w0, mu1_init, tol, max_iter, update_w0, update_sigma, compute_ELBO, standardize));
+    Rcpp::traits::input_parameter< int >::type ncpus(ncpusSEXP);
+    rcpp_result_gen = Rcpp::wrap(rcpp_mr_ash_rss(bhat, shat, z, R, var_y, n, sigma2_e, s0, w0, mu1_init, tol, max_iter, update_w0, update_sigma, compute_ELBO, standardize, ncpus));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -100,7 +101,7 @@ END_RCPP
 
 static const R_CallMethodDef CallEntries[] = {
     {"_pecotmr_dentist_rcpp", (DL_FUNC) &_pecotmr_dentist_rcpp, 10},
-    {"_pecotmr_rcpp_mr_ash_rss", (DL_FUNC) &_pecotmr_rcpp_mr_ash_rss, 16},
+    {"_pecotmr_rcpp_mr_ash_rss", (DL_FUNC) &_pecotmr_rcpp_mr_ash_rss, 17},
     {"_pecotmr_prs_cs_rcpp", (DL_FUNC) &_pecotmr_prs_cs_rcpp, 12},
     {"_pecotmr_qtl_enrichment_rcpp", (DL_FUNC) &_pecotmr_qtl_enrichment_rcpp, 7},
     {NULL, NULL, 0}

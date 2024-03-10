@@ -20,7 +20,8 @@ mr_ash_rss(
   update_w0 = TRUE,
   update_sigma = TRUE,
   compute_ELBO = TRUE,
-  standardize = FALSE
+  standardize = FALSE,
+  ncpu = 1
 )
 }
 \arguments{
@@ -55,6 +56,8 @@ mr_ash_rss(
 \item{compute_ELBO}{Logical value indicating whether to compute the Evidence Lower Bound (ELBO). Default is TRUE.}
 
 \item{standardize}{Logical value indicating whether to standardize the input data. Default is FALSE.}
+
+\item{ncpus}{An integer specifying the number of CPU cores to use for parallel computation. Default is 1.}
 }
 \value{
 A list containing the following components:
