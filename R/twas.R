@@ -453,7 +453,8 @@ mrmash_weights <- function(...) {
     return(coef.mr.mash(res)[-1,])
 }
                    
-#' @importFrom mvsusieR coef.mvsusie mvsusie create_mixture_prior
+# @importFrom mvsusieR coef.mvsusie mvsusie create_mixture_prior
+#' @importFrom mvsusieR mvsusie create_mixture_prior
 #' @export               
 mvsusie_weights <- function(mvsusie_fit=NULL, X=NULL, Y=NULL, prior_variance=NULL, residual_variance=NULL, L=30, mvsusie_max_iter=200, ...) {
     if (is.null(mvsusie_fit)) {
@@ -470,7 +471,7 @@ mvsusie_weights <- function(mvsusie_fit=NULL, X=NULL, Y=NULL, prior_variance=NUL
                             estimate_prior_method='EM', max_iter=mvsusie_max_iter, 
                             n_thread=1, approximate=F)
     }
-    return(coef.mvsusie(mvsusie_fit)[-1,])
+    return(mvsusieR::coef.mvsusie(mvsusie_fit)[-1,])
 } 
 
 # Get a reasonable setting for the standard deviations of the mixture
