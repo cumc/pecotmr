@@ -12,6 +12,7 @@
 #include <vector>
 #include <numeric> // For std::iota
 #include <gsl/gsl_cdf.h>
+#include <unordered_set>
 
 // Enable C++11 via this plugin (Rcpp 0.10.3 or later)
 // [[Rcpp::depends(RcppArmadillo)]]
@@ -20,7 +21,6 @@
 
 using namespace Rcpp;
 using namespace arma;
-
 
 // Assuming sort_indexes is defined as provided
 std::vector<size_t> sort_indexes(const std::vector<int>& v, unsigned int theSize) {
@@ -32,34 +32,21 @@ std::vector<size_t> sort_indexes(const std::vector<int>& v, unsigned int theSize
 	return idx;
 }
 
-// Improved generateSetOfNumbers function using C++11 random
+// Improved generateSetOfNumbers function using C++11 random and std::unordered_set
 std::vector<size_t> generateSetOfNumbers(int SIZE, int seed) {
-	std::vector<int> numbers(SIZE, 0);
-	std::mt19937 rng(seed); // Mersenne Twister: Good quality random number generator
+	std::vector<int> numbers(SIZE);
+	std::unordered_set<int> uniqueNumbers;
+	std::mt19937 rng(seed);
 	std::uniform_int_distribution<int> dist(0, INT_MAX);
 
-	// Generate the first random number
-	numbers[0] = dist(rng);
-	for (int index = 1; index < SIZE; index++) {
+	for (int i = 0; i < SIZE; ++i) {
 		int tempNum;
 		do {
-			tempNum = dist(rng); // Generate a new random number
-			// Check for uniqueness in the current list of generated numbers
-			bool isUnique = true;
-			for (int index2 = 0; index2 < index; index2++) {
-				if (tempNum == numbers[index2]) {
-					isUnique = false;
-					break;
-				}
-			}
-			// If the number is not unique, force the loop to try again
-			if (!isUnique) tempNum = -1;
-		} while (tempNum == -1);
-		// Assign the unique number to the list
-		numbers[index] = tempNum;
+			tempNum = dist(rng);
+		} while (!uniqueNumbers.insert(tempNum).second);
+		numbers[i] = tempNum;
 	}
 
-	// Sort the indices of 'numbers' based on their values
 	return sort_indexes(numbers, SIZE);
 }
 
@@ -95,28 +82,30 @@ void oneIteration(const arma::mat& LDmat, const std::vector<uint>& idx, const st
                   const arma::vec& zScore, arma::vec& imputedZ, arma::vec& rsqList, arma::vec& zScore_e,
                   uint nSample, float probSVD, int ncpus) {
 	int nProcessors = omp_get_max_threads();
-	if(ncpus < nProcessors) nProcessors = ncpus;
+	if (ncpus < nProcessors) nProcessors = ncpus;
 	omp_set_num_threads(nProcessors);
 
 	uint K = std::min(static_cast<uint>(idx.size()), nSample) * probSVD;
 
-	arma::mat LD_it(idx2.size(), idx.size());
 	arma::vec zScore_eigen(idx.size());
+	arma::mat LD_it(idx2.size(), idx.size());
 	arma::mat VV(idx.size(), idx.size());
-
-	// Fill LD_it and VV matrices using direct indexing
-    #pragma omp parallel for collapse(2)
-	for (size_t i = 0; i < idx2.size(); i++) {
-		for (size_t k = 0; k < idx.size(); k++) {
-			LD_it(i, k) = LDmat(idx2[i], idx[k]);
-		}
-	}
 
     #pragma omp parallel for
 	for (size_t i = 0; i < idx.size(); i++) {
 		zScore_eigen(i) = zScore[idx[i]];
-		for (size_t j = 0; j < idx.size(); j++) {
-			VV(i, j) = LDmat(idx[i], idx[j]);
+	}
+
+	// Fill LD_it and VV matrices using a single loop
+    #pragma omp parallel for collapse(2)
+	for (size_t i = 0; i < idx2.size(); i++) {
+		for (size_t k = 0; k < idx.size(); k++) {
+			//LD_it(i, k) = LDmat.at(idx[k] * LDmat.n_rows + idx2[i]);//Try this line if the above is not correct
+			 LD_it(i, k) = LDmat.at(idx2[i] * LDmat.n_cols + idx[k]);  
+			if (i < idx.size() && k < idx.size()) {
+				//VV(i, k) = LDmat.at(idx[k] * LDmat.n_rows + idx[i]);//Try this line if the above is not correct 
+				VV(i, k) = LDmat.at(idx[i] * LDmat.n_rows + idx[k]);  
+			}
 		}
 	}
 
@@ -132,8 +121,8 @@ void oneIteration(const arma::mat& LDmat, const std::vector<uint>& idx, const st
 	if (K <= 1) {
 		Rcpp::stop("Rank of eigen matrix <= 1");
 	}
-	arma::mat ui = arma::eye(eigvec.n_rows, K);
-	arma::mat wi = arma::eye(K, K);
+	arma::mat ui = arma::eye<arma::mat>(eigvec.n_rows, K);
+	arma::mat wi = arma::eye<arma::mat>(K, K);
 	for (uint m = 0; m < K; ++m) {
 		int j = eigvec.n_rows - m - 1;
 		ui.col(m) = eigvec.col(j);
@@ -195,13 +184,16 @@ List dentist_rcpp(const arma::mat& LDmat, uint nSample, const arma::vec& zScore,
                   double gPvalueThreshold, int ncpus, int seed) {
 	// Set number of threads for parallel processing
 	int nProcessors = omp_get_max_threads();
-	if(ncpus < nProcessors) nProcessors = ncpus;
+	if (ncpus < nProcessors) nProcessors = ncpus;
 	omp_set_num_threads(nProcessors);
 
 	uint markerSize = zScore.size();
 	// Initialization based on the seed input
 	std::vector<size_t> randOrder = generateSetOfNumbers(markerSize, seed);
-	std::vector<uint> idx, idx2, fullIdx(randOrder.begin(), randOrder.end());
+	std::vector<uint> idx, idx2;
+	idx.reserve(markerSize / 2);
+	idx2.reserve(markerSize / 2);
+	std::vector<uint> fullIdx(randOrder.begin(), randOrder.end());
 
 	// Determining indices for partitioning
 	for (uint i = 0; i < markerSize; ++i) {
@@ -211,7 +203,7 @@ List dentist_rcpp(const arma::mat& LDmat, uint nSample, const arma::vec& zScore,
 
 	std::vector<uint> groupingGWAS(markerSize, 0);
 	for (uint i = 0; i < markerSize; ++i) {
-		if (minusLogPvalueChisq2(std::pow(zScore(i),2)) > -log10(gPvalueThreshold)) {
+		if (minusLogPvalueChisq2(std::pow(zScore(i), 2)) > -log10(gPvalueThreshold)) {
 			groupingGWAS[i] = 1;
 		}
 	}
@@ -221,17 +213,16 @@ List dentist_rcpp(const arma::mat& LDmat, uint nSample, const arma::vec& zScore,
 	arma::vec zScore_e = arma::zeros<arma::vec>(markerSize);
 	arma::ivec iterID = arma::zeros<arma::ivec>(markerSize);
 
+	std::vector<double> diff(idx2.size());
+	std::vector<uint> grouping_tmp(idx2.size());
+
 	for (int t = 0; t < nIter; ++t) {
 		std::vector<uint> idx2_QCed;
-		std::vector<double> diff;
-		std::vector<uint> grouping_tmp;
 
 		// Perform iteration with current subsets
 		oneIteration(LDmat, idx, idx2, zScore, imputedZ, rsq, zScore_e, nSample, propSVD, ncpus);
 
 		// Assess differences and grouping for thresholding
-		diff.resize(idx2.size());
-		grouping_tmp.resize(idx2.size());
 		for (size_t i = 0; i < idx2.size(); ++i) {
 			diff[i] = std::abs(zScore_e[idx2[i]]);
 			grouping_tmp[i] = groupingGWAS[idx2[i]];
@@ -241,12 +232,12 @@ List dentist_rcpp(const arma::mat& LDmat, uint nSample, const arma::vec& zScore,
 		double threshold1 = getQuantile2(diff, grouping_tmp, 0.995, false);
 		double threshold0 = getQuantile2(diff, grouping_tmp, 0.995, true);
 
-		if(threshold1 == 0) {
+		if (threshold1 == 0) {
 			threshold1 = threshold;
 			threshold0 = threshold;
 		}
 
-		if(t > nIter - 2 ) {
+		if (t > nIter - 2) {
 			threshold0 = threshold;
 			threshold1 = threshold;
 		}
@@ -265,7 +256,7 @@ List dentist_rcpp(const arma::mat& LDmat, uint nSample, const arma::vec& zScore,
 		// Recalculate differences and groupings after the iteration
 		diff.resize(fullIdx.size());
 		grouping_tmp.resize(fullIdx.size());
-		for(size_t i = 0; i < fullIdx.size(); ++i) {
+		for (size_t i = 0; i < fullIdx.size(); ++i) {
 			diff[i] = std::abs(zScore_e[fullIdx[i]]);
 			grouping_tmp[i] = groupingGWAS[fullIdx[i]];
 		}
@@ -275,12 +266,12 @@ List dentist_rcpp(const arma::mat& LDmat, uint nSample, const arma::vec& zScore,
 		threshold1 = getQuantile2(diff, grouping_tmp, 0.995, false);
 		threshold0 = getQuantile2(diff, grouping_tmp, 0.995, true);
 
-		if(threshold1 == 0) {
+		if (threshold1 == 0) {
 			threshold1 = threshold;
 			threshold0 = threshold;
 		}
 
-		if(t > nIter - 2 ) {
+		if (t > nIter - 2) {
 			threshold0 = threshold;
 			threshold1 = threshold;
 		}
@@ -322,15 +313,20 @@ List dentist_rcpp(const arma::mat& LDmat, uint nSample, const arma::vec& zScore,
 		randOrder = generateSetOfNumbers(fullIdx.size(), seed + t * seed); // Update seed for randomness
 		idx.clear();
 		idx2.clear();
-		for (size_t i : fullIdx) {
-			if (randOrder[i] > fullIdx.size() / 2) idx.push_back(i);
-			else idx2.push_back(i);
+		for (size_t i = 0; i < fullIdx.size(); ++i) {
+			if (randOrder[i] > fullIdx.size() / 2) idx.push_back(fullIdx[i]);
+			else idx2.push_back(fullIdx[i]);
 		}
 	}
-	// Prepare and return results
+
+	// Prepare and return results using arma::vec::elem() for simplicity
+	arma::uvec problematic_indices = arma::find(arma::conv_to<arma::vec>::from(groupingGWAS) == 1);
+	arma::vec is_problematic = arma::zeros<arma::vec>(markerSize);
+	is_problematic.elem(problematic_indices).fill(1);
+
 	return List::create(Named("imputed_z") = imputedZ,
 	                    Named("rsq") = rsq,
 	                    Named("corrected_z") = zScore_e,
 	                    Named("iter_to_correct") = iterID,
-	                    Named("is_problematic") = wrap(groupingGWAS));
+	                    Named("is_problematic") = is_problematic);
 }
