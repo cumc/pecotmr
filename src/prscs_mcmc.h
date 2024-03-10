@@ -144,7 +144,6 @@ double gigrnd(double p, double a, double b) {
 		double V = gsl_rng_uniform(rng);
 		double W = gsl_rng_uniform(rng);
 
-
 		if (U < q / (p_r + q + r)) {
 			rnd = -sd + q * V;
 		} else if (U < (q + r) / (p_r + q + r)) {
@@ -152,20 +151,31 @@ double gigrnd(double p, double a, double b) {
 		} else {
 			rnd = -sd + p_r * std::log(V);
 		}
+
 		double f1 = std::exp(-eta - zeta * (rnd - t));
 		double f2 = std::exp(-theta + xi * (rnd + s));
+
 		if (W * g(rnd, sd, td, f1, f2) <= std::exp(fpsi(rnd, alpha, lambda))) {
 			break;
 		}
 	}
+
 	gsl_rng_free(rng);
 
 	rnd = std::exp(rnd) * (lambda / omega + std::sqrt(1.0 + std::pow(lambda / omega, 2)));
+
 	if (swap) {
 		rnd = 1.0 / rnd;
 	}
 
-	return rnd / std::sqrt(a / b);
+	double result = rnd / std::sqrt(a / b);
+
+	// Check if the result is zero and replace it with a small value
+	if (result == 0.0) {
+		result = std::numeric_limits<double>::min();
+	}
+
+	return result;
 }
 
 /**
@@ -204,7 +214,6 @@ std::map<std::string, arma::vec> prs_cs_mcmc(double a, double b, double* phi, co
 	arma::vec maf(sumstats[1]);
 	int n_pst = (n_iter - n_burnin) / thin;
 	int p = beta_mrg.n_elem;
-	int n_blk = ld_blk.size();
 
 	// Initialization
 	arma::vec beta(p, arma::fill::zeros);
@@ -228,21 +237,19 @@ std::map<std::string, arma::vec> prs_cs_mcmc(double a, double b, double* phi, co
 
 		int mm = 0;
 		double quad = 0.0;
-		for (int kk = 0; kk < n_blk; ++kk) {
+		for (int kk = 0; kk < ld_blk.size(); ++kk) {
 			if (ld_blk[kk].n_rows == 0) {
 				continue;
 			}
 
 			arma::uvec idx_blk = arma::regspace<arma::uvec>(mm, mm + ld_blk[kk].n_rows - 1);
-			arma::mat dinvt = ld_blk[kk] + arma::diagmat(1.0 / psi(idx_blk));
-            // FIXME: there are inf in dinvt in the @example which causes quad to be nan and break the code
-            std::cout << dinvt << std::endl;
-			arma::mat dinvt_chol = arma::chol(dinvt);
-			arma::vec beta_tmp = arma::solve(arma::trimatl(dinvt_chol.t()), beta_mrg(idx_blk), arma::solve_opts::fast) +
-			                     arma::randn<arma::vec>(ld_blk[kk].n_rows) * std::sqrt(sigma / n);
-			beta(idx_blk) = arma::solve(arma::trimatu(dinvt_chol), beta_tmp, arma::solve_opts::fast);
-			quad += arma::as_scalar(beta(idx_blk).t() * dinvt * beta(idx_blk));
 			mm += ld_blk[kk].n_rows;
+			arma::mat dinvt = ld_blk[kk] + arma::diagmat(1.0 / psi.elem(idx_blk));
+			arma::mat dinvt_chol = arma::chol(dinvt);
+			arma::vec beta_tmp = arma::solve(arma::trimatl(dinvt_chol.t()), beta_mrg(idx_blk)) +
+			                     arma::randn<arma::vec>(ld_blk[kk].n_rows) * std::sqrt(sigma / n);
+			beta(idx_blk) = arma::solve(arma::trimatu(dinvt_chol), beta_tmp);
+			quad += arma::as_scalar(beta(idx_blk).t() * dinvt * beta(idx_blk));
 		}
 
 		double err = std::max(n / 2.0 * (1.0 - 2.0 * arma::dot(beta, beta_mrg) + quad),
@@ -255,6 +262,11 @@ std::map<std::string, arma::vec> prs_cs_mcmc(double a, double b, double* phi, co
 			delta(jj) = gsl_ran_gamma(rng, a + b, 1.0 / (psi(jj) + *phi));
 		}
 
+		// FIXME: psi can be so small (close to zero) as in the @example data demo which causes inf in dinvt and solve() to break
+		// This happens when beta are all very small and delta all very big
+		// std::cout << "sigma " << sigma << std::endl;
+		// std::cout << "beta " << beta << std::endl;
+		// std::cout << "delta " << delta << std::endl;
 		for (int jj = 0; jj < p; ++jj) {
 			psi(jj) = gigrnd(a - 0.5, 2.0 * delta(jj), n * std::pow(beta(jj), 2) / sigma);
 		}
