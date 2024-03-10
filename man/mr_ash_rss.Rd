@@ -108,4 +108,6 @@ out <- mr_ash_rss(b.hat, s.hat, R = R.hat, var_y = var_y, n = n,
                   mu1_init = rep(0, ncol(X)), tol = 1e-8, max_iter = 1e5,
                   update_w0 = TRUE, update_sigma = TRUE, compute_ELBO = TRUE,
                   standardize = FALSE)
+# In sample prediction correlations
+cor(X\%*\%out1$mu1, y) # 0.9984064
 }

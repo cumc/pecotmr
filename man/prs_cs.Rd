@@ -93,16 +93,10 @@ R.hat <- cor(X)
 var_y <- var(y)
 sigmasq_init <- 1.5
 
-# Run mr_ash_rss as a comparison
-out1 <- mr_ash_rss(b.hat, s.hat, R = R.hat, var_y = var_y, n = n,
-                  sigma2_e = sigmasq_init, s0 = sigma0, w0 = omega0,
-                  mu1_init = rep(0, ncol(X)), tol = 1e-8, max_iter = 1e5,
-                  update_w0 = TRUE, update_sigma = TRUE, compute_ELBO = TRUE,
-                  standardize = FALSE)
 # Run PRS CS
-sumstats <- cbind(b.hat, 0.5)
-colnames(sumstats) <- c("BETA", "MAF")
+sumstats <- list(BETA=b.hat, MAF=rep(0.5, length(b.hat)))
 LD <- list(blk1 = R.hat)
-out2 <- prs_cs(sumstats, LD, n, verbose = TRUE)
-
+out <- prs_cs(sumstats, LD, n, verbose = TRUE)
+# In sample prediction correlations
+cor(X\%*\%out$beta_est, y) # 0.9944553
 }
