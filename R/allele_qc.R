@@ -2,35 +2,37 @@
 #' @param variant_id A data frame or character vector representing variant IDs.
 #'   Expected formats are a data frame with columns "chrom", "pos", "A1", "A2",
 #'   or a character vector in "chr:pos:A2:A1" or "chr:pos_A2_A1" format.
-#' @return A data frame with columns "chrom", "pos", "A1", "A2", where 'chrom' 
+#' @return A data frame with columns "chrom", "pos", "A1", "A2", where 'chrom'
 #'   and 'pos' are integers, and 'A1' and 'A2' are allele identifiers.
 #' @noRd
 convert_to_dataframe <- function(variant_id) {
   # Check if target_variants is already a data.frame with the required columns
-  if (is.data.frame(variant_id)){
+  if (is.data.frame(variant_id)) {
     if (!all(c("chrom", "pos", "A1", "A2") %in% names(variant_id))) {
-        names(variant_id) <- c("chrom", "pos", "A2", "A1")
-      }
+      names(variant_id) <- c("chrom", "pos", "A2", "A1")
+    }
     # Ensure that 'chrom' values are integers
-    variant_id$chrom <- ifelse(grepl("^chr", variant_id$chrom), 
-                       as.integer(sub("^chr", "", variant_id$chrom)), # Remove 'chr' and convert to integer
-                       as.integer(variant_id$chrom))# Convert to integer if not already
+    variant_id$chrom <- ifelse(grepl("^chr", variant_id$chrom),
+      as.integer(sub("^chr", "", variant_id$chrom)), # Remove 'chr' and convert to integer
+      as.integer(variant_id$chrom)
+    ) # Convert to integer if not already
     variant_id$pos <- as.integer(variant_id$pos)
     return(variant_id)
   }
   # Function to split a string and create a data.frame
   create_dataframe <- function(string, pattern) {
     # If the pattern is for "chr:pos_ref_at", replace '_' with ':'
-    if(pattern == "colon_underscore") {
-        string <- gsub("_", ":", string)
+    if (pattern == "colon_underscore") {
+      string <- gsub("_", ":", string)
     }
     parts <- strsplit(string, ":", fixed = TRUE)
-    data <- data.frame(do.call(rbind, parts),stringsAsFactors = FALSE)
+    data <- data.frame(do.call(rbind, parts), stringsAsFactors = FALSE)
     colnames(data) <- c("chrom", "pos", "A2", "A1")
-    #Ensure that 'chrom' values are integers
-    data$chrom <- ifelse(grepl("^chr", data$chrom), 
-                       as.integer(sub("^chr", "", data$chrom)), # Remove 'chr' and convert to integer
-                       as.integer(data$chrom))# Convert to integer if not already 
+    # Ensure that 'chrom' values are integers
+    data$chrom <- ifelse(grepl("^chr", data$chrom),
+      as.integer(sub("^chr", "", data$chrom)), # Remove 'chr' and convert to integer
+      as.integer(data$chrom)
+    ) # Convert to integer if not already
     data$pos <- as.integer(data$pos)
     return(data)
   }
@@ -61,7 +63,7 @@ convert_to_dataframe <- function(variant_id) {
 #'   to be matched, otherwise stops with an error. Default is 20%.
 #' @param remove_dups Whether to remove duplicates, default is TRUE.
 #' @param remove_indels Whether to remove INDELs, default is FALSE.
-#' @param flip Whether the alleles must be flipped: A <--> T & C <--> G, in which case 
+#' @param flip Whether the alleles must be flipped: A <--> T & C <--> G, in which case
 #'   corresponding `col_to_flip` are multiplied by -1. Default is `TRUE`.
 #' @param remove_strand_ambiguous Whether to remove strand SNPs (if any). Default is `TRUE`.
 #' @return A single data frame with matched variants.
@@ -69,109 +71,110 @@ convert_to_dataframe <- function(variant_id) {
 #' @import tidyr
 #' @importFrom vctrs vec_duplicate_detect
 #' @export
-allele_qc <- function(target_variants, ref_variants, target_data, col_to_flip, 
-                      match.min.prop = 0.2, remove_dups = TRUE, flip = TRUE, 
+allele_qc <- function(target_variants, ref_variants, target_data, col_to_flip,
+                      match.min.prop = 0.2, remove_dups = TRUE, flip = TRUE,
                       remove_indels = FALSE, remove_strand_ambiguous = TRUE) {
-  
   target_variants <- convert_to_dataframe(target_variants)
   ref_variants <- convert_to_dataframe(ref_variants)
-  
+
   matched <- merge(target_variants, ref_variants, by = c("chrom", "pos"), all = FALSE, suffixes = c(".target", ".ref")) %>%
     as.data.frame() %>%
     mutate(variants_id_qced = paste(chrom, pos, A2.ref, A1.ref, sep = ":"))
-  
+
   matched_indices <- target_variants %>%
-                     mutate(index = row_number())%>%
-                     inner_join(matched, by = c("chrom" = "chrom", "pos" = "pos", "A1" = "A1.target", "A2" = "A2.target")) %>%
-                     filter(duplicated(.) | !duplicated(.))   # this will keep all rows, duplicates and non-duplicates alike
-  variants_id_qced = matched_indices %>% pull(variants_id_qced)
-  target_data_qced <- target_data[matched_indices$index, , drop = FALSE]%>%
-                      as.data.frame() %>%
-                      mutate(variant_id = variants_id_qced)
-  
+    mutate(index = row_number()) %>%
+    inner_join(matched, by = c("chrom" = "chrom", "pos" = "pos", "A1" = "A1.target", "A2" = "A2.target")) %>%
+    filter(duplicated(.) | !duplicated(.)) # this will keep all rows, duplicates and non-duplicates alike
+  variants_id_qced <- matched_indices %>% pull(variants_id_qced)
+  target_data_qced <- target_data[matched_indices$index, , drop = FALSE] %>%
+    as.data.frame() %>%
+    mutate(variant_id = variants_id_qced)
+
   a1 <- toupper(matched$A1.target)
   a2 <- toupper(matched$A2.target)
   ref1 <- toupper(matched$A1.ref)
   ref2 <- toupper(matched$A2.ref)
-    
-    strand_flip <- function(ref) {
-      # Define a mapping for complementary bases
-      base_mapping <- c("A" = "T", "T" = "A", "G" = "C", "C" = "G")
 
-      # Function to complement a single base
-      complement_base <- function(base) {
-        complement <- base_mapping[base]
-        return(complement)
-      }
+  strand_flip <- function(ref) {
+    # Define a mapping for complementary bases
+    base_mapping <- c("A" = "T", "T" = "A", "G" = "C", "C" = "G")
 
-      # Function to reverse and complement a DNA sequence
-      reverse_complement <- function(sequence) {
-        reversed <- rev(strsplit(sequence, NULL)[[1]])
-        complemented <- sapply(reversed, complement_base, USE.NAMES = FALSE)
-        return(paste(complemented, collapse = ""))
-      }
-
-      complemented_sequence <- sapply(ref, reverse_complement, USE.NAMES = FALSE)
-
-      return(complemented_sequence)
+    # Function to complement a single base
+    complement_base <- function(base) {
+      complement <- base_mapping[base]
+      return(complement)
     }
 
-    flip1 <- strand_flip(ref1)
-    flip2 <- strand_flip(ref2)
-    remove_strand_ambiguous = TRUE
-    snp <- list()
-
-    if (remove_strand_ambiguous) {
-      strand_unambiguous <- !((a1 == "A" & a2 == "T") | (a1 == "T" & a2 == "A") | 
-                               (a1 == "C" & a2 == "G") | (a1 == "G" & a2 == "C"))
-    } else {
-      strand_unambiguous <- rep(TRUE, length(a1))
+    # Function to reverse and complement a DNA sequence
+    reverse_complement <- function(sequence) {
+      reversed <- rev(strsplit(sequence, NULL)[[1]])
+      complemented <- sapply(reversed, complement_base, USE.NAMES = FALSE)
+      return(paste(complemented, collapse = ""))
     }
 
-    snp[["keep"]] <- strand_unambiguous
+    complemented_sequence <- sapply(ref, reverse_complement, USE.NAMES = FALSE)
 
-    # Remove non-ATCG coding
-    check_ATCG <- function(vec) {
-      pattern <- "^[ATCGDI]+$"
+    return(complemented_sequence)
+  }
 
-      # Function to check if a single element matches the pattern
-      check_element <- function(element) {
-        grepl(pattern, element)
-      }
+  flip1 <- strand_flip(ref1)
+  flip2 <- strand_flip(ref2)
+  remove_strand_ambiguous <- TRUE
+  snp <- list()
 
-      result <- sapply(vec, check_element, USE.NAMES = FALSE)
-      return(result)
+  if (remove_strand_ambiguous) {
+    strand_unambiguous <- !((a1 == "A" & a2 == "T") | (a1 == "T" & a2 == "A") |
+      (a1 == "C" & a2 == "G") | (a1 == "G" & a2 == "C"))
+  } else {
+    strand_unambiguous <- rep(TRUE, length(a1))
+  }
+
+  snp[["keep"]] <- strand_unambiguous
+
+  # Remove non-ATCG coding
+  check_ATCG <- function(vec) {
+    pattern <- "^[ATCGDI]+$"
+
+    # Function to check if a single element matches the pattern
+    check_element <- function(element) {
+      grepl(pattern, element)
     }
 
-    non_ATCG <- !(check_ATCG(a1) & check_ATCG(a2))
+    result <- sapply(vec, check_element, USE.NAMES = FALSE)
+    return(result)
+  }
 
-    
+  non_ATCG <- !(check_ATCG(a1) & check_ATCG(a2))
+
+
   snp[["keep"]][non_ATCG] <- FALSE
   snp[["sign_flip"]] <- ((a1 == ref2 & a2 == ref1) | (a1 == flip2 & a2 == flip1)) & (a1 != ref1 & a2 != ref2)
   snp[["strand_flip"]] <- ((a1 == flip1 & a2 == flip2) | (a1 == flip2 & a2 == flip1)) & (a1 != ref1 & a2 != ref2)
   snp[["INDEL"]] <- (a2 == "I" | a2 == "D" | nchar(a2) > 1 | nchar(a1) > 1)
   exact_match <- (a1 == ref1 & a2 == ref2)
   ID_match <- ((a2 == "D" | a2 == "I") & (nchar(ref1) > 1 | nchar(ref2) > 1))
-    
+
   snp[["keep"]][!(exact_match | snp[["sign_flip"]] | snp[["strand_flip"]] | ID_match)] <- FALSE
 
   if (!any(snp[["strand_flip"]][which(strand_unambiguous)])) {
     # we conclude that strand flip does not exists in the data at all
     # so we can bring back those previous marked to drop because of strand ambiguous
     snp[["keep"]][which(!strand_unambiguous)] <- TRUE
-    snp[["keep"]][!(exact_match | snp[["sign_flip"]] | ID_match )] <- FALSE
+    snp[["keep"]][!(exact_match | snp[["sign_flip"]] | ID_match)] <- FALSE
   }
-    
+
   if (remove_indels) {
     snp[["keep"]][snp[["INDEL"]]] <- FALSE
   }
 
   qc_summary <- matched %>%
-    mutate(keep = snp[["keep"]],
-           sign_flip = snp[["sign_flip"]],
-           strand_flip = snp[["strand_flip"]],
-            indel = snp[["INDEL"]])
-  
+    mutate(
+      keep = snp[["keep"]],
+      sign_flip = snp[["sign_flip"]],
+      strand_flip = snp[["strand_flip"]],
+      indel = snp[["INDEL"]]
+    )
+
   # Apply allele flip if required
   if (flip) {
     if (!is.null(target_data_qced[, col_to_flip])) {
@@ -180,25 +183,28 @@ allele_qc <- function(target_variants, ref_variants, target_data, col_to_flip,
       stop("Column '", col_to_flip, "' not found in target_data.")
     }
   }
- 
+
   # Keep SNPs based on the 'keep' flag
-  target_data_qced <- target_data_qced[qc_summary$keep, ,drop=FALSE]
-  
+  target_data_qced <- target_data_qced[qc_summary$keep, , drop = FALSE]
+
   # Remove duplicates if specified
   if (remove_dups) {
     dups <- vec_duplicate_detect(qc_summary[, c("chrom", "pos", "A1.target", "A2.target")])
     if (any(dups)) {
-      target_data_qced <- target_data_qced[!dups, ,drop=FALSE]
+      target_data_qced <- target_data_qced[!dups, , drop = FALSE]
       message("Some duplicates were removed.")
     }
   }
-  
+
   # Check if the minimum proportion of variants is matched
   min_match <- match.min.prop * min(nrow(target_variants), nrow(ref_variants))
   if (nrow(target_data_qced) < min_match) {
     stop("Not enough variants have been matched.")
   }
-    # change A1 and A2 so that it can fit the reference, and rearrange the columns so that the four are at the very front
-    target_data_qced = target_data_qced %>% tidyr::separate(variant_id, into = c("chrom", "pos", "A2", "A1"), sep = ":", remove = FALSE) %>% select(chrom, pos, A1, A2, everything()) %>% mutate(chrom = as.integer(chrom), pos = as.integer(pos))
+  # change A1 and A2 so that it can fit the reference, and rearrange the columns so that the four are at the very front
+  target_data_qced <- target_data_qced %>%
+    tidyr::separate(variant_id, into = c("chrom", "pos", "A2", "A1"), sep = ":", remove = FALSE) %>%
+    select(chrom, pos, A1, A2, everything()) %>%
+    mutate(chrom = as.integer(chrom), pos = as.integer(pos))
   return(list(target_data_qced = target_data_qced, qc_summary = qc_summary))
 }

@@ -32,6 +32,55 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// rcpp_mr_ash_rss
+List rcpp_mr_ash_rss(const NumericVector& bhat, const NumericVector& shat, const NumericVector& z, const NumericMatrix& R, double var_y, int n, double sigma2_e, const NumericVector& s0, const NumericVector& w0, const NumericVector& mu1_init, double tol, int max_iter, bool update_w0, bool update_sigma, bool compute_ELBO, bool standardize, int ncpus);
+RcppExport SEXP _pecotmr_rcpp_mr_ash_rss(SEXP bhatSEXP, SEXP shatSEXP, SEXP zSEXP, SEXP RSEXP, SEXP var_ySEXP, SEXP nSEXP, SEXP sigma2_eSEXP, SEXP s0SEXP, SEXP w0SEXP, SEXP mu1_initSEXP, SEXP tolSEXP, SEXP max_iterSEXP, SEXP update_w0SEXP, SEXP update_sigmaSEXP, SEXP compute_ELBOSEXP, SEXP standardizeSEXP, SEXP ncpusSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< const NumericVector& >::type bhat(bhatSEXP);
+    Rcpp::traits::input_parameter< const NumericVector& >::type shat(shatSEXP);
+    Rcpp::traits::input_parameter< const NumericVector& >::type z(zSEXP);
+    Rcpp::traits::input_parameter< const NumericMatrix& >::type R(RSEXP);
+    Rcpp::traits::input_parameter< double >::type var_y(var_ySEXP);
+    Rcpp::traits::input_parameter< int >::type n(nSEXP);
+    Rcpp::traits::input_parameter< double >::type sigma2_e(sigma2_eSEXP);
+    Rcpp::traits::input_parameter< const NumericVector& >::type s0(s0SEXP);
+    Rcpp::traits::input_parameter< const NumericVector& >::type w0(w0SEXP);
+    Rcpp::traits::input_parameter< const NumericVector& >::type mu1_init(mu1_initSEXP);
+    Rcpp::traits::input_parameter< double >::type tol(tolSEXP);
+    Rcpp::traits::input_parameter< int >::type max_iter(max_iterSEXP);
+    Rcpp::traits::input_parameter< bool >::type update_w0(update_w0SEXP);
+    Rcpp::traits::input_parameter< bool >::type update_sigma(update_sigmaSEXP);
+    Rcpp::traits::input_parameter< bool >::type compute_ELBO(compute_ELBOSEXP);
+    Rcpp::traits::input_parameter< bool >::type standardize(standardizeSEXP);
+    Rcpp::traits::input_parameter< int >::type ncpus(ncpusSEXP);
+    rcpp_result_gen = Rcpp::wrap(rcpp_mr_ash_rss(bhat, shat, z, R, var_y, n, sigma2_e, s0, w0, mu1_init, tol, max_iter, update_w0, update_sigma, compute_ELBO, standardize, ncpus));
+    return rcpp_result_gen;
+END_RCPP
+}
+// prs_cs_rcpp
+Rcpp::List prs_cs_rcpp(double a, double b, Rcpp::Nullable<double> phi, Rcpp::NumericVector bhat, Rcpp::Nullable<Rcpp::NumericVector> maf, int n, Rcpp::List ld_blk, int n_iter, int n_burnin, int thin, bool verbose, Rcpp::Nullable<unsigned int> seed);
+RcppExport SEXP _pecotmr_prs_cs_rcpp(SEXP aSEXP, SEXP bSEXP, SEXP phiSEXP, SEXP bhatSEXP, SEXP mafSEXP, SEXP nSEXP, SEXP ld_blkSEXP, SEXP n_iterSEXP, SEXP n_burninSEXP, SEXP thinSEXP, SEXP verboseSEXP, SEXP seedSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< double >::type a(aSEXP);
+    Rcpp::traits::input_parameter< double >::type b(bSEXP);
+    Rcpp::traits::input_parameter< Rcpp::Nullable<double> >::type phi(phiSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type bhat(bhatSEXP);
+    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::NumericVector> >::type maf(mafSEXP);
+    Rcpp::traits::input_parameter< int >::type n(nSEXP);
+    Rcpp::traits::input_parameter< Rcpp::List >::type ld_blk(ld_blkSEXP);
+    Rcpp::traits::input_parameter< int >::type n_iter(n_iterSEXP);
+    Rcpp::traits::input_parameter< int >::type n_burnin(n_burninSEXP);
+    Rcpp::traits::input_parameter< int >::type thin(thinSEXP);
+    Rcpp::traits::input_parameter< bool >::type verbose(verboseSEXP);
+    Rcpp::traits::input_parameter< Rcpp::Nullable<unsigned int> >::type seed(seedSEXP);
+    rcpp_result_gen = Rcpp::wrap(prs_cs_rcpp(a, b, phi, bhat, maf, n, ld_blk, n_iter, n_burnin, thin, verbose, seed));
+    return rcpp_result_gen;
+END_RCPP
+}
 // qtl_enrichment_rcpp
 Rcpp::List qtl_enrichment_rcpp(SEXP r_gwas_pip, SEXP r_qtl_susie_fit, double pi_gwas, double pi_qtl, int ImpN, double shrinkage_lambda, int num_threads);
 RcppExport SEXP _pecotmr_qtl_enrichment_rcpp(SEXP r_gwas_pipSEXP, SEXP r_qtl_susie_fitSEXP, SEXP pi_gwasSEXP, SEXP pi_qtlSEXP, SEXP ImpNSEXP, SEXP shrinkage_lambdaSEXP, SEXP num_threadsSEXP) {
@@ -52,6 +101,8 @@ END_RCPP
 
 static const R_CallMethodDef CallEntries[] = {
     {"_pecotmr_dentist_rcpp", (DL_FUNC) &_pecotmr_dentist_rcpp, 10},
+    {"_pecotmr_rcpp_mr_ash_rss", (DL_FUNC) &_pecotmr_rcpp_mr_ash_rss, 17},
+    {"_pecotmr_prs_cs_rcpp", (DL_FUNC) &_pecotmr_prs_cs_rcpp, 12},
     {"_pecotmr_qtl_enrichment_rcpp", (DL_FUNC) &_pecotmr_qtl_enrichment_rcpp, 7},
     {NULL, NULL, 0}
 };

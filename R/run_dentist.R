@@ -39,9 +39,9 @@
 #' }
 #'
 #' @export
-dentist <- function(zScore, LDmat, nSample, 
-                        pValueThreshold = 5e-8, propSVD = 0.4, gcControl = FALSE,
-                        nIter = 10, gPvalueThreshold = 0.05, ncpus = 1, seed = 999) {
+dentist <- function(zScore, LDmat, nSample,
+                    pValueThreshold = 5e-8, propSVD = 0.4, gcControl = FALSE,
+                    nIter = 10, gPvalueThreshold = 0.05, ncpus = 1, seed = 999) {
   # Check that LDmat dimensions match the length of zScore
   if (!is.matrix(LDmat) || nrow(LDmat) != ncol(LDmat) || nrow(LDmat) != length(zScore)) {
     stop("LDmat must be a square matrix with dimensions equal to the length of zScore.")
@@ -58,11 +58,16 @@ dentist <- function(zScore, LDmat, nSample,
     invokeRestart("muffleWarning")
   }
 
-  results <- tryCatch({
-    dentist_rcpp(LDmat, nSample, zScore,
-                 pValueThreshold, propSVD, gcControl, nIter,
-                 gPvalueThreshold, ncpus, seed)
-  }, warning = warning_handler)
+  results <- tryCatch(
+    {
+      dentist_rcpp(
+        LDmat, nSample, zScore,
+        pValueThreshold, propSVD, gcControl, nIter,
+        gPvalueThreshold, ncpus, seed
+      )
+    },
+    warning = warning_handler
+  )
   results <- as.data.frame(results)
   results$original_z <- zScore
   return(results)

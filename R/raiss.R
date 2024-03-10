@@ -23,17 +23,17 @@
 #' # result <- raiss(ref_panel, known_zscores, LD_matrix, lamb = 0.01, rcond = 0.01, R2_threshold = 0.6, minimum_ld = 5)
 raiss <- function(ref_panel, known_zscores, LD_matrix, lamb = 0.01, rcond = 0.01, R2_threshold = 0.6, minimum_ld = 5) {
   # Check that ref_panel and known_zscores are both increasing in terms of pos
-  if (is.unsorted(ref_panel$pos)|| is.unsorted(known_zscores$pos)) {
+  if (is.unsorted(ref_panel$pos) || is.unsorted(known_zscores$pos)) {
     stop("ref_panel and known_zscores must be in increasing order of pos.")
   }
 
   # Define knowns and unknowns
-    knowns_id = intersect(known_zscores$variant_id, ref_panel$variant_id)
-    knowns =which(ref_panel$variant_id %in% knowns_id)
-    unknowns = which(!ref_panel$variant_id %in% knowns_id)
-    if(is.data.frame(LD_matrix)){
-        LD_matrix = as.matrix(LD_matrix)
-    }
+  knowns_id <- intersect(known_zscores$variant_id, ref_panel$variant_id)
+  knowns <- which(ref_panel$variant_id %in% knowns_id)
+  unknowns <- which(!ref_panel$variant_id %in% knowns_id)
+  if (is.data.frame(LD_matrix)) {
+    LD_matrix <- as.matrix(LD_matrix)
+  }
   # Extract zt, sig_t, and sig_i_t
   zt <- known_zscores$z
   sig_t <- LD_matrix[knowns, knowns, drop = FALSE]
@@ -50,8 +50,8 @@ raiss <- function(ref_panel, known_zscores, LD_matrix, lamb = 0.01, rcond = 0.01
 
   # Merge with known z-scores
   result_nofilter <- merge_raiss_df(results$zscores_nofilter, known_zscores) %>% arrange(pos)
-  result_filter <- merge_raiss_df(results$zscores, known_zscores)%>% arrange(pos)
-  results = list(result_nofilter = result_nofilter, result_filter  = result_filter )
+  result_filter <- merge_raiss_df(results$zscores, known_zscores) %>% arrange(pos)
+  results <- list(result_nofilter = result_nofilter, result_filter = result_filter)
   return(results)
 }
 
@@ -66,17 +66,16 @@ raiss <- function(ref_panel, known_zscores, LD_matrix, lamb = 0.01, rcond = 0.01
 #' @return A list containing the variance 'var', estimation 'mu', LD score 'raiss_ld_score',
 #'         condition number 'condition_number', and correctness of inversion
 #'         'correct_inversion'.
-raiss_model <- function(zt, sig_t, sig_i_t, lamb=0.01, rcond=0.01, batch=TRUE, report_condition_number=FALSE) {
+raiss_model <- function(zt, sig_t, sig_i_t, lamb = 0.01, rcond = 0.01, batch = TRUE, report_condition_number = FALSE) {
   sig_t_inv <- invert_mat_recursive(sig_t, lamb, rcond)
   if (!is.numeric(zt) || !is.numeric(sig_t) || !is.numeric(sig_i_t)) {
     stop("zt, sig_t, and sig_i_t must be numeric.")
   }
   if (batch) {
-    
-    condition_number <- if(report_condition_number) rep(kappa(sig_t, exact=T, norm="2"), nrow(sig_i_t)) else NA
+    condition_number <- if (report_condition_number) rep(kappa(sig_t, exact = T, norm = "2"), nrow(sig_i_t)) else NA
     correct_inversion <- rep(check_inversion(sig_t, sig_t_inv), nrow(sig_i_t))
   } else {
-    condition_number <- if(report_condition_number) kappa(sig_t, exact=T, norm="2") else NA
+    condition_number <- if (report_condition_number) kappa(sig_t, exact = T, norm = "2") else NA
     correct_inversion <- check_inversion(sig_t, sig_t_inv)
   }
 
@@ -90,18 +89,18 @@ raiss_model <- function(zt, sig_t, sig_i_t, lamb=0.01, rcond=0.01, batch=TRUE, r
   R2 <- ((1 + lamb) - var_norm)
   mu <- mu / sqrt(R2)
 
-  return(list(var=var_norm, mu=mu, raiss_ld_score=raiss_ld_score, condition_number=condition_number, correct_inversion=correct_inversion))
+  return(list(var = var_norm, mu = mu, raiss_ld_score = raiss_ld_score, condition_number = condition_number, correct_inversion = correct_inversion))
 }
 
 #' @param imp is the output of raiss_model()
 #' @param ref_panel is a data frame with columns 'chrom', 'pos', 'variant_id', 'ref', and 'alt'.
 format_raiss_df <- function(imp, ref_panel, unknowns) {
   result_df <- data.frame(
-    chrom = ref_panel[unknowns, 'chrom'],
-    pos = ref_panel[unknowns, 'pos'],
-    variant_id = ref_panel[unknowns, 'variant_id'],
-    A1 = ref_panel[unknowns, 'A1'],
-    A2 = ref_panel[unknowns, 'A2'],
+    chrom = ref_panel[unknowns, "chrom"],
+    pos = ref_panel[unknowns, "pos"],
+    variant_id = ref_panel[unknowns, "variant_id"],
+    A1 = ref_panel[unknowns, "A1"],
+    A2 = ref_panel[unknowns, "A2"],
     z = imp$mu,
     Var = imp$var,
     raiss_ld_score = imp$raiss_ld_score,
@@ -110,8 +109,10 @@ format_raiss_df <- function(imp, ref_panel, unknowns) {
   )
 
   # Specify the column order
-  column_order <- c('chrom', 'pos', 'variant_id', "A1", "A2", 'z', 'Var', 'raiss_ld_score', 'condition_number', 
-                    'correct_inversion')
+  column_order <- c(
+    "chrom", "pos", "variant_id", "A1", "A2", "z", "Var", "raiss_ld_score", "condition_number",
+    "correct_inversion"
+  )
 
   # Reorder the columns
   result_df <- result_df[, column_order]
@@ -135,13 +136,13 @@ merge_raiss_df <- function(raiss_df, known_zscores) {
 
   # Remove the extra columns resulted from the merge (e.g., z.x, z.y)
   merged_df <- merged_df[, !colnames(merged_df) %in% c("z.x", "z.y")]
-  merged_df = arrange(merged_df, pos)
+  merged_df <- arrange(merged_df, pos)
   return(merged_df)
 }
 
 filter_raiss_output <- function(zscores, R2_threshold = 0.6, minimum_ld = 5) {
   # Reset the index and subset the data frame
-  zscores <- zscores[, c('chrom', 'pos', 'variant_id', 'A1', 'A2', 'z', 'Var', 'raiss_ld_score')]
+  zscores <- zscores[, c("chrom", "pos", "variant_id", "A1", "A2", "z", "Var", "raiss_ld_score")]
   zscores$raiss_R2 <- 1 - zscores$Var
 
   # Count statistics before filtering
@@ -152,7 +153,7 @@ filter_raiss_output <- function(zscores, R2_threshold = 0.6, minimum_ld = 5) {
   NSNPs_R2_filt <- sum(zscores$raiss_R2 < R2_threshold)
 
   # Apply filters
-  zscores_nofilter = zscores
+  zscores_nofilter <- zscores
   zscores <- zscores[zscores$raiss_R2 > R2_threshold & zscores$raiss_ld_score >= minimum_ld, ]
   NSNPs_af_filt <- nrow(zscores)
 
@@ -165,14 +166,14 @@ filter_raiss_output <- function(zscores, R2_threshold = 0.6, minimum_ld = 5) {
   cat("filtered because of ld:", NSNPs_ld_filt, "\n")
   cat("filtered because of R2:", NSNPs_R2_filt, "\n")
   cat("after filter:", NSNPs_af_filt, "\n")
-  return(zscore_list = list(zscores_nofilter =zscores_nofilter, zscores = zscores))
+  return(zscore_list = list(zscores_nofilter = zscores_nofilter, zscores = zscores))
 }
 
 compute_mu <- function(sig_i_t, sig_t_inv, zt) {
   return(sig_i_t %*% (sig_t_inv %*% zt))
 }
 
-compute_var <- function(sig_i_t, sig_t_inv, lamb, batch=TRUE) {
+compute_var <- function(sig_i_t, sig_t_inv, lamb, batch = TRUE) {
   if (batch) {
     var <- (1 + lamb) - rowSums((sig_i_t %*% sig_t_inv) * sig_i_t)
     raiss_ld_score <- rowSums(sig_i_t^2)
@@ -180,11 +181,11 @@ compute_var <- function(sig_i_t, sig_t_inv, lamb, batch=TRUE) {
     var <- (1 + lamb) - (sig_i_t %*% (sig_t_inv %*% t(sig_i_t)))
     raiss_ld_score <- sum(sig_i_t^2)
   }
-  return(list(var=var, raiss_ld_score=raiss_ld_score))
+  return(list(var = var, raiss_ld_score = raiss_ld_score))
 }
 
 check_inversion <- function(sig_t, sig_t_inv) {
-  return(all.equal(sig_t, sig_t %*% (sig_t_inv %*% sig_t), tolerance=1e-5))
+  return(all.equal(sig_t, sig_t %*% (sig_t_inv %*% sig_t), tolerance = 1e-5))
 }
 
 var_in_boundaries <- function(var, lamb) {
@@ -194,44 +195,49 @@ var_in_boundaries <- function(var, lamb) {
 }
 
 invert_mat <- function(mat, lamb, rcond) {
-  tryCatch({
-    # Modify the diagonal elements of mat
-    diag(mat) <- 1 + lamb
-    # Compute the pseudo-inverse
-    mat_inv <- MASS::ginv(mat, tol = rcond)
-    return(mat_inv)
-  }, error = function(e) {
-    # Second attempt with updated lamb and rcond in case of an error
-    diag(mat) <- 1 + lamb * 1.1
-    mat_inv <- MASS::ginv(mat, tol = rcond * 1.1)
-    return(mat_inv)
-  })
+  tryCatch(
+    {
+      # Modify the diagonal elements of mat
+      diag(mat) <- 1 + lamb
+      # Compute the pseudo-inverse
+      mat_inv <- MASS::ginv(mat, tol = rcond)
+      return(mat_inv)
+    },
+    error = function(e) {
+      # Second attempt with updated lamb and rcond in case of an error
+      diag(mat) <- 1 + lamb * 1.1
+      mat_inv <- MASS::ginv(mat, tol = rcond * 1.1)
+      return(mat_inv)
+    }
+  )
 }
 
 invert_mat_recursive <- function(mat, lamb, rcond) {
-  tryCatch({
-    # Modify the diagonal elements of mat
-    diag(mat) <- 1 + lamb
-    # Compute the pseudo-inverse
-    mat_inv <- MASS::ginv(mat, tol = rcond)
-    return(mat_inv)
-  }, error = function(e) {
-    # Recursive call with updated lamb and rcond in case of an error
-    invert_mat(mat, lamb * 1.1, rcond * 1.1)
-  })
+  tryCatch(
+    {
+      # Modify the diagonal elements of mat
+      diag(mat) <- 1 + lamb
+      # Compute the pseudo-inverse
+      mat_inv <- MASS::ginv(mat, tol = rcond)
+      return(mat_inv)
+    },
+    error = function(e) {
+      # Recursive call with updated lamb and rcond in case of an error
+      invert_mat(mat, lamb * 1.1, rcond * 1.1)
+    }
+  )
 }
 
 invert_mat_eigen <- function(mat, tol = 1e-3) {
-    
-    eigen_mat <- eigen(mat)
-    L <- which(cumsum(eigen_mat$values) / sum(eigen_mat$values) > 1-tol)[1]
-    if (is.na(L)) {
-      # all eigen values are extremely small
-      stop("Cannot invert the input matrix because all its eigen values are negative or close to zero")
-    }
-    mat_inv <- eigen_mat$vectors[,1:L] %*% 
-        diag(1/eigen_mat$values[1:L]) %*% 
-        t(eigen_mat$vectors[,1:L])
-    
-    return(mat_inv)
+  eigen_mat <- eigen(mat)
+  L <- which(cumsum(eigen_mat$values) / sum(eigen_mat$values) > 1 - tol)[1]
+  if (is.na(L)) {
+    # all eigen values are extremely small
+    stop("Cannot invert the input matrix because all its eigen values are negative or close to zero")
+  }
+  mat_inv <- eigen_mat$vectors[, 1:L] %*%
+    diag(1 / eigen_mat$values[1:L]) %*%
+    t(eigen_mat$vectors[, 1:L])
+
+  return(mat_inv)
 }

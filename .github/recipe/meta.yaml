@@ -24,7 +24,7 @@ requirements:
   host:
     - bioconductor-qvalue
     - r-bedtoolsr
-    - r-base=4.2
+    - r-base>=4.2
     - r-coloc
     - r-data.table
     - r-domc
@@ -41,15 +41,15 @@ requirements:
     - r-matrixstats
     - r-mr.ash.alpha
     - r-mr.mash.alpha
+    - r-mvsusier
+    - r-udr
     - r-fsusier
     - r-pgenlibr
-    - r-plink2r
     - bioconductor-snpstats
     - r-furrr
     - r-purrr
     - r-rcpp
     - r-readr
-    - r-reticulate
     - r-rfast
     - r-rlab
     - r-stringr
@@ -76,15 +76,15 @@ requirements:
     - r-matrixstats
     - r-mr.ash.alpha
     - r-mr.mash.alpha
+    - r-mvsusier
+    - r-udr
     - r-fsusier
     - r-pgenlibr
-    - r-plink2r
     - bioconductor-snpstats
     - r-furrr
     - r-purrr
     - r-rcpp
     - r-readr
-    - r-reticulate
     - r-rfast
     - r-rlab
     - r-stringr
@@ -97,7 +97,7 @@ test:
     - $R -e "library('{{ name }}')"
 
 about:
-  home: https://github.com/stephenslab/mvsusier
+  home: https://github.com/cumc/pecotmr
   license: GPL-3.0-or-later
   license_file: LICENSE
   summary: pecotmr implements pair-wise enrichment, colocalization, TWAS and Mendelian Randomization to integrate QTL and GWAS analysis based on a fine-mapped single effects model.
