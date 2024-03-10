@@ -171,13 +171,13 @@ def mcmc(a, b, phi, sst_dict, n, ld_blk, blk_size, n_iter, n_burnin, thin, chrom
                 quad += np.dot(np.dot(beta[idx_blk].T, dinvt), beta[idx_blk])
                 mm += blk_size[kk]
                 #print("dinvt", dinvt)
-                print("dinvt_chol", dinvt_chol)
-                print("beta_tmp", beta_tmp)
-                print("quad", quad)
+                #print("dinvt_chol", dinvt_chol)
+                #print("beta_tmp", beta_tmp)
+                #print("quad", quad)
                 #print("idx_blk", idx_blk)
                 #print("psi", psi)
                 #print("LD", ld_blk[kk])
-        print("beta", beta)
+        #print("beta", beta)
         err = max(n/2.0*(1.0-2.0*sum(beta*beta_mrg)+quad), n/2.0*sum(beta**2/psi))
         sigma = 1.0/random.gamma((n+p)/2.0, 1.0/err)
         #print(sigma)
@@ -226,6 +226,7 @@ def mcmc(a, b, phi, sst_dict, n, ld_blk, blk_size, n_iter, n_burnin, thin, chrom
         print('... Estimated global shrinkage parameter: %1.2e ...' % phi_est )
 
     print('... Done ...')
+    print(beta_est)
 
 
 
@@ -247,4 +248,40 @@ print(blk_size)
 
 res = mcmc(1,0.5,None, sst_dict,350, ld_blk, blk_size,
             1000, 500,5, 1, "./",False, False, None)
+
+
+#python run_prs_cs_test.py 
+#... MCMC ...
+#/home/gw/GIT/software/pecotmr/inst/prototype/run_prs_cs_test.py:42: DeprecationWarning: Conversion of an array with ndim > 0 to a scalar is deprecated, and will error in future. Ensure you extract a single element from your array before performing this operation. (Deprecated NumPy 1.25.)
+#  p = float(p); a = float(a); b = float(b)
+#--- iter-100 ---
+#--- iter-200 ---
+#--- iter-300 ---
+#--- iter-400 ---
+#--- iter-500 ---
+#--- iter-600 ---
+#--- iter-700 ---
+#--- iter-800 ---
+#--- iter-900 ---
+#--- iter-1000 ---
+#/home/gw/GIT/software/pecotmr/inst/prototype/run_prs_cs_test.py:226: DeprecationWarning: Conversion of an array with ndim > 0 to a scalar is deprecated, and will error in future. Ensure you extract a single element from your array before performing this operation. (Deprecated NumPy 1.25.)
+#  print('... Estimated global shrinkage parameter: %1.2e ...' % phi_est )
+#... Estimated global shrinkage parameter: 4.17e-01 ...
+#... Done ...
+#[[ 0.08410789]
+# [ 0.74511205]
+# [-1.18767133]
+# [ 0.77778277]
+# [-0.52743742]
+# [-0.55978771]
+# [-1.10077025]
+# [ 1.26027262]
+# [ 1.43920873]
+# [-1.26155271]
+# [-0.51717922]
+# [ 4.3908392 ]
+# [-0.32931302]
+# [-1.39188668]
+# [ 0.53230795]
+# [-0.13282161]]
 

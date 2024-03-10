@@ -12,8 +12,7 @@
 #include <cmath>
 #include <map>
 #include <iomanip>
-#include <gsl/gsl_randist.h>
-#include <gsl/gsl_cdf.h>
+#include <random>
 
 /**
  * @brief Evaluate the function psi(x, alpha, lambda).
@@ -69,7 +68,7 @@ double g(double x, double sd, double td, double f1, double f2) {
  * @param b Scale parameter.
  * @return Random variate from the generalized inverse Gaussian distribution.
  */
-double gigrnd(double p, double a, double b) {
+double gigrnd(double p, double a, double b, std::mt19937& rng) {
 	double lambda = p;
 	double omega = std::sqrt(a * b);
 	bool swap = false;
@@ -122,8 +121,6 @@ double gigrnd(double p, double a, double b) {
 		}
 	}
 
-
-
 	double eta = -fpsi(t, alpha, lambda);
 	double zeta = -fdpsi(t, alpha, lambda);
 	double theta = -fpsi(-s, alpha, lambda);
@@ -136,12 +133,12 @@ double gigrnd(double p, double a, double b) {
 	double sd = s - p_r * theta;
 	double q = td + sd;
 
-	gsl_rng* rng = gsl_rng_alloc(gsl_rng_mt19937);
+	std::uniform_real_distribution<double> unif_dist(0.0, 1.0);
 	double rnd = 0.0;
 	while (true) {
-		double U = gsl_rng_uniform(rng);
-		double V = gsl_rng_uniform(rng);
-		double W = gsl_rng_uniform(rng);
+		double U = unif_dist(rng);
+		double V = unif_dist(rng);
+		double W = unif_dist(rng);
 
 		if (U < q / (p_r + q + r)) {
 			rnd = -sd + q * V;
@@ -158,8 +155,6 @@ double gigrnd(double p, double a, double b) {
 			break;
 		}
 	}
-
-	gsl_rng_free(rng);
 
 	rnd = std::exp(rnd) * (lambda / omega + std::sqrt(1.0 + std::pow(lambda / omega, 2)));
 
@@ -200,24 +195,23 @@ double gigrnd(double p, double a, double b) {
 std::map<std::string, arma::vec> prs_cs_mcmc(double a, double b, double* phi, const std::vector<std::vector<double> >& sumstats,
                                              int n, const std::vector<arma::mat>& ld_blk,
                                              int n_iter, int n_burnin, int thin,
-                                             bool beta_std, bool verbose, int* seed) {
+                                             bool beta_std, bool verbose, unsigned int seed) {
 	if (verbose) {
 		std::cout << "Running Markov Chain Monte Carlo (MCMC) sampler..." << std::endl;
 	}
 
-	// Seed the random number generator
-	gsl_rng* rng = gsl_rng_alloc(gsl_rng_mt19937);
-	if (seed != nullptr) {
-		gsl_rng_set(rng, *seed);
-	}
-
 	// Derived statistics
 	arma::vec beta_mrg(sumstats[0]);
+	// std::cout << "beta_mrg " << beta_mrg << std::endl;
 	arma::vec maf(sumstats[1]);
 	int n_pst = (n_iter - n_burnin) / thin;
 	int p = beta_mrg.n_elem;
 
 	// Initialization
+	std::mt19937 rng(seed);
+	std::normal_distribution<double> normal_dist(0.0, 1.0);
+	std::gamma_distribution<double> gamma_dist_sigma((n + p) / 2.0, 1.0);
+
 	arma::vec beta(p, arma::fill::zeros);
 	arma::vec psi(p, arma::fill::ones);
 	double sigma = 1.0;
@@ -247,50 +241,43 @@ std::map<std::string, arma::vec> prs_cs_mcmc(double a, double b, double* phi, co
 			arma::uvec idx_blk = arma::regspace<arma::uvec>(mm, mm + ld_blk[kk].n_rows - 1);
 			mm += ld_blk[kk].n_rows;
 
-			//std::cout << psi << std::endl;
-			//std::cout << idx_blk << std::endl;
-			//std::cout << ld_blk[kk] << std::endl;
-
 			arma::mat dinvt = ld_blk[kk] + arma::diagmat(1.0 / psi.elem(idx_blk));
-			//std::cout << "dinvt " << dinvt << std::endl;
 
 			arma::mat dinvt_chol = arma::chol(dinvt);
 
-			//std::cout << "dinvt chol " << dinvt_chol << std::endl;
-
 			arma::vec beta_tmp = arma::solve(arma::trimatl(dinvt_chol.t()), beta_mrg(idx_blk)) +
 			                     arma::vec(ld_blk[kk].n_rows).transform([&](double) {
-				return gsl_ran_gaussian(rng, 1.0);
+				return normal_dist(rng);
 			}) * std::sqrt(sigma / n);
-			std::cout << "beta_tmp " << beta_tmp << std::endl;
+			// std::cout << "beta_tmp " << beta_tmp << std::endl;
 			beta(idx_blk) = arma::solve(arma::trimatu(dinvt_chol), beta_tmp);
 
 			quad += arma::as_scalar(beta(idx_blk).t() * dinvt * beta(idx_blk));
-			std::cout << "quad " << quad << std::endl;
+			// std::cout << "quad " << quad << std::endl;
 		}
-		std::cout << "beta " << beta << std::endl;
-
+		// std::cout << "beta " << beta << std::endl;
 		double err = std::max(n / 2.0 * (1.0 - 2.0 * arma::dot(beta, beta_mrg) + quad),
 		                      n / 2.0 * arma::sum(arma::pow(beta, 2) / psi));
 
-		sigma = 1.0 / gsl_ran_gamma(rng, (n + p) / 2.0, 1.0 / err);
+		sigma = 1.0 / gamma_dist_sigma(rng) / err;
 
 		arma::vec delta = arma::vec(p);
 		for (int jj = 0; jj < p; ++jj) {
-			delta(jj) = gsl_ran_gamma(rng, a + b, 1.0 / (psi(jj) + *phi));
+			std::gamma_distribution<double> gamma_dist_delta(a + b, 1.0 / (psi(jj) + *phi));
+			delta(jj) = gamma_dist_delta(rng);
 		}
 
-		// FIXME: psi can be so small (close to zero) as in the @example data demo which causes inf in dinvt and solve() to break
-		// This happens when beta are all very small and delta all very big
 		// std::cout << "sigma " << sigma << std::endl;
 		// std::cout << "delta " << delta << std::endl;
 		for (int jj = 0; jj < p; ++jj) {
-			psi(jj) = gigrnd(a - 0.5, 2.0 * delta(jj), n * std::pow(beta(jj), 2) / sigma);
+			psi(jj) = gigrnd(a - 0.5, 2.0 * delta(jj), n * std::pow(beta(jj), 2) / sigma, rng);
 		}
 
 		if (phi_updt) {
-			double w = gsl_ran_gamma(rng, 1.0, 1.0 / (*phi + 1.0));
-			*phi = gsl_ran_gamma(rng, p * b + 0.5, 1.0 / (arma::sum(delta) + w));
+			std::gamma_distribution<double> gamma_dist_phi(1.0, 1.0 / (*phi + 1.0));
+			double w = gamma_dist_phi(rng);
+			std::gamma_distribution<double> gamma_dist_phi_new(p * b + 0.5, 1.0 / (arma::sum(delta) + w));
+			*phi = gamma_dist_phi_new(rng);
 		}
 
 		// Posterior
@@ -301,8 +288,6 @@ std::map<std::string, arma::vec> prs_cs_mcmc(double a, double b, double* phi, co
 			phi_est += *phi / n_pst;
 		}
 	}
-
-	gsl_rng_free(rng);
 
 	if (phi_updt) {
 		delete phi;

@@ -1,4 +1,3 @@
-# Generate example data
      set.seed(985115)
      n <- 350
      p <- 16
@@ -33,4 +32,40 @@
      sumstats = list(BETA=b.hat, MAF=rep(0.5, length(b.hat)))
      LD <- list(blk1 = R.hat)
      write.table(data.frame(sumstats), "sumstats.txt", sep = "\t", row.names = FALSE, col.names = TRUE)
-	write.table(LD$blk1, "LD.txt", sep = "\t", row.names = FALSE, col.names = FALSE)
+     write.table(LD$blk1, "LD.txt", sep = "\t", row.names = FALSE, col.names = FALSE)
+
+     out2 <- pecotmr::prs_cs(sumstats, LD, n, verbose = TRUE, seed=999)
+     print(out2$beta_est)
+
+
+#Rscript generate_test_for_prs_cs.R 
+#Running Markov Chain Monte Carlo (MCMC) sampler...
+#Iteration  100 of 1000
+#Iteration  200 of 1000
+#Iteration  300 of 1000
+#Iteration  400 of 1000
+#Iteration  500 of 1000
+#Iteration  600 of 1000
+#Iteration  700 of 1000
+#Iteration  800 of 1000
+#Iteration  900 of 1000
+#Iteration 1000 of 1000
+#Estimated global shrinkage parameter: 0.573608
+#MCMC sampling completed.
+#            [,1]
+# [1,]  0.2014556
+# [2,]  1.0877955
+# [3,] -1.5719068
+# [4,]  1.1523724
+# [5,] -0.8181124
+# [6,] -0.8719565
+# [7,] -1.5151863
+# [8,]  1.7940113
+# [9,]  2.0403245
+#[10,] -1.7775449
+#[11,] -0.8175015
+#[12,]  6.1956311
+#[13,] -0.6421237
+#[14,] -1.9703685
+#[15,]  0.8190806
+#[16,] -0.3304925

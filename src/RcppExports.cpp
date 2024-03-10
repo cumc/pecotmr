@@ -59,7 +59,7 @@ BEGIN_RCPP
 END_RCPP
 }
 // prs_cs_rcpp
-Rcpp::List prs_cs_rcpp(double a, double b, Rcpp::Nullable<double> phi, Rcpp::List sumstats, int n, Rcpp::List ld_blk, int n_iter, int n_burnin, int thin, bool beta_std, bool verbose, Rcpp::Nullable<int> seed);
+Rcpp::List prs_cs_rcpp(double a, double b, Rcpp::Nullable<double> phi, Rcpp::List sumstats, int n, Rcpp::List ld_blk, int n_iter, int n_burnin, int thin, bool beta_std, bool verbose, Rcpp::Nullable<unsigned int> seed);
 RcppExport SEXP _pecotmr_prs_cs_rcpp(SEXP aSEXP, SEXP bSEXP, SEXP phiSEXP, SEXP sumstatsSEXP, SEXP nSEXP, SEXP ld_blkSEXP, SEXP n_iterSEXP, SEXP n_burninSEXP, SEXP thinSEXP, SEXP beta_stdSEXP, SEXP verboseSEXP, SEXP seedSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
@@ -75,7 +75,7 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< int >::type thin(thinSEXP);
     Rcpp::traits::input_parameter< bool >::type beta_std(beta_stdSEXP);
     Rcpp::traits::input_parameter< bool >::type verbose(verboseSEXP);
-    Rcpp::traits::input_parameter< Rcpp::Nullable<int> >::type seed(seedSEXP);
+    Rcpp::traits::input_parameter< Rcpp::Nullable<unsigned int> >::type seed(seedSEXP);
     rcpp_result_gen = Rcpp::wrap(prs_cs_rcpp(a, b, phi, sumstats, n, ld_blk, n_iter, n_burnin, thin, beta_std, verbose, seed));
     return rcpp_result_gen;
 END_RCPP

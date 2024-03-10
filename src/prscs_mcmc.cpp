@@ -27,44 +27,44 @@
  */
 // [[Rcpp::export]]
 Rcpp::List prs_cs_rcpp(double a, double b, Rcpp::Nullable<double> phi, Rcpp::List sumstats,
-                       int n, Rcpp::List ld_blk, 
-                       int n_iter, int n_burnin, int thin, 
-                       bool beta_std, bool verbose, Rcpp::Nullable<int> seed) {
-    // Convert Rcpp types to C++ types
-    std::vector<std::vector<double>> sumstats_vec;
-    sumstats_vec.push_back(Rcpp::as<std::vector<double>>(sumstats["BETA"]));
-    sumstats_vec.push_back(Rcpp::as<std::vector<double>>(sumstats["MAF"]));
+                       int n, Rcpp::List ld_blk,
+                       int n_iter, int n_burnin, int thin,
+                       bool beta_std, bool verbose, Rcpp::Nullable<unsigned int> seed) {
+	// Convert Rcpp types to C++ types
+	std::vector<std::vector<double> > sumstats_vec;
+	sumstats_vec.push_back(Rcpp::as<std::vector<double> >(sumstats["BETA"]));
+	sumstats_vec.push_back(Rcpp::as<std::vector<double> >(sumstats["MAF"]));
 
-    std::vector<arma::mat> ld_blk_vec;
-    for (int i = 0; i < ld_blk.size(); ++i) {
-        ld_blk_vec.push_back(Rcpp::as<arma::mat>(ld_blk[i]));
-    }
+	std::vector<arma::mat> ld_blk_vec;
+	for (int i = 0; i < ld_blk.size(); ++i) {
+		ld_blk_vec.push_back(Rcpp::as<arma::mat>(ld_blk[i]));
+	}
 
+	double* phi_ptr = nullptr;
+	if (phi.isNotNull()) {
+		phi_ptr = new double(Rcpp::as<double>(phi));
+	}
 
-    double* phi_ptr = nullptr;
-    if (phi.isNotNull()) {
-        phi_ptr = new double(Rcpp::as<double>(phi));
-    }
+	unsigned int seed_val = 0;
+	if (seed.isNotNull()) {
+		seed_val = Rcpp::as<unsigned int>(seed);
+	} else {
+		seed_val = std::random_device{}();
+	}
 
-    int* seed_ptr = nullptr;
-    if (seed.isNotNull()) {
-        seed_ptr = new int(Rcpp::as<int>(seed));
-    }
+	// Call the prs_cs function
+	std::map<std::string, arma::vec> output = prs_cs_mcmc(a, b, phi_ptr, sumstats_vec, n, ld_blk_vec,
+	                                                      n_iter, n_burnin, thin, beta_std, verbose, seed_val);
 
-    // Call the prs_cs function
-    std::map<std::string, arma::vec> output = prs_cs_mcmc(a, b, phi_ptr, sumstats_vec, n, ld_blk_vec,
-                                                     n_iter, n_burnin, thin, beta_std, verbose, seed_ptr);
+	// Convert the output to an Rcpp::List
+	Rcpp::List result;
+	result["beta_est"] = output["beta_est"];
+	result["psi_est"] = output["psi_est"];
+	result["sigma_est"] = output["sigma_est"](0);
+	result["phi_est"] = output["phi_est"](0);
 
-    // Convert the output to an Rcpp::List
-    Rcpp::List result;
-    result["beta_est"] = output["beta_est"];
-    result["psi_est"] = output["psi_est"];
-    result["sigma_est"] = output["sigma_est"](0);
-    result["phi_est"] = output["phi_est"](0);
+	// Clean up dynamically allocated memory
+	delete phi_ptr;
 
-    // Clean up dynamically allocated memory
-    delete phi_ptr;
-    delete seed_ptr;
-
-    return result;
+	return result;
 }
