@@ -44,26 +44,30 @@
 #' # Set the prior
 #' K <- 9
 #' sigma0 <- c(0.001, .1, .5, 1, 5, 10, 20, 30, .005)
-#' omega0 <- rep(1/K, K)
+#' omega0 <- rep(1 / K, K)
 #'
 #' # Calculate summary statistics
-#' b.hat <- sapply(1:p, function(j) { summary(lm(y ~ X[, j]))$coefficients[-1, 1] })
-#' s.hat <- sapply(1:p, function(j) { summary(lm(y ~ X[, j]))$coefficients[-1, 2] })
+#' b.hat <- sapply(1:p, function(j) {
+#'   summary(lm(y ~ X[, j]))$coefficients[-1, 1]
+#' })
+#' s.hat <- sapply(1:p, function(j) {
+#'   summary(lm(y ~ X[, j]))$coefficients[-1, 2]
+#' })
 #' R.hat <- cor(X)
 #' var_y <- var(y)
 #' sigmasq_init <- 1.5
 #'
 #' # Run PRS CS
-#' maf = rep(0.5, length(b.hat)) # fake MAF
+#' maf <- rep(0.5, length(b.hat)) # fake MAF
 #' LD <- list(blk1 = R.hat)
-#' out <- prs_cs(b.hat, LD, n, maf=maf)
+#' out <- prs_cs(b.hat, LD, n, maf = maf)
 #' # In sample prediction correlations
-#' cor(X%*%out$beta_est, y) # 0.9944553
+#' cor(X %*% out$beta_est, y) # 0.9944553
 #' @export
 prs_cs <- function(bhat, LD, n,
-                    a = 1, b = 0.5, phi = NULL, 
-                    maf = NULL, n_iter = 1000, n_burnin = 500,
-                    thin = 5, verbose = FALSE, seed = NULL) {
+                   a = 1, b = 0.5, phi = NULL,
+                   maf = NULL, n_iter = 1000, n_burnin = 500,
+                   thin = 5, verbose = FALSE, seed = NULL) {
   # Check input parameters
   if (missing(LD) || !is.list(LD)) {
     stop("Please provide a valid list of LD blocks using 'LD'.")
@@ -78,20 +82,24 @@ prs_cs <- function(bhat, LD, n,
   }
 
   # Check if the length of bhat matches the sum of the nrow of all elements in the LD list
-  total_rows_in_LD = sum(sapply(LD, nrow))
+  total_rows_in_LD <- sum(sapply(LD, nrow))
   if (length(bhat) != total_rows_in_LD) {
     stop("The length of 'bhat' must be the same as the sum of the number of rows of all elements in the 'LD' list.")
   }
 
   # Run PRS-CS
-  result <- prs_cs_rcpp(a = a, b = b, phi = phi, bhat, maf,
-                        n = n, ld_blk = LD,
-                        n_iter = n_iter, n_burnin = n_burnin, thin = thin,
-                        verbose = verbose, seed = seed)
-  
+  result <- prs_cs_rcpp(
+    a = a, b = b, phi = phi, bhat, maf,
+    n = n, ld_blk = LD,
+    n_iter = n_iter, n_burnin = n_burnin, thin = thin,
+    verbose = verbose, seed = seed
+  )
+
   # Return the result as a list
-  list(beta_est = result$beta_est,
-       psi_est = result$psi_est,
-       sigma_est = result$sigma_est,
-       phi_est = result$phi_est)
+  list(
+    beta_est = result$beta_est,
+    psi_est = result$psi_est,
+    sigma_est = result$sigma_est,
+    phi_est = result$phi_est
+  )
 }
