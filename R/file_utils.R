@@ -1,7 +1,5 @@
 # This needs pgenlibr package
 # devtools::install_github("chrchang/plink-ng", subdir="/2.0/pgenlibr")
-# and PLINK2R
-# Sys.setenv("R_REMOTES_NO_ERRORS_FROM_WARNINGS"=TRUE); remotes::install_github('gabraham/plink2R', subdir='plink2R', ref='d74be015e8f54d662b96c6c2a52a614746f9030d')
 
 # read PLINK files
 #' @importFrom dplyr rename

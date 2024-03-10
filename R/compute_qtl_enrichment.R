@@ -53,7 +53,6 @@
 #' 
 #' @seealso \code{\link[susieR]{susie}}
 #' @useDynLib pecotmr
-#' @importFrom Rcpp evalCpp 
 #' @export
 #' 
 compute_qtl_enrichment <- function(gwas_pip, susie_qtl_regions, 

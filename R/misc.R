@@ -68,7 +68,7 @@ format_variant_id <- function(names_vector) {
 
 load_genotype_data <- function(genotype, keep_indel = TRUE) {
   # Read genotype data using plink
-  geno <- read_plink(genotype)
+  geno <- plink2R::read_plink(genotype)
   # Process row names
   rownames(geno$bed) <- sapply(strsplit(rownames(geno$bed), ":"), `[`, 2)
   # Remove indels if specified
@@ -337,7 +337,6 @@ add_Y_residuals <- function(data_list, conditions, scale_residuals = FALSE) {
   return(data_list)
 }
 
-#' @importFrom plink2R read_plink
 #' @import purrr dplyr tibble
 #' @importFrom utils read.table
 #' @importFrom tidyr unnest
