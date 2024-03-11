@@ -19,12 +19,12 @@ compute_qtl_enrichment(
 
 \item{susie_qtl_regions}{This is a list of SuSiE fitted objects per QTL unit analyzed}
 
-\item{pi_gwas}{This parameter is highly important if GWAS input does not contain all SNPs interrogated (e.g., in some cases, only fine-mapped geomic regions are included). 
+\item{pi_gwas}{This parameter is highly important if GWAS input does not contain all SNPs interrogated (e.g., in some cases, only fine-mapped geomic regions are included).
 Then users must pick a value of total_variants and estimate pi_gwas beforehand by: sum(gwas_pip$pip)/total_variants}
 
 \item{pi_qtl}{This parameter can be safely left to default if your input QTL data has enough regions to estimate it.}
 
-\item{lambda}{Similar to the shrinkage parameter used in ridge regression. It takes any non-negative value and shrinks the enrichment estimate towards 0. 
+\item{lambda}{Similar to the shrinkage parameter used in ridge regression. It takes any non-negative value and shrinks the enrichment estimate towards 0.
 When it is set to 0, no shrinkage will be applied. A large value indicates strong shrinkage. The default value is set to 1.0.}
 
 \item{ImpN}{Rounds of multiple imputation to draw QTL from, default is 25.}
@@ -35,7 +35,7 @@ When it is set to 0, no shrinkage will be applied. A large value indicates stron
 A list of enrichment parameter estimates
 }
 \description{
-Largely follows from fastenloc https://github.com/xqwen/fastenloc 
+Largely follows from fastenloc https://github.com/xqwen/fastenloc
 but uses `susieR` fitted objects as input to estimate prior for use with `coloc` package (coloc v5, aka SuSiE-coloc).
 The main differences are 1) now enrichment is based on all QTL variants whether or not they are inside signal clusters;
 2) Causal QTL are sampled from SuSiE single effects, not signal clusters;
@@ -52,21 +52,21 @@ Uses output of \code{\link[susieR]{susie}} from the
 n_gwas_pip <- 1000
 gwas_pip <- runif(n_gwas_pip)
 names(gwas_pip) <- paste0("snp", 1:n_gwas_pip)
-gwas_fit <- list(pip=gwas_pip)
+gwas_fit <- list(pip = gwas_pip)
 # Simulate fake data for a single SuSiEFit object
 simulate_susiefit <- function(n, p) {
- pip <- runif(n)
- names(pip) <- paste0("snp", 1:n)
- alpha <- t(matrix(runif(n * p), nrow = n))
- alpha <- t(apply(alpha, 1, function(row) row / sum(row)))
- list(
-   pip = pip,
-   alpha = alpha,
-   prior_variance = runif(p)
- )
+  pip <- runif(n)
+  names(pip) <- paste0("snp", 1:n)
+  alpha <- t(matrix(runif(n * p), nrow = n))
+  alpha <- t(apply(alpha, 1, function(row) row / sum(row)))
+  list(
+    pip = pip,
+    alpha = alpha,
+    prior_variance = runif(p)
+  )
 }
 # Simulate multiple SuSiEFit objects
-n_susie_fits <- 2 
+n_susie_fits <- 2
 susie_fits <- replicate(n_susie_fits, simulate_susiefit(n_gwas_pip, 10), simplify = FALSE)
 # Add these fits to a list, providing names to each element
 names(susie_fits) <- paste0("fit", 1:length(susie_fits))
