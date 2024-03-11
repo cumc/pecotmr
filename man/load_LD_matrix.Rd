@@ -7,8 +7,8 @@
 load_LD_matrix(LD_meta_file_path, region, extract_coordinates = NULL)
 }
 \arguments{
-\item{LD_meta_file_path}{path of LD_metadata, LD_metadata is a data frame specifying LD blocks with 
-columns "chrom", "start", "end", and "path". "start" and "end" denote the positions of LD blocks. 
+\item{LD_meta_file_path}{path of LD_metadata, LD_metadata is a data frame specifying LD blocks with
+columns "chrom", "start", "end", and "path". "start" and "end" denote the positions of LD blocks.
 "path" is the path of each LD block, optionally including bim file paths.}
 
 \item{region}{A data frame specifying region of interest with columns "chrom", "start", and "end".}
@@ -19,7 +19,7 @@ columns "chrom", "start", "end", and "path". "start" and "end" denote the positi
 A list of processed LD matrices and associated variant data frames for region of interest.
 Each element of the list contains:
 \describe{
-\item{combined_LD_variants}{A data frame merging selected variants within each LD block in bim file format with columns "chrom", "variants", 
+\item{combined_LD_variants}{A data frame merging selected variants within each LD block in bim file format with columns "chrom", "variants",
 "GD", "pos", "A1", and "A2".}
 \item{combined_LD_matrix}{The LD matrix for each region, with row and column names matching variant identifiers.}
 }

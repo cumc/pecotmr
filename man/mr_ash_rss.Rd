@@ -96,21 +96,27 @@ yty <- t(y) \%*\% y
 # Set the prior
 K <- 9
 sigma0 <- c(0.001, .1, .5, 1, 5, 10, 20, 30, .005)
-omega0 <- rep(1/K, K)
+omega0 <- rep(1 / K, K)
 
 # Calculate summary statistics
-b.hat <- sapply(1:p, function(j) { summary(lm(y ~ X[, j]))$coefficients[-1, 1] })
-s.hat <- sapply(1:p, function(j) { summary(lm(y ~ X[, j]))$coefficients[-1, 2] })
+b.hat <- sapply(1:p, function(j) {
+  summary(lm(y ~ X[, j]))$coefficients[-1, 1]
+})
+s.hat <- sapply(1:p, function(j) {
+  summary(lm(y ~ X[, j]))$coefficients[-1, 2]
+})
 R.hat <- cor(X)
 var_y <- var(y)
 sigmasq_init <- 1.5
 
 # Run mr_ash_rss
-out <- mr_ash_rss(b.hat, s.hat, R = R.hat, var_y = var_y, n = n,
-                  sigma2_e = sigmasq_init, s0 = sigma0, w0 = omega0,
-                  mu1_init = rep(0, ncol(X)), tol = 1e-8, max_iter = 1e5,
-                  update_w0 = TRUE, update_sigma = TRUE, compute_ELBO = TRUE,
-                  standardize = FALSE)
+out <- mr_ash_rss(b.hat, s.hat,
+  R = R.hat, var_y = var_y, n = n,
+  sigma2_e = sigmasq_init, s0 = sigma0, w0 = omega0,
+  mu1_init = rep(0, ncol(X)), tol = 1e-8, max_iter = 1e5,
+  update_w0 = TRUE, update_sigma = TRUE, compute_ELBO = TRUE,
+  standardize = FALSE
+)
 # In sample prediction correlations
-cor(X\%*\%out1$mu1, y) # 0.9984064
+cor(X \%*\% out1$mu1, y) # 0.9984064
 }

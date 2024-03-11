@@ -41,7 +41,7 @@ A list containing the annotated LD matrix with ABF results, credible sets,
 }
 \description{
 Performs Approximate Bayesian Factor (ABF) analysis, identifies credible sets,
-and annotates lead variants based on fine-mapping results. It computes p-values 
+and annotates lead variants based on fine-mapping results. It computes p-values
 from z-scores assuming a two-sided standard normal distribution.
 }
 \examples{

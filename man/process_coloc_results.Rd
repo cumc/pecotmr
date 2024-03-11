@@ -13,13 +13,13 @@ process_coloc_results(
   coloc_result,
   LD_meta_file_path,
   analysis_script_obj,
+  analysis_region,
   PPH4_thres = 0.8,
   coloc_pip_thres = 0.95,
   squared = FALSE,
   min_abs_corr = 0.5,
   null_index = 0,
   coloc_index = "PP.H4.abf",
-  analysis_region,
   median_abs_corr = NULL
 )
 }
