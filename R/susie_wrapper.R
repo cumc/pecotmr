@@ -222,8 +222,10 @@ rss_input_preprocess <- function(sumstats, LD_data, skip_region = NULL) {
     }
     allele_flip$target_data_qced <- allele_flip$target_data_qced %>% filter(!(variant_id) %in% skip_variant)
   }
-
-  sumstat_processed <- allele_flip$target_data_qced %>% arrange(pos)
+  # filter out the sumstatas 
+  sumstat_processed <- allele_flip$target_data_qced %>% arrange(pos) %>%
+  filter(!duplicated(variant_id) & !duplicated(variant_id, fromLast = TRUE))
+    
   return(sumstat_processed)
 }
 
