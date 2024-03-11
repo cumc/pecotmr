@@ -37,7 +37,7 @@ coloc_wrapper(
 
 \item{gwas_region_obj}{Optional table name in GWAS RDS files (default 'susie_fit').}
 
-\item{prior_tol}{When the prior variance is estimated, compare the estimated value to \code{prior_tol} at the end of the computation, 
+\item{prior_tol}{When the prior variance is estimated, compare the estimated value to \code{prior_tol} at the end of the computation,
 and exclude a single effect from PIP computation if the estimated prior variance is smaller than this tolerance value.}
 
 \item{p1, }{p2, and p12 are results from xqtl_enrichment_wrapper (default 'p1=1e-4, p2=1e-4, p12=5e-6', same as coloc.bf_bf).}

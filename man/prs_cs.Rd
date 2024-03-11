@@ -78,19 +78,23 @@ yty <- t(y) \%*\% y
 # Set the prior
 K <- 9
 sigma0 <- c(0.001, .1, .5, 1, 5, 10, 20, 30, .005)
-omega0 <- rep(1/K, K)
+omega0 <- rep(1 / K, K)
 
 # Calculate summary statistics
-b.hat <- sapply(1:p, function(j) { summary(lm(y ~ X[, j]))$coefficients[-1, 1] })
-s.hat <- sapply(1:p, function(j) { summary(lm(y ~ X[, j]))$coefficients[-1, 2] })
+b.hat <- sapply(1:p, function(j) {
+  summary(lm(y ~ X[, j]))$coefficients[-1, 1]
+})
+s.hat <- sapply(1:p, function(j) {
+  summary(lm(y ~ X[, j]))$coefficients[-1, 2]
+})
 R.hat <- cor(X)
 var_y <- var(y)
 sigmasq_init <- 1.5
 
 # Run PRS CS
-maf = rep(0.5, length(b.hat)) # fake MAF
+maf <- rep(0.5, length(b.hat)) # fake MAF
 LD <- list(blk1 = R.hat)
-out <- prs_cs(b.hat, LD, n, maf=maf)
+out <- prs_cs(b.hat, LD, n, maf = maf)
 # In sample prediction correlations
-cor(X\%*\%out$beta_est, y) # 0.9944553
+cor(X \%*\% out$beta_est, y) # 0.9944553
 }
