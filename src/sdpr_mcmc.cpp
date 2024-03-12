@@ -291,16 +291,16 @@ void MCMC_state::sample_beta(size_t j, const mcmc_data &dat, ldmat_data &ldmat_d
 	}
 
 	// (N B_gamma + \Sigma_0^-1) = L L^T
-	arma::mat L = arma::chol(B, "lower");
+	B = arma::chol(B, "lower");
 
 	// \mu = L^{-1} A_vec
-	arma::vec mu = arma::solve(arma::trimatl(L), A_vec);
+	A_vec = arma::solve(trimatl(B), A_vec);
 
 	// N(\mu, I)
-	beta_c += mu;
+	beta_c += A_vec;
 
 	// X ~ N(\mu, I), L^{-T} X ~ N( L^{-T} \mu, (L L^T)^{-1} )
-	beta_c = arma::solve(arma::trimatu(L.t()), beta_c);
+	beta_c = arma::solve(trimatl(B).t(), beta_c);
 
 	// compute eta related terms
 	for (size_t i=0; i<causal_list.size(); i++) {
@@ -392,9 +392,11 @@ void solve_ldmat(const mcmc_data &dat, ldmat_data &ldmat_dat, const double a, un
 			}
 		}
 
-		arma::mat L_B = arma::chol(B, "lower");
-		A = arma::solve(arma::trimatl(L_B), A);
-		A = arma::solve(arma::trimatu(L_B.t()), A);
+		B = arma::chol(B, "lower");
+
+		A = arma::solve(trimatl(B), A);
+
+		A = arma::solve(trimatl(B).t(), A);
 
 		if (opt_llk == 1) {
 			A *= sz;
