@@ -294,13 +294,13 @@ void MCMC_state::sample_beta(size_t j, const mcmc_data &dat, ldmat_data &ldmat_d
 	arma::mat L = arma::chol(B, "lower");
 
 	// \mu = L^{-1} A_vec
-	arma::vec mu = arma::solve(L, A_vec);
+	arma::vec mu = arma::solve(arma::trimatl(L), A_vec);
 
 	// N(\mu, I)
 	beta_c += mu;
 
 	// X ~ N(\mu, I), L^{-T} X ~ N( L^{-T} \mu, (L L^T)^{-1} )
-	beta_c = arma::solve(arma::trimatl(L.t()), beta_c);
+	beta_c = arma::solve(arma::trimatu(L.t()), beta_c);
 
 	// compute eta related terms
 	for (size_t i=0; i<causal_list.size(); i++) {
@@ -349,9 +349,14 @@ void solve_ldmat(const mcmc_data &dat, ldmat_data &ldmat_dat, const double a, un
 		arma::mat L = dat.ref_ld_mat[i];
 
 		if (opt_llk == 1) {
+			// (R + aNI) / N A = R via cholesky decomp
+			// Changed May 21 2021 to divide by N
+			// replace aN with a
 			B.diag() += a;
 		}
 		else {
+			// R_ij N_s,ij / N_i N_j
+			// Added May 24 2021
 			for (size_t j=0; j<size; j++) {
 				for (size_t k=0; k<size; k++) {
 					double tmp = B(j, k);
@@ -366,18 +371,17 @@ void solve_ldmat(const mcmc_data &dat, ldmat_data &ldmat_dat, const double a, un
 					B(j, k) = tmp;
 				}
 			}
-
+			// force positive definite
+			// B = Q \Lambda Q^T
 			arma::vec eval;
 			arma::mat evec;
 			arma::eig_sym(eval, evec, B);
 			double eval_min = eval.min();
 
-			for (size_t j=0; j<size; j++) {
-				for (size_t k=0; k<j; k++) {
-					B(j, k) = B(k, j);
-				}
-			}
+			// restore lower half of B
+			B = arma::symmatu(B);
 
+			// if min eigen value < 0, add -1.1 * eval to diagonal
 			for (size_t j=0; j<size; j++) {
 				if (eval_min < 0) {
 					B(j, j) = 1.0/dat.sz[j+dat.boundary[i].first] - 1.1*eval_min;
@@ -390,7 +394,7 @@ void solve_ldmat(const mcmc_data &dat, ldmat_data &ldmat_dat, const double a, un
 
 		arma::mat L_B = arma::chol(B, "lower");
 		A = arma::solve(arma::trimatl(L_B), A);
-		A = arma::solve(arma::trimatu(L_B), A.t()).t();
+		A = arma::solve(arma::trimatu(L_B.t()), A);
 
 		if (opt_llk == 1) {
 			A *= sz;
