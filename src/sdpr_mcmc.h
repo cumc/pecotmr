@@ -3,6 +3,7 @@
 #include <armadillo>
 #include <cmath>
 #include <random>
+#include <unordered_map>
 
 typedef struct {
 	std::vector<arma::mat> A;
@@ -13,6 +14,26 @@ typedef struct {
 	std::vector<double> num;
 	std::vector<double> denom;
 } ldmat_data;
+
+class beta_distribution {
+public:
+// Constructor that takes alpha and beta parameters
+beta_distribution(double alpha, double beta)
+	: a_distribution(alpha, 1.0), b_distribution(beta, 1.0) {
+}
+
+// Generates a beta-distributed random number
+template <typename RNG>
+double operator()(RNG& rng) {
+	double x = a_distribution(rng);
+	double y = b_distribution(rng);
+	return x / (x + y);
+}
+
+private:
+std::gamma_distribution<double> a_distribution;
+std::gamma_distribution<double> b_distribution;
+};
 
 /**
  * @class mcmc_data
@@ -82,9 +103,9 @@ private:
 void compute_boundary() {
 	size_t start = 0;
 	for (const auto& mat : ref_ld_mat) {
-		size_t end = start + mat.n_rows - 1;
+		size_t end = start + mat.n_rows;
 		boundary.emplace_back(start, end);
-		start = end + 1;
+		start = end;
 	}
 }
 };
@@ -107,8 +128,8 @@ std::vector<double> sumsq;
 MCMC_state(size_t num_snp, size_t max_cluster, \
            double a0, double b0, double sz) {
 	a0k = a0; b0k = b0; N = sz;
-	    // Changed May 20 2021
-	    // Now N (sz) is absorbed into A, B; so set to 1.
+	// Changed May 20 2021
+	// Now N (sz) is absorbed into A, B; so set to 1.
 	N = 1.0;
 
 	n_snp = num_snp;
@@ -166,8 +187,61 @@ MCMC_samples(size_t num_snps) {
 }
 };
 
+/**
+ * @brief Perform Markov Chain Monte Carlo (MCMC) for estimating effect sizes.
+ *
+ * @param data The `mcmc_data` object containing the necessary data for the MCMC algorithm.
+ * @param sz The sample size of the GWAS.
+ * @param a Factor to shrink the reference LD matrix. Default is 0.1.
+ * @param c Factor to correct for the deflation. Default is 1.
+ * @param M Max number of variance components. Default is 1000.
+ * @param a0k Hyperparameter for inverse gamma distribution. Default is 0.5.
+ * @param b0k Hyperparameter for inverse gamma distribution. Default is 0.5.
+ * @param iter Number of iterations for MCMC. Default is 1000.
+ * @param burn Number of burn-in iterations for MCMC. Default is 200.
+ * @param thin Thinning interval for MCMC. Default is 5.
+ * @param n_threads Number of threads to use. Default is 1.
+ * @param opt_llk Which likelihood to evaluate. 1 for equation 6 (slightly shrink the correlation of SNPs)
+ *                and 2 for equation 5 (SNPs genotyped on different arrays in a separate cohort).
+ *                Default is 1.
+ * @param verbose Whether to print verbose output. Default is true.
+ *
+ * @return An `std::unordered_map` containing the estimated effect sizes (beta) and heritability (h2).
+ *
+ * @details
+ * This function performs Markov Chain Monte Carlo (MCMC) to estimate effect sizes and heritability
+ * based on the provided `mcmc_data` object and other parameters.
+ *
+ * The `mcmc_data` object should contain the following:
+ * - `beta_mrg`: A vector of marginal beta values for each SNP.
+ * - `ref_ld_mat`: A vector of LD matrices, where each matrix corresponds to a subset of SNPs.
+ * - `sz`: A vector of sample sizes for each SNP.
+ * - `array`: A vector of genotyping array information for each SNP.
+ *
+ * The function returns an `std::unordered_map` with the following key-value pairs:
+ * - "beta": An `arma::vec` containing the estimated effect sizes for each SNP.
+ * - "h2": An `arma::vec` containing the estimated heritability.
+ *
+ * Additional parameters:
+ * - `sz`: The sample size of the GWAS.
+ * - `a`: Factor to shrink the reference LD matrix. Default is 0.1.
+ * - `c`: Factor to correct for the deflation. Default is 1.
+ * - `M`: Max number of variance components. Default is 1000.
+ * - `a0k`, `b0k`: Hyperparameters for the inverse gamma distribution. Default is 0.5 for both.
+ * - `iter`: Number of iterations for MCMC. Default is 1000.
+ * - `burn`: Number of burn-in iterations for MCMC. Default is 200.
+ * - `thin`: Thinning interval for MCMC. Default is 5.
+ * - `n_threads`: Number of threads to use. Default is 1.
+ * - `opt_llk`: Which likelihood to evaluate. 1 for equation 6 (slightly shrink the correlation of SNPs)
+ *              and 2 for equation 5 (SNPs genotyped on different arrays in a separate cohort).
+ *              Default is 1.
+ * - `verbose`: Whether to print verbose output. Default is true.
+ *
+ * @note The `mcmc` function assumes the existence of the `Function_pool` class and its member functions,
+ *       as well as the `mcmc.h` header file with the necessary class and struct definitions.
+ */
 std::unordered_map<std::string, arma::vec> mcmc(
-	const mcmc_data& data,
+	mcmc_data& data,
 	unsigned         sz,
 	double           a,
 	double           c,
@@ -178,5 +252,6 @@ std::unordered_map<std::string, arma::vec> mcmc(
 	int              burn,
 	int              thin,
 	unsigned         n_threads,
-	int              opt_llk
+	int              opt_llk,
+	bool             verbose
 	);

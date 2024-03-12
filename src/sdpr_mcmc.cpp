@@ -1,5 +1,4 @@
 #include <algorithm>
-#include "mcmc.h"
 #include <cmath>
 #include <thread>
 #include <chrono>
@@ -7,6 +6,9 @@
 #include <numeric>
 #include <random>
 #include <x86intrin.h>
+#include "sse_mathfun.h"
+#include "function_pool.h"
+#include "sdpr_mcmc.h"
 
 using namespace std::chrono;
 
@@ -43,13 +45,13 @@ void MCMC_state::calc_b(size_t j, const mcmc_data &dat, const ldmat_data &ldmat_
 
 	arma::vec diag = ldmat_dat.B[j].diag();
 
-	    // diag(B) * beta
+	// diag(B) * beta
 	b_j = beta_j % diag;
 
-	    // eta^2 * (diag(B) * beta) - eta^2 * B * beta
+	// eta^2 * (diag(B) * beta) - eta^2 * B * beta
 	b_j = eta*eta * (b_j - ldmat_dat.B[j] * beta_j);
 
-	    // eta^2 * (diag(B) * beta) - eta^2 * B * beta + eta * A^T * beta_mrg
+	// eta^2 * (diag(B) * beta) - eta^2 * B * beta + eta * A^T * beta_mrg
 	b_j += eta * ldmat_dat.calc_b_tmp[j];
 }
 
@@ -75,24 +77,23 @@ void MCMC_state::sample_assignment(size_t j, const mcmc_data &dat, const ldmat_d
 		rnd[i] = unif(r);
 	}
 
-	    // N = 1.0 after May 21 2021
+	// N = 1.0 after May 21 2021
 	float C = pow(eta, 2.0) * N;
 
-	    // auto vectorized
+	// auto vectorized
 	for (size_t i=0; i<end_i-start_i; i++) {
 		for (size_t k=1; k<M; k++) {
 			prob[i][k] = C * Bjj[i] * cluster_var[k] + 1;
 		}
 	}
 
-	    // unable to auto vectorize due to log
-	    // explicitly using SSE
+	// unable to auto vectorize due to log
+	// explicitly using SSE
 	__m128 _v, _m;
 	for (size_t i=0; i<end_i-start_i; i++) {
 		size_t k = 1;
 		for (; k<M; k+=4) { // require M >= 4
-			_v = _mm_loadu_ps(&prob[i][k]);
-			_v = _mm_log_ps(_v);
+			_v = log_ps(_mm_loadu_ps(&prob[i][k]));
 			_mm_storeu_ps(&tmp[i][k], _v);
 		}
 
@@ -101,7 +102,7 @@ void MCMC_state::sample_assignment(size_t j, const mcmc_data &dat, const ldmat_d
 		}
 	}
 
-	    // auto vectorized
+	// auto vectorized
 	for (size_t i=0; i<end_i-start_i; i++) {
 		for (size_t k=1; k<M; k++) {
 			prob[i][k] = -0.5*tmp[i][k] + log_p[k] + square(N*bj[i]) * cluster_var[k] / (2*prob[i][k]);
@@ -109,7 +110,7 @@ void MCMC_state::sample_assignment(size_t j, const mcmc_data &dat, const ldmat_d
 	}
 
 	for (size_t i=0; i<end_i-start_i; i++) {
-		    // SSE version to find max
+		// SSE version to find max
 		_v = _mm_loadu_ps(&prob[i][0]);
 		size_t k = 4;
 		for (; k<M; k+=4) {
@@ -126,13 +127,13 @@ void MCMC_state::sample_assignment(size_t j, const mcmc_data &dat, const ldmat_d
 			max_elem = (max_elem > prob[i][k]) ? max_elem : prob[i][k];
 		}
 
-		    // SSE version log exp sum
+		// SSE version log exp sum
 		_m = _mm_load1_ps(&max_elem);
-		_v = _mm_exp_ps(_mm_sub_ps(_mm_loadu_ps(&prob[i][0]), _m));
+		_v = exp_ps(_mm_sub_ps(_mm_loadu_ps(&prob[i][0]), _m));
 
 		k = 4;
 		for (; k<M; k+=4) {
-			_v = _mm_add_ps(_v, _mm_exp_ps(_mm_sub_ps(_mm_loadu_ps(&prob[i][k]), _m)));
+			_v = _mm_add_ps(_v, exp_ps(_mm_sub_ps(_mm_loadu_ps(&prob[i][k]), _m)));
 		}
 
 		_v = _mm_hadd_ps(_v, _v);
@@ -174,9 +175,8 @@ void MCMC_state::sample_V() {
 		a[i] = suff_stats[i+1] + a[i+1];
 	}
 
-	std::beta_distribution<double> dist;
 	for (size_t i=0; i<M-1; i++) {
-		dist = std::beta_distribution<double>(1 + suff_stats[i], alpha + a[i]);
+		beta_distribution dist(1 + suff_stats[i], alpha + a[i]);
 		V[i] = dist(r);
 	}
 	V[M-1] = 1;
@@ -290,19 +290,19 @@ void MCMC_state::sample_beta(size_t j, const mcmc_data &dat, ldmat_data &ldmat_d
 		beta_c(i) = dist(r);
 	}
 
-	    // (N B_gamma + \Sigma_0^-1) = L L^T
+	// (N B_gamma + \Sigma_0^-1) = L L^T
 	arma::mat L = arma::chol(B, "lower");
 
-	    // \mu = L^{-1} A_vec
-	arma::vec mu = arma::solve(L, A_vec, arma::solve_opts::fast);
+	// \mu = L^{-1} A_vec
+	arma::vec mu = arma::solve(L, A_vec);
 
-	    // N(\mu, I)
+	// N(\mu, I)
 	beta_c += mu;
 
-	    // X ~ N(\mu, I), L^{-T} X ~ N( L^{-T} \mu, (L L^T)^{-1} )
-	beta_c = arma::solve(arma::trimatl(L.t()), beta_c, arma::solve_opts::fast);
+	// X ~ N(\mu, I), L^{-T} X ~ N( L^{-T} \mu, (L L^T)^{-1} )
+	beta_c = arma::solve(arma::trimatl(L.t()), beta_c);
 
-	    // compute eta related terms
+	// compute eta related terms
 	for (size_t i=0; i<causal_list.size(); i++) {
 		B(i, i) = C*ldmat_dat.B[j](causal_list[i]-start_i, causal_list[i]-start_i);
 	}
@@ -336,9 +336,9 @@ void MCMC_state::sample_eta(const ldmat_data &ldmat_dat) {
 	double num_sum = std::accumulate(ldmat_dat.num.begin(), ldmat_dat.num.end(), 0.0);
 	double denom_sum = std::accumulate(ldmat_dat.denom.begin(), ldmat_dat.denom.end(), 0.0);
 	denom_sum += 1e-6;
+
 	std::normal_distribution<double> dist(num_sum/denom_sum, sqrt(1.0/denom_sum));
 	eta = dist(r);
-
 }
 
 void solve_ldmat(const mcmc_data &dat, ldmat_data &ldmat_dat, const double a, unsigned sz, int opt_llk) {
@@ -389,8 +389,8 @@ void solve_ldmat(const mcmc_data &dat, ldmat_data &ldmat_dat, const double a, un
 		}
 
 		arma::mat L_B = arma::chol(B, "lower");
-		A = arma::solve(arma::trimatl(L_B), A, arma::solve_opts::fast);
-		A = arma::solve(arma::trimatu(L_B), A.t(), arma::solve_opts::fast).t();
+		A = arma::solve(arma::trimatl(L_B), A);
+		A = arma::solve(arma::trimatu(L_B), A.t()).t();
 
 		if (opt_llk == 1) {
 			A *= sz;
@@ -413,34 +413,33 @@ void solve_ldmat(const mcmc_data &dat, ldmat_data &ldmat_dat, const double a, un
 		ldmat_dat.denom.push_back(0);
 		ldmat_dat.num.push_back(0);
 	}
-
 }
 
 std::unordered_map<std::string, arma::vec> mcmc(
-	const mcmc_data& data,
-	unsigned         sz,
-	double           a,
-	double           c,
-	size_t           M,
-	double           a0k,
-	double           b0k,
-	int              iter,
-	int              burn,
-	int              thin,
-	unsigned         n_threads,
-	int              opt_llk,
-	bool             verbose = true
+	mcmc_data& data,
+	unsigned   sz,
+	double     a = 0.1,
+	double     c = 1.0,
+	size_t     M = 1000,
+	double     a0k = 0.5,
+	double     b0k = 0.5,
+	int        iter = 1000,
+	int        burn = 200,
+	int        thin = 5,
+	unsigned   n_threads = 1,
+	int        opt_llk = 1,
+	bool       verbose = true
 	) {
-	int n_pst = (iter-burn) / thin;
 
-	if (verbose) {
-		cout << "Running SDPR with opt_llk " << opt_llk << endl;
-	}
+	int n_pst = (iter-burn) / thin;
 
 	ldmat_data ldmat_dat;
 
 	MCMC_state state(data.beta_mrg.size(), M, a0k, b0k, sz);
-	data.beta_mrg /= c;
+
+	for (size_t i=0; i<data.beta_mrg.size(); i++) {
+		data.beta_mrg[i] /= c;
+	}
 
 	MCMC_samples samples(data.beta_mrg.size());
 
@@ -495,5 +494,4 @@ std::unordered_map<std::string, arma::vec> mcmc(
 	results["h2"] = arma::vec(1, arma::fill::value(samples.h2));
 
 	return results;
-
 }

@@ -98,12 +98,39 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// sdpr_rcpp
+Rcpp::List sdpr_rcpp(const std::vector<double>& bhat, const Rcpp::List& LD, int n, Rcpp::Nullable<Rcpp::NumericVector> per_variant_sample_size, Rcpp::Nullable<Rcpp::IntegerVector> array, double a, double c, size_t M, double a0k, double b0k, int iter, int burn, int thin, unsigned n_threads, int opt_llk, bool verbose);
+RcppExport SEXP _pecotmr_sdpr_rcpp(SEXP bhatSEXP, SEXP LDSEXP, SEXP nSEXP, SEXP per_variant_sample_sizeSEXP, SEXP arraySEXP, SEXP aSEXP, SEXP cSEXP, SEXP MSEXP, SEXP a0kSEXP, SEXP b0kSEXP, SEXP iterSEXP, SEXP burnSEXP, SEXP thinSEXP, SEXP n_threadsSEXP, SEXP opt_llkSEXP, SEXP verboseSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< const std::vector<double>& >::type bhat(bhatSEXP);
+    Rcpp::traits::input_parameter< const Rcpp::List& >::type LD(LDSEXP);
+    Rcpp::traits::input_parameter< int >::type n(nSEXP);
+    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::NumericVector> >::type per_variant_sample_size(per_variant_sample_sizeSEXP);
+    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::IntegerVector> >::type array(arraySEXP);
+    Rcpp::traits::input_parameter< double >::type a(aSEXP);
+    Rcpp::traits::input_parameter< double >::type c(cSEXP);
+    Rcpp::traits::input_parameter< size_t >::type M(MSEXP);
+    Rcpp::traits::input_parameter< double >::type a0k(a0kSEXP);
+    Rcpp::traits::input_parameter< double >::type b0k(b0kSEXP);
+    Rcpp::traits::input_parameter< int >::type iter(iterSEXP);
+    Rcpp::traits::input_parameter< int >::type burn(burnSEXP);
+    Rcpp::traits::input_parameter< int >::type thin(thinSEXP);
+    Rcpp::traits::input_parameter< unsigned >::type n_threads(n_threadsSEXP);
+    Rcpp::traits::input_parameter< int >::type opt_llk(opt_llkSEXP);
+    Rcpp::traits::input_parameter< bool >::type verbose(verboseSEXP);
+    rcpp_result_gen = Rcpp::wrap(sdpr_rcpp(bhat, LD, n, per_variant_sample_size, array, a, c, M, a0k, b0k, iter, burn, thin, n_threads, opt_llk, verbose));
+    return rcpp_result_gen;
+END_RCPP
+}
 
 static const R_CallMethodDef CallEntries[] = {
     {"_pecotmr_dentist_rcpp", (DL_FUNC) &_pecotmr_dentist_rcpp, 10},
     {"_pecotmr_rcpp_mr_ash_rss", (DL_FUNC) &_pecotmr_rcpp_mr_ash_rss, 17},
     {"_pecotmr_prs_cs_rcpp", (DL_FUNC) &_pecotmr_prs_cs_rcpp, 12},
     {"_pecotmr_qtl_enrichment_rcpp", (DL_FUNC) &_pecotmr_qtl_enrichment_rcpp, 7},
+    {"_pecotmr_sdpr_rcpp", (DL_FUNC) &_pecotmr_sdpr_rcpp, 16},
     {NULL, NULL, 0}
 };
 
