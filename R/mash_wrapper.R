@@ -1,4 +1,3 @@
-#' @import dplyr
 #' @export
 handle_invalid_summary_stat <- function(dat_list, bhat = NULL, sbhat = NULL, z = TRUE) {
   replace_values <- function(df, replace_with) {
@@ -24,8 +23,6 @@ handle_invalid_summary_stat <- function(dat_list, bhat = NULL, sbhat = NULL, z =
 
 # This function extracts tensorQTL results for given region for multiple
 # summary statistics files
-#' @import dplyr
-#' @importFrom data.table fread
 #' @export
 load_multitrait_tensorqtl_sumstat <- function(
     sumstats_paths, region, gene = NULL,
@@ -196,7 +193,6 @@ load_multitrait_tensorqtl_sumstat <- function(
   return(out)
 }
 
-#' @importFrom dplyr select filter
 #' @export
 merge_susie_cs <- function(susie_fit, coverage = "cs_coverage_0.95", complementary = FALSE) {
   # Initialize an empty list for the combined_sets
@@ -389,8 +385,7 @@ merge_susie_cs <- function(susie_fit, coverage = "cs_coverage_0.95", complementa
   return(combined_top_loci_df)
 }
 
-#' @import dplyr
-#' @importFrom data.table as.data.table
+#' @importFrom data.table as.data.table setnames
 #' @export
 load_multitrait_R_sumstat <- function(
     susie_fit, sumstats_db, coverage = NULL, top_loci = FALSE,
@@ -579,7 +574,6 @@ mash_rand_null_sample <- function(dat, n_random, n_null, exclude_condition, seed
   return(result)
 }
 
-#' @import dplyr
 #' @export
 merge_data <- function(res_data, one_data) {
   combined_data <- list()
