@@ -86,12 +86,15 @@ load_twas_weights <- function(weight_db_files, conditions = NULL,
   # Only extract the variant_names and susie_result_trimmed
   extract_variants_and_susie_results <- function(combined_all_data, conditions) {
     combined_susie_result_trimmed <- lapply(conditions, function(condition) {
-      list(
+      result=list(
         variant_names = get_nested_element(combined_all_data, c(condition, "preset_variants_result", "variant_names")),
         susie_result_trimmed = get_nested_element(combined_all_data, c(condition, "preset_variants_result", "susie_result_trimmed")),
-        top_loci = get_nested_element(combined_all_data, c(condition, "preset_variants_result", "top_loci")),
         region_info = get_nested_element(combined_all_data, c(condition, "region_info"))
       )
+      if ('top_loci' %in% names(combined_all_data[[condition]][["preset_variants_result"]])) {
+        result$top_loci = get_nested_element(combined_all_data, c(condition, "preset_variants_result", "top_loci"))
+      }
+      return(result)
     })
     names(combined_susie_result_trimmed) <- conditions
     return(combined_susie_result_trimmed)
@@ -147,7 +150,7 @@ load_twas_weights <- function(weight_db_files, conditions = NULL,
     } else {
       # Processing with variable_name_obj: Align and merge data, fill missing with zeros
       variable_objs <- lapply(conditions, function(condition) {
-        get_nested_element(combined_all_data, c(condition, twas_weights_table, variable_name_obj))
+        get_nested_element(combined_all_data, c(condition, "preset_variants_result", variable_name_obj))#matching variants from weight table which can be less than preset result
       })
       weights <- align_and_merge(combined_weights_by_condition, variable_objs)
     }
@@ -162,7 +165,7 @@ load_twas_weights <- function(weight_db_files, conditions = NULL,
       combined_susie_result_trimmed <- extract_variants_and_susie_results(combined_all_data, conditions)
       weights <- consolidate_weights_list(combined_all_data, conditions, variable_name_obj, twas_weights_table)
       return(list(susie_results = combined_susie_result_trimmed, weights = weights))
-    },
+    }, 
     silent = TRUE
-  )
-}
+    )
+} 
