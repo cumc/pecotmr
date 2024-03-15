@@ -253,7 +253,10 @@ coloc_wrapper <- function(xqtl_file, gwas_files,
   xqtl_raw_data <- readRDS(xqtl_file)[[1]]
   xqtl_data <- if (!is.null(xqtl_finemapping_obj)) get_nested_element(xqtl_raw_data, xqtl_finemapping_obj) else xqtl_raw_data
   xqtl_lbf_matrix <- as.data.frame(xqtl_data$lbf_variable)
-  xqtl_lbf_matrix <- xqtl_lbf_matrix[xqtl_data$V > prior_tol, ]
+  
+  #fsusie data does not have V element in results
+  if ("V" %in% names(xqtl_data)) xqtl_lbf_matrix[xqtl_data$V > prior_tol, ] else (message("No V found in orginal data."))
+ 
   if (!is.null(xqtl_varname_obj)) colnames(xqtl_lbf_matrix) <- get_nested_element(xqtl_raw_data, xqtl_varname_obj)
 
   # add 'chr' in colnames
