@@ -75,9 +75,10 @@
 #' @export
 mrmash_wrapper <- function(X,
                            Y,
+                           sumstats = NULL,
                            prior_data_driven_matrices = NULL,
                            prior_grid = NULL,
-                           nthreads = 2,
+                           nthreads = 1,
                            prior_canonical_matrices = FALSE,
                            standardize = FALSE,
                            update_w0 = TRUE,
@@ -88,8 +89,12 @@ mrmash_wrapper <- function(X,
                            max_iter = 5000,
                            tol = 0.01,
                            verbose = FALSE, ...) {
-  
   # Check input data
+
+  if (!is.matrix(X) || !is.matrix(Y)) {
+    stop("X and Y must be matrices.")
+  }
+
   if (nrow(X) != nrow(Y)) {
     stop("X and Y must have the same number of rows.")
   }
@@ -107,8 +112,10 @@ mrmash_wrapper <- function(X,
   }
   
   # Compute summary statistics and prior_grids
-  sumstats <- compute_univariate_sumstats(X, Y, standardize = standardize, 
+  if (is.null(sumstats)) {
+    sumstats <- compute_univariate_sumstats(X, Y, standardize = standardize, 
                                           standardize.response = FALSE, mc.cores = nthreads)
+  }
   prior_grid <- compute_grid(bhat = sumstats$Bhat, sbhat = sumstats$Shat)
   
   # Compute canonical matrices, if requested
