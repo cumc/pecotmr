@@ -48,7 +48,7 @@ twas_analysis <- function(weights_matrix, gwas_sumstats_db, LD_matrix, extract_v
 #' Each element organized as region/condition/weights
 #' @param condition The specific condition to be checked and consolidated across all files.
 #' @param variable_name_obj The name of the variable/object to fetch from each file, if not NULL.
-#' @return A consolidated list of weights for the specified condition and a list of susie_trimmed_results.
+#' @return A consolidated list of weights for the specified condition and a list of SuSiE results.
 #' @examples
 #' # Example usage (replace with actual file paths, condition, region, and variable_name_obj):
 #' weight_db_files <- c("path/to/file1.rds", "path/to/file2.rds")
@@ -60,7 +60,8 @@ twas_analysis <- function(weights_matrix, gwas_sumstats_db, LD_matrix, extract_v
 #' @import dplyr
 #' @export
 load_twas_weights <- function(weight_db_files, conditions = NULL,
-                              variable_name_obj = "variant_names",
+                              variable_name_obj = c("preset_variants_result", "variant_names"),
+                              susie_obj = c("preset_variants_result", "susie_result_trimmed"),
                               twas_weights_table = "twas_weights") {
   ## Internal function to load and validate data from RDS files
   load_and_validate_data <- function(weight_db_files, conditions, variable_name_obj) {
@@ -83,21 +84,18 @@ load_twas_weights <- function(weight_db_files, conditions = NULL,
     }
     return(combined_all_data)
   }
-  # Only extract the variant_names and susie_result_trimmed
+  # Only extract the variant_names and SuSiE results
   extract_variants_and_susie_results <- function(combined_all_data, conditions) {
-    combined_susie_result_trimmed <- lapply(conditions, function(condition) {
-      result=list(
-        variant_names = get_nested_element(combined_all_data, c(condition, "preset_variants_result", "variant_names")),
-        susie_result_trimmed = get_nested_element(combined_all_data, c(condition, "preset_variants_result", "susie_result_trimmed")),
+    combined_susie_result <- lapply(conditions, function(condition) {
+      result <- list(
+        variant_names = get_nested_element(combined_all_data, c(condition, variable_name_obj)),
+        susie_result = get_nested_element(combined_all_data, c(condition, susie_obj)),
         region_info = get_nested_element(combined_all_data, c(condition, "region_info"))
       )
-      if ('top_loci' %in% names(combined_all_data[[condition]][["preset_variants_result"]])) {
-        result$top_loci = get_nested_element(combined_all_data, c(condition, "preset_variants_result", "top_loci"))
-      }
       return(result)
     })
-    names(combined_susie_result_trimmed) <- conditions
-    return(combined_susie_result_trimmed)
+    names(combined_susie_result) <- conditions
+    return(combined_susie_result)
   }
   # Internal function to align and merge weight matrices
   align_and_merge <- function(weights_list, variable_objs) {
@@ -150,7 +148,7 @@ load_twas_weights <- function(weight_db_files, conditions = NULL,
     } else {
       # Processing with variable_name_obj: Align and merge data, fill missing with zeros
       variable_objs <- lapply(conditions, function(condition) {
-        get_nested_element(combined_all_data, c(condition, "preset_variants_result", variable_name_obj))#matching variants from weight table which can be less than preset result
+        get_nested_element(combined_all_data, c(condition, variable_name_obj))
       })
       weights <- align_and_merge(combined_weights_by_condition, variable_objs)
     }
@@ -162,10 +160,10 @@ load_twas_weights <- function(weight_db_files, conditions = NULL,
   try(
     {
       combined_all_data <- load_and_validate_data(weight_db_files, conditions, variable_name_obj)
-      combined_susie_result_trimmed <- extract_variants_and_susie_results(combined_all_data, conditions)
+      combined_susie_result <- extract_variants_and_susie_results(combined_all_data, conditions)
       weights <- consolidate_weights_list(combined_all_data, conditions, variable_name_obj, twas_weights_table)
-      return(list(susie_results = combined_susie_result_trimmed, weights = weights))
-    }, 
+      return(list(susie_results = combined_susie_result, weights = weights))
+    },
     silent = TRUE
-    )
-} 
+  )
+}

@@ -34,13 +34,16 @@ mr_format <- function(susie_result, condition, gwas_sumstats_db, coverage = "cs_
     )
   }
   gene_name <- unique(get_nested_element(susie_result, c("susie_results", condition, "region_info", "region_name")))
-  # Attempt to retrieve top_loci; if not found, return NULL or an empty data frame
-  if (!'top_loci' %in% names(susie_result[["susie_results"]][[condition]])){
-   message(paste0("top_loci does not exist for the specified condition ", condition," in susie_result."))
-   top_loci <- NULL
-  } else {
-   top_loci <- get_nested_element(susie_result, c("susie_results", condition, "top_loci"))
-  }
+  # Attempt to retrieve top_loci; if not found, return NULL
+  top_loci <- tryCatch(
+    {
+      get_nested_element(susie_result, c("susie_results", condition, "top_loci"))
+    },
+    error = function() { # No parameter here
+      message("top_loci does not exist for the specified condition in susie_result.")
+      return(NULL)
+    }
+  )
   if (is.data.frame(top_loci)) {
     if (all(unique(get_nested_element(top_loci, coverage)) != 0)) {
       susie_cs_result_formatted <- top_loci %>%
