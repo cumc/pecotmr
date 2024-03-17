@@ -7,9 +7,10 @@
 mrmash_wrapper(
   X,
   Y,
+  sumstats = NULL,
   prior_data_driven_matrices = NULL,
   prior_grid = NULL,
-  nthreads = 2,
+  nthreads = 1,
   prior_canonical_matrices = FALSE,
   standardize = FALSE,
   update_w0 = TRUE,
@@ -19,6 +20,7 @@ mrmash_wrapper(
   B_init_method = "enet",
   max_iter = 5000,
   tol = 0.01,
+  weights_tol = 0.001,
   verbose = FALSE,
   ...
 )
@@ -82,20 +84,24 @@ set.seed(123)
 prior_grid <- runif(17, 0.00005, 0.05)
 
 sample_id <- paste0("P000", str_pad(1:400, 3, pad = "0"))
-X <- matrix(sample(0:2, size = n*p, replace = TRUE, prob = c(0.65, 0.30, 0.05)), nrow = n)
+X <- matrix(sample(0:2, size = n * p, replace = TRUE, prob = c(0.65, 0.30, 0.05)), nrow = n)
 rownames(X) <- sample_id
 colnames(X) <- paste0("rs", sample(10000:100000, p))
 
-tissues <- c("Adipose Tissue", "Muscle Tissue", "Brain Tissue", "Liver Tissue",
-             "Kidney Tissue", "Heart Tissue", "Lung Tissue")
-Y <- matrix(runif(n*r, -2, 2), nrow = n)
+tissues <- c(
+  "Adipose Tissue", "Muscle Tissue", "Brain Tissue", "Liver Tissue",
+  "Kidney Tissue", "Heart Tissue", "Lung Tissue"
+)
+Y <- matrix(runif(n * r, -2, 2), nrow = n)
 Y <- scale(Y)
 colnames(Y) <- tissues
 rownames(Y) <- sample_id
 
 set.seed(Sys.time())
-components <- c("XtX", "tFLASH_default", "FLASH_default", "tFLASH_nonneg",
-                "FLASH_nonneg", "PCA")
+components <- c(
+  "XtX", "tFLASH_default", "FLASH_default", "tFLASH_nonneg",
+  "FLASH_nonneg", "PCA"
+)
 
 prior_data_driven_matrices <- list()
 for (i in components) {
@@ -106,8 +112,10 @@ for (i in components) {
   prior_data_driven_matrices[[i]] <- cov
 }
 
-res <- mrmash_wrapper(X = X, Y = Y,
-                      prior_data_driven_matrices = prior_data_driven_matrices,
-                      prior_grid = prior_grid)
+res <- mrmash_wrapper(
+  X = X, Y = Y,
+  prior_data_driven_matrices = prior_data_driven_matrices,
+  prior_grid = prior_grid
+)
 
 }
