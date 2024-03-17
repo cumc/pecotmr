@@ -2,12 +2,10 @@
 % Please edit documentation in R/encoloc.R
 \name{filter_and_order_coloc_results}
 \alias{filter_and_order_coloc_results}
-\title{Functions for  Colocalization Analysis Wrapper
-Function to filter and order colocalization results}
+\title{Function to filter and order colocalization results}
 \usage{
 filter_and_order_coloc_results(coloc_results_fil)
 }
 \description{
-Functions for  Colocalization Analysis Wrapper
 Function to filter and order colocalization results
 }

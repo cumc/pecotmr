@@ -480,7 +480,15 @@ load_regional_regression_data <- function(...) {
 # return matrix of R conditions, with column names being the names of the conditions (phenotypes) and row names being sample names. Even for one condition it has to be a matrix with just one column.
 #' @noRd
 pheno_list_to_mat <- function(data_list) {
-  Y_resid_matrix <- do.call(cbind, data_list$residual_Y)
+  all_row_names <- unique(unlist(lapply(data_list$residual_Y, rownames)))
+  #Step 2: Align matrices and fill with NA where necessary
+  aligned_mats <- lapply(data_list$residual_Y, function(mat) {
+                     expanded_mat <- matrix(NA, nrow = length(all_row_names), ncol = 1, dimnames = list(all_row_names, NULL))
+                     common_rows <- intersect(rownames(mat), all_row_names)
+                     expanded_mat[common_rows, ] <- mat[common_rows, ]
+                     return(expanded_mat)
+                   })
+  Y_resid_matrix <- do.call(cbind,aligned_mats)
   colnames(Y_resid_matrix) <- names(data_list$residual_Y)
   data_list$residual_Y <- Y_resid_matrix
   return(data_list)

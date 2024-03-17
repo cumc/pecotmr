@@ -8,11 +8,8 @@ run_multivariate_pipeline(
   X,
   y,
   maf,
-  dropped_sample,
   max_L = 30,
   ld_reference_meta_file = NULL,
-  X_scalar = rep(1, ncol(y)),
-  y_scalar = rep(1, ncol(y)),
   pip_cutoff_to_skip = rep(0, ncol(y)),
   signal_cutoff = 0.025,
   secondary_coverage = c(0.5, 0.7),
@@ -25,7 +22,9 @@ run_multivariate_pipeline(
   max_cv_variants = 5000,
   cv_folds = 5,
   cv_threads = 1,
-  cv_seed = 999
+  cv_seed = 999,
+  weights_tol = 1e-04,
+  twas_weights = FALSE
 )
 }
 \arguments{
@@ -35,15 +34,9 @@ run_multivariate_pipeline(
 
 \item{maf}{A list of vectors for minor allele frequencies for each variant in X.}
 
-\item{dropped_sample}{A list of lists with X, Y, and covar, each list contains a list of dropped samples as vectors for each condition. Can be obtained from the output of load_regional_multivariate_data.}
-
 \item{max_L}{The maximum number of components in mvSuSiE. Default is 30.}
 
 \item{ld_reference_meta_file}{An optional path to a file containing linkage disequilibrium reference data. If provided, variants in X are filtered based on this reference.}
-
-\item{X_scalar}{Scalar for the genotype data, used in residual scaling at the step of mvsusie_post_processor. Defaults to 1 (no scaling).}
-
-\item{y_scalar}{Scalar for the phenotype data, used in residual scaling at the step of mvsusie_post_processor. Defaults to 1 (no scaling).}
 
 \item{pip_cutoff_to_skip}{Cutoff value for skipping conditions based on PIP values. Default is 0.}
 
@@ -70,6 +63,12 @@ run_multivariate_pipeline(
 \item{cv_threads}{The number of threads to use for parallel computation in cross-validation. Defaults to 1.}
 
 \item{cv_seed}{The seed for random number generation in cross-validation. Defaults to 999.}
+
+\item{dropped_sample}{A list of lists with X, Y, and covar, each list contains a list of dropped samples as vectors for each condition. Can be obtained from the output of load_regional_multivariate_data.}
+
+\item{X_scalar}{Scalar for the genotype data, used in residual scaling at the step of mvsusie_post_processor. Defaults to 1 (no scaling).}
+
+\item{y_scalar}{Scalar for the phenotype data, used in residual scaling at the step of mvsusie_post_processor. Defaults to 1 (no scaling).}
 }
 \description{
 This function performs weights computation for Transcriptome-Wide Association Study (TWAS) with fitting

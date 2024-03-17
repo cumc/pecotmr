@@ -7,7 +7,8 @@
 load_twas_weights(
   weight_db_files,
   conditions = NULL,
-  variable_name_obj = "variant_names",
+  variable_name_obj = c("preset_variants_result", "variant_names"),
+  susie_obj = c("preset_variants_result", "susie_result_trimmed"),
   twas_weights_table = "twas_weights"
 )
 }
@@ -20,7 +21,7 @@ Each element organized as region/condition/weights}
 \item{condition}{The specific condition to be checked and consolidated across all files.}
 }
 \value{
-A consolidated list of weights for the specified condition and a list of susie_trimmed_results.
+A consolidated list of weights for the specified condition and a list of SuSiE results.
 }
 \description{
 This function loads TWAS weight data from multiple RDS files, checks for the presence
