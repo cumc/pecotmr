@@ -91,11 +91,8 @@ variant_id_to_df <- function(variant_id) {
     return(variant_id)
   }
   # Function to split a string and create a data.frame
-  create_dataframe <- function(string, pattern) {
-    # If the pattern is for "chr:pos_ref_at", replace '_' with ':'
-    if (pattern == "colon_underscore") {
-      string <- gsub("_", ":", string)
-    }
+  create_dataframe <- function(string) {
+    string <- gsub("_", ":", string)
     parts <- strsplit(string, ":", fixed = TRUE)
     data <- data.frame(do.call(rbind, parts), stringsAsFactors = FALSE)
     colnames(data) <- c("chrom", "pos", "A2", "A1")
@@ -107,18 +104,8 @@ variant_id_to_df <- function(variant_id) {
     data$pos <- as.integer(data$pos)
     return(data)
   }
+  return(create_dataframe(variant_id))
 
-  # Check if id1 is in the first vector format
-  if (any(grepl(":", variant_id[1])) && any(grepl("_", variant_id[1]))) {
-    return(create_dataframe(variant_id, "colon_underscore"))
-  }
-
-  # Check if id1 is in the second vector format
-  if (all(grepl(":", variant_id[1]))) {
-    return(create_dataframe(variant_id, ":"))
-  }
-  # If none of the conditions are met, stop and print an error
-  stop("Input does not match any expected format. Please provide a valid data frame or a character vector in the specified formats.")
 }
 
 load_genotype_data <- function(genotype, keep_indel = TRUE) {
@@ -178,10 +165,10 @@ NoSNPsError <- function(message) {
 
 #' Load genotype data for a specific region using data.table for efficiency
 #'
-#' By default, plink usage dosage of the *major* allele, since allele A1 is
-#' usually the minor allele and the code "1" refers to the second allele A2,
-#' so that "11" is A2/A2 or major/major. We always use minor allele dosage, to
-#' be consistent with the output from plink --recodeA which used minor allele
+#' By default, plink usage dosage of the *major* allele, since "effect allele" A1 is
+#' usually the minor allele and the code "1" refers to the "other allele" A2,
+#' so that "11" is A2/A2 or major/major. We always use effect allele dosage, to
+#' be more consistent with the minor allele based convention ie, plink --recodeA which used minor allele
 #' dosage by default.
 #'
 #' @param genotype Path to the genotype data file (without extension).
@@ -225,12 +212,6 @@ load_genotype_region <- function(genotype, region = NULL, keep_indel = TRUE) {
   } else {
     geno_bed <- geno$genotypes
   }
-  # By default, plink usage dosage of the *major* allele, since allele A1 is
-  # usually the minor allele and the code "1" refers to the second allele A2,
-  # so that "11" is A2/A2 or major/major.
-
-  # We always use minor allele dosage, to be consistent with the output from
-  # plink --recodeA which used minor allele dosage by default.
   return(2 - as(geno_bed, "numeric"))
 }
 

@@ -60,12 +60,13 @@ compute_qtl_enrichment <- function(gwas_pip, susie_qtl_regions,
                                    lambda = 1.0, ImpN = 25,
                                    num_threads = 1) {
   if (is.null(pi_gwas)) {
-    warning("Using data to estimate pi_gwas. This will be problematic if your input gwas_pip does not contain genome-wide variants.")
+    warning("pi_gwas is not provided. Estimating pi_gwas from the data. Note that this estimate may be biased if the input gwas_pip does not contain genome-wide variants.")
     pi_gwas <- sum(gwas_pip) / length(gwas_pip)
-    cat(paste("Estimated pi_gwas is:", round(pi_gwas, 5), "\n"))
+    cat(paste("Estimated pi_gwas: ", round(pi_gwas, 5), "\n"))
   }
+
   if (is.null(pi_qtl)) {
-    warning("Using data to estimate pi_qtl. This will be problematic if either 1) your input susie_qtl_regions does not have enought data to estimate it, or 2) your single effects only includes variables inside of credible sets or signal clusters.")
+    warning("pi_qtl is not provided. Estimating pi_qtl from the data. Note that this estimate may be biased if either 1) the input susie_qtl_regions does not have enough data, or 2) the single effects only include variables inside of credible sets or signal clusters.")
     num_signal <- 0
     num_test <- 0
     for (d in susie_qtl_regions) {
@@ -73,16 +74,37 @@ compute_qtl_enrichment <- function(gwas_pip, susie_qtl_regions,
       num_test <- num_test + length(d$pip)
     }
     pi_qtl <- num_signal / num_test
-    cat(paste("Estimated pi_qtl is:", round(pi_qtl, 5), "\n"))
+    cat(paste("Estimated pi_qtl: ", round(pi_qtl, 5), "\n"))
   }
-  if (pi_gwas == 0) stop("Cannot perform enrichment analysis because there is no association signal from GWAS")
-  if (pi_qtl == 0) stop("Cannot perform enrichment analysis because there is no QTL associated with molecular phenotype")
 
-  # FIXME: Here I want to defined a function to align variant names from m two strings containing variant names
-  # Input should be two vectors of variant names as variant_id chr:pos:A1:A2 or chr:pos_A1_A2. The first should be the "source" and the 2nd be the "reference".
-  # Output should be a vector converting the source to as similarly as the reference as possible.
-  # If some variants are not found in the reference we will use what's in the source as is.
-  # This function should be used to align the variant names between GWAS and xQTL data.
+  if (pi_gwas == 0) stop("Cannot perform enrichment analysis. No association signal found in GWAS data.")
+  if (pi_qtl == 0) stop("Cannot perform enrichment analysis. No QTL associated with the molecular phenotype.")
+
+  # Check if names of gwas_pip and susie_qtl_regions$pip are both available
+  if (is.null(names(gwas_pip))) {
+    stop("Variant names are missing in gwas_pip. Please provide named gwas_pip data.")
+  }
+  if (!all(sapply(susie_qtl_regions, function(x) !is.null(names(x$pip))))) {
+    stop("Variant names are missing in susie_qtl_regions$pip. Please provide susie_qtl_regions with named pip data.")
+  }
+
+  # Align the names of susie_qtl_regions$pip to gwas_pip names and document unmatched variants
+  aligned_susie_qtl_regions <- lapply(susie_qtl_regions, function(x) {
+    alignment_result <- align_variant_names(names(x$pip), names(gwas_pip))
+    names(x$pip) <- alignment_result$aligned_variants
+    if (length(alignment_result$unmatched_indices)>0) {
+      x$unmatched_variants <- names(x$pip)[alignment_result$unmatched_indices]
+    }
+    x
+  })
+  unmatched_variants <- lapply(aligned_susie_qtl_regions, function(x) x$unmatched_variants)
+
+  # Update susie_qtl_regions with the aligned variant names
+  susie_qtl_regions <- lapply(aligned_susie_qtl_regions, function(x) {
+    x$unmatched_variants <- NULL
+    x
+  })
+
   en <- qtl_enrichment_rcpp(
     r_gwas_pip = gwas_pip,
     r_qtl_susie_fit = susie_qtl_regions,
@@ -92,5 +114,10 @@ compute_qtl_enrichment <- function(gwas_pip, susie_qtl_regions,
     shrinkage_lambda = lambda,
     num_threads = num_threads
   )
+
+  # Add the unmatched variants to the output
+  en <- list(en)
+  en$unused_xqtl_variants <- unmatched_variants
+
   return(en)
 }

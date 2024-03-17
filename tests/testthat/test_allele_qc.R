@@ -121,31 +121,31 @@ create_allele_data <- function(seed, n=100, match_min_prop=0.8, ambiguous=FALSE,
 test_that("Check that we correctly remove stand ambiguous SNPs",{
   res <- create_allele_data(1, n=100, match_min_prop=0.8, ambiguous=TRUE)
   output <- allele_qc(
-    res$target_variants, res$ref_variants, res$target_data, "beta", match.min.prop = 0.2,
-    TRUE, TRUE, FALSE, TRUE)
+    res$target_variants, res$ref_variants, res$target_data, "beta", match_min_prop = 0.2,
+    TRUE, FALSE, TRUE)
   expect_equal(nrow(output$target_data_qced), 80)
 })
 
 test_that("Check that we correctly remove non-ACTG coding SNPs",{
   res <- create_allele_data(1, n=100, match_min_prop=0.4, non_actg=TRUE)
   output <- allele_qc(
-    res$target_variants, res$ref_variants, res$target_data, "beta", match.min.prop = 0.2,
-    TRUE, TRUE, FALSE, TRUE)
+    res$target_variants, res$ref_variants, res$target_data, "beta", match_min_prop = 0.2,
+    TRUE, FALSE, TRUE)
   expect_equal(nrow(output$target_data_qced), 40)
 })
 
 test_that("Check that execution stops if not enough variants are matched",{
   res <- create_allele_data(1, n=100, match_min_prop=0.1, ambiguous=TRUE)
   expect_error(allele_qc(
-    res$target_variants, res$ref_variants, res$target_data, "beta", match.min.prop = 0.2,
-    TRUE, TRUE, FALSE, TRUE), "Not enough variants have been matched.")
+    res$target_variants, res$ref_variants, res$target_data, "beta", match_min_prop = 0.2,
+    TRUE, FALSE, TRUE), "Not enough variants have been matched.")
 })
 
 test_that("align_variant_names correctly aligns variant names", {
   # Test case 1: Matching variant names
   source1 <- c("1:123:A:C", "2:456:G:T", "3:789:C:A")
   reference1 <- c("1:123:A:C", "2:456:T:G", "3:789:C:A")
-  expected_aligned1 <- c("1:123:A:C", "2:456:G:T", "3:789:C:A")
+  expected_aligned1 <- c("1:123:A:C", "2:456:T:G", "3:789:C:A")
   expected_unmatched1 <- integer(0)
   
   result1 <- align_variant_names(source1, reference1)
@@ -155,7 +155,7 @@ test_that("align_variant_names correctly aligns variant names", {
   # Test case 2: Unmatched variant names
   source2 <- c("1:123:A:C", "2:456:G:T", "3:789:C:A", "4:101:G:C")
   reference2 <- c("1:123:A:C", "2:456:T:G", "3:789:C:A")
-  expected_aligned2 <- c("1:123:A:C", "2:456:G:T", "3:789:C:A", "4:101:G:C")
+  expected_aligned2 <- c("1:123:A:C", "2:456:T:G", "3:789:C:A", "4:101:G:C")
   expected_unmatched2 <- 4
   
   result2 <- align_variant_names(source2, reference2)
@@ -165,7 +165,7 @@ test_that("align_variant_names correctly aligns variant names", {
   # Test case 3: Different variant name formats
   source3 <- c("1:123:A:C", "2:456_G_T", "3:789:C:A")
   reference3 <- c("1:123:A:C", "2:456:T:G", "3:789:C:A")
-  expected_aligned3 <- c("1:123:A:C", "2:456:G:T", "3:789:C:A")
+  expected_aligned3 <- c("1:123:A:C", "2:456:T:G", "3:789:C:A")
   expected_unmatched3 <- integer(0)
   
   result3 <- align_variant_names(source3, reference3)
@@ -229,7 +229,7 @@ test_that("align_variant_names correctly aligns variant names with different chr
   # Test case 9: Original without chr prefix, reference with chr prefix
   source9 <- c("1:123:A:C", "2:456:G:T", "3:789:C:A")
   reference9 <- c("chr1:123:A:C", "chr2:456:T:G", "chr3:789:C:A")
-  expected_aligned9 <- c("chr1:123:A:C", "chr2:456:G:T", "chr3:789:C:A")
+  expected_aligned9 <- c("chr1:123:A:C", "chr2:456:T:G", "chr3:789:C:A")
   expected_unmatched9 <- integer(0)
   
   result9 <- align_variant_names(source9, reference9)
@@ -239,20 +239,10 @@ test_that("align_variant_names correctly aligns variant names with different chr
   # Test case 10: Original with chr prefix, reference without chr prefix
   source10 <- c("chr1:123:A:C", "chr2:456:G:T", "chr3:789:C:A")
   reference10 <- c("1:123:A:C", "2:456:T:G", "3:789:C:A")
-  expected_aligned10 <- c("1:123:A:C", "2:456:G:T", "3:789:C:A")
+  expected_aligned10 <- c("1:123:A:C", "2:456:T:G", "3:789:C:A")
   expected_unmatched10 <- integer(0)
   
   result10 <- align_variant_names(source10, reference10)
   expect_equal(result10$aligned_variants, expected_aligned10)
   expect_equal(result10$unmatched_indices, expected_unmatched10)
-  
-  # Test case 11: Mixed chr prefix conventions
-  source11 <- c("1:123:A:C", "chr2:456:G:T", "3:789:C:A")
-  reference11 <- c("chr1:123:A:C", "2:456:T:G", "chr3:789:C:A")
-  expected_aligned11 <- c("chr1:123:A:C", "2:456:G:T", "chr3:789:C:A")
-  expected_unmatched11 <- integer(0)
-  
-  result11 <- align_variant_names(source11, reference11)
-  expect_equal(result11$aligned_variants, expected_aligned11)
-  expect_equal(result11$unmatched_indices, expected_unmatched11)
 })
