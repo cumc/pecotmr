@@ -36,7 +36,6 @@ run_multivariate_pipeline <- function(
     mrmash_weights_prior_matrices_cv = NULL, prior_canonical_matrices = TRUE, sample_partition = NULL,
     mrmash_max_iter = 5000, mvsusie_max_iter = 200, max_cv_variants = 5000, cv_folds = 5,
     cv_threads = 1, cv_seed = 999, weights_tol = 1e-4, twas_weights = FALSE) {
-
   skip_conditions <- function(y, pip_cutoff_to_skip) {
     for (r in 1:ncol(y)) {
       if (pip_cutoff_to_skip[r] > 0) {
@@ -53,24 +52,22 @@ run_multivariate_pipeline <- function(
     return(y)
   }
 
-    initialize_multivariate_prior <- function(
-     condition_names, mrmash_weights_prior_matrices,
-      mrmash_weights_prior_matrices_cv, weights_tol) {
-    
-      if (!is.null(mrmash_weights_prior_matrices)) {
-         mrmash_weights_prior_matrices <- list(matrices = mrmash_weights_prior_matrices$U, weights = mrmash_weights_prior_matrices$w)
-         mrmash_weights_prior_matrices <- create_mixture_prior(mixture_prior = mrmash_weights_prior_matrices, weights_tol = weights_tol, include_indices = condition_names)
-      }
-    
-      if (!is.null(mrmash_weights_prior_matrices_cv)) {
-        mrmash_weights_prior_matrices_cv <- lapply(
-          mrmash_weights_prior_matrices_cv,
-          function(x) {
-            x <- list(matrices = x$U, weights = x$w)
-            create_mixture_prior(mixture_prior = x, weights_tol = weights_tol, include_indices = condition_names)
-          }
-        )
-      }
+  initialize_multivariate_prior <- function(condition_names, mrmash_weights_prior_matrices,
+                                            mrmash_weights_prior_matrices_cv, weights_tol) {
+    if (!is.null(mrmash_weights_prior_matrices)) {
+      mrmash_weights_prior_matrices <- list(matrices = mrmash_weights_prior_matrices$U, weights = mrmash_weights_prior_matrices$w)
+      mrmash_weights_prior_matrices <- create_mixture_prior(mixture_prior = mrmash_weights_prior_matrices, weights_tol = weights_tol, include_indices = condition_names)
+    }
+
+    if (!is.null(mrmash_weights_prior_matrices_cv)) {
+      mrmash_weights_prior_matrices_cv <- lapply(
+        mrmash_weights_prior_matrices_cv,
+        function(x) {
+          x <- list(matrices = x$U, weights = x$w)
+          create_mixture_prior(mixture_prior = x, weights_tol = weights_tol, include_indices = condition_names)
+        }
+      )
+    }
 
     return(list(
       mrmash_weights_prior_matrices = mrmash_weights_prior_matrices, mrmash_weights_prior_matrices_cv = mrmash_weights_prior_matrices_cv
@@ -87,7 +84,8 @@ run_multivariate_pipeline <- function(
 
   # Filter data based on remaining conditions
   filtered_data <- initialize_multivariate_prior(colnames(y), mrmash_weights_prior_matrices,
-    mrmash_weights_prior_matrices_cv,weights_tol = weights_tol
+    mrmash_weights_prior_matrices_cv,
+    weights_tol = weights_tol
   )
 
   filtered_mrmash_weights_prior_matrices <- filtered_data$mrmash_weights_prior_matrices
@@ -114,19 +112,19 @@ run_multivariate_pipeline <- function(
   #   mvsusie_fitted, X, y, X_scalar, y_scalar,
   #   maf, secondary_coverage, signal_cutoff, dropped_samples
   # )
-    
+
   # Run TWAS pipeline
   if (!twas_weights) {
-     result <- twas_multivariate_weights_pipeline(X, y, maf, mvsusie_prefit, mvsusie_fitted,
-               prior = prior, resid_Y = resid_Y, dropped_samples = dropped_samples, cv_folds = cv_folds,
-               ld_reference_meta_file = ld_reference_meta_file, max_cv_variants = max_cv_variants,
-               mvsusie_max_iter = mvsusie_max_iter, mrmash_max_iter = mrmash_max_iter, signal_cutoff = signal_cutoff,
-               pip_cutoff_to_skip = pip_cutoff_to_skip, secondary_coverage = secondary_coverage,
-               prior_canonical_matrices = prior_canonical_matrices, mrmash_weights_prior_matrices = mrmash_weights_prior_matrices,
-               mrmash_weights_prior_matrices_cv = mrmash_weights_prior_matrices_cv, cv_seed = cv_seed
-              )
-     return(result)
-   }
+    result <- twas_multivariate_weights_pipeline(X, y, maf, mvsusie_prefit, mvsusie_fitted,
+      prior = prior, resid_Y = resid_Y, dropped_samples = dropped_samples, cv_folds = cv_folds,
+      ld_reference_meta_file = ld_reference_meta_file, max_cv_variants = max_cv_variants,
+      mvsusie_max_iter = mvsusie_max_iter, mrmash_max_iter = mrmash_max_iter, signal_cutoff = signal_cutoff,
+      pip_cutoff_to_skip = pip_cutoff_to_skip, secondary_coverage = secondary_coverage,
+      prior_canonical_matrices = prior_canonical_matrices, mrmash_weights_prior_matrices = mrmash_weights_prior_matrices,
+      mrmash_weights_prior_matrices_cv = mrmash_weights_prior_matrices_cv, cv_seed = cv_seed
+    )
+    return(result)
+  }
 }
 
 #' TWAS Weights Multivariate Pipeline

@@ -76,7 +76,8 @@
 #' )
 #'
 #' @importFrom mr.mash.alpha compute_canonical_covs mr.mash expand_covs compute_univariate_sumstats
-#' @importFrom doMC registerDoMC
+#' @importFrom doFuture registerDoFuture
+#' @importFrom future plan multisession
 #' @importFrom glmnet cv.glmnet
 #' @export
 mrmash_wrapper <- function(X,
@@ -94,7 +95,7 @@ mrmash_wrapper <- function(X,
                            B_init_method = "enet",
                            max_iter = 5000,
                            tol = 0.01,
-                           weights_tol  = 1e-4,
+                           weights_tol = 1e-4,
                            verbose = FALSE, ...) {
   # Check input data
 
@@ -130,19 +131,21 @@ mrmash_wrapper <- function(X,
   # Compute canonical matrices, if requested
   # Compute canonical matrices, if requested
   if (isTRUE(prior_canonical_matrices)) {
-    prior_canonical_matrices <- compute_canonical_covs(ncol(Y), singletons = TRUE, 
-                                                       hetgrid = c(0, 0.25, 0.5, 0.75, 1))
+    prior_canonical_matrices <- compute_canonical_covs(ncol(Y),
+      singletons = TRUE,
+      hetgrid = c(0, 0.25, 0.5, 0.75, 1)
+    )
     if (!is.null(prior_data_driven)) {
       prior_data_driven <- list(matrices = prior_data_driven$xUlist, weights = prior_data_driven$pi)
-      prior_data_driven <- create_mixture_prior(mixture_prior = prior_data_driven,weights_tol = weights_tol,include_indices = colnames(Y))
+      prior_data_driven <- create_mixture_prior(mixture_prior = prior_data_driven, weights_tol = weights_tol, include_indices = colnames(Y))
       S0_raw <- c(prior_canonical_matrices, prior_data_driven[["prior_variance"]][["xUlist"]][-1])
     } else {
       S0_raw <- prior_canonical_matrices
     }
   } else {
-      prior_data_driven <- list(matrices = prior_data_driven$xUlist, weights = prior_data_driven$pi)
-      prior_data_driven <- create_mixture_prior(mixture_prior = prior_data_driven,weights_tol = weights_tol,include_indices = colnames(Y))
-      S0_raw <- prior_data_driven[["prior_variance"]][["xUlist"]][-1]  
+    prior_data_driven <- list(matrices = prior_data_driven$xUlist, weights = prior_data_driven$pi)
+    prior_data_driven <- create_mixture_prior(mixture_prior = prior_data_driven, weights_tol = weights_tol, include_indices = colnames(Y))
+    S0_raw <- prior_data_driven[["prior_variance"]][["xUlist"]][-1]
   }
 
   # Compute prior covariance
@@ -189,7 +192,8 @@ compute_coefficients_glasso <- function(X, Y, standardize, nthreads, Xnew = NULL
 
   # Fit group-lasso
   if (nthreads > 1) {
-    registerDoMC(nthreads)
+    registerDoFuture()
+    plan(multisession, workers=nthreads)
     paral <- TRUE
   } else {
     paral <- FALSE
@@ -225,7 +229,8 @@ compute_coefficients_univ_glmnet <- function(X, Y, alpha, standardize, nthreads,
 
   linreg <- function(i, X, Y, alpha, standardize, nthreads, Xnew) {
     if (nthreads > 1) {
-      registerDoMC(nthreads)
+      registerDoFuture()
+      plan(multisession, workers=nthreads)
       paral <- TRUE
     } else {
       paral <- FALSE

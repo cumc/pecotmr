@@ -105,7 +105,6 @@ variant_id_to_df <- function(variant_id) {
     return(data)
   }
   return(create_dataframe(variant_id))
-
 }
 
 load_genotype_data <- function(genotype, keep_indel = TRUE) {
@@ -175,8 +174,10 @@ NoSNPsError <- function(message) {
 #' @param region The target region in the format "chr:start-end".
 #' @param keep_indel Whether to keep indel SNPs.
 #' @return A vector of SNP IDs in the specified region.
-#' @importFrom snpStats read.plink
+#' 
 #' @importFrom data.table fread
+#' @importFrom magrittr %>%
+#' @importFrom snpStats read.plink
 #' @export
 load_genotype_region <- function(genotype, region = NULL, keep_indel = TRUE) {
   if (!is.null(region)) {
@@ -215,6 +216,11 @@ load_genotype_region <- function(genotype, region = NULL, keep_indel = TRUE) {
   return(2 - as(geno_bed, "numeric"))
 }
 
+#' @importFrom purrr map
+#' @importFrom readr read_delim cols
+#' @importFrom dplyr select mutate across everything
+#' @importFrom magrittr %>%
+#' @noRd
 load_covariate_data <- function(covariate_path) {
   return(map(covariate_path, ~ read_delim(.x, "\t", col_types = cols()) %>%
     select(-1) %>%
@@ -227,7 +233,9 @@ NoPhenotypeError <- function(message) {
 }
 
 #' @importFrom purrr map2 compact
-#' @importFrom dplyr filter
+#' @importFrom readr read_delim cols
+#' @importFrom dplyr filter select mutate across everything
+#' @importFrom magrittr %>%
 #' @noRd
 load_phenotype_data <- function(phenotype_path, region, extract_region_name = NULL, region_name_col = NULL, tabix_header = TRUE) {
   if (is.null(extract_region_name)) {
@@ -269,8 +277,10 @@ load_phenotype_data <- function(phenotype_path, region, extract_region_name = NU
   return(phenotype_data)
 }
 
-## extract phenotype coordiate information (first three col for each element in the list)
 #' @importFrom purrr map
+#' @importFrom tibble as_tibble
+#' @importFrom dplyr mutate
+#' @importFrom magrittr %>%
 #' @noRd
 extract_phenotype_coordinates <- function(phenotype_list) {
   return(map(phenotype_list, ~ t(.x[1:3, ]) %>%
@@ -278,11 +288,17 @@ extract_phenotype_coordinates <- function(phenotype_list) {
     mutate(start = as.numeric(start), end = as.numeric(end))))
 }
 
+#' @importFrom magrittr %>%
+#' @noRd
 filter_by_common_samples <- function(dat, common_samples) {
   dat[common_samples, , drop = FALSE] %>% .[order(rownames(.)), ]
 }
 
-#' @importFrom readr read_delim cols
+#' @importFrom tibble tibble
+#' @importFrom dplyr mutate select
+#' @importFrom purrr map map2
+#' @importFrom magrittr %>%
+#' @noRd
 prepare_data_list <- function(geno_bed, phenotype, covariate, imiss_cutoff, maf_cutoff, mac_cutoff, xvar_cutoff, phenotype_header = 4, keep_samples = NULL) {
   data_list <- tibble(
     covar = covariate,
@@ -325,6 +341,10 @@ prepare_data_list <- function(geno_bed, phenotype, covariate, imiss_cutoff, maf_
   return(data_list)
 }
 
+#' @importFrom purrr map
+#' @importFrom dplyr intersect
+#' @importFrom magrittr %>%
+#' @noRd
 prepare_X_matrix <- function(geno_bed, data_list, imiss_cutoff, maf_cutoff, mac_cutoff, xvar_cutoff) {
   # Calculate the union of all samples from data_list: any of X, covar and Y would do
   all_samples_union <- map(data_list$covar, ~ rownames(.x)) %>%
@@ -346,6 +366,11 @@ prepare_X_matrix <- function(geno_bed, data_list, imiss_cutoff, maf_cutoff, mac_
   return(X_filtered)
 }
 
+#' @importFrom purrr map map2
+#' @importFrom dplyr mutate
+#' @importFrom stats lm.fit sd
+#' @importFrom magrittr %>%
+#' @noRd
 add_X_residuals <- function(data_list, scale_residuals = FALSE) {
   # Compute residuals for X and add them to data_list
   data_list <- data_list %>%
@@ -365,6 +390,11 @@ add_X_residuals <- function(data_list, scale_residuals = FALSE) {
   return(data_list)
 }
 
+#' @importFrom purrr map map2
+#' @importFrom dplyr mutate
+#' @importFrom stats lm.fit sd
+#' @importFrom magrittr %>%
+#' @noRd
 add_Y_residuals <- function(data_list, conditions, scale_residuals = FALSE) {
   # Compute residuals, their mean, and standard deviation, and add them to data_list
   data_list <- data_list %>%
@@ -386,10 +416,46 @@ add_Y_residuals <- function(data_list, conditions, scale_residuals = FALSE) {
   return(data_list)
 }
 
-#' @import purrr dplyr tibble
-#' @importFrom utils read.table
-#' @importFrom tidyr unnest
-#' @importFrom stringr str_split
+
+#' Load regional association data
+#'
+#' This function loads genotype, phenotype, and covariate data for a specific region and performs data preprocessing.
+#'
+#' @param genotype PLINK bed file containing genotype data.
+#' @param phenotype A vector of phenotype file names.
+#' @param covariate A vector of covariate file names corresponding to the phenotype file vector.
+#' @param region A string of chr:start-end for the phenotype region.
+#' @param conditions A vector of strings representing different conditions or groups.
+#' @param maf_cutoff Minimum minor allele frequency (MAF) cutoff. Default is 0.
+#' @param mac_cutoff Minimum minor allele count (MAC) cutoff. Default is 0.
+#' @param xvar_cutoff Maximum variant missingness cutoff. Default is 0.
+#' @param imiss_cutoff Maximum individual missingness cutoff. Default is 0.
+#' @param association_window A string of chr:start-end for the association analysis window (cis or trans). If not provided, all genotype data will be loaded.
+#' @param extract_region_name A string (e.g., gene ID ENSG00000269699) to subset the information when there are multiple regions available. Default is NULL.
+#' @param region_name_col Column name containing the region name. Default is NULL.
+#' @param keep_indel Logical indicating whether to keep insertions/deletions (INDELs). Default is TRUE.
+#' @param keep_samples A vector of sample names to keep. Default is NULL.
+#' @param phenotype_header Number of rows to skip at the beginning of the transposed phenotype file (default is 4 for chr, start, end, and ID).
+#' @param scale_residuals Logical indicating whether to scale residuals. Default is FALSE.
+#' @param tabix_header Logical indicating whether the tabix file has a header. Default is TRUE.
+#'
+#' @return A list containing the following components:
+#' \itemize{
+#'   \item residual_Y: A list of residualized phenotype values (either a vector or a matrix).
+#'   \item residual_X: A list of residualized genotype matrices for each condition.
+#'   \item residual_Y_scalar: Scaling factor for residualized phenotype values.
+#'   \item residual_X_scalar: Scaling factor for residualized genotype values.
+#'   \item dropped_sample: A list of dropped samples for X, Y, and covariates.
+#'   \item covar: Covariate data.
+#'   \item Y: Original phenotype data.
+#'   \item X_data: Original genotype data.
+#'   \item X: Filtered genotype matrix.
+#'   \item maf: Minor allele frequency (MAF) for each variant.
+#'   \item chrom: Chromosome of the region.
+#'   \item grange: Genomic range of the region (start and end positions).
+#'   \item Y_coordinates: Phenotype coordinates if a region is specified.
+#' }
+#'
 #' @export
 load_regional_association_data <- function(genotype, # PLINK file
                                            phenotype, # a vector of phenotype file names
@@ -481,14 +547,14 @@ load_regional_regression_data <- function(...) {
 #' @noRd
 pheno_list_to_mat <- function(data_list) {
   all_row_names <- unique(unlist(lapply(data_list$residual_Y, rownames)))
-  #Step 2: Align matrices and fill with NA where necessary
+  # Step 2: Align matrices and fill with NA where necessary
   aligned_mats <- lapply(data_list$residual_Y, function(mat) {
-                     expanded_mat <- matrix(NA, nrow = length(all_row_names), ncol = 1, dimnames = list(all_row_names, NULL))
-                     common_rows <- intersect(rownames(mat), all_row_names)
-                     expanded_mat[common_rows, ] <- mat[common_rows, ]
-                     return(expanded_mat)
-                   })
-  Y_resid_matrix <- do.call(cbind,aligned_mats)
+    expanded_mat <- matrix(NA, nrow = length(all_row_names), ncol = 1, dimnames = list(all_row_names, NULL))
+    common_rows <- intersect(rownames(mat), all_row_names)
+    expanded_mat[common_rows, ] <- mat[common_rows, ]
+    return(expanded_mat)
+  })
+  Y_resid_matrix <- do.call(cbind, aligned_mats)
   colnames(Y_resid_matrix) <- names(data_list$residual_Y)
   data_list$residual_Y <- Y_resid_matrix
   return(data_list)

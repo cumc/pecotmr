@@ -618,8 +618,8 @@ merge_data <- function(res_data, one_data) {
     return(combined_data)
   }
 }
+
 #' @importFrom udr ud_init ud_fit
-#' @import stringr
 #' @importFrom mashr mash_set_data cov_canonical estimate_null_correlation_simple
 #' @export
 mash_pipeline <- function(mash_input, alpha, unconstrained.update = "ted", set_seed = 999) {

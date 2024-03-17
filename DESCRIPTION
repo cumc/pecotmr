@@ -20,9 +20,6 @@ Imports:
     data.table,
     stringr,
     dplyr,
-    Rlab,
-    qvalue,
-    Matrix,
     matrixStats,
     readr,
     glmnet,
@@ -30,25 +27,23 @@ Imports:
     purrr,
     tidyr,
     Rfast,
-    doMC,
+    doFuture,
     udr,
     mashr,
     pgenlibr,
     snpStats,
-    vctrs
+    vctrs,
+    fsusieR,
+    future,
+    mvsusieR,
+    tibble
 Suggests: 
     testthat,
     knitr,
-    pillar,
-    tibble,
-    ggplot2,
-    ggvenn,
-    ggrepel,
-    ggnewscale,
-    harmonicmeanp,
+    rmarkdown,
     GBJ,
-    plink2R,
-    rmarkdown
+    harmonicmeanp
+    plink2R
 LinkingTo: 
     Rcpp,
     RcppArmadillo,

@@ -202,14 +202,15 @@ get_rss_input <- function(sumstat_path, column_file_path, n_sample, n_case, n_co
 #' @param skip_region A character vector specifying regions to be skipped in the analysis (optional).
 #'
 #' @return A processed data frame containing summary statistics after preprocessing.
-#' @import dplyr
-#' @import tibble
-#'
+#' @importFrom dplyr filter pull arrange
+#' @importFrom tibble tibble
+#' @importFrom tidyr separate
+#' @importFrom magrittr %>%
 #' @export
 rss_input_preprocess <- function(sumstats, LD_data, skip_region = NULL) {
   target_variants <- sumstats[, c("chrom", "pos", "A1", "A2")]
   ref_variants <- LD_data$combined_LD_variants
-  allele_flip <- allele_qc(target_variants, ref_variants, sumstats, col_to_flip = c("beta", "z"), match.min.prop = 0.2, remove_dups = TRUE, remove_indels = FALSE, remove_strand_ambiguous = TRUE)
+  allele_flip <- allele_qc(target_variants, ref_variants, sumstats, col_to_flip = c("beta", "z"), match_min_prop = 0.2, remove_dups = TRUE, remove_indels = FALSE, remove_strand_ambiguous = TRUE)
 
   if (length(skip_region) != 0) {
     skip_table <- tibble(region = skip_region) %>% separate(region, into = c("chrom", "start", "end"), sep = "[:-]")
@@ -255,9 +256,8 @@ rss_input_preprocess <- function(sumstats, LD_data, skip_region = NULL) {
 #'
 #' @return A list containing the results of various SuSiE RSS analyses.
 #'
-#' @import dplyr
-#' @import susieR
-#' @import tibble
+#' @importFrom magrittr %>%
+#' @importFrom dplyr arrange select
 #' @export
 susie_rss_pipeline <- function(sumstat, R, ref_panel, n, L, var_y, QC = TRUE, impute = TRUE, bayesian_conditional_analysis = TRUE, lamb = 0.01, rcond = 0.01, R2_threshold = 0.6,
                                max_L = 20, l_step = 5, minimum_ld = 5, coverage = 0.95,
@@ -341,7 +341,6 @@ susie_rss_pipeline <- function(sumstat, R, ref_panel, n, L, var_y, QC = TRUE, im
 }
 
 
-
 #' SuSiE RSS Analysis with Quality Control and Imputation
 #'
 #' Performs SuSiE RSS analysis with optional quality control steps that include
@@ -367,7 +366,8 @@ susie_rss_pipeline <- function(sumstat, R, ref_panel, n, L, var_y, QC = TRUE, im
 #' @param output_qc Logical; if TRUE, includes QC-only results in the output.
 #' @return A list containing the results of the SuSiE RSS analysis after applying quality control measures and optional imputation.
 #' @importFrom susieR susie_rss
-#' @import dplyr
+#' @importFrom magrittr %>%
+#' @importFrom dplyr arrange
 #' @export
 susie_rss_qc <- function(sumstat, R, ref_panel, bhat = NULL, shat = NULL, var_y = NULL, n = NULL, L = 10, max_L = 20, l_step = 5,
                          lamb = 0.01, rcond = 0.01, R2_threshold = 0.6, minimum_ld = 5, impute = TRUE, output_qc = TRUE, coverage = 0.95, ...) {
@@ -436,8 +436,6 @@ susie_rss_qc <- function(sumstat, R, ref_panel, bhat = NULL, shat = NULL, var_y 
   }
   return(result_final)
 }
-
-
 
 #' Post-process SuSiE or SuSiE_rss Analysis Results
 #'

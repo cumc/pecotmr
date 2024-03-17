@@ -89,7 +89,9 @@ load_script <- function() {
 }
 
 #' @importFrom data.table fread
-#' @import dplyr
+#' @importFrom dplyr as_tibble mutate
+#' @importFrom tibble tibble
+#' @importFrom magrittr %>%
 tabix_region <- function(file, region, tabix_header = "auto") {
   # Execute tabix command and capture the output
   cmd_output <- tryCatch(
@@ -110,6 +112,7 @@ tabix_region <- function(file, region, tabix_header = "auto") {
       !!names(.)[2] := as.numeric(.[[2]])
     )
 }
+
 #' Find Valid File Path
 find_valid_file_path <- function(reference_file_path, target_file_path) {
   # Check if the reference file path exits

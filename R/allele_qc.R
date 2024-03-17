@@ -17,7 +17,8 @@
 #' @param flip_strand Whether to output the variants after strand flip. Default is `FALSE`.
 #' @param remove_unmatched Whether to remove unmatched variants. Default is `TRUE`.
 #' @return A single data frame with matched variants.
-#' @import dplyr
+#' @importFrom magrittr %>% 
+#' @importFrom dplyr mutate inner_join filter pull select everything
 #' @importFrom vctrs vec_duplicate_detect
 #' @importFrom tidyr separate
 #' @export
@@ -207,7 +208,6 @@ allele_qc <- function(target_variants, ref_variants, target_data, col_to_flip = 
 #' reference <- c("1:123:A:C", "2:456:T:G", "4:101:G:C")
 #' align_variant_names(source, reference)
 #'
-#' @importFrom dplyr %>%
 #' @export
 align_variant_names <- function(source, reference) {
   # Check if source and reference follow the expected pattern

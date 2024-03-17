@@ -1,5 +1,7 @@
 #' Function to Check if Regions are in increasing order and remove duplicated rows
-#' @import dplyr
+#' @importFrom dplyr distinct arrange group_by mutate ungroup
+#' @importFrom magrittr %>%
+#' @importFrom stats lag
 check_consecutive_regions <- function(df) {
   # Ensure that 'chrom' values are integers, df can be genomic_data or regions_of_interest
   df$chrom <- ifelse(grepl("^chr", df$chrom),
@@ -18,7 +20,7 @@ check_consecutive_regions <- function(df) {
   # due to a dplyr issue: https://github.com/tidyverse/dplyr/issues/2195
   start_ordered_check <- df %>%
     group_by(chrom) %>%
-    mutate(start_order = start >= stats::lag(start, default = first(start))) %>%
+    mutate(start_order = start >= lag(start, default = first(start))) %>%
     ungroup()
 
   if (any(!start_ordered_check$start_order, na.rm = TRUE)) {
@@ -201,8 +203,10 @@ process_LD_matrix <- function(LD_file_path, bim_file_path) {
   list(LD_matrix = LD_matrix, LD_variants = LD_variants_ordered)
 }
 
-#' @import dplyr
-# Extract LD matrix and variants for a specific region
+#' Extract LD matrix and variants for a specific region
+#' @importFrom dplyr mutate select merge
+#' @importFrom magrittr %>%
+#' @importFrom utils tail
 extract_LD_for_region <- function(LD_matrix, variants, region, extract_coordinates) {
   # Filter variants based on region
   extracted_LD_variants <- subset(variants, chrom == region$chrom & pos >= region$start & pos <= region$end)

@@ -71,12 +71,12 @@ fsusie_get_cs <- function(fSuSiE.obj, X, requested_coverage = 0.95) {
   # Create 'cs' set with names
   cs_named <- setNames(object = fSuSiE.obj$cs, nm = paste0("L", seq_along(fSuSiE.obj$cs)))
 
-  # Create 'purity' data frame without dplyr
+  # Create 'purity' data frame 
   purity_df <- do.call(rbind, lapply(cal_purity(fSuSiE.obj$cs, X = X, method = "susie"), function(x) as.data.frame(t(x))))
   rownames(purity_df) <- names(cs_named)
   colnames(purity_df) <- c("min.abs.corr", "mean.abs.corr", "median.abs.corr")
 
-  # Create 'coverage' without purrr
+  # Create 'coverage' without
   coverage_vector <- numeric(length(fSuSiE.obj$alpha))
   for (i in seq_along(fSuSiE.obj$alpha)) {
     alpha_i <- fSuSiE.obj$alpha[[i]]

@@ -57,7 +57,6 @@ twas_analysis <- function(weights_matrix, gwas_sumstats_db, LD_matrix, extract_v
 #' variable_name_obj <- "example_variable" # or NULL for standard processing
 #' consolidated_weights <- load_twas_weights(weight_db_files, condition, region, variable_name_obj)
 #' print(consolidated_weights)
-#' @import dplyr
 #' @export
 load_twas_weights <- function(weight_db_files, conditions = NULL,
                               variable_name_obj = c("preset_variants_result", "variant_names"),

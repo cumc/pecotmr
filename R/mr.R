@@ -79,8 +79,9 @@ mr_format <- function(susie_result, condition, gwas_sumstats_db, coverage = "cs_
 #' "meta_eff", "se_meta_eff", "meta_pval", "Q", "Q_pval" and "I2". "gene_name" is ensemble ID. "num_CS" is the number of credible sets
 #' contained in each gene, "num_IV" is the number of variants contained in each gene. "meta_eff", "se_meta_eff" and "meta_pval" are the MR estimate, standard error and pvalue.
 #' "Q" is Cochran’s Q statistic, "I2" quantifies the heterogeneity, range from 0 to 1.
-#' @import dplyr
-#' @importFrom stats pnorm
+#' @importFrom dplyr mutate group_by filter ungroup distinct arrange select
+#' @importFrom magrittr %>%
+#' @importFrom stats pnorm pchisq
 #' @export
 mr_analysis <- function(mr_formatted_input, cpip_cutoff = 0.5) {
   create_null_output <- function(gene_name) {

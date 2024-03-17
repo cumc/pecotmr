@@ -92,7 +92,7 @@ compute_qtl_enrichment <- function(gwas_pip, susie_qtl_regions,
   aligned_susie_qtl_regions <- lapply(susie_qtl_regions, function(x) {
     alignment_result <- align_variant_names(names(x$pip), names(gwas_pip))
     names(x$pip) <- alignment_result$aligned_variants
-    if (length(alignment_result$unmatched_indices)>0) {
+    if (length(alignment_result$unmatched_indices) > 0) {
       x$unmatched_variants <- names(x$pip)[alignment_result$unmatched_indices]
     }
     x
