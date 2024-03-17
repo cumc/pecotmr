@@ -193,7 +193,7 @@ compute_coefficients_glasso <- function(X, Y, standardize, nthreads, Xnew = NULL
   # Fit group-lasso
   if (nthreads > 1) {
     registerDoFuture()
-    plan(multisession, workers=nthreads)
+    plan(multisession, workers = nthreads)
     paral <- TRUE
   } else {
     paral <- FALSE
@@ -230,7 +230,7 @@ compute_coefficients_univ_glmnet <- function(X, Y, alpha, standardize, nthreads,
   linreg <- function(i, X, Y, alpha, standardize, nthreads, Xnew) {
     if (nthreads > 1) {
       registerDoFuture()
-      plan(multisession, workers=nthreads)
+      plan(multisession, workers = nthreads)
       paral <- TRUE
     } else {
       paral <- FALSE

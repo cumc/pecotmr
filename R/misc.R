@@ -1,3 +1,40 @@
+pval_acat <- function(pvals) {
+  if (length(pvals) == 1) {
+    return(pvals[1])
+  }
+  stat <- 0.00
+  pval_min <- 1.00
+
+  stat <- sum(qcauchy(pvals))
+  pval_min <- min(pval_min, min(qcauchy(pvals)))
+
+  return(pcauchy(stat / length(pvals), lower.tail = FALSE))
+}
+
+#' @importFrom harmonicmeanp pLandau
+pval_hmp <- function(pvals) {
+  # https://search.r-project.org/CRAN/refmans/harmonicmeanp/html/pLandau.html
+  pvalues <- unique(pvals)
+  L <- length(pvalues)
+  HMP <- L / sum(pvalues^-1)
+
+  LOC_L1 <- 0.874367040387922
+  SCALE <- 1.5707963267949
+
+  return(pLandau(1 / HMP, mu = log(L) + LOC_L1, sigma = SCALE, lower.tail = FALSE))
+}
+
+pval_global <- function(pvals, comb_method = "HMP", naive = FALSE) {
+  # assuming sstats has tissues as columns and rows as pvals
+  min_pval <- min(pvals)
+  n_total_tests <- pvals %>%
+    unique() %>%
+    length() # There should be one unique pval per tissue
+  global_pval <- if (comb_method == "HMP") pval_hmp(pvals) else pval_acat(pvals) # pval vector
+  naive_pval <- min(n_total_tests * min_pval, 1.0)
+  return(if (naive) naive_pval else global_pval) # global_pval and naive_pval
+}
+
 matxMax <- function(mtx) {
   return(arrayInd(which.max(mtx), dim(mtx)))
 }
@@ -34,6 +71,33 @@ is_zero_variance <- function(x) {
   } else {
     return(F)
   }
+}
+
+compute_LD <- function(X) {
+  if (is.null(X)) {
+    stop("X must be provided.")
+  }
+
+  # Mean impute X
+  genotype_data_imputed <- apply(X, 2, function(x) {
+    pos <- which(is.na(x))
+    if (length(pos) != 0) {
+      x[pos] <- mean(x, na.rm = TRUE)
+    }
+    return(x)
+  })
+
+  # Check if Rfast package is installed
+  if (requireNamespace("Rfast", quietly = TRUE)) {
+    # Use Rfast::cora for faster correlation calculation
+    R <- Rfast::cora(genotype_data_imputed, large = TRUE)
+  } else {
+    # Use base R cor function if Rfast is not installed
+    R <- cor(genotype_data_imputed)
+  }
+
+  colnames(R) <- rownames(R) <- colnames(genotype_data_imputed)
+  R
 }
 
 #' @importFrom matrixStats colVars
@@ -107,21 +171,6 @@ variant_id_to_df <- function(variant_id) {
   return(create_dataframe(variant_id))
 }
 
-load_genotype_data <- function(genotype, keep_indel = TRUE) {
-  # Read genotype data using plink
-  geno <- plink2R::read_plink(genotype)
-  # Process row names
-  rownames(geno$bed) <- sapply(strsplit(rownames(geno$bed), ":"), `[`, 2)
-  # Remove indels if specified
-  if (!keep_indel) {
-    is_indel <- with(geno$bim, grepl("[^ATCG]", V5) | grepl("[^ATCG]", V6) | nchar(V5) > 1 | nchar(V6) > 1)
-    geno_bed <- geno$bed[, !is_indel]
-  } else {
-    geno_bed <- geno$bed
-  }
-  return(geno_bed)
-}
-
 #' @importFrom stringr str_split
 #' @export
 parse_region <- function(region) {
@@ -162,6 +211,21 @@ NoSNPsError <- function(message) {
   structure(list(message = message), class = c("NoSNPsError", "error", "condition"))
 }
 
+load_genotype_data <- function(genotype, keep_indel = TRUE) {
+  # Read genotype data using plink
+  geno <- plink2R::read_plink(genotype)
+  # Process row names
+  rownames(geno$bed) <- sapply(strsplit(rownames(geno$bed), ":"), `[`, 2)
+  # Remove indels if specified
+  if (!keep_indel) {
+    is_indel <- with(geno$bim, grepl("[^ATCG]", V5) | grepl("[^ATCG]", V6) | nchar(V5) > 1 | nchar(V6) > 1)
+    geno_bed <- geno$bed[, !is_indel]
+  } else {
+    geno_bed <- geno$bed
+  }
+  return(geno_bed)
+}
+
 #' Load genotype data for a specific region using data.table for efficiency
 #'
 #' By default, plink usage dosage of the *major* allele, since "effect allele" A1 is
@@ -174,7 +238,7 @@ NoSNPsError <- function(message) {
 #' @param region The target region in the format "chr:start-end".
 #' @param keep_indel Whether to keep indel SNPs.
 #' @return A vector of SNP IDs in the specified region.
-#' 
+#'
 #' @importFrom data.table fread
 #' @importFrom magrittr %>%
 #' @importFrom snpStats read.plink
@@ -415,7 +479,6 @@ add_Y_residuals <- function(data_list, conditions, scale_residuals = FALSE) {
 
   return(data_list)
 }
-
 
 #' Load regional association data
 #'

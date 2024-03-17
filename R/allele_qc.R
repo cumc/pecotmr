@@ -17,7 +17,7 @@
 #' @param flip_strand Whether to output the variants after strand flip. Default is `FALSE`.
 #' @param remove_unmatched Whether to remove unmatched variants. Default is `TRUE`.
 #' @return A single data frame with matched variants.
-#' @importFrom magrittr %>% 
+#' @importFrom magrittr %>%
 #' @importFrom dplyr mutate inner_join filter pull select everything row_number
 #' @importFrom vctrs vec_duplicate_detect
 #' @importFrom tidyr separate
@@ -169,10 +169,11 @@ allele_qc <- function(target_variants, ref_variants, target_data, col_to_flip = 
       target_data_qced_unmatched <- target_data[unmatched_indices, , drop = FALSE] %>%
         as.data.frame() %>%
         mutate(variant_id = paste(target_variants$chrom[unmatched_indices],
-                                  target_variants$pos[unmatched_indices],
-                                  target_variants$A2[unmatched_indices],
-                                  target_variants$A1[unmatched_indices],
-                                  sep = ":"))
+          target_variants$pos[unmatched_indices],
+          target_variants$A2[unmatched_indices],
+          target_variants$A1[unmatched_indices],
+          sep = ":"
+        ))
       target_data_qced <- rbind(target_data_qced_matched, target_data_qced_unmatched)
     } else {
       target_data_qced <- target_data_qced_matched
@@ -213,13 +214,13 @@ align_variant_names <- function(source, reference) {
   # Check if source and reference follow the expected pattern
   source_pattern <- grepl("^(chr)?[0-9]+:[0-9]+:[ATCG]+:[ATCG]+$|^(chr)?[0-9]+:[0-9]+_[ATCG]+_[ATCG]+$", source)
   reference_pattern <- grepl("^(chr)?[0-9]+:[0-9]+:[ATCG]+:[ATCG]+$|^(chr)?[0-9]+:[0-9]+_[ATCG]+_[ATCG]+$", reference)
-  
+
   if (!all(source_pattern) && !all(reference_pattern)) {
     # Both source and reference do not follow the expected pattern
     warning("Cannot unify variant names because they do not follow the expected variant naming convention chr:pos:A2:A1 or chr:pos_A2_A1.")
     return(list(aligned_variants = source, unmatched_indices = integer(0)))
   }
-  
+
   if ((!all(source_pattern) && all(reference_pattern)) || (all(source_pattern) && !all(reference_pattern))) {
     # One of source or reference follows the pattern, while the other does not
     stop("Source and reference have different variant naming conventions. They cannot be aligned.")
@@ -229,7 +230,7 @@ align_variant_names <- function(source, reference) {
 
   source_df <- variant_id_to_df(source)
   reference_df <- variant_id_to_df(reference)
-  
+
   qc_result <- allele_qc(
     target_variants = source_df,
     ref_variants = reference_df,
@@ -242,9 +243,9 @@ align_variant_names <- function(source, reference) {
     remove_strand_ambiguous = FALSE,
     remove_unmatched = FALSE
   )
-  
+
   aligned_df <- qc_result$target_data_qced
-  
+
   # Determine the output format based on the reference convention
   if (!grepl("_", reference[1])) {
     # Reference follows "chr:pos:A2:A1" convention
@@ -253,7 +254,7 @@ align_variant_names <- function(source, reference) {
     # Reference follows "chr:pos_A2_A1" convention
     output_format <- "colon_underscore"
   }
-  
+
   # Format the aligned variants based on the reference convention
   if (output_format == "colon") {
     aligned_variants <- apply(aligned_df[, c("chrom", "pos", "A2", "A1")], 1, paste, collapse = ":")
@@ -261,9 +262,9 @@ align_variant_names <- function(source, reference) {
     aligned_variants <- apply(aligned_df[, c("chrom", "pos", "A2", "A1")], 1, paste, collapse = ":")
     aligned_variants <- gsub(":", "_", aligned_variants, fixed = TRUE, 2)
   }
-  
+
   names(aligned_variants) <- NULL
-  
+
   # Adjust the chr prefix in aligned_variants based on the reference convention
   aligned_variants_has_chr_prefix <- grepl("^chr", aligned_variants[1])
   if (reference_has_chr_prefix && !aligned_variants_has_chr_prefix) {
@@ -271,9 +272,9 @@ align_variant_names <- function(source, reference) {
   } else if (!reference_has_chr_prefix && aligned_variants_has_chr_prefix) {
     aligned_variants <- sub("^chr", "", aligned_variants)
   }
-  
+
   unmatched_indices <- which(match(aligned_variants, reference, nomatch = 0) == 0)
-  
+
   list(
     aligned_variants = aligned_variants,
     unmatched_indices = unmatched_indices

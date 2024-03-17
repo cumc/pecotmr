@@ -43,6 +43,50 @@ lbf_to_alpha_vector <- function(lbf, prior_weights = NULL) {
 #' @export
 lbf_to_alpha <- function(lbf) t(apply(lbf, 1, lbf_to_alpha_vector))
 
+# FIXME: this function does not work properly. Need to fix it in multiple aspects
+#' Adjust SuSiE Weights
+#'
+#' This function adjusts the SuSiE weights based on a set of intersected variants.
+#' It subsets various components like lbf_matrix, mu, and scale factors based on these variants.
+#'
+#' @param weight_db_file A RDS file containing TWAS weights.
+#' @param condition specific condition.
+#' @param keep_variants Vector of variant names to keep.
+#' @param allele_qc Optional
+#' @return A list of adjusted xQTL coefficients and remained variants ids
+#' @export
+adjust_susie_weights <- function(twas_weights_results, condition, keep_variants, allele_qc = TRUE) {
+  # Intersect the rownames of weights with keep_variants
+  twas_weights_variants <- get_nested_element(twas_weights_results, c("susie_results", condition, "variant_names"))
+  # allele flip twas weights matrix variants name
+  if (allele_qc) {
+    weights_matrix <- get_nested_element(twas_weights_results, c("weights", condition))
+    weights_matrix_qced <- allele_qc(twas_weights_variants, gwas_LD_list$combined_LD_variants, weights_matrix, 1:ncol(weights_matrix))
+    intersected_indices <- which(weights_matrix_qced$qc_summary$keep == TRUE)
+  } else {
+    keep_variants_transformed <- ifelse(!startsWith(keep_variants, "chr"), paste0("chr", keep_variants), keep_variants)
+    intersected_variants <- intersect(twas_weights_variants, keep_variants_transformed)
+    intersected_indices <- match(intersected_variants, twas_weights_variants)
+  }
+  if (length(intersected_indices) == 0) {
+    stop("Error: No intersected variants found. Please check 'twas_weights' and 'keep_variants' inputs to make sure there are variants left to use.")
+  }
+  # Subset lbf_matrix, mu, and x_column_scale_factors
+  lbf_matrix <- get_nested_element(twas_weights_results, c("susie_results", condition, "susie_result_trimmed", "lbf_variable"))
+  mu <- get_nested_element(twas_weights_results, c("susie_results", condition, "susie_result_trimmed", "mu"))
+  x_column_scal_factors <- get_nested_element(twas_weights_results, c("susie_results", condition, "susie_result_trimmed", "X_column_scale_factors"))
+
+  lbf_matrix_subset <- lbf_matrix[, intersected_indices]
+  mu_subset <- mu[, intersected_indices]
+  x_column_scal_factors_subset <- x_column_scal_factors[intersected_indices]
+
+  # Convert lbf_matrix to alpha and calculate adjusted xQTL coefficients
+  adjusted_xqtl_alpha <- lbf_to_alpha(lbf_matrix_subset)
+  adjusted_xqtl_coef <- colSums(adjusted_xqtl_alpha * mu_subset) / x_column_scal_factors_subset
+
+  return(list(adjusted_susie_weights = adjusted_xqtl_coef, remained_variants_ids = names(adjusted_xqtl_coef)))
+}
+
 #' @importFrom susieR susie
 #' @export
 susie_wrapper <- function(X, y, init_L = 10, max_L = 30, l_step = 5, ...) {

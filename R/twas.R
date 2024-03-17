@@ -1,28 +1,106 @@
-# FIXME: check that weights have the same length as z-scores
+#' Calculate TWAS z-score and p-value
+#'
+#' This function calculates the TWAS z-score and p-value given the weights, z-scores,
+#' and optionally the correlation matrix (R) or the genotype matrix (X).
+#'
+#' @param weights A numeric vector of weights.
+#' @param z A numeric vector of z-scores.
+#' @param R An optional correlation matrix. If not provided, it will be calculated from the genotype matrix X.
+#' @param X An optional genotype matrix. If R is not provided, X must be supplied to calculate the correlation matrix.
+#'
+#' @return A list containing the following elements:
+#' \itemize{
+#'   \item z: The TWAS z-score.
+#'   \item pval: The corresponding p-value.
+#' }
+#'
 #' @importFrom Rfast cora
+#' @importFrom stats cor pchisq
+#'
 #' @export
 twas_z <- function(weights, z, R = NULL, X = NULL) {
-  if (is.null(R)) {
-    # mean impute X
-    genetype_data_imputed <- apply(X, 2, function(x) {
-      pos <- which(is.na(x))
-      if (length(pos) != 0) {
-        x[pos] <- mean(x, na.rm = TRUE)
-      }
-      return(x)
-    })
-    # need to add `large = T` in Rfast::cora, or could get wrong results
-    # R <- cora(genetype_data_imputed, large = T)
-    # FIXME: test and enable using cora if Rfast is installed
-    # See how susieR did it
-    R <- cor(genetype_data_imputed)
-    colnames(R) <- rownames(R) <- colnames(genetype_data_imputed)
+  # Check that weights and z-scores have the same length
+  if (length(weights) != length(z)) {
+    stop("Weights and z-scores must have the same length.")
   }
+
+  if (is.null(R)) R <- compute_LD(X)
+
   stat <- t(weights) %*% z
   denom <- t(weights) %*% R %*% weights
   zscore <- stat / sqrt(denom)
   pval <- pchisq(zscore * zscore, 1, lower.tail = FALSE)
+
   return(list(z = zscore, pval = pval))
+}
+
+#' Multi-condition TWAS joint test
+#'
+#' This function performs a multi-condition TWAS joint test using the GBJ method.
+#' It assumes that the input genotype matrix (X) is standardized.
+#'
+#' @param R An optional correlation matrix. If not provided, it will be calculated from the genotype matrix X.
+#' @param X An optional genotype matrix. If R is not provided, X must be supplied to calculate the correlation matrix.
+#' @param weights A matrix of weights, where each column corresponds to a different condition.
+#' @param z A vector of GWAS z-scores.
+#'
+#' @return A list containing the following elements:
+#' \itemize{
+#'   \item Z: A matrix of TWAS z-scores and p-values for each condition.
+#'   \item GBJ: The result of the GBJ test.
+#' }
+#'
+#' @importFrom GBJ GBJ
+#' @importFrom stats cor pnorm
+#'
+#' @export
+twas_joint_z <- function(R = NULL, X = NULL, weights, z) {
+  # Check that weights and z-scores have the same number of rows
+  if (nrow(weights) != length(z)) {
+    stop("Number of rows in weights must match the length of z-scores.")
+  }
+
+
+  if (is.null(R)) R <- compute_LD(X)
+
+  idx <- which(rownames(R) %in% rownames(weights))
+  D <- R[idx, idx]
+
+  cov_y <- crossprod(weights, D) %*% weights
+  y_sd <- sqrt(diag(cov_y))
+  x_sd <- rep(1, nrow(weights)) # Assuming X is standardized
+
+  # Get gamma matrix MxM (snp x snp)
+  g <- lapply(colnames(weights), function(x) {
+    gm <- diag(x_sd / y_sd[x], length(x_sd), length(x_sd))
+    return(gm)
+  })
+  names(g) <- colnames(weights)
+
+  ######### Get TWAS - Z statistics & P-value, GBJ test ########
+  z_matrix <- do.call(rbind, lapply(colnames(weights), function(x) {
+    Zi <- crossprod(weights[, x], g[[x]]) %*% as.numeric(z)
+    pval <- 2 * pnorm(abs(Zi), lower.tail = FALSE)
+    Zp <- c(Zi, pval)
+    names(Zp) <- c("Z", "pval")
+    return(Zp)
+  }))
+  rownames(z_matrix) <- colnames(weights)
+
+  # GBJ test
+  lam <- matrix(rep(NA, ncol(weights) * nrow(weights)), nrow = ncol(weights))
+  rownames(lam) <- colnames(weights)
+
+  for (p in colnames(weights)) {
+    la <- as.matrix(weights[, p] %*% g[[p]])
+    lam[p, ] <- la
+  }
+
+  sig <- tcrossprod((lam %*% D), lam)
+  gbj <- GBJ(test_stats = z_matrix[, 1], cor_mat = sig)
+
+  rs <- list("Z" = z_matrix, "GBJ" = gbj)
+  return(rs)
 }
 
 #' Cross-Validation for Transcriptome-Wide Association Studies (TWAS)
@@ -389,299 +467,29 @@ twas_weights <- function(X, Y, weight_methods, num_threads = 1, seed = NULL) {
   return(weights_list)
 }
 
+#' Predict outcomes using TWAS weights
+#'
+#' This function takes a matrix of predictors (\code{X}) and a list of TWAS (transcriptome-wide 
+#' association studies) weights (\code{weights_list}), and calculates the predicted outcomes by 
+#' multiplying \code{X} by each set of weights in \code{weights_list}. The names of the elements 
+#' in the output list are derived from the names in \code{weights_list}, with "_weights" replaced 
+#' by "_predicted".
+#'
+#' @param X A matrix or data frame of predictors where each row is an observation and each 
+#' column is a variable.
+#' @param weights_list A list of numeric vectors representing the weights for each predictor. 
+#' The names of the list elements should follow the pattern \code{[outcome]_weights}, where 
+#' \code{[outcome]} is the name of the outcome variable that the weights are associated with.
+#'
+#' @return A named list of numeric vectors, where each vector is the predicted outcome for the 
+#' corresponding set of weights in \code{weights_list}. The names of the list elements are 
+#' derived from the names in \code{weights_list} by replacing "_weights" with "_predicted".
+#'
 #' @export
+#' @examples
+#' # Assuming `X` is your matrix of predictors and `weights_list` is your list of weights:
+#' predicted_outcomes <- twas_predict(X, weights_list)
+#' print(predicted_outcomes)
 twas_predict <- function(X, weights_list) {
   setNames(lapply(weights_list, function(w) X %*% w), gsub("_weights", "_predicted", names(weights_list)))
-}
-
-#' @importFrom susieR coef.susie
-#' @export
-susie_weights <- function(X = NULL, y = NULL, susie_fit = NULL, ...) {
-  if (is.null(susie_fit)) {
-    # get susie_fit object
-    susie_fit <- susie_wrapper(X, y, ...)
-  }
-  if ("alpha" %in% names(susie_fit) && "mu" %in% names(susie_fit) && "X_column_scale_factors" %in% names(susie_fit)) {
-    # This is designed to cope with output from pecotmr::susie_post_processor()
-    # We set intercept to 0 and later trim it off anyways
-    susie_fit$intercept <- 0
-    return(coef.susie(susie_fit)[-1])
-  } else {
-    return(rep(0, length(susie_fit$pip)))
-  }
-}
-
-#' Adjust SuSiE Weights
-#'
-#' This function adjusts the SuSiE weights based on a set of intersected variants.
-#' It subsets various components like lbf_matrix, mu, and scale factors based on these variants.
-#'
-#' @param weight_db_file A RDS file containing TWAS weights.
-#' @param condition specific condition.
-#' @param keep_variants Vector of variant names to keep.
-#' @param allele_qc Optional
-#' @return A list of adjusted xQTL coefficients and remained variants ids
-#' @export
-
-adjust_susie_weights <- function(twas_weights_results, condition, keep_variants, allele_qc = TRUE) {
-  # Intersect the rownames of weights with keep_variants
-  twas_weights_variants <- get_nested_element(twas_weights_results, c("susie_results", condition, "variant_names"))
-  # allele flip twas weights matrix variants name
-  if (allele_qc == TRUE) {
-    weights_matrix <- get_nested_element(twas_weights_results, c("weights", condition))
-    weights_matrix_qced <- allele_qc(twas_weights_variants, gwas_LD_list$combined_LD_variants, weights_matrix, 1:ncol(weights_matrix))
-    intersected_indices <- which(weights_matrix_qced$qc_summary$keep == TRUE)
-  } else {
-    keep_variants_transformed <- ifelse(!startsWith(keep_variants, "chr"), paste0("chr", keep_variants), keep_variants)
-    intersected_variants <- intersect(twas_weights_variants, keep_variants_transformed)
-    intersected_indices <- match(intersected_variants, twas_weights_variants)
-  }
-  if (length(intersected_indices) == 0) {
-    stop("Error: No intersected variants found. Please check 'twas_weights' and 'keep_variants' inputs to make sure there are variants left to use.")
-  }
-  # Subset lbf_matrix, mu, and x_column_scale_factors
-  lbf_matrix <- get_nested_element(twas_weights_results, c("susie_results", condition, "susie_result_trimmed", "lbf_variable"))
-  mu <- get_nested_element(twas_weights_results, c("susie_results", condition, "susie_result_trimmed", "mu"))
-  x_column_scal_factors <- get_nested_element(twas_weights_results, c("susie_results", condition, "susie_result_trimmed", "X_column_scale_factors"))
-
-  lbf_matrix_subset <- lbf_matrix[, intersected_indices]
-  mu_subset <- mu[, intersected_indices]
-  x_column_scal_factors_subset <- x_column_scal_factors[intersected_indices]
-
-  # Convert lbf_matrix to alpha and calculate adjusted xQTL coefficients
-  adjusted_xqtl_alpha <- lbf_to_alpha(lbf_matrix_subset)
-  adjusted_xqtl_coef <- colSums(adjusted_xqtl_alpha * mu_subset) / x_column_scal_factors_subset
-
-  return(list(adjusted_susie_weights = adjusted_xqtl_coef, remained_variants_ids = names(adjusted_xqtl_coef)))
-}
-
-#' @importFrom mr.mash.alpha coef.mr.mash
-#' @export
-mrmash_weights <- function(...) {
-  res <- mrmash_wrapper(...)
-  return(coef.mr.mash(res)[-1, ])
-}
-
-# @importFrom mvsusieR coef.mvsusie mvsusie create_mixture_prior
-#' @importFrom mvsusieR mvsusie create_mixture_prior
-#' @export
-mvsusie_weights <- function(mvsusie_fit = NULL, X = NULL, Y = NULL, prior_variance = NULL, residual_variance = NULL, L = 30, mvsusie_max_iter = 200, ...) {
-  if (is.null(mvsusie_fit)) {
-    message("Did not provide mvsusie_fit, fitting mvSuSiE now")
-    if (is.null(X) || is.null(Y)) {
-      stop("Both X and Y must be provided if mvsusie_fit is NULL.")
-    }
-    if (is.null(prior_variance)) prior_variance <- create_mixture_prior(R = ncol(Y))
-    if (is.null(residual_variance)) residual_variance <- mr.mash.alpha:::compute_cov_flash(Y)
-
-    mvsusie_fit <- mvsusie(
-      X = X, Y = Y, L = L, prior_variance = prior_variance,
-      residual_variance = residual_variance, precompute_covariances = F,
-      compute_objective = T, estimate_residual_variance = F, estimate_prior_variance = T,
-      estimate_prior_method = "EM", max_iter = mvsusie_max_iter,
-      n_thread = 1, approximate = F
-    )
-  }
-  return(mvsusieR::coef.mvsusie(mvsusie_fit)[-1, ])
-}
-
-# Get a reasonable setting for the standard deviations of the mixture
-# components in the mixture-of-normals prior based on the data (X, y).
-# Input se is an estimate of the residual *variance*, and n is the
-# number of standard deviations to return. This code is adapted from
-# the autoselect.mixsd function in the ashr package.
-#' @importFrom susieR univariate_regression
-init_prior_sd <- function(X, y, n = 30) {
-  res <- univariate_regression(X, y)
-  smax <- 3 * max(res$betahat)
-  seq(0, smax, length.out = n)
-}
-
-#' @importFrom glmnet cv.glmnet
-#' @importFrom stats coef
-glmnet_weights <- function(X, y, alpha) {
-  eff.wgt <- matrix(0, ncol = 1, nrow = ncol(X))
-  sds <- apply(X, 2, sd)
-  keep <- sds != 0 & !is.na(sds)
-  enet <- cv.glmnet(x = X[, keep], y = y, alpha = alpha, nfold = 5, intercept = T, standardize = F)
-  eff.wgt[keep] <- coef(enet, s = "lambda.min")[2:(sum(keep) + 1)]
-  return(eff.wgt)
-}
-
-#' @export
-enet_weights <- function(X, y) glmnet_weights(X, y, 0.5)
-
-#' @export
-lasso_weights <- function(X, y) glmnet_weights(X, y, 1)
-
-#' @examples
-#' wgt.mr.ash <- mrash_weights(eqtl$X, eqtl$y_res, beta.init = lasso_weights(X, y))
-#' @importFrom mr.ash.alpha mr.ash
-#' @importFrom stats predict
-#' @export
-mrash_weights <- function(X, y, init_prior_sd = TRUE, ...) {
-  args_list <- list(...)
-  if (!"beta.init" %in% names(args_list)) {
-    args_list$beta.init <- lasso_weights(X, y)
-  }
-  fit.mr.ash <- do.call("mr.ash", c(list(X = X, y = y, sa2 = if (init_prior_sd) init_prior_sd(X, y)^2 else NULL), args_list))
-  predict(fit.mr.ash, type = "coefficients")[-1]
-}
-
-pval_acat <- function(pvals) {
-  if (length(pvals) == 1) {
-    return(pvals[1])
-  }
-  stat <- 0.00
-  pval_min <- 1.00
-
-  stat <- sum(qcauchy(pvals))
-  pval_min <- min(pval_min, min(qcauchy(pvals)))
-
-  return(pcauchy(stat / length(pvals), lower.tail = FALSE))
-}
-
-#' @importFrom harmonicmeanp pLandau
-pval_hmp <- function(pvals) {
-  # https://search.r-project.org/CRAN/refmans/harmonicmeanp/html/pLandau.html
-  pvalues <- unique(pvals)
-  L <- length(pvalues)
-  HMP <- L / sum(pvalues^-1)
-
-  LOC_L1 <- 0.874367040387922
-  SCALE <- 1.5707963267949
-
-  return(pLandau(1 / HMP, mu = log(L) + LOC_L1, sigma = SCALE, lower.tail = FALSE))
-}
-
-pval_global <- function(pvals, comb_method = "HMP", naive = FALSE) {
-  # assuming sstats has tissues as columns and rows as pvals
-  min_pval <- min(pvals)
-  n_total_tests <- pvals %>%
-    unique() %>%
-    length() # There should be one unique pval per tissue
-  global_pval <- if (comb_method == "HMP") pval_hmp(pvals) else pval_acat(pvals) # pval vector
-  naive_pval <- min(n_total_tests * min_pval, 1.0)
-  return(if (naive) naive_pval else global_pval) # global_pval and naive_pval
-}
-
-## Multi-condition TWAS joint test
-## the UTMOST paper assumes X are not standardized, in the formula below - the input of X is assumed to be standardized
-#' @importFrom GBJ GBJ
-#' @export
-
-twas_joint_z <- function(ld, Bhat, gwas_z) {
-  idx <- which(rownames(ld) %in% rownames(Bhat))
-  D <- ld[idx, idx]
-
-  cov_y <- crossprod(Bhat, D) %*% Bhat
-  y_sd <- sqrt(diag(cov_y))
-  x_sd <- rep(1, nrow(Bhat)) # we assume X is standardized
-
-  # get gamma matrix MxM (snp x snp)
-  g <- lapply(colnames(Bhat), function(x) {
-    gm <- diag(x_sd / y_sd[x], length(x_sd), length(x_sd))
-    return(gm)
-  })
-  names(g) <- colnames(Bhat)
-
-  ######### Get TWAS - Z statistics & P-value, GBJ test ########
-  z <- do.call(rbind, lapply(colnames(Bhat), function(x) {
-    Zi <- crossprod(Bhat[, x], g[[x]]) %*% as.numeric(gwas_z[, "Z"])
-    pval <- 2 * pnorm(abs(Zi), lower.tail = FALSE)
-    Zp <- c(Zi, pval)
-    names(Zp) <- c("Z", "pval")
-    return(Zp)
-  }))
-  rownames(z) <- colnames(Bhat)
-
-  # GBJ test
-  lam <- matrix(rep(NA, ncol(Bhat) * nrow(Bhat)), nrow = ncol(Bhat))
-  rownames(lam) <- colnames(Bhat)
-  for (p in colnames(Bhat)) {
-    la <- as.matrix(Bhat[, p] %*% g[[p]])
-    lam[p, ] <- la
-  }
-
-  sig <- tcrossprod((lam %*% D), lam)
-  gbj <- GBJ(test_stats = z[, 1], cor_mat = sig)
-  rs <- list("Z" = z, "GBJ" = gbj)
-  return(rs)
-}
-
-#' TWAS Weights Pipeline
-#'
-#' This function performs weights computation for Transcriptome-Wide Association Study (TWAS)
-#' incorporating various steps such as filtering variants by linkage disequilibrium reference panel variants,
-#' fitting models using SuSiE and other methods, and calculating TWAS weights and predictions.
-#' Optionally, it can perform cross-validation for TWAS weights.
-#'
-#' @param X A matrix of genotype data where rows represent samples and columns represent genetic variants.
-#' @param y A vector of phenotype measurements for each sample.
-#' @param susie_fit An object returned by the SuSiE function, containing the SuSiE model fit.
-#' @param maf A vector of minor allele frequencies for each variant in X.
-#' @param ld_reference_meta_file An optional path to a file containing linkage disequilibrium reference data. If provided, variants in X are filtered based on this reference.
-#' @param cv_folds The number of folds to use for cross-validation. Set to 0 to skip cross-validation.
-#' @param X_scalar A scalar or vector to scale the genotype data. Defaults to 1 (no scaling).
-#' @param y_scalar A scalar to scale the phenotype data. Defaults to 1 (no scaling).
-#' @param coverage The coverage probability used in SuSiE for credible set construction. Defaults to 0.95.
-#' @param secondary_coverage A vector of secondary coverage probabilities for credible set refinement. Defaults to c(0.7, 0.5).
-#' @param signal_cutoff A threshold for determining significant signals in the SuSiE output. Defaults to 0.05.
-#' @param mr_ash_max_iter The maximum number of iterations for the MR-ASH method. Defaults to 100.
-#' @param min_cv_maf The minimum minor allele frequency for variants to be included in cross-validation. Defaults to 0.05.
-#' @param max_cv_variants The maximum number of variants to be included in cross-validation. Defaults to 5000.
-#' @param cv_seed The seed for random number generation in cross-validation. Defaults to 999.
-#' @param cv_threads The number of threads to use for parallel computation in cross-validation. Defaults to 1.
-#' @return A list containing results from the TWAS pipeline, including TWAS weights, predictions, and optionally cross-validation results.
-#' @export
-#' @examples
-#' # Example usage (assuming appropriate objects for X, y, susie_fit, and maf are available):
-#' twas_results <- twas_weights_pipeline(X, y, maf, susie_fit)
-twas_weights_pipeline <- function(X, y, maf, susie_fit, ld_reference_meta_file = NULL, cv_folds = 5, X_scalar = 1, y_scalar = 1,
-                                  coverage = 0.95, secondary_coverage = c(0.7, 0.5), signal_cutoff = 0.05,
-                                  mr_ash_max_iter = 100, min_cv_maf = 0.05, max_cv_variants = 5000, cv_seed = 999, cv_threads = 1) {
-  res <- list()
-  if (!is.null(susie_fit)) {
-    L <- length(which(susie_fit$V > 1E-9))
-    init_L <- max(1, L - 2)
-    max_L <- L + 3
-  } else {
-    # susie_fit did not detect anything significant
-    init_L <- 2
-    max_L <- 2
-  }
-  if (!is.null(ld_reference_meta_file)) {
-    variants_kept <- filter_variants_by_ld_reference(colnames(X), ld_reference_meta_file)
-    X <- X[, variants_kept$data, drop = FALSE]
-    maf <- maf[variants_kept$idx]
-    res$preset_variants_result <- susie_wrapper(X, y, init_L = init_L, max_L = max_L, refine = TRUE, coverage = coverage)
-    res$preset_variants_result <- susie_post_processor(res$preset_variants_result, X, y, if (X_scalar == 1) 1 else X_scalar[variants_kept$idx], y_scalar, maf, secondary_coverage = secondary_coverage, signal_cutoff = signal_cutoff)
-    res$preset_variants_result$analysis_script <- NULL
-    res$preset_variants_result$sumstats <- NULL
-    susie_fit <- res$preset_variants_result$susie_result_trimmed
-  }
-  weight_methods <- list(enet_weights = list(), lasso_weights = list(), mrash_weights = list(init_prior_sd = TRUE, max.iter = mr_ash_max_iter))
-  if (!is.null(susie_fit)) weight_methods$susie_weights <- list(susie_fit = susie_fit)
-  # get TWAS weights
-  res$twas_weights <- twas_weights(X, y, weight_methods = weight_methods)
-  # get TWAS predictions for possible next steps such as computing correlations between predicted expression values
-  res$twas_predictions <- twas_predict(X, res$twas_weights)
-  if (cv_folds > 0) {
-    # A few cutting corners to run CV faster at the disadvantage of SuSiE and mr.ash:
-    # 1. reset SuSiE to not using refine or adaptive L (more or less the default SuSiE)
-    # 2. at most 100 iterations for mr.ash allowed
-    # 3. only use a subset of top signals and common variants
-    if (!is.null(susie_fit)) weight_methods$susie_weights <- list(refine = FALSE, init_L = max_L, max_L = max_L)
-    variants_for_cv <- c()
-    if (!is.null(res$preset_variants_result$top_loci) && nrow(res$preset_variants_result$top_loci) > 0) {
-      variants_for_cv <- res$preset_variants_result$top_loci[, 1]
-    }
-    common_var <- colnames(X)[which(maf > min_cv_maf)]
-    if (length(common_var) + length(variants_for_cv) > max_cv_variants) {
-      common_var <- sample(common_var, max_cv_variants - length(variants_for_cv), replace = FALSE)
-    }
-    variants_for_cv <- unique(c(variants_for_cv, common_var))
-    res$twas_cv_result <- twas_weights_cv(X, y, fold = cv_folds, weight_methods = weight_methods, seed = cv_seed, max_num_variants = max_cv_variants, num_threads = cv_threads, variants_to_keep = if (length(variants_for_cv) > 0) variants_for_cv else NULL)
-  }
-  return(res)
 }
