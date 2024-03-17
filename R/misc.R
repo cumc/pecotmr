@@ -488,7 +488,10 @@ pheno_list_to_mat <- function(data_list) {
                      expanded_mat[common_rows, ] <- mat[common_rows, ]
                      return(expanded_mat)
                    })
-  return(aligned_mats)
+  Y_resid_matrix <- do.call(cbind,aligned_mats)
+  colnames(Y_resid_matrix) <- names(data_list$residual_Y)
+  data_list$residual_Y <- Y_resid_matrix
+  return(data_list)
 }
 
 #' @return A list

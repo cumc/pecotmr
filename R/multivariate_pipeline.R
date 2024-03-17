@@ -35,7 +35,7 @@ run_multivariate_pipeline <- function(
     ), signal_cutoff = 0.025, secondary_coverage = c(0.5, 0.7), mrmash_weights_prior_matrices = NULL,
     mrmash_weights_prior_matrices_cv = NULL, prior_canonical_matrices = TRUE, sample_partition = NULL,
     mrmash_max_iter = 5000, mvsusie_max_iter = 200, max_cv_variants = 5000, cv_folds = 5,
-    cv_threads = 1, cv_seed = 999, weights_tol = 1e-3, twas_weights = FALSE) {
+    cv_threads = 1, cv_seed = 999, weights_tol = 1e-4, twas_weights = FALSE) {
 
   skip_conditions <- function(y, pip_cutoff_to_skip) {
     for (r in 1:ncol(y)) {
@@ -53,12 +53,12 @@ run_multivariate_pipeline <- function(
     return(y)
   }
 
-   filter_prior_matrices <- function(
-     condition_names , mrmash_weights_prior_matrices,
-      mrmash_weights_prior_matrices_cv, weights_tol = 10^-3) {
+    initialize_multivariate_prior <- function(
+     condition_names, mrmash_weights_prior_matrices,
+      mrmash_weights_prior_matrices_cv, weights_tol) {
     
       if (!is.null(mrmash_weights_prior_matrices)) {
-         names(mrmash_weights_prior_matrices)[1:2] <- c("matrices","weights")  
+         mrmash_weights_prior_matrices <- list(matrices = mrmash_weights_prior_matrices$U, weights = mrmash_weights_prior_matrices$w)
          mrmash_weights_prior_matrices <- create_mixture_prior(mixture_prior = mrmash_weights_prior_matrices, weights_tol = weights_tol, include_indices = condition_names)
       }
     
@@ -66,7 +66,7 @@ run_multivariate_pipeline <- function(
         mrmash_weights_prior_matrices_cv <- lapply(
           mrmash_weights_prior_matrices_cv,
           function(x) {
-            names(x)[1:2] <- c("matrices","weights")
+            x <- list(matrices = x$U, weights = x$w)
             create_mixture_prior(mixture_prior = x, weights_tol = weights_tol, include_indices = condition_names)
           }
         )
@@ -86,8 +86,8 @@ run_multivariate_pipeline <- function(
   }
 
   # Filter data based on remaining conditions
-  filtered_data <- filter_prior_matrices(colnames(y), mrmash_weights_prior_matrices,
-    mrmash_weights_prior_matrices_cv
+  filtered_data <- initialize_multivariate_prior(colnames(y), mrmash_weights_prior_matrices,
+    mrmash_weights_prior_matrices_cv,weights_tol = weights_tol
   )
 
   filtered_mrmash_weights_prior_matrices <- filtered_data$mrmash_weights_prior_matrices

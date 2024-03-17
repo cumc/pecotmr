@@ -94,7 +94,7 @@ mrmash_wrapper <- function(X,
                            B_init_method = "enet",
                            max_iter = 5000,
                            tol = 0.01,
-                           weights_tol  = 1e-3,
+                           weights_tol  = 1e-4,
                            verbose = FALSE, ...) {
   # Check input data
 
@@ -133,15 +133,14 @@ mrmash_wrapper <- function(X,
     prior_canonical_matrices <- compute_canonical_covs(ncol(Y), singletons = TRUE, 
                                                        hetgrid = c(0, 0.25, 0.5, 0.75, 1))
     if (!is.null(prior_data_driven)) {
-      names(prior_data_driven)[1:2] <- c("weights","matrices")
+      prior_data_driven <- list(matrices = prior_data_driven$xUlist, weights = prior_data_driven$pi)
       prior_data_driven <- create_mixture_prior(mixture_prior = prior_data_driven,weights_tol = weights_tol,include_indices = colnames(Y))
-      print(prior_data_driven[["prior_variance"]][["xUlist"]])
       S0_raw <- c(prior_canonical_matrices, prior_data_driven[["prior_variance"]][["xUlist"]][-1])
     } else {
       S0_raw <- prior_canonical_matrices
     }
   } else {
-      names(prior_data_driven)[1:2] <- c("weights","matrices")
+      prior_data_driven <- list(matrices = prior_data_driven$xUlist, weights = prior_data_driven$pi)
       prior_data_driven <- create_mixture_prior(mixture_prior = prior_data_driven,weights_tol = weights_tol,include_indices = colnames(Y))
       S0_raw <- prior_data_driven[["prior_variance"]][["xUlist"]][-1]  
   }
