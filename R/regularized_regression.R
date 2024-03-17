@@ -1,3 +1,320 @@
+#' Bayesian Multiple Regression with Mixture-of-Normals Prior
+#'
+#' This function performs Bayesian multiple regression with a mixture-of-normals prior using the `rcpp_mr_ash_rss` function from the C++ implementation.
+#'
+#' @param bhat Numeric vector of observed effect sizes (standardized).
+#' @param shat Numeric vector of standard errors of effect sizes.
+#' @param z Numeric vector of Z-scores.
+#' @param R Numeric matrix of the correlation matrix.
+#' @param var_y Numeric value of the variance of the outcome.
+#' @param n Integer value of the sample size.
+#' @param sigma2_e Numeric value of the error variance.
+#' @param s0 Numeric vector of prior variances for the mixture components.
+#' @param w0 Numeric vector of prior weights for the mixture components.
+#' @param mu1_init Numeric vector of initial values for the posterior mean of the coefficients.
+#' @param tol Numeric value of the convergence tolerance. Default is 1e-8.
+#' @param max_iter Integer value of the maximum number of iterations. Default is 1e5.
+#' @param update_w0 Logical value indicating whether to update the mixture weights. Default is TRUE.
+#' @param update_sigma Logical value indicating whether to update the error variance. Default is TRUE.
+#' @param compute_ELBO Logical value indicating whether to compute the Evidence Lower Bound (ELBO). Default is TRUE.
+#' @param standardize Logical value indicating whether to standardize the input data. Default is FALSE.
+#' @param ncpus An integer specifying the number of CPU cores to use for parallel computation. Default is 1.
+#'
+#' @return A list containing the following components:
+#' \describe{
+#'   \item{mu1}{Numeric vector of the posterior mean of the coefficients.}
+#'   \item{sigma2_1}{Numeric vector of the posterior variance of the coefficients.}
+#'   \item{w1}{Numeric matrix of the posterior assignment probabilities.}
+#'   \item{sigma2_e}{Numeric value of the error variance.}
+#'   \item{w0}{Numeric vector of the mixture weights.}
+#'   \item{ELBO}{Numeric value of the Evidence Lower Bound (if `compute_ELBO = TRUE`).}
+#' }
+#'
+#' @examples
+#' # Generate example data
+#' set.seed(985115)
+#' n <- 350
+#' p <- 16
+#' sigmasq_error <- 0.5
+#' zeroes <- rbinom(p, 1, 0.6)
+#' beta.true <- rnorm(p, 1, sd = 4)
+#' beta.true[zeroes] <- 0
+#'
+#' X <- cbind(matrix(rnorm(n * p), nrow = n))
+#' X <- scale(X, center = TRUE, scale = FALSE)
+#' y <- X %*% matrix(beta.true, ncol = 1) + rnorm(n, 0, sqrt(sigmasq_error))
+#' y <- scale(y, center = TRUE, scale = FALSE)
+#'
+#' # Calculate sufficient statistics
+#' XtX <- t(X) %*% X
+#' Xty <- t(X) %*% y
+#' yty <- t(y) %*% y
+#'
+#' # Set the prior
+#' K <- 9
+#' sigma0 <- c(0.001, .1, .5, 1, 5, 10, 20, 30, .005)
+#' omega0 <- rep(1 / K, K)
+#'
+#' # Calculate summary statistics
+#' b.hat <- sapply(1:p, function(j) {
+#'   summary(lm(y ~ X[, j]))$coefficients[-1, 1]
+#' })
+#' s.hat <- sapply(1:p, function(j) {
+#'   summary(lm(y ~ X[, j]))$coefficients[-1, 2]
+#' })
+#' R.hat <- cor(X)
+#' var_y <- var(y)
+#' sigmasq_init <- 1.5
+#'
+#' # Run mr_ash_rss
+#' out <- mr_ash_rss(b.hat, s.hat,
+#'   R = R.hat, var_y = var_y, n = n,
+#'   sigma2_e = sigmasq_init, s0 = sigma0, w0 = omega0,
+#'   mu1_init = rep(0, ncol(X)), tol = 1e-8, max_iter = 1e5,
+#'   update_w0 = TRUE, update_sigma = TRUE, compute_ELBO = TRUE,
+#'   standardize = FALSE
+#' )
+#' # In sample prediction correlations
+#' cor(X %*% out1$mu1, y) # 0.9984064
+#' @export
+mr_ash_rss <- function(bhat, shat, z = numeric(0), R, var_y, n,
+                       sigma2_e, s0, w0, mu1_init = numeric(0),
+                       tol = 1e-8, max_iter = 1e5,
+                       update_w0 = TRUE, update_sigma = TRUE,
+                       compute_ELBO = TRUE, standardize = FALSE, ncpu = 1) {
+  # Check if ncpu is greater than 0 and is an integer
+  if (ncpu <= 0 || !is.integer(ncpu)) {
+    stop("ncpu must be a positive integer.")
+  }
+
+  if (is.null(var_y)) var_y <- Inf
+
+  result <- rcpp_mr_ash_rss(
+    bhat = bhat, shat = shat, z = z, R = R,
+    var_y = var_y, n = n, sigma2_e = sigma2_e,
+    s0 = s0, w0 = w0, mu1_init = mu1_init,
+    tol = tol, max_iter = max_iter,
+    update_w0 = update_w0, update_sigma = update_sigma,
+    compute_ELBO = compute_ELBO, standardize = standardize,
+    ncpus = ncpu
+  )
+
+  return(result)
+}
+
+#' PRS-CS: a polygenic prediction method that infers posterior SNP effect sizes under continuous shrinkage (CS) priors
+#'
+#' This function is a wrapper for the PRS-CS method implemented in C++. It takes marginal effect size estimates from regression and an external LD reference panel
+#' and infers posterior SNP effect sizes using Bayesian regression with continuous shrinkage priors.
+#'
+#' @param bhat A vector of marginal effect sizes.
+#' @param LD A list of LD blocks, where each element is a matrix representing an LD block.
+#' @param n Sample size of the GWAS.
+#' @param a Shape parameter for the prior distribution of psi. Default is 1.
+#' @param b Scale parameter for the prior distribution of psi. Default is 0.5.
+#' @param phi Global shrinkage parameter. If NULL, it will be estimated automatically. Default is NULL.
+#' @param n_iter Number of MCMC iterations. Default is 1000.
+#' @param n_burnin Number of burn-in iterations. Default is 500.
+#' @param thin Thinning factor for MCMC. Default is 5.
+#' @param maf A vector of minor allele frequencies, if available, will standardize the effect sizes by MAF. Default is NULL.
+#' @param verbose Whether to print verbose output. Default is FALSE.
+#' @param seed Random seed for reproducibility. Default is NULL.
+#'
+#' @return A list containing the posterior estimates:
+#'   - beta_est: Posterior estimates of SNP effect sizes.
+#'   - psi_est: Posterior estimates of psi (shrinkage parameters).
+#'   - sigma_est: Posterior estimate of the residual variance.
+#'   - phi_est: Posterior estimate of the global shrinkage parameter.
+#' @examples
+#' # Generate example data
+#' set.seed(985115)
+#' n <- 350
+#' p <- 16
+#' sigmasq_error <- 0.5
+#' zeroes <- rbinom(p, 1, 0.6)
+#' beta.true <- rnorm(p, 1, sd = 4)
+#' beta.true[zeroes] <- 0
+#'
+#' X <- cbind(matrix(rnorm(n * p), nrow = n))
+#' X <- scale(X, center = TRUE, scale = FALSE)
+#' y <- X %*% matrix(beta.true, ncol = 1) + rnorm(n, 0, sqrt(sigmasq_error))
+#' y <- scale(y, center = TRUE, scale = FALSE)
+#'
+#' # Calculate sufficient statistics
+#' XtX <- t(X) %*% X
+#' Xty <- t(X) %*% y
+#' yty <- t(y) %*% y
+#'
+#' # Set the prior
+#' K <- 9
+#' sigma0 <- c(0.001, .1, .5, 1, 5, 10, 20, 30, .005)
+#' omega0 <- rep(1 / K, K)
+#'
+#' # Calculate summary statistics
+#' b.hat <- sapply(1:p, function(j) {
+#'   summary(lm(y ~ X[, j]))$coefficients[-1, 1]
+#' })
+#' s.hat <- sapply(1:p, function(j) {
+#'   summary(lm(y ~ X[, j]))$coefficients[-1, 2]
+#' })
+#' R.hat <- cor(X)
+#' var_y <- var(y)
+#' sigmasq_init <- 1.5
+#'
+#' # Run PRS CS
+#' maf <- rep(0.5, length(b.hat)) # fake MAF
+#' LD <- list(blk1 = R.hat)
+#' out <- prs_cs(b.hat, LD, n, maf = maf)
+#' # In sample prediction correlations
+#' cor(X %*% out$beta_est, y) # 0.9944553
+#' @export
+prs_cs <- function(bhat, LD, n,
+                   a = 1, b = 0.5, phi = NULL,
+                   maf = NULL, n_iter = 1000, n_burnin = 500,
+                   thin = 5, verbose = FALSE, seed = NULL) {
+  # Check input parameters
+  if (missing(LD) || !is.list(LD)) {
+    stop("Please provide a valid list of LD blocks using 'LD'.")
+  }
+  if (missing(n) || n <= 0) {
+    stop("Please provide a valid sample size using 'n'.")
+  }
+
+  # Check if maf is provided and its length matches that of bhat
+  if (!is.null(maf) && length(bhat) != length(maf)) {
+    stop("The length of 'bhat' must be the same as 'maf'.")
+  }
+
+  # Check if the length of bhat matches the sum of the nrow of all elements in the LD list
+  total_rows_in_LD <- sum(sapply(LD, nrow))
+  if (length(bhat) != total_rows_in_LD) {
+    stop("The length of 'bhat' must be the same as the sum of the number of rows of all elements in the 'LD' list.")
+  }
+
+  # Run PRS-CS
+  result <- prs_cs_rcpp(
+    a = a, b = b, phi = phi, bhat, maf,
+    n = n, ld_blk = LD,
+    n_iter = n_iter, n_burnin = n_burnin, thin = thin,
+    verbose = verbose, seed = seed
+  )
+
+  # Return the result as a list
+  list(
+    beta_est = result$beta_est,
+    psi_est = result$psi_est,
+    sigma_est = result$sigma_est,
+    phi_est = result$phi_est
+  )
+}
+
+#' SDPR (Summary-Statistics-Based Dirichelt Process Regression for Polygenic Risk Prediction)
+#'
+#' This function is a wrapper for the SDPR C++ implementation, which performs Markov Chain Monte Carlo (MCMC)
+#' for estimating effect sizes and heritability based on summary statistics and reference LD matrices.
+#'
+#' @param bhat A vector of marginal beta values for each SNP.
+#' @param LD A list of LD matrices, where each matrix corresponds to a subset of SNPs.
+#' @param n The total sample size of the GWAS.
+#' @param per_variant_sample_size (Optional) A vector of sample sizes for each SNP. If NULL (default), it will be initialized
+#'                    to a vector of length equal to `bhat`, with all values set to `n`.
+#' @param array (Optional) A vector of genotyping array information for each SNP. If NULL (default), it will be
+#'              initialized to a vector of 1's with length equal to `bhat`.
+#' @param a Factor to shrink the reference LD matrix. Default is 0.1.
+#' @param c Factor to correct for the deflation. Default is 1.
+#' @param M Max number of variance components. Default is 1000.
+#' @param a0k Hyperparameter for inverse gamma distribution. Default is 0.5.
+#' @param b0k Hyperparameter for inverse gamma distribution. Default is 0.5.
+#' @param iter Number of iterations for MCMC. Default is 1000.
+#' @param burn Number of burn-in iterations for MCMC. Default is 200.
+#' @param thin Thinning interval for MCMC. Default is 5.
+#' @param n_threads Number of threads to use. Default is 1.
+#' @param opt_llk Which likelihood to evaluate. 1 for equation 6 (slightly shrink the correlation of SNPs)
+#'                and 2 for equation 5 (SNPs genotyped on different arrays in a separate cohort).
+#'                Default is 1.
+#' @param verbose Whether to print verbose output. Default is true.
+#'
+#' @return A list containing the estimated effect sizes (beta) and heritability (h2).
+#' @examples
+#' # Generate example data
+#' set.seed(985115)
+#' n <- 350
+#' p <- 16
+#' sigmasq_error <- 0.5
+#' zeroes <- rbinom(p, 1, 0.6)
+#' beta.true <- rnorm(p, 1, sd = 4)
+#' beta.true[zeroes] <- 0
+#'
+#' X <- cbind(matrix(rnorm(n * p), nrow = n))
+#' X <- scale(X, center = TRUE, scale = FALSE)
+#' y <- X %*% matrix(beta.true, ncol = 1) + rnorm(n, 0, sqrt(sigmasq_error))
+#' y <- scale(y, center = TRUE, scale = FALSE)
+#'
+#' # Calculate sufficient statistics
+#' XtX <- t(X) %*% X
+#' Xty <- t(X) %*% y
+#' yty <- t(y) %*% y
+#'
+#' # Set the prior
+#' K <- 9
+#' sigma0 <- c(0.001, .1, .5, 1, 5, 10, 20, 30, .005)
+#' omega0 <- rep(1 / K, K)
+#'
+#' # Calculate summary statistics
+#' b.hat <- sapply(1:p, function(j) {
+#'   summary(lm(y ~ X[, j]))$coefficients[-1, 1]
+#' })
+#' s.hat <- sapply(1:p, function(j) {
+#'   summary(lm(y ~ X[, j]))$coefficients[-1, 2]
+#' })
+#' R.hat <- cor(X)
+#' var_y <- var(y)
+#' sigmasq_init <- 1.5
+#'
+#' # Run PRS CS
+#' maf <- rep(0.5, length(b.hat)) # fake MAF
+#' LD <- list(blk1 = R.hat)
+#' out <- sdpr(b.hat, LD, n, maf = maf)
+#' # In sample prediction correlations
+#' cor(X %*% out$beta_est, y) #
+#'
+#' @note This function is a wrapper for the SDPR C++ implementation, which is a rewritten and adopted version
+#'       of the SDPR package. The original SDPR documentation is available at
+#'       https://htmlpreview.github.io/?https://github.com/eldronzhou/SDPR/blob/main/doc/Manual.html
+#'
+#' @export
+sdpr <- function(bhat, LD, n, per_variant_sample_size = NULL, array = NULL, a = 0.1, c = 1.0, M = 1000,
+                 a0k = 0.5, b0k = 0.5, iter = 1000, burn = 200, thin = 5, n_threads = 1,
+                 opt_llk = 1, verbose = TRUE) {
+  # Check if the sum of the rows in LD list is the same as length of bhat
+  if (sum(sapply(LD, nrow)) != length(bhat)) {
+    stop("The sum of the rows in LD list must be the same as the length of bhat.")
+  }
+
+  # Check if total sample size n is a positive integer
+  if (missing(n) || n <= 0) {
+    stop("The total sample size 'n' must be a positive integer.")
+  }
+
+  # Check if per_variant_sample_size vector contains only positive values (if provided)
+  if (!is.null(per_variant_sample_size) && any(per_variant_sample_size <= 0)) {
+    stop("The 'per_variant_sample_size' vector must contain only positive values.")
+  }
+
+  # Check if array vector contains only 0, 1, or 2 (if provided)
+  if (!is.null(array) && any(!array %in% c(0, 1, 2))) {
+    stop("The 'array' vector must contain only 0, 1, or 2.")
+  }
+
+  # Call the sdpr_rcpp function
+  result <- sdpr_rcpp(
+    bhat, LD, n, per_variant_sample_size, array, a, c, M, a0k, b0k, iter, burn, thin,
+    n_threads, opt_llk, verbose
+  )
+
+  return(result)
+}
+
 #' @importFrom susieR coef.susie
 #' @export
 susie_weights <- function(X = NULL, y = NULL, susie_fit = NULL, ...) {
