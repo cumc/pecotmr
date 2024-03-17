@@ -72,12 +72,7 @@ xqtl_enrichment_wrapper <- function(xqtl_files, gwas_files,
   ))
 }
 
-
-
-#' Functions for  Colocalization Analysis Wrapper
-
 #' Function to filter and order colocalization results
-
 filter_and_order_coloc_results <- function(coloc_results_fil) {
   # Ensure the input has more than one column
   if (ncol(coloc_results_fil) <= 1) {
@@ -196,9 +191,6 @@ process_coloc_results <- function(coloc_result, LD_meta_file_path, analysis_scri
 }
 
 
-
-
-
 #' Colocalization Analysis Wrapper
 #'
 #' This function processes xQTL and multiple GWAS finemapped data files for colocalization analysis.
@@ -296,7 +288,6 @@ coloc_wrapper <- function(xqtl_file, gwas_files,
 #' @param LD_meta_file_path Path to the metadata of LD reference.
 #' @param analysis_region Path to the analysis region of coloc result.
 #' @return A list containing the coloc results and post processed coloc sets.
-
 coloc_post_processor <- function(coloc_res, LD_meta_file_path = NULL, analysis_region = NULL, ...) {
   if (!is.null(LD_meta_file_path)) {
     if (is.null(analysis_region)) {
