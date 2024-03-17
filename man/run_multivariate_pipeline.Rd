@@ -23,7 +23,7 @@ run_multivariate_pipeline(
   cv_folds = 5,
   cv_threads = 1,
   cv_seed = 999,
-  weights_tol = 0.001,
+  weights_tol = 1e-04,
   twas_weights = FALSE
 )
 }
