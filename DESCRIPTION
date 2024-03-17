@@ -42,7 +42,7 @@ Suggests:
     knitr,
     rmarkdown,
     GBJ,
-    harmonicmeanp
+    harmonicmeanp,
     plink2R
 LinkingTo: 
     Rcpp,
