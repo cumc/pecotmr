@@ -18,7 +18,7 @@
 #' @param remove_unmatched Whether to remove unmatched variants. Default is `TRUE`.
 #' @return A single data frame with matched variants.
 #' @importFrom magrittr %>% 
-#' @importFrom dplyr mutate inner_join filter pull select everything
+#' @importFrom dplyr mutate inner_join filter pull select everything row_number
 #' @importFrom vctrs vec_duplicate_detect
 #' @importFrom tidyr separate
 #' @export

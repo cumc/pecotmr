@@ -192,7 +192,6 @@ load_multitrait_tensorqtl_sumstat <- function(
   return(out)
 }
 
-#' @export
 merge_susie_cs <- function(susie_fit, coverage = "cs_coverage_0.95", complementary = FALSE) {
   # Initialize an empty list for the combined_sets
   combined_sets <- list()
@@ -573,7 +572,7 @@ mash_rand_null_sample <- function(dat, n_random, n_null, exclude_condition, seed
 }
 
 #' @export
-merge_data <- function(res_data, one_data) {
+merge_mash_data <- function(res_data, one_data) {
   combined_data <- list()
   if (length(res_data) == 0) {
     return(one_data)

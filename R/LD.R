@@ -204,7 +204,7 @@ process_LD_matrix <- function(LD_file_path, bim_file_path) {
 }
 
 #' Extract LD matrix and variants for a specific region
-#' @importFrom dplyr mutate select merge
+#' @importFrom dplyr mutate select
 #' @importFrom magrittr %>%
 #' @importFrom utils tail
 extract_LD_for_region <- function(LD_matrix, variants, region, extract_coordinates) {
