@@ -27,7 +27,7 @@ requirements:
     - r-base>=4.2
     - r-coloc
     - r-data.table
-    - r-domc
+    - r-dofuture
     - r-dplyr
     - r-gbj
     - r-ggplot2
@@ -62,7 +62,7 @@ requirements:
     - r-base>=4.2
     - r-coloc
     - r-data.table
-    - r-domc
+    - r-dofuture
     - r-dplyr
     - r-gbj
     - r-ggplot2
