@@ -69,6 +69,58 @@ format_variant_id <- function(names_vector) {
   gsub("_", ":", names_vector)
 }
 
+#' Converted  Variant ID into a properly structured data frame
+#' @param variant_id A data frame or character vector representing variant IDs.
+#'   Expected formats are a data frame with columns "chrom", "pos", "A1", "A2",
+#'   or a character vector in "chr:pos:A2:A1" or "chr:pos_A2_A1" format.
+#' @return A data frame with columns "chrom", "pos", "A1", "A2", where 'chrom'
+#'   and 'pos' are integers, and 'A1' and 'A2' are allele identifiers.
+#' @noRd
+variant_id_to_df <- function(variant_id) {
+  # Check if target_variants is already a data.frame with the required columns
+  if (is.data.frame(variant_id)) {
+    if (!all(c("chrom", "pos", "A1", "A2") %in% names(variant_id))) {
+      names(variant_id) <- c("chrom", "pos", "A2", "A1")
+    }
+    # Ensure that 'chrom' values are integers
+    variant_id$chrom <- ifelse(grepl("^chr", variant_id$chrom),
+      as.integer(sub("^chr", "", variant_id$chrom)), # Remove 'chr' and convert to integer
+      as.integer(variant_id$chrom)
+    ) # Convert to integer if not already
+    variant_id$pos <- as.integer(variant_id$pos)
+    return(variant_id)
+  }
+  # Function to split a string and create a data.frame
+  create_dataframe <- function(string, pattern) {
+    # If the pattern is for "chr:pos_ref_at", replace '_' with ':'
+    if (pattern == "colon_underscore") {
+      string <- gsub("_", ":", string)
+    }
+    parts <- strsplit(string, ":", fixed = TRUE)
+    data <- data.frame(do.call(rbind, parts), stringsAsFactors = FALSE)
+    colnames(data) <- c("chrom", "pos", "A2", "A1")
+    # Ensure that 'chrom' values are integers
+    data$chrom <- ifelse(grepl("^chr", data$chrom),
+      as.integer(sub("^chr", "", data$chrom)), # Remove 'chr' and convert to integer
+      as.integer(data$chrom)
+    ) # Convert to integer if not already
+    data$pos <- as.integer(data$pos)
+    return(data)
+  }
+
+  # Check if id1 is in the first vector format
+  if (any(grepl(":", variant_id[1])) && any(grepl("_", variant_id[1]))) {
+    return(create_dataframe(variant_id, "colon_underscore"))
+  }
+
+  # Check if id1 is in the second vector format
+  if (all(grepl(":", variant_id[1]))) {
+    return(create_dataframe(variant_id, ":"))
+  }
+  # If none of the conditions are met, stop and print an error
+  stop("Input does not match any expected format. Please provide a valid data frame or a character vector in the specified formats.")
+}
+
 load_genotype_data <- function(genotype, keep_indel = TRUE) {
   # Read genotype data using plink
   geno <- plink2R::read_plink(genotype)
@@ -443,7 +495,6 @@ load_regional_regression_data <- function(...) {
     grange = dat$grange
   ))
 }
-
 
 # return matrix of R conditions, with column names being the names of the conditions (phenotypes) and row names being sample names. Even for one condition it has to be a matrix with just one column.
 #' @noRd

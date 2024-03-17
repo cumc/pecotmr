@@ -1,55 +1,3 @@
-#' Converted  Variant ID into a properly structured data frame
-#' @param variant_id A data frame or character vector representing variant IDs.
-#'   Expected formats are a data frame with columns "chrom", "pos", "A1", "A2",
-#'   or a character vector in "chr:pos:A2:A1" or "chr:pos_A2_A1" format.
-#' @return A data frame with columns "chrom", "pos", "A1", "A2", where 'chrom'
-#'   and 'pos' are integers, and 'A1' and 'A2' are allele identifiers.
-#' @noRd
-convert_to_dataframe <- function(variant_id) {
-  # Check if target_variants is already a data.frame with the required columns
-  if (is.data.frame(variant_id)) {
-    if (!all(c("chrom", "pos", "A1", "A2") %in% names(variant_id))) {
-      names(variant_id) <- c("chrom", "pos", "A2", "A1")
-    }
-    # Ensure that 'chrom' values are integers
-    variant_id$chrom <- ifelse(grepl("^chr", variant_id$chrom),
-      as.integer(sub("^chr", "", variant_id$chrom)), # Remove 'chr' and convert to integer
-      as.integer(variant_id$chrom)
-    ) # Convert to integer if not already
-    variant_id$pos <- as.integer(variant_id$pos)
-    return(variant_id)
-  }
-  # Function to split a string and create a data.frame
-  create_dataframe <- function(string, pattern) {
-    # If the pattern is for "chr:pos_ref_at", replace '_' with ':'
-    if (pattern == "colon_underscore") {
-      string <- gsub("_", ":", string)
-    }
-    parts <- strsplit(string, ":", fixed = TRUE)
-    data <- data.frame(do.call(rbind, parts), stringsAsFactors = FALSE)
-    colnames(data) <- c("chrom", "pos", "A2", "A1")
-    # Ensure that 'chrom' values are integers
-    data$chrom <- ifelse(grepl("^chr", data$chrom),
-      as.integer(sub("^chr", "", data$chrom)), # Remove 'chr' and convert to integer
-      as.integer(data$chrom)
-    ) # Convert to integer if not already
-    data$pos <- as.integer(data$pos)
-    return(data)
-  }
-
-  # Check if id1 is in the first vector format
-  if (any(grepl(":", variant_id[1])) && any(grepl("_", variant_id[1]))) {
-    return(create_dataframe(variant_id, "colon_underscore"))
-  }
-
-  # Check if id1 is in the second vector format
-  if (all(grepl(":", variant_id[1]))) {
-    return(create_dataframe(variant_id, ":"))
-  }
-  # If none of the conditions are met, stop and print an error
-  stop("Input does not match any expected format. Please provide a valid data frame or a character vector in the specified formats.")
-}
-
 #' Match alleles between target_variants and ref_variants
 #'
 #' Match by ("chrom", "A1", "A2" and "pos"), accounting for possible
@@ -57,7 +5,7 @@ convert_to_dataframe <- function(variant_id) {
 #'
 #' @param target_variants A data frame with columns "chrom", "pos", "A1", "A2" or strings in the format of "chr:pos:A2:A1"/"chr:pos_A2_A1".
 #' @param ref_variants A data frame with columns "chrom", "pos", "A1", "A2" or strings in the format of "chr:pos:A2:A1"/"chr:pos_A2_A1".
-#' @param target_data A data frame on which QC procedures will be applied..
+#' @param target_data A data frame on which QC procedures will be applied.
 #' @param col_to_flip The name of the column in target_data where flips are to be applied.
 #' @param match_min_prop Minimum proportion of variants in the smallest data
 #'   to be matched, otherwise stops with an error. Default is 20%.
@@ -66,6 +14,7 @@ convert_to_dataframe <- function(variant_id) {
 #' @param flip Whether the alleles must be flipped: A <--> T & C <--> G, in which case
 #'   corresponding `col_to_flip` are multiplied by -1. Default is `TRUE`.
 #' @param remove_strand_ambiguous Whether to remove strand SNPs (if any). Default is `TRUE`.
+#' @param flip_strand Whether to output the variants after strand flip. Default is `FALSE`.
 #' @return A single data frame with matched variants.
 #' @import dplyr
 #' @import tidyr
@@ -73,9 +22,10 @@ convert_to_dataframe <- function(variant_id) {
 #' @export
 allele_qc <- function(target_variants, ref_variants, target_data, col_to_flip,
                       match.min.prop = 0.2, remove_dups = TRUE, flip = TRUE,
-                      remove_indels = FALSE, remove_strand_ambiguous = TRUE) {
-  target_variants <- convert_to_dataframe(target_variants)
-  ref_variants <- convert_to_dataframe(ref_variants)
+                      remove_indels = FALSE, remove_strand_ambiguous = TRUE,
+                      flip_strand = FALSE) {
+  target_variants <- variant_id_to_df(target_variants)
+  ref_variants <- variant_id_to_df(ref_variants)
 
   matched <- merge(target_variants, ref_variants, by = c("chrom", "pos"), all = FALSE, suffixes = c(".target", ".ref")) %>%
     as.data.frame() %>%
@@ -187,6 +137,13 @@ allele_qc <- function(target_variants, ref_variants, target_data, col_to_flip,
   # Keep SNPs based on the 'keep' flag
   target_data_qced <- target_data_qced[qc_summary$keep, , drop = FALSE]
 
+  # Output the variants after strand flip if specified
+  if (flip_strand) {
+    strand_flipped_indices <- which(qc_summary$strand_flip)
+    target_data_qced[strand_flipped_indices, "A1"] <- strand_flip(target_data_qced[strand_flipped_indices, "A1"])
+    target_data_qced[strand_flipped_indices, "A2"] <- strand_flip(target_data_qced[strand_flipped_indices, "A2"])
+  }
+
   # Remove duplicates if specified
   if (remove_dups) {
     dups <- vec_duplicate_detect(qc_summary[, c("chrom", "pos", "A1.target", "A2.target")])
@@ -207,4 +164,51 @@ allele_qc <- function(target_variants, ref_variants, target_data, col_to_flip,
     select(chrom, pos, A1, A2, everything()) %>%
     mutate(chrom = as.integer(chrom), pos = as.integer(pos))
   return(list(target_data_qced = target_data_qced, qc_summary = qc_summary))
+}
+
+#' Align Variant Names
+#'
+#' This function aligns variant names from two strings containing variant names in the format of
+#' "chr:pos:A1:A2" or "chr:pos_A1_A2". The first string should be the "source" and the second
+#' should be the "reference".
+#'
+#' @param source A character vector of variant names in the format "chr:pos:A2:A1" or "chr:pos_A2_A1".
+#' @param reference A character vector of variant names in the format "chr:pos:A2:A1" or "chr:pos_A2_A1".
+#'
+#' @return A list with two elements:
+#'   - aligned_variants: A character vector of aligned variant names.
+#'   - unmatched_indices: A vector of indices for the variants in the source that could not be matched.
+#'
+#' @examples
+#' source <- c("1:123:A:C", "2:456:G:T", "3:789:C:A")
+#' reference <- c("1:123:A:C", "2:456:T:G", "4:101:G:C")
+#' align_variant_names(source, reference)
+#'
+#' @importFrom dplyr %>%
+#' @export
+align_variant_names <- function(source, reference) {
+  source_df <- variant_id_to_df(source)
+  reference_df <- variant_id_to_df(reference)
+
+  qc_result <- allele_qc(
+    target_variants = source_df,
+    ref_variants = reference_df,
+    target_data = source_df,
+    col_to_flip = NULL,
+    match.min.prop = 0,
+    remove_dups = FALSE,
+    flip = TRUE,
+    strand_flip = TRUE,
+    remove_indels = FALSE,
+    remove_strand_ambiguous = FALSE
+  )
+
+  aligned_df <- qc_result$target_data_qced
+  unmatched_indices <- setdiff(seq_len(nrow(source_df)), qc_result$qc_summary$keep)
+  aligned_variants <- apply(aligned_df[, c("chrom", "pos", "A2", "A1")], 1, paste, collapse = ":")
+
+  list(
+    aligned_variants = aligned_variants,
+    unmatched_indices = unmatched_indices
+  )
 }

@@ -60,9 +60,8 @@ run_multivariate_pipeline <- function(
     return(y)
   }
 
-  filter_cv_data <- function(
-      y, maf, X_scalar, y_scalar, dropped_sample, mrmash_weights_prior_matrices,
-      mrmash_weights_prior_matrices_cv) {
+  filter_cv_data <- function(y, maf, X_scalar, y_scalar, dropped_sample, mrmash_weights_prior_matrices,
+                             mrmash_weights_prior_matrices_cv) {
     drop_indx <- which(colSums(is.na(y)) == nrow(y))
 
     if (length(drop_indx) >= 1) {
@@ -170,10 +169,9 @@ twas_multivariate_weights_pipeline <- function(
     ld_reference_meta_file = NULL, cv_folds = 5, sample_partition = NULL, mrmash_weights_prior_matrices = NULL,
     mrmash_weights_prior_matrices_cv = NULL, prior_canonical_matrices = FALSE, cv_seed = 999,
     cv_threads = 1) {
-  run_twas_cv <- function(
-      res, X, y, top_sig_idx, cv_folds, sample_partition, mrmash_weights_prior_matrices_cv,
-      mrmash_max_iter, prior_canonical_matrices, mvsusie_fitted, resid_Y, max_L,
-      mvsusie_max_iter, cv_threads, cv_seed) {
+  run_twas_cv <- function(res, X, y, top_sig_idx, cv_folds, sample_partition, mrmash_weights_prior_matrices_cv,
+                          mrmash_max_iter, prior_canonical_matrices, mvsusie_fitted, resid_Y, max_L,
+                          mvsusie_max_iter, cv_threads, cv_seed) {
     weight_methods <- list(mrmash_weights = list(), mvsusie_weights = list())
     message(paste0(
       "Performing cross-validation with ", length(top_sig_idx),
@@ -230,9 +228,8 @@ twas_multivariate_weights_pipeline <- function(
     return(res)
   }
 
-  compute_twas_weights <- function(
-      X, y, mrmash_weights_prior_matrices, prior_canonical_matrices,
-      mrmash_max_iter, mvsusie_fitted, prior, resid_Y, max_L, mvsusie_max_iter) {
+  compute_twas_weights <- function(X, y, mrmash_weights_prior_matrices, prior_canonical_matrices,
+                                   mrmash_max_iter, mvsusie_fitted, prior, resid_Y, max_L, mvsusie_max_iter) {
     weight_methods <- list(
       mrmash_weights = list(
         prior_data_driven_matrices = mrmash_weights_prior_matrices,
@@ -247,9 +244,8 @@ twas_multivariate_weights_pipeline <- function(
     return(twas_weight)
   }
 
-  mvsusie_preset_variants <- function(
-      X, y, maf, ld_reference_meta_file, max_L,
-      prior, resid_Y, mvsusie_max_iter) {
+  mvsusie_preset_variants <- function(X, y, maf, ld_reference_meta_file, max_L,
+                                      prior, resid_Y, mvsusie_max_iter) {
     variants_kept <- filter_variants_by_ld_reference(colnames(X), ld_reference_meta_file)
     X <- X[, variants_kept$data, drop = FALSE]
     maf <- lapply(maf, function(x, idx) {

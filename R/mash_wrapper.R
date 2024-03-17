@@ -47,9 +47,8 @@ load_multitrait_tensorqtl_sumstat <- function(
   }
 
 
-  merge_matrices <- function(
-      matrix_list, value_column, id_column = "variants",
-      remove_any_missing = FALSE) {
+  merge_matrices <- function(matrix_list, value_column, id_column = "variants",
+                             remove_any_missing = FALSE) {
     # Convert matrices to data frames
     df_list <- lapply(seq_along(matrix_list), function(i) {
       df <- as.data.frame(matrix_list[[i]])
@@ -440,9 +439,8 @@ load_multitrait_R_sumstat <- function(
     return(matched_indices)
   }
 
-  merge_matrices <- function(
-      matrix_list, value_column, id_column = "variants",
-      remove_any_missing = FALSE) {
+  merge_matrices <- function(matrix_list, value_column, id_column = "variants",
+                             remove_any_missing = FALSE) {
     # Convert matrices to data frames
     df_list <- lapply(seq_along(matrix_list), function(i) {
       df <- as.data.frame(matrix_list[[i]])

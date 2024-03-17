@@ -65,7 +65,7 @@ compute_qtl_enrichment <- function(gwas_pip, susie_qtl_regions,
     cat(paste("Estimated pi_gwas is:", round(pi_gwas, 5), "\n"))
   }
   if (is.null(pi_qtl)) {
-    warning("Using data to estimate pi_qtl. This will be problematic if either 1) your input susie_qtl_regions is not genome-wide, or 2) your single effects only includes variables inside of credible sets or signal clusters.")
+    warning("Using data to estimate pi_qtl. This will be problematic if either 1) your input susie_qtl_regions does not have enought data to estimate it, or 2) your single effects only includes variables inside of credible sets or signal clusters.")
     num_signal <- 0
     num_test <- 0
     for (d in susie_qtl_regions) {
@@ -78,8 +78,11 @@ compute_qtl_enrichment <- function(gwas_pip, susie_qtl_regions,
   if (pi_gwas == 0) stop("Cannot perform enrichment analysis because there is no association signal from GWAS")
   if (pi_qtl == 0) stop("Cannot perform enrichment analysis because there is no QTL associated with molecular phenotype")
 
-  # Here we don't check if SNP names match between GWAS and xQTL.
-  # We will report the overlapping status in the Rcpp code to stdout about the proportion of xQTL that are missing in GWAS.
+  # FIXME: Here I want to defined a function to align variant names from m two strings containing variant names
+  # Input should be two vectors of variant names as variant_id chr:pos:A1:A2 or chr:pos_A1_A2. The first should be the "source" and the 2nd be the "reference".
+  # Output should be a vector converting the source to as similarly as the reference as possible.
+  # If some variants are not found in the reference we will use what's in the source as is.
+  # This function should be used to align the variant names between GWAS and xQTL data.
   en <- qtl_enrichment_rcpp(
     r_gwas_pip = gwas_pip,
     r_qtl_susie_fit = susie_qtl_regions,

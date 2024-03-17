@@ -45,7 +45,7 @@ connected to Internet while running these commands):
 + To format R codes in the `R` folder,
 
    ```bash
-   bash inst/misc/format_r_code.sh R/mash_wrapper.R
+   for i in `ls R/*.R`; do bash inst/misc/format_r_code.sh $i; done
    ```
 
 + After editing C++ code in the `src` directory, please use
