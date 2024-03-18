@@ -110,21 +110,19 @@ void oneIteration(const arma::mat& LDmat, const std::vector<uint>& idx, const st
 	arma::mat LD_it(idx2.size(), idx.size());
 	arma::mat VV(idx.size(), idx.size());
 
-    #pragma omp parallel for
-	for (size_t i = 0; i < idx.size(); i++) {
-		zScore_eigen(i) = zScore[idx[i]];
-	}
-
-	// Fill LD_it and VV matrices using a single loop
+	// Fill LD_it and VV matrices using direct indexing
     #pragma omp parallel for collapse(2)
 	for (size_t i = 0; i < idx2.size(); i++) {
 		for (size_t k = 0; k < idx.size(); k++) {
-			LD_it(i, k) = LDmat.at(idx[k] * LDmat.n_rows + idx2[i]);
-			// LD_it(i, k) = LDmat.at(idx2[i] * LDmat.n_cols + idx[k]); // Try this line if the above is not correct
-			if (i < idx.size() && k < idx.size()) {
-				VV(i, k) = LDmat.at(idx[k] * LDmat.n_rows + idx[i]);
-				// VV(i, k) = LDmat.at(idx[i] * LDmat.n_rows + idx[k]); // Try this line if the above is not correct
-			}
+			LD_it(i, k) = LDmat.at(idx2[i] * LDmat.n_cols + idx[k]);
+		}
+	}
+
+    #pragma omp parallel for collapse(2)
+	for (size_t i = 0; i < idx.size(); i++) {
+		zScore_eigen(i) = zScore[idx[i]];
+		for (size_t j = 0; j < idx.size(); j++) {
+			VV(i, j) = LDmat.at(idx[i] * LDmat.n_rows + idx[j]);
 		}
 	}
 
@@ -256,9 +254,9 @@ List dentist_rcpp(const arma::mat& LDmat, uint nSample, const arma::vec& zScore,
 		} else {
 			threshold1 = getQuantile2_chen_et_al(diff, grouping_tmp, 0.995);
 			std::vector<uint> negated_grouping_tmp(grouping_tmp.size());
-			for (size_t i = 0; i < grouping_tmp.size(); ++i) {
-				negated_grouping_tmp[i] = 1 - grouping_tmp[i];
-			}
+			std::transform(grouping_tmp.begin(), grouping_tmp.end(), negated_grouping_tmp.begin(), [](uint val) {
+				return 1 - val;
+			});
 			threshold0 = getQuantile2_chen_et_al(diff, negated_grouping_tmp, 0.995);
 		}
 
@@ -301,9 +299,9 @@ List dentist_rcpp(const arma::mat& LDmat, uint nSample, const arma::vec& zScore,
 		} else {
 			threshold1 = getQuantile2_chen_et_al(diff, grouping_tmp, 0.995);
 			std::vector<uint> negated_grouping_tmp(grouping_tmp.size());
-			for (size_t i = 0; i < grouping_tmp.size(); ++i) {
-				negated_grouping_tmp[i] = 1 - grouping_tmp[i];
-			}
+			std::transform(grouping_tmp.begin(), grouping_tmp.end(), negated_grouping_tmp.begin(), [](uint val) {
+				return 1 - val;
+			});
 			threshold0 = getQuantile2_chen_et_al(diff, negated_grouping_tmp, 0.995);
 		}
 		if (threshold1 == 0) {
