@@ -92,7 +92,7 @@ mrmash_wrapper <- function(X,
                            w0_threshold = 1e-8,
                            update_V = TRUE,
                            update_V_method = "full",
-                           B_init_method = "enet",
+                           B_init_method = "glasso",
                            max_iter = 5000,
                            tol = 0.01,
                            weights_tol = 1e-4,
@@ -116,7 +116,8 @@ mrmash_wrapper <- function(X,
   Y_has_missing <- any(is.na(Y))
 
   if (Y_has_missing && B_init_method == "glasso") {
-    stop("B_init_method = 'glasso' can only be used without missing values in Y.")
+    warning("B_init_method = 'glasso' can only be used without missing values in Y. Setting it to 'enet' instead")
+    B_init_method <- "enet"
   }
 
   # Compute summary statistics and prior_grids
@@ -127,6 +128,13 @@ mrmash_wrapper <- function(X,
     )
   }
   prior_grid <- compute_grid(bhat = sumstats$Bhat, sbhat = sumstats$Shat)
+
+  if (!is.null(prior_data_driven_matrices)) {
+    if (inherits(prior_data_driven_matrices, "MashInitializer")) {
+      prior_data_driven_matrices <- lapply(prior_data_driven_matrices, function(x) x$prior_variance$xUlist[-1])
+    }
+    prior_data_driven_matrices <- filter_data_driven_mats(Y, prior_data_driven_matrices)
+  }
 
   # Compute canonical matrices, if requested
   if (isTRUE(prior_canonical_matrices)) {
@@ -147,14 +155,14 @@ mrmash_wrapper <- function(X,
   S0 <- expand_covs(S0_raw, prior_grid, zeromat = TRUE)
   time1 <- proc.time()
 
-  if (B_init_method == "enet") {
-    out <- compute_coefficients_univ_glmnet(X, Y,
-      alpha = 0.5, standardize = standardize,
-      nthreads = nthreads, Xnew = NULL
-    )
-  } else if (B_init_method == "glasso") {
+  if (B_init_method == "glasso") {
     out <- compute_coefficients_glasso(X, Y,
       standardize = standardize,
+      nthreads = nthreads, Xnew = NULL
+    )
+  } else {
+    out <- compute_coefficients_univ_glmnet(X, Y,
+      alpha = 0.5, standardize = standardize,
       nthreads = nthreads, Xnew = NULL
     )
   }
@@ -286,14 +294,23 @@ compute_w0 <- function(Bhat, ncomps) {
 
 ### Filter data-driven matrices
 filter_data_driven_mats <- function(Y, data_driven_mats) {
-  if (!is.list(data_driven_mats)) {
-    stop("data_driven_mats must be a list.")
-  }
-
   conditions_to_keep <- colnames(Y)
+  
+  # Check if colnames of Y is a subset of column names of each element in data_driven_mats
+  for (mat_name in names(data_driven_mats)) {
+    mat <- data_driven_mats[[mat_name]]
+    missing_conditions <- setdiff(conditions_to_keep, colnames(mat))
+    
+    if (length(missing_conditions) > 0) {
+      stop(paste("Condition(s)", paste(missing_conditions, collapse = ", "), 
+                 "not found in matrix", mat_name))
+    }
+  }
+  
   data_driven_mats_filt <- lapply(data_driven_mats, function(x, to_keep) {
     x[to_keep, to_keep]
   }, conditions_to_keep)
+  
   return(data_driven_mats_filt)
 }
 

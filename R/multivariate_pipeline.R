@@ -147,7 +147,7 @@ multivariate_analysis_pipeline <- function(
   if (twas_weights) {
     message("Fitting mr.mash model on input data ...")
     mrmash_fitted <- mrmash_wrapper(
-      X = X, Y = Y, prior_data_driven_matrices = filtered_data_driven_prior_matrices$prior_variance$xUlist[-1],
+      X = X, Y = Y, prior_data_driven_matrices = filtered_data_driven_prior_matrices,
       prior_grid = NULL, prior_canonical_matrices = canonical_prior_matrices, max_iter = mrmash_max_iter
     )
     resid_Y <- mrmash_fitted$V
@@ -168,10 +168,8 @@ multivariate_analysis_pipeline <- function(
     mvsusie_fitted, X, NULL, 1, 1,
     maf = maf, secondary_coverage = secondary_coverage, signal_cutoff = signal_cutoff, mode = "mvsusie"
   )
-
-  if (!is.null(mrmash_fitted)) {
-    res <- c(res, mrmash_fitted)
-  }
+  res$mrmash_results <- mrmash_fitted
+  # FIXME: need to add some codes to get single condition inference lfsr results for each y
 
   # Run TWAS pipeline
   if (!twas_weights) {
