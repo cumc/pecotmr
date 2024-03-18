@@ -14,7 +14,8 @@ dentist(
   nIter = 10,
   gPvalueThreshold = 0.05,
   ncpus = 1,
-  seed = 999
+  seed = 999,
+  correct_chen_et_al_bug = TRUE
 )
 }
 \arguments{

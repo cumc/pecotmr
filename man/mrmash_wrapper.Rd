@@ -17,7 +17,7 @@ mrmash_wrapper(
   w0_threshold = 1e-08,
   update_V = TRUE,
   update_V_method = "full",
-  B_init_method = "enet",
+  B_init_method = "glasso",
   max_iter = 5000,
   tol = 0.01,
   weights_tol = 1e-04,
