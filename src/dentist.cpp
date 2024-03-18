@@ -279,7 +279,7 @@ List dentist_rcpp(const arma::mat& LDmat, uint nSample, const arma::vec& zScore,
 		}
 
 		// Perform another iteration with updated sets of indices (idx and idx2_QCed)
-		oneIteration(LDmat, idx, idx2_QCed, zScore, imputedZ, rsq, zScore_e, nSample, propSVD, ncpus);
+		oneIteration(LDmat, idx2_QCed, idx, zScore, imputedZ, rsq, zScore_e, nSample, propSVD, ncpus);
 
 		// Recalculate differences and groupings after the iteration
 		diff.resize(fullIdx.size());

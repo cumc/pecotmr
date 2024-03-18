@@ -41,7 +41,8 @@
 #' @export
 dentist <- function(zScore, LDmat, nSample,
                     pValueThreshold = 5e-8, propSVD = 0.4, gcControl = FALSE,
-                    nIter = 10, gPvalueThreshold = 0.05, ncpus = 1, seed = 999) {
+                    nIter = 10, gPvalueThreshold = 0.05, ncpus = 1, seed = 999, 
+                    correct_chen_et_al_bug = TRUE) {
   # Check that LDmat dimensions match the length of zScore
   if (!is.matrix(LDmat) || nrow(LDmat) != ncol(LDmat) || nrow(LDmat) != length(zScore)) {
     stop("LDmat must be a square matrix with dimensions equal to the length of zScore.")
@@ -63,7 +64,7 @@ dentist <- function(zScore, LDmat, nSample,
       dentist_rcpp(
         LDmat, nSample, zScore,
         pValueThreshold, propSVD, gcControl, nIter,
-        gPvalueThreshold, ncpus, seed
+        gPvalueThreshold, ncpus, seed, correct_chen_et_al_bug
       )
     },
     warning = warning_handler
