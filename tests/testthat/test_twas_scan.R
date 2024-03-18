@@ -157,7 +157,7 @@ test_that("load_twas_weights raises error if different regions specified", {
   weight_db <- setup_weight_db_vector(n_rds = 2, n_cond = 4, same_gene = FALSE)
   expect_true(
     inherits(
-      load_twas_weights(weight_db$weight_paths, conditions = NULL, variable_name_obj = "variant_names"),
+      load_twas_weights(weight_db$weight_paths, conditions = NULL, variable_name_obj = c("preset_variants_result", "variant_names")),
       "try-error"))
   cleanup_weight_db_vector(weight_db$weight_paths)
 })
@@ -167,7 +167,7 @@ test_that("load_twas_weights raises error if different number of conditions per 
   weight_db <- setup_weight_db_vector(n_rds = 2, n_cond = 4)
   expect_true(
     inherits(
-      load_twas_weights(weight_db$weight_paths, conditions = "not_found", variable_name_obj = "variant_names"),
+      load_twas_weights(weight_db$weight_paths, conditions = "not_found", variable_name_obj = c("preset_variants_result", "variant_names")),
       "try-error"))
   cleanup_weight_db_vector(weight_db$weight_paths)
 })
@@ -175,7 +175,7 @@ test_that("load_twas_weights raises error if different number of conditions per 
 # Test null conditions
 test_that("load_twas_weights works with null condition", {
   weight_db <- setup_weight_db_vector(n_rds = 2, n_cond = 4)
-  res <- load_twas_weights(weight_db$weight_paths, conditions = NULL, variable_name_obj = "variant_names")
+  res <- load_twas_weights(weight_db$weight_paths, conditions = NULL, variable_name_obj = c("preset_variants_result", "variant_names"))
   expect_true(all(c("susie_results", "weights") %in% names(res)))
   cleanup_weight_db_vector(weight_db$weight_paths)
 })
@@ -183,7 +183,7 @@ test_that("load_twas_weights works with null condition", {
 # Specify conditions
 test_that("load_twas_weights works with specified condition", {
   weight_db <- setup_weight_db_vector(n_rds = 2, n_cond = 4, same_condition = TRUE, condition = "cond_1_joe_eQTL")
-  res <- load_twas_weights(weight_db$weight_paths, conditions = "cond_1_joe_eQTL", variable_name_obj = "variant_names")
+  res <- load_twas_weights(weight_db$weight_paths, conditions = "cond_1_joe_eQTL", variable_name_obj = c("preset_variants_result", "variant_names"))
   expect_true(all(c("susie_results", "weights") %in% names(res)))
   cleanup_weight_db_vector(weight_db$weight_paths)
 })
