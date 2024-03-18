@@ -167,7 +167,7 @@ void oneIteration(const arma::mat& LDmat, const std::vector<uint>& idx, const st
 }
 
 /**
- * @brief Executes DENTIST algorithm for quality control in GWAS summary data.
+ * @brief Executes DENTIST algorithm for quality control in GWAS summary data: the iterative imputation function.
  *
  * DENTIST (Detecting Errors iN analyses of summary staTISTics) identifies and removes problematic variants
  * in GWAS summary data by comparing observed GWAS statistics to predicted values based on linkage disequilibrium (LD)
@@ -196,7 +196,7 @@ void oneIteration(const arma::mat& LDmat, const std::vector<uint>& idx, const st
  */
 
 // [[Rcpp::export]]
-List dentist_rcpp(const arma::mat& LDmat, uint nSample, const arma::vec& zScore,
+List dentist_iterative_impute(const arma::mat& LDmat, uint nSample, const arma::vec& zScore,
                   double pValueThreshold, float propSVD, bool gcControl, int nIter,
                   double gPvalueThreshold, int ncpus, int seed, bool correct_chen_et_al_bug = false) {
 	// Set number of threads for parallel processing
@@ -356,14 +356,8 @@ List dentist_rcpp(const arma::mat& LDmat, uint nSample, const arma::vec& zScore,
 		}
 	}
 
-	// Prepare and return results using arma::vec::elem() for simplicity
-	arma::uvec problematic_indices = arma::find(arma::conv_to<arma::vec>::from(groupingGWAS) == 1);
-	arma::vec is_problematic = arma::zeros<arma::vec>(markerSize);
-	is_problematic.elem(problematic_indices).fill(1);
-
 	return List::create(Named("imputed_z") = imputedZ,
 	                    Named("rsq") = rsq,
 	                    Named("corrected_z") = zScore_e,
-	                    Named("iter_to_correct") = iterID,
-	                    Named("is_problematic") = is_problematic);
+	                    Named("iter_to_correct") = iterID);
 }

@@ -59,9 +59,9 @@ dentist <- function(zScore, LDmat, nSample,
     invokeRestart("muffleWarning")
   }
 
-  results <- tryCatch(
+  res <- tryCatch(
     {
-      dentist_rcpp(
+      dentist_iterative_impute(
         LDmat, nSample, zScore,
         pValueThreshold, propSVD, gcControl, nIter,
         gPvalueThreshold, ncpus, seed, correct_chen_et_al_bug
@@ -69,7 +69,14 @@ dentist <- function(zScore, LDmat, nSample,
     },
     warning = warning_handler
   )
-  results <- as.data.frame(results)
-  results$original_z <- zScore
-  return(results)
+  res <- as.data.frame(res)
+  res$original_z <- zScore
+
+  detect_outlier <- function(dat) {
+    # FIXME: add the final QC step here
+    return (dat)
+  }
+
+  res <- detect_outlier(res)
+  return(res)
 }
