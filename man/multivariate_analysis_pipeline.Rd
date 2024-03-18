@@ -13,8 +13,8 @@ multivariate_analysis_pipeline(
   pip_cutoff_to_skip = rep(0, ncol(Y)),
   signal_cutoff = 0.025,
   secondary_coverage = c(0.7, 0.5),
-  data_driven_prior_matricies = NULL,
-  data_driven_prior_matricies_cv = NULL,
+  data_driven_prior_matrices = NULL,
+  data_driven_prior_matrices_cv = NULL,
   canonical_prior_matrices = TRUE,
   sample_partition = NULL,
   mrmash_max_iter = 5000,
@@ -44,9 +44,9 @@ multivariate_analysis_pipeline(
 
 \item{secondary_coverage}{A vector of secondary coverage probabilities for credible set refinement. Defaults to c(0.7, 0.5).}
 
-\item{data_driven_prior_matricies}{A list of data-driven covariance matrices for mr.mash weights.}
+\item{data_driven_prior_matrices}{A list of data-driven covariance matrices for mr.mash weights.}
 
-\item{data_driven_prior_matricies_cv}{A list of data-driven covariance matrices for mr.mash weights in cross-validation.}
+\item{data_driven_prior_matrices_cv}{A list of data-driven covariance matrices for mr.mash weights in cross-validation.}
 
 \item{canonical_prior_matrices}{If set to TRUE, will compute canonical covariance matrices and add them into the prior covariance matrix list in mrmash_wrapper. Default is TRUE.}
 
@@ -70,4 +70,41 @@ multivariate_analysis_pipeline(
 This function performs weights computation for Transcriptome-Wide Association Study (TWAS) with fitting
 models using mvSuSiE and mr.mash with the option of using a limited number of variants selected from
 mvSuSiE fine-mapping for computing TWAS weights with cross-validation.
+}
+\examples{
+library(pecotmr)
+
+data(multitrait_data)
+attach(multitrait_data)
+
+data_driven_prior_matrices <- list(
+  U = prior_matrices,
+  w = rep(1 / length(prior_matrices), length(prior_matrices))
+)
+
+data_driven_prior_matrices_cv <- lapply(prior_matrices_cv, function(x) {
+  list(U = x, w = rep(1 / length(x), length(x)))
+})
+
+result <- multivariate_analysis_pipeline(
+  X = multitrait_data$X[, 1:100],
+  Y = multitrait_data$Y,
+  maf = 0,
+  max_L = 10,
+  ld_reference_meta_file = NULL,
+  mvsusie_max_iter = 20, # 200
+  mrmash_max_iter = 50, # 500
+  max_cv_variants = 100, # 5000
+  pip_cutoff_to_skip = 0.025,
+  signal_cutoff = 0.025,
+  data_driven_prior_matrices = data_driven_prior_matrices,
+  data_driven_prior_matrices_cv = data_driven_prior_matrices_cv,
+  canonical_prior_matrices = TRUE,
+  sample_partition = NULL,
+  cv_folds = 5,
+  cv_seed = 999,
+  cv_threads = 2,
+  prior_weights_min = 1e-4,
+  twas_weights = FALSE
+)
 }
