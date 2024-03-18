@@ -118,7 +118,7 @@ void oneIteration(const arma::mat& LDmat, const std::vector<uint>& idx, const st
 		}
 	}
 
-    #pragma omp parallel for collapse(2)
+    #pragma omp parallel for
 	for (size_t i = 0; i < idx.size(); i++) {
 		zScore_eigen(i) = zScore[idx[i]];
 		for (size_t j = 0; j < idx.size(); j++) {
