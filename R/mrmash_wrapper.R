@@ -129,23 +129,18 @@ mrmash_wrapper <- function(X,
   prior_grid <- compute_grid(bhat = sumstats$Bhat, sbhat = sumstats$Shat)
 
   # Compute canonical matrices, if requested
-  # Compute canonical matrices, if requested
   if (isTRUE(prior_canonical_matrices)) {
     prior_canonical_matrices <- compute_canonical_covs(ncol(Y),
       singletons = TRUE,
       hetgrid = c(0, 0.25, 0.5, 0.75, 1)
     )
     if (!is.null(prior_data_driven)) {
-      prior_data_driven <- list(matrices = prior_data_driven$xUlist, weights = prior_data_driven$pi)
-      prior_data_driven <- create_mixture_prior(mixture_prior = prior_data_driven, weights_tol = weights_tol, include_indices = colnames(Y))
-      S0_raw <- c(prior_canonical_matrices, prior_data_driven[["prior_variance"]][["xUlist"]][-1])
+      S0_raw <- c(prior_canonical_matrices, prior_data_driven)
     } else {
       S0_raw <- prior_canonical_matrices
     }
   } else {
-    prior_data_driven <- list(matrices = prior_data_driven$xUlist, weights = prior_data_driven$pi)
-    prior_data_driven <- create_mixture_prior(mixture_prior = prior_data_driven, weights_tol = weights_tol, include_indices = colnames(Y))
-    S0_raw <- prior_data_driven[["prior_variance"]][["xUlist"]][-1]
+    S0_raw <- prior_data_driven
   }
 
   # Compute prior covariance
@@ -188,7 +183,7 @@ compute_coefficients_glasso <- function(X, Y, standardize, nthreads, Xnew = NULL
   n <- nrow(X)
   p <- ncol(X)
   r <- ncol(Y)
-  tissue_names <- colnames(Y)
+  condition_names <- colnames(Y)
 
   # Fit group-lasso
   if (nthreads > 1) {
@@ -215,7 +210,7 @@ compute_coefficients_glasso <- function(X, Y, standardize, nthreads, Xnew = NULL
   # Make predictions if requested.
   if (!is.null(Xnew)) {
     Yhat_glmnet <- drop(predict(cvfit_glmnet, newx = Xnew, s = "lambda.min"))
-    colnames(Yhat_glmnet) <- tissue_names
+    colnames(Yhat_glmnet) <- condition_names
     res <- list(Bhat = B, Ytrain = Y, Yhat_new = Yhat_glmnet)
   } else {
     res <- list(Bhat = B, Ytrain = Y)
@@ -237,8 +232,8 @@ compute_coefficients_univ_glmnet <- function(X, Y, alpha, standardize, nthreads,
     }
 
     samples_kept <- which(!is.na(Y[, i]))
-    Ynomiss <- Y[samples_kept, i]
-    Xnomiss <- X[samples_kept, ]
+    Ynomiss <- Y[samples_kept, i, drop=FALSE]
+    Xnomiss <- X[samples_kept, , drop=FALSE]
 
     cvfit <- cv.glmnet(
       x = Xnomiss, y = Ynomiss, family = "gaussian", alpha = alpha,
@@ -290,16 +285,16 @@ compute_w0 <- function(Bhat, ncomps) {
 }
 
 ### Filter data-driven matrices
-filter_datadriven_mats <- function(Y, datadriven_mats) {
-  if (!is.list(datadriven_mats)) {
-    stop("datadriven_mats must be a list.")
+filter_data_driven_mats <- function(Y, data_driven_mats) {
+  if (!is.list(data_driven_mats)) {
+    stop("data_driven_mats must be a list.")
   }
 
-  tissues_to_keep <- colnames(Y)
-  datadriven_mats_filt <- lapply(datadriven_mats, function(x, to_keep) {
+  conditions_to_keep <- colnames(Y)
+  data_driven_mats_filt <- lapply(data_driven_mats, function(x, to_keep) {
     x[to_keep, to_keep]
-  }, tissues_to_keep)
-  return(datadriven_mats_filt)
+  }, conditions_to_keep)
+  return(data_driven_mats_filt)
 }
 
 ### Function to compute grids

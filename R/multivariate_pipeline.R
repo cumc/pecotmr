@@ -35,28 +35,43 @@ multivariate_analysis_pipeline <- function(
     ), signal_cutoff = 0.025, secondary_coverage = c(0.7, 0.5), data_driven_prior_matricies = NULL,
     data_driven_prior_matricies_cv = NULL, canonical_prior_matrices = TRUE, sample_partition = NULL,
     mrmash_max_iter = 5000, mvsusie_max_iter = 200, max_cv_variants = 5000, cv_folds = 5,
-    cv_threads = 1, cv_seed = 999, weights_tol = 1e-4, twas_weights = FALSE) {
-  skip_conditions <- function(Y, pip_cutoff_to_skip) {
+    cv_threads = 1, cv_seed = 999, prior_weights_min = 1e-4, twas_weights = FALSE) {
+  skip_conditions <- function(X, Y, pip_cutoff_to_skip) {
+    cols_to_keep <- logical(ncol(Y)) # Initialize vector to track columns to keep
     for (r in 1:ncol(Y)) {
       if (pip_cutoff_to_skip[r] > 0) {
-        top_model_pip <- susie(X, Y[, r], L = 1)$pip
-        if (!any(top_model_pip > pip_cutoff_to_skip[r])) {
+        non_missing_indices <- which(!is.na(Y[, r]))
+        X_non_missing <- X[non_missing_indices, ]
+        Y_non_missing <- Y[non_missing_indices, r]
+
+        top_model_pip <- susie(X_non_missing, Y_non_missing, L = 1)$pip
+
+        if (any(top_model_pip > pip_cutoff_to_skip[r])) {
+          cols_to_keep[r] <- TRUE # Mark column for keeping
+        } else {
           message(paste0(
             "Skipping condition ", colnames(Y)[r], ", because all top_model_pip < pip_cutoff_to_skip = ",
-            pip_cutoff_to_skip[r], ", top loci model does not show any potentially significant variants."
+            pip_cutoff_to_skip[r], ". Top loci model does not show any potentially significant variants."
           ))
-          Y[, r] <- NA
         }
       }
     }
-    return(Y)
+
+    Y_filtered <- Y[, cols_to_keep, drop = FALSE]
+
+    if (ncol(Y_filtered) <= 1) {
+      warning("After filtering, Y has ", ncol(Y_filtered), " column(s) left. Returning NULL.")
+      return(NULL)
+    } else {
+      return(Y_filtered)
+    }
   }
 
   initialize_multivariate_prior <- function(condition_names, data_driven_prior_matricies,
-                                            data_driven_prior_matricies_cv, weights_tol) {
+                                            data_driven_prior_matricies_cv, prior_weights_min) {
     if (!is.null(data_driven_prior_matricies)) {
       data_driven_prior_matricies <- list(matrices = data_driven_prior_matricies$U, weights = data_driven_prior_matricies$w)
-      data_driven_prior_matricies <- create_mixture_prior(mixture_prior = data_driven_prior_matricies, weights_tol = weights_tol, include_indices = condition_names)
+      data_driven_prior_matricies <- create_mixture_prior(mixture_prior = data_driven_prior_matricies, weights_tol = prior_weights_min, include_indices = condition_names)
     }
 
     if (!is.null(data_driven_prior_matricies_cv)) {
@@ -64,7 +79,7 @@ multivariate_analysis_pipeline <- function(
         data_driven_prior_matricies_cv,
         function(x) {
           x <- list(matrices = x$U, weights = x$w)
-          create_mixture_prior(mixture_prior = x, weights_tol = weights_tol, include_indices = condition_names)
+          create_mixture_prior(mixture_prior = x, weights_tol = prior_weights_min, include_indices = condition_names)
         }
       )
     }
@@ -78,14 +93,14 @@ multivariate_analysis_pipeline <- function(
   Y <- skip_conditions(Y, pip_cutoff_to_skip)
 
   # Return empty list if all conditions are skipped
-  if (all(is.na(Y))) {
+  if (is.null(Y)) {
     return(list())
   }
 
   # Filter data based on remaining conditions
   filtered_data <- initialize_multivariate_prior(colnames(Y), data_driven_prior_matricies,
     data_driven_prior_matricies_cv,
-    weights_tol = weights_tol
+    weights_tol = prior_weights_min
   )
 
   filtered_data_driven_prior_matricies <- filtered_data$data_driven_prior_matricies
@@ -94,7 +109,7 @@ multivariate_analysis_pipeline <- function(
 
   # Fit mr.mash model
   mrmash_output <- mrmash_wrapper(
-    X = X, Y = Y, prior_data_driven = filtered_data_driven_prior_matricies$prior_variance,
+    X = X, Y = Y, prior_data_driven = filtered_data_driven_prior_matricies$prior_variance$xUlist[-1],
     prior_grid = NULL, canonical_prior_matrices = canonical_prior_matrices, max_iter = mrmash_max_iter
   )
   resid_Y <- mrmash_output$V

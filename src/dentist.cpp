@@ -71,6 +71,25 @@ double getQuantile2(const std::vector<double>& dat, const std::vector<uint>& gro
 	return getQuantile(filteredData, whichQuantile);
 }
 
+// Get a quantile value based on grouping
+double getQuantile2_chen_et_al(const std::vector<double> &dat, std::vector<uint> grouping, double whichQuantile)
+{
+	int sum = std::accumulate(grouping.begin(), grouping.end(), 0);
+
+	if (sum < 50)
+	{
+		return 0;
+	}
+
+	std::vector<double> diff2;
+	for (uint i = 0; i < dat.size(); i++)
+	{
+		if (grouping[i] == 1)
+			diff2.push_back(dat[i]);
+	}
+	return getQuantile(diff2, whichQuantile);
+}
+
 // Calculate minus log p-value of chi-squared statistic
 double minusLogPvalueChisq2(double stat) {
 	double p = 1.0 - gsl_cdf_chisq_P(stat, 1.0);
@@ -104,7 +123,7 @@ void oneIteration(const arma::mat& LDmat, const std::vector<uint>& idx, const st
 			// LD_it(i, k) = LDmat.at(idx2[i] * LDmat.n_cols + idx[k]); // Try this line if the above is not correct
 			if (i < idx.size() && k < idx.size()) {
 				VV(i, k) = LDmat.at(idx[k] * LDmat.n_rows + idx[i]);
-				// VV(i, k) = LDmat.at(idx[i] * LDmat.n_rows + idx[k]); // Try this line if the above is not correct 
+				// VV(i, k) = LDmat.at(idx[i] * LDmat.n_rows + idx[k]); // Try this line if the above is not correct
 			}
 		}
 	}
@@ -181,7 +200,7 @@ void oneIteration(const arma::mat& LDmat, const std::vector<uint>& idx, const st
 // [[Rcpp::export]]
 List dentist_rcpp(const arma::mat& LDmat, uint nSample, const arma::vec& zScore,
                   double pValueThreshold, float propSVD, bool gcControl, int nIter,
-                  double gPvalueThreshold, int ncpus, int seed) {
+                  double gPvalueThreshold, int ncpus, int seed, bool correct_chen_et_al_bug = false) {
 	// Set number of threads for parallel processing
 	int nProcessors = omp_get_max_threads();
 	if (ncpus < nProcessors) nProcessors = ncpus;
@@ -229,19 +248,31 @@ List dentist_rcpp(const arma::mat& LDmat, uint nSample, const arma::vec& zScore,
 		}
 
 		double threshold = getQuantile(diff, 0.995);
-		double threshold1 = getQuantile2(diff, grouping_tmp, 0.995, false);
-		double threshold0 = getQuantile2(diff, grouping_tmp, 0.995, true);
+		double threshold1, threshold0;
+
+		if (correct_chen_et_al_bug) {
+			threshold1 = getQuantile2(diff, grouping_tmp, 0.995, false);
+			threshold0 = getQuantile2(diff, grouping_tmp, 0.995, true);
+		} else {
+			threshold1 = getQuantile2_chen_et_al(diff, grouping_tmp, 0.995);
+			std::vector<uint> negated_grouping_tmp(grouping_tmp.size());
+			for (size_t i = 0; i < grouping_tmp.size(); ++i) {
+				negated_grouping_tmp[i] = 1 - grouping_tmp[i];
+			}
+			threshold0 = getQuantile2_chen_et_al(diff, negated_grouping_tmp, 0.995);
+		}
 
 		if (threshold1 == 0) {
 			threshold1 = threshold;
 			threshold0 = threshold;
 		}
-
-		if (t > nIter - 2) {
-			threshold0 = threshold;
-			threshold1 = threshold;
+		if (correct_chen_et_al_bug || nIter - 2 >= 0) {
+			// FIXME: Please explain the story here
+			if (t > nIter - 2) {
+				threshold0 = threshold;
+				threshold1 = threshold;
+			}
 		}
-
 		// Apply threshold-based filtering for QC
 		for (size_t i = 0; i < diff.size(); ++i) {
 			if ((grouping_tmp[i] == 1 && diff[i] <= threshold1) ||
@@ -263,19 +294,29 @@ List dentist_rcpp(const arma::mat& LDmat, uint nSample, const arma::vec& zScore,
 
 		// Re-determine thresholds based on the recalculated differences and groupings
 		threshold = getQuantile(diff, 0.995);
-		threshold1 = getQuantile2(diff, grouping_tmp, 0.995, false);
-		threshold0 = getQuantile2(diff, grouping_tmp, 0.995, true);
-
+		if (correct_chen_et_al_bug) {
+			// FIXME: explain the story here
+			threshold1 = getQuantile2(diff, grouping_tmp, 0.995, false);
+			threshold0 = getQuantile2(diff, grouping_tmp, 0.995, true);
+		} else {
+			threshold1 = getQuantile2_chen_et_al(diff, grouping_tmp, 0.995);
+			std::vector<uint> negated_grouping_tmp(grouping_tmp.size());
+			for (size_t i = 0; i < grouping_tmp.size(); ++i) {
+				negated_grouping_tmp[i] = 1 - grouping_tmp[i];
+			}
+			threshold0 = getQuantile2_chen_et_al(diff, negated_grouping_tmp, 0.995);
+		}
 		if (threshold1 == 0) {
 			threshold1 = threshold;
 			threshold0 = threshold;
 		}
 
-		if (t > nIter - 2) {
-			threshold0 = threshold;
-			threshold1 = threshold;
+		if (correct_chen_et_al_bug || nIter - 2 >= 0) {
+			if (t > nIter - 2) {
+				threshold0 = threshold;
+				threshold1 = threshold;
+			}
 		}
-
 		// Adjust for genetic control and inflation factor if necessary
 		std::vector<double> chisq(fullIdx.size());
 		for (size_t i = 0; i < fullIdx.size(); ++i) {
