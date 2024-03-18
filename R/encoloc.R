@@ -239,17 +239,15 @@ coloc_wrapper <- function(xqtl_file, gwas_files,
   combined_gwas_lbf_matrix <- bind_rows(gwas_lbf_matrices) %>%
     mutate(across(everything(), ~ replace_na(., 0)))
 
-  
-  if(nrow(combined_gwas_lbf_matrix) > 0){
+  # Process xQTL data
+  xqtl_raw_data <- readRDS(xqtl_file)[[1]]
+  xqtl_data <- if (!is.null(xqtl_finemapping_obj)) get_nested_element(xqtl_raw_data, xqtl_finemapping_obj) else xqtl_raw_data
+  xqtl_lbf_matrix <- as.data.frame(xqtl_data$lbf_variable)
 
-      # Process xQTL data
-      xqtl_raw_data <- readRDS(xqtl_file)[[1]]
-      xqtl_data <- if (!is.null(xqtl_finemapping_obj)) get_nested_element(xqtl_raw_data, xqtl_finemapping_obj) else xqtl_raw_data
-      xqtl_lbf_matrix <- as.data.frame(xqtl_data$lbf_variable)
-
-      # fsusie data does not have V element in results
-      if ("V" %in% names(xqtl_data)) xqtl_lbf_matrix <- xqtl_lbf_matrix[xqtl_data$V > prior_tol, ] else (message("No V found in orginal data."))
-
+  # fsusie data does not have V element in results
+  if ("V" %in% names(xqtl_data)) xqtl_lbf_matrix <- xqtl_lbf_matrix[xqtl_data$V > prior_tol, ] else (message("No V found in orginal data."))
+      
+  if(nrow(combined_gwas_lbf_matrix) > 0 && nrow(xqtl_lbf_matrix) > 0){
       if (!is.null(xqtl_varname_obj)) colnames(xqtl_lbf_matrix) <- get_nested_element(xqtl_raw_data, xqtl_varname_obj)
 
       colnames(xqtl_lbf_matrix) <- align_variant_names(colnames(xqtl_lbf_matrix),  colnames(combined_gwas_lbf_matrix))$aligned_variants
@@ -267,6 +265,7 @@ coloc_wrapper <- function(xqtl_file, gwas_files,
 
       # COLOC function
       coloc_res <- coloc.bf_bf(xqtl_lbf_matrix, combined_gwas_lbf_matrix, p1 = p1, p2 = p2, p12 = p12)
+
   } else {
       coloc_res <- list("No coloc results due to the absence of a GWAS log Bayes factor matrix filtered by prior tolerance.")
   }
