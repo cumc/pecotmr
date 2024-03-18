@@ -253,11 +253,10 @@ List dentist_rcpp(const arma::mat& LDmat, uint nSample, const arma::vec& zScore,
 			threshold0 = getQuantile2(diff, grouping_tmp, 0.995, true);
 		} else {
 			threshold1 = getQuantile2_chen_et_al(diff, grouping_tmp, 0.995);
-			std::vector<uint> negated_grouping_tmp(grouping_tmp.size());
-			std::transform(grouping_tmp.begin(), grouping_tmp.end(), negated_grouping_tmp.begin(), [](uint val) {
+			std::transform(grouping_tmp.begin(), grouping_tmp.end(), grouping_tmp.begin(), [](uint val) {
 				return 1 - val;
 			});
-			threshold0 = getQuantile2_chen_et_al(diff, negated_grouping_tmp, 0.995);
+			threshold0 = getQuantile2_chen_et_al(diff, grouping_tmp, 0.995);
 		}
 
 		if (threshold1 == 0) {
@@ -298,11 +297,10 @@ List dentist_rcpp(const arma::mat& LDmat, uint nSample, const arma::vec& zScore,
 			threshold0 = getQuantile2(diff, grouping_tmp, 0.995, true);
 		} else {
 			threshold1 = getQuantile2_chen_et_al(diff, grouping_tmp, 0.995);
-			std::vector<uint> negated_grouping_tmp(grouping_tmp.size());
-			std::transform(grouping_tmp.begin(), grouping_tmp.end(), negated_grouping_tmp.begin(), [](uint val) {
+			std::transform(grouping_tmp.begin(), grouping_tmp.end(), grouping_tmp.begin(), [](uint val) {
 				return 1 - val;
 			});
-			threshold0 = getQuantile2_chen_et_al(diff, negated_grouping_tmp, 0.995);
+			threshold0 = getQuantile2_chen_et_al(diff, grouping_tmp, 0.995);
 		}
 		if (threshold1 == 0) {
 			threshold1 = threshold;
