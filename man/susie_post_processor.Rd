@@ -17,7 +17,7 @@ susie_post_processor(
   prior_eff_tol = 1e-09,
   min_abs_corr = 0.5,
   median_abs_corr = 0.8,
-  mode = c("susie", "susie_rss")
+  mode = c("susie", "susie_rss", "mvsusie")
 )
 }
 \arguments{
@@ -25,7 +25,7 @@ susie_post_processor(
 
 \item{data_x}{Genotype data matrix for 'susie' or Xcorr matrix for 'susie_rss'.}
 
-\item{data_y}{Phenotype data vector for 'susie' or summary stats object for 'susie_rss' (a list contain attribute betahat and sebetahat AND/OR z). i.e. data_y = list(betahat = ..., sebetahat = ...)}
+\item{data_y}{Phenotype data vector for 'susie' or summary stats object for 'susie_rss' (a list contain attribute betahat and sebetahat AND/OR z). i.e. data_y = list(betahat = ..., sebetahat = ...), or NULL for mvsusie}
 
 \item{X_scalar}{Scalar for the genotype data, used in residual scaling.}
 
@@ -53,7 +53,7 @@ The function can operate in two modes: 'susie' and 'susie_rss', based on the met
 }
 \examples{
 # Example usage for SuSiE
-# result <- combined_susie_post_processor(susie_output, X_data, y_data, maf, mode = "susie")
+# result <- susie_post_processor(susie_output, X_data, y_data, maf, mode = "susie")
 # Example usage for SuSiE_rss
-# result <- combined_susie_post_processor(susie_output, Xcorr, z, maf, mode = "susie_rss")
+# result <- susie_post_processor(susie_output, Xcorr, z, maf, mode = "susie_rss")
 }
