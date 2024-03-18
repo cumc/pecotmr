@@ -212,8 +212,8 @@ allele_qc <- function(target_variants, ref_variants, target_data, col_to_flip = 
 #' @export
 align_variant_names <- function(source, reference) {
   # Check if source and reference follow the expected pattern
-  source_pattern <- grepl("^(chr)?[0-9]+:[0-9]+:[ATCG]+:[ATCG]+$|^(chr)?[0-9]+:[0-9]+_[ATCG]+_[ATCG]+$", source)
-  reference_pattern <- grepl("^(chr)?[0-9]+:[0-9]+:[ATCG]+:[ATCG]+$|^(chr)?[0-9]+:[0-9]+_[ATCG]+_[ATCG]+$", reference)
+  source_pattern <- grepl("^(chr)?[0-9]+:[0-9]+:[ATCG*]+:[ATCG*]+$|^(chr)?[0-9]+:[0-9]+_[ATCG*]+_[ATCG*]+$", source)
+  reference_pattern <- grepl("^(chr)?[0-9]+:[0-9]+:[ATCG*]+:[ATCG*]+$|^(chr)?[0-9]+:[0-9]+_[ATCG*]+_[ATCG*]+$", reference)
 
   if (!all(source_pattern) && !all(reference_pattern)) {
     # Both source and reference do not follow the expected pattern
@@ -260,7 +260,7 @@ align_variant_names <- function(source, reference) {
     aligned_variants <- apply(aligned_df[, c("chrom", "pos", "A2", "A1")], 1, paste, collapse = ":")
   } else {
     aligned_variants <- apply(aligned_df[, c("chrom", "pos", "A2", "A1")], 1, paste, collapse = ":")
-    aligned_variants <- gsub(":", "_", aligned_variants, fixed = TRUE, 2)
+    aligned_variants <- gsub(":(\\d+):(\\w):(\\w)", ":\\1_\\2_\\3", aligned_variants)
   }
 
   names(aligned_variants) <- NULL

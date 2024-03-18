@@ -235,11 +235,9 @@ coloc_wrapper <- function(xqtl_file, gwas_files,
   if (length(all_gwas_colnames) != sum(sapply(gwas_lbf_matrices, ncol))) {
     stop("Duplicate variant names found across GWAS regions analyzed. This is not expected.")
   }
-
   # Combine GWAS matrices and replace NAs with zeros
   combined_gwas_lbf_matrix <- bind_rows(gwas_lbf_matrices) %>%
     mutate(across(everything(), ~ replace_na(., 0)))
-
 
   # Process xQTL data
   xqtl_raw_data <- readRDS(xqtl_file)[[1]]
@@ -247,38 +245,30 @@ coloc_wrapper <- function(xqtl_file, gwas_files,
   xqtl_lbf_matrix <- as.data.frame(xqtl_data$lbf_variable)
 
   # fsusie data does not have V element in results
-  if ("V" %in% names(xqtl_data)) xqtl_lbf_matrix[xqtl_data$V > prior_tol, ] else (message("No V found in orginal data."))
+  if ("V" %in% names(xqtl_data)) xqtl_lbf_matrix <- xqtl_lbf_matrix[xqtl_data$V > prior_tol, ] else (message("No V found in orginal data."))
+      
+  if(nrow(combined_gwas_lbf_matrix) > 0 && nrow(xqtl_lbf_matrix) > 0){
+      if (!is.null(xqtl_varname_obj)) colnames(xqtl_lbf_matrix) <- get_nested_element(xqtl_raw_data, xqtl_varname_obj)
 
-  if (!is.null(xqtl_varname_obj)) colnames(xqtl_lbf_matrix) <- get_nested_element(xqtl_raw_data, xqtl_varname_obj)
+      colnames(xqtl_lbf_matrix) <- align_variant_names(colnames(xqtl_lbf_matrix),  colnames(combined_gwas_lbf_matrix))$aligned_variants
+      common_colnames <- intersect(colnames(xqtl_lbf_matrix), colnames(combined_gwas_lbf_matrix))
+      xqtl_lbf_matrix <- xqtl_lbf_matrix[, common_colnames, drop = FALSE] %>% as.matrix()
+      combined_gwas_lbf_matrix <- combined_gwas_lbf_matrix[, common_colnames, drop = FALSE] %>% as.matrix()
 
-  # add 'chr' in colnames
-  add_chr_prefix <- function(df) {
-    if (any(grepl("chr", colnames(df)))) {
-      colnames(df) <- colnames(df)
-    } else {
-      colnames(df) <- paste0("chr", colnames(df))
-    }
-    return(df)
+      # Report the number of dropped columns from xQTL matrix
+      num_dropped_cols <- length(setdiff(colnames(xqtl_lbf_matrix), common_colnames))
+      message("Number of columns dropped from xQTL matrix: ", num_dropped_cols)
+
+      # Function to convert region df to str
+      convert_to_string <- function(df) paste0("chr", df$chrom, ":", df$start, "-", df$end)
+      region <- if (!is.null(xqtl_region_obj)) get_nested_element(xqtl_raw_data, xqtl_region_obj) %>% convert_to_string() else NULL
+
+      # COLOC function
+      coloc_res <- coloc.bf_bf(xqtl_lbf_matrix, combined_gwas_lbf_matrix, p1 = p1, p2 = p2, p12 = p12)
+
+  } else {
+      coloc_res <- list("No coloc results due to the absence of a GWAS log Bayes factor matrix filtered by prior tolerance.")
   }
-
-  combined_gwas_lbf_matrix <- add_chr_prefix(combined_gwas_lbf_matrix)
-  xqtl_lbf_matrix <- add_chr_prefix(xqtl_lbf_matrix)
-
-  # Match column names and reorder matrices
-  common_colnames <- intersect(colnames(xqtl_lbf_matrix), colnames(combined_gwas_lbf_matrix))
-  xqtl_lbf_matrix <- xqtl_lbf_matrix[, common_colnames, drop = FALSE] %>% as.matrix()
-  combined_gwas_lbf_matrix <- combined_gwas_lbf_matrix[, common_colnames, drop = FALSE] %>% as.matrix()
-
-  # Report the number of dropped columns from xQTL matrix
-  num_dropped_cols <- length(setdiff(colnames(xqtl_lbf_matrix), common_colnames))
-  message("Number of columns dropped from xQTL matrix: ", num_dropped_cols)
-
-  # Function to convert region df to str
-  convert_to_string <- function(df) paste0("chr", df$chrom, ":", df$start, "-", df$end)
-  region <- if (!is.null(xqtl_region_obj)) get_nested_element(xqtl_raw_data, xqtl_region_obj) %>% convert_to_string() else NULL
-
-  # COLOC function
-  coloc_res <- coloc.bf_bf(xqtl_lbf_matrix, combined_gwas_lbf_matrix, p1 = p1, p2 = p2, p12 = p12, ...)
   return(c(coloc_res, analysis_region = region))
 }
 
