@@ -74,7 +74,7 @@ double getQuantile2(const std::vector<double>& dat, const std::vector<uint>& gro
 // Get a quantile value based on grouping
 double getQuantile2_chen_et_al(const std::vector<double> &dat, std::vector<uint> grouping, double whichQuantile)
 {
-	int sum = std::accumulate(grouping.begin(), grouping.end(), 0);
+	uint sum = std::accumulate(grouping.begin(), grouping.end(), 0);
 
 	if (sum < 50)
 	{
