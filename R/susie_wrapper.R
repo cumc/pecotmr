@@ -489,7 +489,7 @@ susie_rss_qc <- function(sumstat, R, ref_panel, bhat = NULL, shat = NULL, var_y 
 #'
 #' @param susie_output Output from running susieR::susie() or susieR::susie_rss()
 #' @param data_x Genotype data matrix for 'susie' or Xcorr matrix for 'susie_rss'.
-#' @param data_y Phenotype data vector for 'susie' or summary stats object for 'susie_rss' (a list contain attribute betahat and sebetahat AND/OR z). i.e. data_y = list(betahat = ..., sebetahat = ...)
+#' @param data_y Phenotype data vector for 'susie' or summary stats object for 'susie_rss' (a list contain attribute betahat and sebetahat AND/OR z). i.e. data_y = list(betahat = ..., sebetahat = ...), or NULL for mvsusie
 #' @param X_scalar Scalar for the genotype data, used in residual scaling.
 #' @param y_scalar Scalar for the phenotype data, used in residual scaling.
 #' @param maf Minor Allele Frequencies vector.
@@ -501,9 +501,9 @@ susie_rss_qc <- function(sumstat, R, ref_panel, bhat = NULL, shat = NULL, var_y 
 #' @return A list containing modified SuSiE object along with additional post-processing information.
 #' @examples
 #' # Example usage for SuSiE
-#' # result <- combined_susie_post_processor(susie_output, X_data, y_data, maf, mode = "susie")
+#' # result <- susie_post_processor(susie_output, X_data, y_data, maf, mode = "susie")
 #' # Example usage for SuSiE_rss
-#' # result <- combined_susie_post_processor(susie_output, Xcorr, z, maf, mode = "susie_rss")
+#' # result <- susie_post_processor(susie_output, Xcorr, z, maf, mode = "susie_rss")
 #' @importFrom dplyr full_join
 #' @importFrom purrr map_int pmap
 #' @importFrom susieR get_cs_correlation susie_get_cs
@@ -513,7 +513,7 @@ susie_post_processor <- function(susie_output, data_x, data_y, X_scalar, y_scala
                                  secondary_coverage = c(0.5, 0.7), signal_cutoff = 0.1,
                                  other_quantities = NULL, prior_eff_tol = 1e-9, min_abs_corr = 0.5,
                                  median_abs_corr = 0.8,
-                                 mode = c("susie", "susie_rss")) {
+                                 mode = c("susie", "susie_rss", "mvsusie")) {
   mode <- match.arg(mode)
   get_cs_index <- function(snps_idx, susie_cs) {
     # Use pmap to iterate over each vector in susie_cs
@@ -560,8 +560,8 @@ susie_post_processor <- function(susie_output, data_x, data_y, X_scalar, y_scala
     cs_info_pri <- map_int(top_variants_idx, ~ get_cs_index(.x, susie_output_sets_cs))
     ifelse(is.na(cs_info_pri), 0, as.numeric(str_replace(names(susie_output_sets_cs)[cs_info_pri], "L", "")))
   }
-  get_cs_and_corr <- function(susie_output, coverage, data_x, mode = c("susie", "susie_rss")) {
-    if (mode == "susie") {
+  get_cs_and_corr <- function(susie_output, coverage, data_x, mode = c("susie", "susie_rss", "mvsusie")) {
+    if (mode %in% c("susie", "mvsusie")) {
       susie_output_secondary <- list(sets = susie_get_cs(susie_output, X = data_x, coverage = coverage, min_abs_corr = min_abs_corr, median_abs_corr = median_abs_corr), pip = susie_output$pip)
       susie_output_secondary$cs_corr <- get_cs_correlation(susie_output_secondary, X = data_x)
       susie_output_secondary

@@ -10,10 +10,8 @@
 #' @param dropped_sample A list of lists with X, Y, and covar, each list contains a list of dropped samples as vectors for each condition. Can be obtained from the output of load_regional_multivariate_data.
 #' @param max_L The maximum number of components in mvSuSiE. Default is 30.
 #' @param ld_reference_meta_file An optional path to a file containing linkage disequilibrium reference data. If provided, variants in X are filtered based on this reference.
-#' @param X_scalar Scalar for the genotype data, used in residual scaling at the step of mvsusie_post_processor. Defaults to 1 (no scaling).
-#' @param Y_scalar Scalar for the phenotype data, used in residual scaling at the step of mvsusie_post_processor. Defaults to 1 (no scaling).
 #' @param pip_cutoff_to_skip Cutoff value for skipping conditions based on PIP values. Default is 0.
-#' @param signal_cutoff Cutoff value for signal identification in PIP values for mvsusie_post_processor. Default is 0.025.
+#' @param signal_cutoff Cutoff value for signal identification in PIP values for susie_post_processor. Default is 0.025.
 #' @param secondary_coverage A vector of secondary coverage probabilities for credible set refinement. Defaults to c(0.7, 0.5).
 #' @param data_driven_prior_matricies A list of data-driven covariance matrices for mr.mash weights.
 #' @param data_driven_prior_matricies_cv A list of data-driven covariance matrices for mr.mash weights in cross-validation.
@@ -106,40 +104,43 @@ multivariate_analysis_pipeline <- function(
   filtered_data_driven_prior_matricies <- filtered_data$data_driven_prior_matricies
   filtered_data_driven_prior_matricies_cv <- filtered_data$data_driven_prior_matricies_cv
 
-
-  # Fit mr.mash model
-  mrmash_output <- mrmash_wrapper(
-    X = X, Y = Y, prior_data_driven = filtered_data_driven_prior_matricies$prior_variance$xUlist[-1],
-    prior_grid = NULL, canonical_prior_matrices = canonical_prior_matrices, max_iter = mrmash_max_iter
-  )
-  resid_Y <- mrmash_output$V
+  if (twas_weights) {
+    # Fit mr.mash model
+    mrmash_output <- mrmash_wrapper(
+      X = X, Y = Y, prior_data_driven = filtered_data_driven_prior_matricies$prior_variance$xUlist[-1],
+      prior_grid = NULL, canonical_prior_matrices = canonical_prior_matrices, max_iter = mrmash_max_iter
+    )
+    resid_Y <- mrmash_output$V
+  } else {
+    resid_Y <- mr.mash.alpha:::compute_cov_flash(Y)
+  }
 
   # Fit mvSuSiE model
   mvsusie_fitted <- mvsusie(X,
-    Y = Y, L = max_L, prior_variance = filtered_data_driven_prior_matricies, prior_weights = filtered_data_driven_prior_matricies$prior_variance$weights,
+    Y = Y, L = max_L, prior_variance = filtered_data_driven_prior_matricies,
     residual_variance = resid_Y, precompute_covariances = F, compute_objective = T, estimate_residual_variance = F,
     estimate_prior_variance = T, estimate_prior_method = "EM", max_iter = mvsusie_max_iter,
     n_thread = 1, approximate = F
   )
-  return(mvsusie_fitted)
   # Process mvSuSiE results
-  # mvsusie_prefit <- mvsusie_post_processor(
-  #   mvsusie_fitted, X, Y, X_scalar, Y_scalar,
-  #   maf, secondary_coverage, signal_cutoff, dropped_samples
-  # )
+  res <- susie_post_processor(
+    mvsusie_fitted, X, NULL, 1, 1,
+    maf = maf, secondary_coverage = secondary_coverage, signal_cutoff = signal_cutoff, mode = "mvsusie"
+  )
 
   # Run TWAS pipeline
   if (!twas_weights) {
-    result <- twas_multivariate_weights_pipeline(X, Y, maf, mvsusie_prefit, mvsusie_fitted,
-      prior = prior, resid_Y = resid_Y, dropped_samples = dropped_samples, cv_folds = cv_folds,
+    twas_res <- twas_multivariate_weights_pipeline(X, Y, maf, mvsusie_fitted,
+      prior = prior, resid_Y = resid_Y, cv_folds = cv_folds,
       ld_reference_meta_file = ld_reference_meta_file, max_cv_variants = max_cv_variants,
       mvsusie_max_iter = mvsusie_max_iter, mrmash_max_iter = mrmash_max_iter, signal_cutoff = signal_cutoff,
       pip_cutoff_to_skip = pip_cutoff_to_skip, secondary_coverage = secondary_coverage,
       canonical_prior_matrices = canonical_prior_matrices, data_driven_prior_matricies = data_driven_prior_matricies,
       data_driven_prior_matricies_cv = data_driven_prior_matricies_cv, cv_seed = cv_seed
     )
-    return(result)
+    res <- c(res, twas_res)
   }
+  return(res)
 }
 
 #' TWAS Weights Multivariate Pipeline
@@ -147,11 +148,8 @@ multivariate_analysis_pipeline <- function(
 #' @importFrom mvsusieR mvsusie
 #' @export
 twas_multivariate_weights_pipeline <- function(
-    X, Y, maf, mvsusie_prefit, mvsusie_fitted,
-    dropped_samples, prior, resid_Y, X_scalar = rep(1, ncol(Y)), Y_scalar = rep(
-      1,
-      ncol(Y)
-    ), max_cv_variants = 5000, mvsusie_max_iter = 200, mrmash_max_iter = 5000,
+    X, Y, maf, mvsusie_fitted,
+    prior, resid_Y, max_cv_variants = 5000, mvsusie_max_iter = 200, mrmash_max_iter = 5000,
     pip_cutoff_to_skip = 0, signal_cutoff = 0.025, secondary_coverage = c(0.5, 0.7),
     ld_reference_meta_file = NULL, cv_folds = 5, sample_partition = NULL, data_driven_prior_matricies = NULL,
     data_driven_prior_matricies_cv = NULL, canonical_prior_matrices = FALSE, cv_seed = 999,
@@ -266,7 +264,7 @@ twas_multivariate_weights_pipeline <- function(
     return(max_L)
   }
 
-  max_L <- determine_max_L(mvsusie_prefit)
+  max_L <- determine_max_L(mvsusie_fitted)
 
   res <- list()
 
@@ -282,9 +280,9 @@ twas_multivariate_weights_pipeline <- function(
   }
 
   # Process mvSuSiE results with filtered variants
-  res <- mvsusie_post_processor(
-    mvsusie_fitted, X, Y, X_scalar, Y_scalar, maf,
-    secondary_coverage, signal_cutoff, dropped_samples
+  res$preset_variants_result <- susie_post_processor(
+    mvsusie_fitted, X, NULL, 1, 1,
+    maf = maf, secondary_coverage = secondary_coverage, signal_cutoff = signal_cutoff, mode = "mvsusie"
   )
 
   # Compute TWAS weights and predictions
@@ -295,16 +293,16 @@ twas_multivariate_weights_pipeline <- function(
   twas_predictions <- twas_predict(X, twas_weight)
 
   # Split TWAS results by condition
-  res <- split_twas_results(res, twas_weight, twas_predictions)
+  res <- c(res, split_twas_results(res, twas_weight, twas_predictions))
 
   # Perform cross-validation if specified
   if (cv_folds > 0) {
     top_sig_idx <- select_top_variants(mvsusie_fitted, max_cv_variants)
-    res <- run_twas_cv(
+    res <- c(res, run_twas_cv(
       res, X, Y, top_sig_idx, cv_folds, sample_partition, data_driven_prior_matricies_cv,
       mrmash_max_iter, canonical_prior_matrices, mvsusie_fitted, resid_Y, max_L,
       mvsusie_max_iter, cv_threads, cv_seed
-    )
+    ))
   }
 
   return(res)
