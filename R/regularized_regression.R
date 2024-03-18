@@ -334,16 +334,22 @@ susie_weights <- function(X = NULL, y = NULL, susie_fit = NULL, ...) {
 
 #' @importFrom mr.mash.alpha coef.mr.mash
 #' @export
-mrmash_weights <- function(...) {
-  res <- mrmash_wrapper(...)
-  return(coef.mr.mash(res)[-1, ])
+mrmash_weights <- function(mrmash_fit = NULL, X = NULL, Y = NULL, ...) {
+  if (is.null(mrmash_fit)) {
+    message("Did not provide mrmash_fit, fitting mr.mash now ...")
+    if (is.null(X) || is.null(Y)) {
+      stop("Both X and Y must be provided if mrmash_fit is NULL.")
+    }
+    mrmash_fit <- mrmash_wrapper(...)
+  }
+  return(coef.mr.mash(mrmash_fit)[-1, ])
 }
 
 #' @importFrom mvsusieR mvsusie coef.mvsusie create_mixture_prior
 #' @export
 mvsusie_weights <- function(mvsusie_fit = NULL, X = NULL, Y = NULL, prior_variance = NULL, residual_variance = NULL, L = 30, mvsusie_max_iter = 200, ...) {
   if (is.null(mvsusie_fit)) {
-    message("Did not provide mvsusie_fit, fitting mvSuSiE now")
+    message("Did not provide mvsusie_fit, fitting mvSuSiE now ...")
     if (is.null(X) || is.null(Y)) {
       stop("Both X and Y must be provided if mvsusie_fit is NULL.")
     }

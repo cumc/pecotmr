@@ -134,13 +134,13 @@ mrmash_wrapper <- function(X,
       singletons = TRUE,
       hetgrid = c(0, 0.25, 0.5, 0.75, 1)
     )
-    if (!is.null(prior_data_driven)) {
-      S0_raw <- c(prior_canonical_matrices, prior_data_driven)
+    if (!is.null(prior_data_driven_matrices)) {
+      S0_raw <- c(prior_canonical_matrices, prior_data_driven_matrices)
     } else {
       S0_raw <- prior_canonical_matrices
     }
   } else {
-    S0_raw <- prior_data_driven
+    S0_raw <- prior_data_driven_matrices
   }
 
   # Compute prior covariance
@@ -232,8 +232,8 @@ compute_coefficients_univ_glmnet <- function(X, Y, alpha, standardize, nthreads,
     }
 
     samples_kept <- which(!is.na(Y[, i]))
-    Ynomiss <- Y[samples_kept, i, drop=FALSE]
-    Xnomiss <- X[samples_kept, , drop=FALSE]
+    Ynomiss <- Y[samples_kept, i, drop = FALSE]
+    Xnomiss <- X[samples_kept, , drop = FALSE]
 
     cvfit <- cv.glmnet(
       x = Xnomiss, y = Ynomiss, family = "gaussian", alpha = alpha,
