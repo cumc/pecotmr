@@ -156,6 +156,7 @@ multivariate_analysis_pipeline <- function(
     mrmash_fitted <- NULL
   }
 
+  res <- list()
   message("Fitting mvSuSiE model on input data ...")
   mvsusie_fitted <- mvsusie(X,
     Y = Y, L = max_L, prior_variance = filtered_data_driven_prior_matrices,
@@ -164,13 +165,13 @@ multivariate_analysis_pipeline <- function(
     n_thread = 1, approximate = F, verbosity = verbose
   )
   # Process mvSuSiE results
-  res <- susie_post_processor(
+  res$mnm_result <- susie_post_processor(
     mvsusie_fitted, X, NULL, 1, 1,
     maf = maf, secondary_coverage = secondary_coverage, signal_cutoff = signal_cutoff, mode = "mvsusie"
   )
-  res$mrmash_result <- mrmash_fitted
+  res$mnm_result$mrmash_result <- mrmash_fitted
 
-  # FIXME: need to add some codes to get single condition inference lfsr results for each y
+  # FIXME: need to add some codes to get single condition inference results using lfsr and somehow recover the top_loci table equivalent
 
   # Run TWAS pipeline
   if (twas_weights) {
