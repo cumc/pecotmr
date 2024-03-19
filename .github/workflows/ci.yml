@@ -36,7 +36,7 @@ jobs:
 
       - name: Check unit test code coverage
         shell: micromamba-shell {0}
-        run: R -e "covr::codecov()"
+        run: R -e "covr::codecov(quiet = FALSE)"
 
       #- name: Run R CMD CHECK
         #shell: micromamba-shell {0}
