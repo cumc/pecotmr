@@ -574,10 +574,14 @@ susie_post_processor <- function(susie_output, data_x, data_y, X_scalar, y_scala
 
   # Initialize result list
   res <- list(
-    other_quantities = other_quantities,
-    analysis_script = load_script(),
     variant_names = format_variant_id(names(susie_output$pip))
   )
+  analysis_script <- load_script()
+  if (analysis_script != "") res$analysis_script <- analysis_script
+  if (!is.null(other_quantities)) res$other_quantities <- other_quantities
+  if (mode == "mvsusie") {
+    res$condition_names <- susie_output$condition_names
+  }
   if (!is.null(data_y)) {
     # Mode-specific processing
     if (mode == "susie") {
@@ -642,15 +646,27 @@ susie_post_processor <- function(susie_output, data_x, data_y, X_scalar, y_scala
       pip = susie_output$pip,
       sets = susie_output$sets,
       cs_corr = susie_output$cs_corr,
-      sets_secondary = sets_secondary,
+      sets_secondary = lapply(sets_secondary, function(x) x[names(x) != "pip"]),
       alpha = susie_output$alpha[eff_idx, , drop = FALSE],
       lbf_variable = susie_output$lbf_variable[eff_idx, , drop = FALSE],
-      mu = susie_output$mu[eff_idx, , drop = FALSE],
-      mu2 = susie_output$mu2[eff_idx, , drop = FALSE],
       V = if (!is.null(susie_output$V)) susie_output$V[eff_idx] else NULL,
-      niter = susie_output$niter,
-      X_column_scale_factors = if (mode == "susie") susie_output$X_column_scale_factors else NULL
+      niter = susie_output$niter
     )
+    if (mode == "susie") {
+      res$susie_result_trimmed$X_column_scale_factors <- susie_output$X_column_scale_factors
+      res$susie_result_trimmed$mu <- susie_output$mu[eff_idx, , drop = FALSE]
+      res$susie_result_trimmed$mu2 <- susie_output$mu2[eff_idx, , drop = FALSE]
+    }
+    if (mode == "mvsusie") {
+      # res$susie_result_trimmed$b1 = susie_output$b1[eff_idx, , , drop = FALSE]
+      # res$susie_result_trimmed$b2 = susie_output$b2[eff_idx, , , drop = FALSE]
+      res$susie_result_trimmed$b1_rescaled <- susie_output$b1_rescaled[eff_idx, , , drop = FALSE]
+      res$susie_result_trimmed$coef <- susie_output$coef
+      res$susie_result_trimmed$clfsr <- susie_output$conditional_lfsr[eff_idx, , , drop = FALSE]
+      # other lfsr can be computed:
+      # se_lfsr <- mvsusie_single_effect_lfsr(clfsr, alpha)
+      # lfsr <- mvsusie_get_lfsr(clfsr, alpha)
+    }
     class(res$susie_result_trimmed) <- "susie"
   }
   return(res)
