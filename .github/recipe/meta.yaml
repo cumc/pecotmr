@@ -19,12 +19,13 @@ build:
 requirements:
   build:
     - {{ compiler('c') }}
+    - clangdev=17  #[osx]
     - {{ compiler('cxx') }}
     - cross-r-base {{ r_base }}  # [build_platform != target_platform]
   host:
     - bioconductor-qvalue
     - r-bedtoolsr
-    - r-base>=4.2
+    - r-base==4.3
     - r-coloc
     - r-data.table
     - r-dofuture
