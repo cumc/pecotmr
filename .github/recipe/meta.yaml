@@ -24,7 +24,7 @@ requirements:
   host:
     - bioconductor-qvalue
     - r-bedtoolsr
-    - r-base==4.3
+    - r-base==4.3.3
     - r-coloc
     - r-data.table
     - r-dofuture
@@ -59,7 +59,7 @@ requirements:
   run:
     - bioconductor-qvalue
     - r-bedtoolsr
-    - r-base>=4.2
+    - r-base>=4.3
     - r-coloc
     - r-data.table
     - r-dofuture
