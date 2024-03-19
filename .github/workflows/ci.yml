@@ -23,7 +23,6 @@ jobs:
         run: |
           cp .github/environment/environment.yaml /tmp/environment.yaml
           grep -v '{%' < .github/recipe/meta.yaml | yq .requirements.host | sed 's/^/  /' >> /tmp/environment.yaml
-          echo "  - compilers" >> /tmp/environment.yaml
 
       - name: Setup micromamba
         uses: mamba-org/setup-micromamba@v1
@@ -64,7 +63,6 @@ jobs:
         run: |
           cp .github/environment/environment.yaml /tmp/environment.yaml
           grep -v '{%' < .github/recipe/meta.yaml | yq .requirements.host | sed 's/^/  /' >> /tmp/environment.yaml
-          echo "  - clangdev=17" >> /tmp/environment.yaml
 
       - name: Setup micromamba
         uses: mamba-org/setup-micromamba@v1
@@ -101,7 +99,6 @@ jobs:
         run: |
           cp .github/environment/environment.yaml /tmp/environment.yaml
           grep -v '{%' < .github/recipe/meta.yaml | yq .requirements.host | sed 's/^/  /' >> /tmp/environment.yaml
-          echo "  - clangdev=17" >> /tmp/environment.yaml
 
       - name: Setup micromamba
         uses: mamba-org/setup-micromamba@v1
