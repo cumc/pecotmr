@@ -32,6 +32,26 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// dentist_rcpp
+List dentist_rcpp(const arma::mat& LDmat, uint nSample, const arma::vec& zScore, double pValueThreshold, float propSVD, bool gcControl, int nIter, double gPvalueThreshold, int ncpus, int seed);
+RcppExport SEXP _pecotmr_dentist_rcpp(SEXP LDmatSEXP, SEXP nSampleSEXP, SEXP zScoreSEXP, SEXP pValueThresholdSEXP, SEXP propSVDSEXP, SEXP gcControlSEXP, SEXP nIterSEXP, SEXP gPvalueThresholdSEXP, SEXP ncpusSEXP, SEXP seedSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< const arma::mat& >::type LDmat(LDmatSEXP);
+    Rcpp::traits::input_parameter< uint >::type nSample(nSampleSEXP);
+    Rcpp::traits::input_parameter< const arma::vec& >::type zScore(zScoreSEXP);
+    Rcpp::traits::input_parameter< double >::type pValueThreshold(pValueThresholdSEXP);
+    Rcpp::traits::input_parameter< float >::type propSVD(propSVDSEXP);
+    Rcpp::traits::input_parameter< bool >::type gcControl(gcControlSEXP);
+    Rcpp::traits::input_parameter< int >::type nIter(nIterSEXP);
+    Rcpp::traits::input_parameter< double >::type gPvalueThreshold(gPvalueThresholdSEXP);
+    Rcpp::traits::input_parameter< int >::type ncpus(ncpusSEXP);
+    Rcpp::traits::input_parameter< int >::type seed(seedSEXP);
+    rcpp_result_gen = Rcpp::wrap(dentist_rcpp(LDmat, nSample, zScore, pValueThreshold, propSVD, gcControl, nIter, gPvalueThreshold, ncpus, seed));
+    return rcpp_result_gen;
+END_RCPP
+}
 // rcpp_mr_ash_rss
 List rcpp_mr_ash_rss(const NumericVector& bhat, const NumericVector& shat, const NumericVector& z, const NumericMatrix& R, double var_y, int n, double sigma2_e, const NumericVector& s0, const NumericVector& w0, const NumericVector& mu1_init, double tol, int max_iter, bool update_w0, bool update_sigma, bool compute_ELBO, bool standardize, int ncpus);
 RcppExport SEXP _pecotmr_rcpp_mr_ash_rss(SEXP bhatSEXP, SEXP shatSEXP, SEXP zSEXP, SEXP RSEXP, SEXP var_ySEXP, SEXP nSEXP, SEXP sigma2_eSEXP, SEXP s0SEXP, SEXP w0SEXP, SEXP mu1_initSEXP, SEXP tolSEXP, SEXP max_iterSEXP, SEXP update_w0SEXP, SEXP update_sigmaSEXP, SEXP compute_ELBOSEXP, SEXP standardizeSEXP, SEXP ncpusSEXP) {
@@ -100,6 +120,7 @@ END_RCPP
 }
 
 static const R_CallMethodDef CallEntries[] = {
+    {"_pecotmr_dentist_rcpp", (DL_FUNC) &_pecotmr_dentist_rcpp, 10},
     {"_pecotmr_dentist_rcpp", (DL_FUNC) &_pecotmr_dentist_rcpp, 10},
     {"_pecotmr_rcpp_mr_ash_rss", (DL_FUNC) &_pecotmr_rcpp_mr_ash_rss, 17},
     {"_pecotmr_prs_cs_rcpp", (DL_FUNC) &_pecotmr_prs_cs_rcpp, 12},
