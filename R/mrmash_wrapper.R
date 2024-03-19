@@ -131,7 +131,7 @@ mrmash_wrapper <- function(X,
 
   if (!is.null(prior_data_driven_matrices)) {
     if (inherits(prior_data_driven_matrices, "MashInitializer")) {
-      prior_data_driven_matrices <- lapply(prior_data_driven_matrices, function(x) x$prior_variance$xUlist[-1])
+      prior_data_driven_matrices <- prior_data_driven_matrices$prior_variance$xUlist[-1]
     }
     prior_data_driven_matrices <- filter_data_driven_mats(Y, prior_data_driven_matrices)
   }
@@ -295,22 +295,24 @@ compute_w0 <- function(Bhat, ncomps) {
 ### Filter data-driven matrices
 filter_data_driven_mats <- function(Y, data_driven_mats) {
   conditions_to_keep <- colnames(Y)
-  
+
   # Check if colnames of Y is a subset of column names of each element in data_driven_mats
   for (mat_name in names(data_driven_mats)) {
     mat <- data_driven_mats[[mat_name]]
     missing_conditions <- setdiff(conditions_to_keep, colnames(mat))
-    
+
     if (length(missing_conditions) > 0) {
-      stop(paste("Condition(s)", paste(missing_conditions, collapse = ", "), 
-                 "not found in matrix", mat_name))
+      stop(paste(
+        "Condition(s)", paste(missing_conditions, collapse = ", "),
+        "not found in matrix", mat_name
+      ))
     }
   }
-  
+
   data_driven_mats_filt <- lapply(data_driven_mats, function(x, to_keep) {
     x[to_keep, to_keep]
   }, conditions_to_keep)
-  
+
   return(data_driven_mats_filt)
 }
 
