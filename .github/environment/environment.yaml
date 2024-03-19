@@ -5,7 +5,6 @@ channels:
   - bioconda
   - nodefaults
 dependencies:
-  - clangdev
   - gsl
   - bioconductor-bioccheck
   - r-devtools
