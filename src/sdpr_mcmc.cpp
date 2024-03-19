@@ -5,7 +5,7 @@
 #include <fstream>
 #include <numeric>
 #include <random>
-#include <simde/x86/avx512.h>
+#include "simde/x86/avx512.h"
 #include "sse_mathfun.h"
 #include "function_pool.h"
 #include "sdpr_mcmc.h"
