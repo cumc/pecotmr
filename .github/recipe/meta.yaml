@@ -19,7 +19,6 @@ build:
 requirements:
   build:
     - {{ compiler('c') }}
-    - clangdev=17  #[osx]
     - {{ compiler('cxx') }}
     - cross-r-base {{ r_base }}  # [build_platform != target_platform]
   host:
