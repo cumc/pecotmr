@@ -5,7 +5,9 @@ channels:
   - bioconda
   - nodefaults
 dependencies:
-  - clangdev=17
+  - compilers
+  - clang==17
+  - clangxx==17
   - gsl
   - bioconductor-bioccheck
   - r-devtools
