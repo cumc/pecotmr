@@ -71,12 +71,10 @@ dentist <- function(zScore, LDmat, nSample,
   )
   res <- as.data.frame(res)
   res$original_z <- zScore
-
-  detect_outlier <- function(dat) {
+  #outlier_test <- function(imp_z, orignal_z) {
     # FIXME: add the final QC step here
-    return (dat)
-  }
-
-  res <- detect_outlier(res)
+    #return (res)
+  #}
+  #res <- res %>% mutate(outlier=outlier_test(imp_z, orignal_z,...whatever it is that you define as outlier_test function)
   return(res)
 }
