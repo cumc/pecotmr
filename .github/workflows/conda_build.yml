@@ -12,7 +12,7 @@ on:
         default: '0'
 
 jobs:
-  build_package_linux:
+  build_package_linux-64:
     name: Build conda package for linux-64
     runs-on: ubuntu-latest
     strategy:
@@ -63,7 +63,7 @@ jobs:
         shell: micromamba-shell {0}
         run: anaconda upload --force /tmp/conda-bld/linux-64/*.tar.bz2
 
-  build_package_macos:
+  build_package_osx-64:
     name: Build conda package for osx-64
     runs-on: macos-latest
     strategy:
@@ -110,3 +110,51 @@ jobs:
       - name: Upload package
         shell: micromamba-shell {0}
         run: anaconda upload --force /tmp/conda-bld/osx-64/*.tar.bz2
+
+  build_package_osx-arm64:
+    name: Build conda package for osx-arm64
+    runs-on: macos-14
+    strategy:
+      fail-fast: false
+    env:
+      ANACONDA_API_TOKEN: ${{ secrets.ANACONDA_API_TOKEN }}
+
+    steps:
+      - name: Checkout pull request branch
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Setup micromamba
+        uses: mamba-org/setup-micromamba@v1
+        with:
+          environment-name: boa
+          create-args: boa conda-verify anaconda-client sed coreutils
+          generate-run-shell: true
+          condarc: |
+            channels:
+              - dnachun
+              - conda-forge
+              - bioconda
+
+      - name: Create recipe from template
+        shell: micromamba-shell {0}
+        run: |
+          mkdir /tmp/recipe
+          cp .github/recipe/meta.yaml /tmp/recipe/meta.yaml
+          cp .github/recipe/build.sh /tmp/recipe/build.sh
+          version=${{ github.event.inputs.version }}
+          build=${{ github.event.inputs.build }}
+          wget https://github.com/cumc/pecotmr/archive/${version}.tar.gz
+          sha256sum=$(sha256sum ${version}.tar.gz | cut -d ' ' -f 1)
+          sed -i "s/VERSION_PLACEHOLDER/${version}/g" /tmp/recipe/meta.yaml
+          sed -i "s/SHA256SUM_PLACEHOLDER/${sha256sum}/g" /tmp/recipe/meta.yaml
+          sed -i "s/BUILD_PLACEHOLDER/${build}/g" /tmp/recipe/meta.yaml
+
+      - name: Build conda package
+        shell: micromamba-shell {0}
+        run: conda mambabuild --output-folder /tmp/conda-bld /tmp/recipe
+
+      - name: Upload package
+        shell: micromamba-shell {0}
+        run: anaconda upload --force /tmp/conda-bld/osx-arm64/*.tar.bz2
