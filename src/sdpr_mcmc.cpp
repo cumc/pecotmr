@@ -5,7 +5,11 @@
 #include <fstream>
 #include <numeric>
 #include <random>
+#ifdef __arm64__
+#include "simde/x86/avx512.h"
+#else
 #include <x86intrin.h>
+#endif
 #include "sse_mathfun.h"
 #include "function_pool.h"
 #include "sdpr_mcmc.h"
