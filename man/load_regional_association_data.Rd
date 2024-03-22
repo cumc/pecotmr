@@ -45,7 +45,7 @@ load_regional_association_data(
 
 \item{association_window}{A string of chr:start-end for the association analysis window (cis or trans). If not provided, all genotype data will be loaded.}
 
-\item{extract_region_name}{A string (e.g., gene ID ENSG00000269699) to subset the information when there are multiple regions available. Default is NULL.}
+\item{extract_region_name}{A list of vectors of strings (e.g., gene ID ENSG00000269699) to subset the information when there are multiple regions available. Default is NULL.}
 
 \item{region_name_col}{Column name containing the region name. Default is NULL.}
 
