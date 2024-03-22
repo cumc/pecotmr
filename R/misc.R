@@ -494,7 +494,7 @@ add_Y_residuals <- function(data_list, conditions, scale_residuals = FALSE) {
 #' @param xvar_cutoff Maximum variant missingness cutoff. Default is 0.
 #' @param imiss_cutoff Maximum individual missingness cutoff. Default is 0.
 #' @param association_window A string of chr:start-end for the association analysis window (cis or trans). If not provided, all genotype data will be loaded.
-#' @param extract_region_name A string (e.g., gene ID ENSG00000269699) to subset the information when there are multiple regions available. Default is NULL.
+#' @param extract_region_name A list of vectors of strings (e.g., gene ID ENSG00000269699) to subset the information when there are multiple regions available. Default is NULL.
 #' @param region_name_col Column name containing the region name. Default is NULL.
 #' @param keep_indel Logical indicating whether to keep insertions/deletions (INDELs). Default is TRUE.
 #' @param keep_samples A vector of sample names to keep. Default is NULL.
@@ -529,8 +529,8 @@ load_regional_association_data <- function(genotype, # PLINK file
                                            mac_cutoff = 0,
                                            xvar_cutoff = 0,
                                            imiss_cutoff = 0,
-                                           association_window = NULL, #  a string of chr:start-end for association analysis window (cis or trans). If not provided all genotype data will be loaded
-                                           extract_region_name = NULL, # a string of eg gene ID ENSG00000269699, this is helpful if we only want to keep a subset of the information when there are multiple regions available
+                                           association_window = NULL, 
+                                           extract_region_name = NULL, 
                                            region_name_col = NULL,
                                            keep_indel = TRUE,
                                            keep_samples = NULL,
