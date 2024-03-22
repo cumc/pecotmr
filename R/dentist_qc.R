@@ -31,7 +31,7 @@
 #'   \item{\code{iter_to_correct}}{The number of iterations required to correct the z-scores, if applicable.}
 #'   \item{\code{index_within_window}}{The index of the observation within the window.}
 #'   \item{\code{index_global}}{The global index of the observation.}
-#'   \item{\code{stat}}{The computed statistical value based on the original and imputed z-scores and R-squared.}
+#'   \item{\code{outlier_stat}}{The computed statistical value based on the original and imputed z-scores and R-squared.}
 #'   \item{\code{outlier}}{A logical indicator specifying whether the observation is identified as an outlier based on the statistical test.}
 #' }
 #' 
@@ -60,14 +60,6 @@ dentist_detect_outliers <- function(sum_stat, LDmat, nSample,
     stop("Input sum_stat is missing either 'pos'/'position' or 'z'/'zscore' column.")
   }
   sum_stat <- sum_stat %>% arrange(pos)
-  ### FIXME: formalize this logic somewhere
-  ### if correct_chen_et_al_bug = FALSE, then there can never be a single window
-  # 1. if window_size is invalid (<=0 or >=range), and
-  # 1.1. if correct_chen_et_al_bug==TRUE, run dentist single window, so just window (0-4122)
-  # 1.2. if correct_chen_et_al_bug==FALSE, run in the dentist original way, so window (0-4122) and (742-4122)
-  # 2. if window_size is valid, and
-  # 2.1 if correct_chen_et_al_bug==TRUE, divide the window but don't add additional window if the first window covers all, so just (0-4122)
-  # 2.2 if correct_chen_et_al_bug==FALSE, divide the window in the dentist original way, so window (0-4122) and (742-4122)
   if (window_size <= 0 | ((window_size >= max(sum_stat$pos) - min(sum_stat$pos) | is.na(window_size)) & (correct_chen_et_al_bug == TRUE))) {
     imputed_result <- dentist_impute_single_window(
       sum_stat$z, LDmat, nSample,
@@ -98,8 +90,8 @@ dentist_detect_outliers <- function(sum_stat, LDmat, nSample,
   lambda_original <- 1
   imputed_result <- imputed_result %>%
     mutate(
-      stat = calculate_stat(original_z, imputed_z, rsq),
-      outlier = outlier_test(stat, lambda_original)
+      outlier_stat = calculate_stat(original_z, imputed_z, rsq),
+      outlier = outlier_test(outlier_stat, lambda_original)
     ) %>%
     filter(!(imputed_z == 0 & rsq == 0))
   return(imputed_result)
