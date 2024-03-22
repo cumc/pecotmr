@@ -2,7 +2,7 @@
 % Please edit documentation in R/dentist_qc.R
 \name{dentist_impute_single_window}
 \alias{dentist_impute_single_window}
-\title{Detecting Errors iN analyses of summary staTISTics}
+\title{Impute Summary Statistics for a Single Window Using Dentist Algorithm}
 \usage{
 dentist_impute_single_window(
   zScore,
@@ -19,53 +19,45 @@ dentist_impute_single_window(
 )
 }
 \arguments{
-\item{zScore}{A numeric vector of Z-scores from the GWAS summary statistics.}
+\item{zScore}{A numeric vector containing the z-score values for variants within the window.}
 
-\item{LDmat}{A square matrix of linkage disequilibrium (LD) values where the dimensions equal the length of the \code{zScore} vector.}
+\item{LDmat}{A square matrix containing linkage disequilibrium (LD) information for variants within the window.}
 
-\item{nSample}{The number of samples used in the GWAS whose summary statistics are being analyzed.}
+\item{nSample}{The total number of samples.}
 
-\item{pValueThreshold}{A numeric threshold for the p-value, below which variants are considered significant for quality control. Default is 5e-8.}
+\item{pValueThreshold}{The p-value threshold for significance. Default is 5e-8.}
 
-\item{propSVD}{A numeric value specifying the proportion of SVD components to retain in the analysis. Default is 0.5.}
+\item{propSVD}{The proportion of singular value decomposition (SVD) to use. Default is 0.4.}
 
-\item{gcControl}{Logical; if \code{TRUE}, applies genomic control corrections. Default is FALSE.}
+\item{gcControl}{Logical indicating whether genomic control should be applied. Default is FALSE.}
 
-\item{nIter}{An integer specifying the number of iterations for the DENTIST algorithm. Default is 10.}
+\item{nIter}{The number of iterations for the Dentist algorithm. Default is 10.}
 
-\item{gPvalueThreshold}{A numeric threshold for p-value for grouping variants into significant and null. Default is 0.05.}
+\item{gPvalueThreshold}{The genomic p-value threshold for significance. Default is 0.05.}
 
-\item{ncpus}{An integer specifying the number of CPU cores to use for parallel computation. Default is 1.}
+\item{ncpus}{The number of CPU cores to use for parallel processing. Default is 1.}
 
-\item{seed}{An integer seed for random number generation to ensure reproducible results. Default is 123.}
+\item{seed}{The random seed for reproducibility. Default is 999.}
+
+\item{correct_chen_et_al_bug}{Logical indicating whether to correct the Chen et al. bug. Default is TRUE.}
 }
 \value{
-A data frame containing the following columns
-\itemize{
-  \item{\code{imputed_z}}{A numeric vector of imputed Z-scores for each marker.}
-  \item{\code{rsq}}{A numeric vector of R-squared values for each marker, indicating the goodness of fit.}
-  \item{\code{corrected_z}}{A numeric vector of adjusted Z-scores after error detection.}
-  \item{\code{iter_to_correct}}{An integer vector indicating the iteration in which each marker passed the quality control.}
-  \item{\code{is_problematic}}{A binary vector indicating whether each marker is considered problematic (1) or not (0).}
-}
+A data frame containing the imputed summary statistics for the variants within the window.
+
+The returned data frame includes columns representing the imputed summary statistics.
 }
 \description{
-DENTIST (Detecting Errors iN analyses of summary staTISTics) is a quality control
-tool for GWAS summary data. It uses linkage disequilibrium (LD) information from a reference
-panel to identify and correct problematic variants by comparing observed GWAS statistics to
-predicted values. It can detect errors in genotyping/imputation, allelic errors, and
-heterogeneity between GWAS and LD reference samples.
+This function performs imputation of summary statistics for a single genomic window
+using the Dentist algorithm.
 }
 \examples{
-\dontrun{
-# Simulate some data for demonstration purposes (FIXME: need more serious simulation this does not work)
-nMarkers <- 1000
-LDmat <- matrix(runif(nMarkers^2), nrow = nMarkers)
-LDmat <- (LDmat + t(LDmat)) / 2 # Making the matrix symmetric
-diag(LDmat) <- 1 # Ensure the diagonal is 1 for LD matrix
-zScore <- rnorm(nMarkers)
-zhat <- zScore \%*\% LDmat
-results <- dentist(LDmat = LDmat, nSample = 5000, zScore = zhat)
-}
+# Example usage of dentist_impute_single_window
+dentist_impute_single_window(zScore, LDmat, nSample)
 
+}
+\references{
+Reference to the Dentist algorithm or related research papers.
+}
+\seealso{
+\code{\link{dentist_detect_outliers}} for detecting outliers using the Dentist algorithm.
 }
