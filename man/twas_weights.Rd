@@ -11,7 +11,7 @@ twas_weights(X, Y, weight_methods, num_threads = 1, seed = NULL)
 
 \item{Y}{A matrix (or vector, which will be converted to a matrix) of samples by outcomes, where each row corresponds to a sample.}
 
-\item{weight_methods}{A list of methods and their specific arguments, formatted as list(method1 = method1_args, method2 = method2_args). 
+\item{weight_methods}{A list of methods and their specific arguments, formatted as list(method1 = method1_args, method2 = method2_args).
 methods in the list are applied to the datasets X and Y.}
 
 \item{num_threads}{The number of threads to use for parallel processing.

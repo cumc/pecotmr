@@ -2,117 +2,120 @@
 % Please edit documentation in R/mrmash_wrapper.R
 \name{mrmash_wrapper}
 \alias{mrmash_wrapper}
-\title{mr.mash wrapper}
+\title{Mr.Mash Wrapper}
 \usage{
 mrmash_wrapper(
   X,
   Y,
+  sumstats = NULL,
   prior_data_driven_matrices = NULL,
   prior_grid = NULL,
-  nthreads = 2,
+  nthreads = 1,
   prior_canonical_matrices = FALSE,
   standardize = FALSE,
   update_w0 = TRUE,
   w0_threshold = 1e-08,
   update_V = TRUE,
   update_V_method = "full",
-  B_init_method = "enet",
+  B_init_method = "glasso",
   max_iter = 5000,
   tol = 0.01,
+  weights_tol = 1e-04,
   verbose = FALSE,
   ...
 )
 }
 \arguments{
-\item{X}{n x p matrix of genotype, where n is the total number of individuals and p denotes
-the number of SNPs.}
+\item{X}{An n x p matrix of genotype data, where n is the total number of individuals and p is the number of SNPs.}
 
-\item{Y}{n x r matrix of residual for expression, where n is the total number of individuals 
-and r is the total number of conditions (tissue/cell-types).}
+\item{Y}{An n x r matrix of residual expression data, where n is the total number of individuals and r is the total number of conditions (tissue/cell-types).}
 
-\item{prior_data_driven_matrices}{A list of data-driven covariance matrices.}
+\item{prior_data_driven_matrices}{A list of data-driven covariance matrices. Default is NULL.}
 
-\item{prior_grid}{a vector of scaling factors to be used in fitting mr.mash model.}
+\item{prior_grid}{A vector of scaling factors to be used in fitting the mr.mash model. Default is NULL.}
+
+\item{nthreads}{The number of threads to use for parallel computation. Default is 2.}
+
+\item{prior_canonical_matrices}{A logical indicating whether to use canonical matrices as priors. Default is FALSE.}
+
+\item{standardize}{A logical indicating whether to standardize the input data. Default is FALSE.}
+
+\item{update_w0}{A logical indicating whether to update the prior mixture weights. Default is TRUE.}
+
+\item{w0_threshold}{The threshold for updating prior mixture weights. Default is 1e-8.}
+
+\item{update_V}{A logical indicating whether to update the residual covariance matrix. Default is TRUE.}
+
+\item{update_V_method}{The method for updating the residual covariance matrix. Default is "full".}
+
+\item{B_init_method}{The method for initializing the coefficient matrix. Default is "enet".}
+
+\item{max_iter}{The maximum number of iterations. Default is 5000.}
+
+\item{tol}{The tolerance for convergence. Default is 0.01.}
+
+\item{verbose}{A logical indicating whether to print verbose output. Default is FALSE.}
+
+\item{...}{Additional arguments to be passed to mr.mash.}
 }
 \value{
-A mr.mash fit, stored as a list with some or all of the
-following elements:
-
-\item{mu1}{p x r matrix of posterior means for the regression
-  coeffcients. }
-
-\item{S1}{r x r x p array of posterior covariances for the
-  regression coeffcients. }
-
-\item{w1}{p x K matrix of posterior assignment probabilities to the
-  mixture components. }
-  
-\item{V}{r x r residual covariance matrix. }
-
-\item{w0}{K-vector with (updated, if \code{update_w0=TRUE}) prior mixture weights, each 
- associated with the respective covariance matrix in \code{S0}}.
-  
-\item{S0}{r x r x K array of prior covariance matrices
-  on the regression coefficients. }
-
-\item{intercept}{r-vector containing posterior mean estimate of the
-  intercept.}
-
-\item{fitted}{n x r matrix of fitted values.}
-
-\item{G}{r x r covariance matrix of fitted values.}
-
-\item{pve}{r-vector of proportion of variance explained by the covariates.}
-
-\item{ELBO}{Evidence Lower Bound (ELBO) at last iteration.}
-
-\item{progress}{A data frame including information regarding
-  convergence criteria at each iteration.}
-  
-\item{converged}{\code{TRUE} or \code{FALSE}, indicating whether
-  the optimization algorithm converged to a solution within the chosen tolerance
-  level.}
-
-\item{elapsed_time}{computation runtime for fitting mr.mash. }
-  
-\item{Y}{n x r matrix of responses at last iteration (only relevant when missing values
-  are present in the input Y).}
+A mr.mash fit, stored as a list with some or all of the following elements:
+\item{mu1}{A p x r matrix of posterior means for the regression coefficients.}
+\item{S1}{An r x r x p array of posterior covariances for the regression coefficients.}
+\item{w1}{A p x K matrix of posterior assignment probabilities to the mixture components.}
+\item{V}{An r x r residual covariance matrix.}
+\item{w0}{A K-vector with (updated, if \code{update_w0=TRUE}) prior mixture weights, each associated with the respective covariance matrix in \code{S0}.}
+\item{S0}{An r x r x K array of prior covariance matrices on the regression coefficients.}
+\item{intercept}{An r-vector containing the posterior mean estimate of the intercept.}
+\item{fitted}{An n x r matrix of fitted values.}
+\item{G}{An r x r covariance matrix of fitted values.}
+\item{pve}{An r-vector of proportion of variance explained by the covariates.}
+\item{ELBO}{The Evidence Lower Bound (ELBO) at the last iteration.}
+\item{progress}{A data frame including information regarding convergence criteria at each iteration.}
+\item{converged}{A logical indicating whether the optimization algorithm converged to a solution within the chosen tolerance level.}
+\item{elapsed_time}{The computation runtime for fitting mr.mash.}
+\item{Y}{An n x r matrix of responses at the last iteration (only relevant when missing values are present in the input Y).}
 }
 \description{
-Take precomputed prior grid and mixture prior to compute weights with mr.mash
+Compute weights with mr.mash using a precomputed prior grid and mixture prior.
 }
 \examples{
-###Set seed
 set.seed(123)
-prior_grid <- runif(17,0.00005,0.05)
+prior_grid <- runif(17, 0.00005, 0.05)
 
-#simulate X and Y, sample id, snp id
 sample_id <- paste0("P000", str_pad(1:400, 3, pad = "0"))
-X<- matrix(sample(0:2, size=n*p, replace=TRUE, prob=c(.65,.30,.05)), nrow=n)
+X <- matrix(sample(0:2, size = n * p, replace = TRUE, prob = c(0.65, 0.30, 0.05)), nrow = n)
 rownames(X) <- sample_id
-colnames(X) <- paste0("rs", sample(10000:100000, p)) #snp names
-tissues <- c('Adipose Tissue','Muscle Tissue', 'Brain Tissue','Liver Tissue','Kidney Tissue',
-'Heart Tissue','Lung Tissue')
-Y <- matrix(runif(n*r,-2,2), nrow=n)
+colnames(X) <- paste0("rs", sample(10000:100000, p))
+
+tissues <- c(
+  "Adipose Tissue", "Muscle Tissue", "Brain Tissue", "Liver Tissue",
+  "Kidney Tissue", "Heart Tissue", "Lung Tissue"
+)
+Y <- matrix(runif(n * r, -2, 2), nrow = n)
 Y <- scale(Y)
 colnames(Y) <- tissues
-rownames(Y) <- sample_id 
-
+rownames(Y) <- sample_id
 
 set.seed(Sys.time())
-components <- c('XtX','tFLASH_default','FLASH_default','tFLASH_nonneg','FLASH_nonneg','PCA')
+components <- c(
+  "XtX", "tFLASH_default", "FLASH_default", "tFLASH_nonneg",
+  "FLASH_nonneg", "PCA"
+)
 
 prior_data_driven_matrices <- list()
-for (i in components){
-   A <- matrix(runif(r^2)*2-1, ncol=r) 
-   cov <- t(A) \%*\% A
-   colnames(cov) <- tissues
-   rownames(cov) <- tissues
-   prior_data_driven_matrices[[i]]<- cov
-   }
+for (i in components) {
+  A <- matrix(runif(r^2) * 2 - 1, ncol = r)
+  cov <- t(A) \%*\% A
+  colnames(cov) <- tissues
+  rownames(cov) <- tissues
+  prior_data_driven_matrices[[i]] <- cov
+}
 
-#fit mr.mash without cross validation
-res <- mrmash_wrapper(X=X, Y=Y, prior_data_driven_matrices=prior_data_driven_matrices, prior_grid=prior_grid)
-
+res <- mrmash_wrapper(
+  X = X, Y = Y,
+  prior_data_driven_matrices = prior_data_driven_matrices,
+  prior_grid = prior_grid
+)
 
 }

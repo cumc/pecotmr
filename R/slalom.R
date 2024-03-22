@@ -1,7 +1,7 @@
 #' Slalom Function for Summary Statistics QC for Fine-Mapping Analysis
 #'
 #' Performs Approximate Bayesian Factor (ABF) analysis, identifies credible sets,
-#' and annotates lead variants based on fine-mapping results. It computes p-values 
+#' and annotates lead variants based on fine-mapping results. It computes p-values
 #' from z-scores assuming a two-sided standard normal distribution.
 #'
 #' @param zScore Numeric vector of z-scores corresponding to each variant.
@@ -25,21 +25,20 @@
 #' results <- slalom(zScore, LDmat, standard_error)
 #' @export
 #'
-slalom <- function(zScore, LDmat, standard_error = rep(1, length(zScore)), abf_prior_variance = 0.04, 
-                   nlog10p_dentist_s_threshold = 4.0, r2_threshold = 0.6, lead_variant_choice = "pvalue") { 
-  
-  if (!is.matrix(LDmat) || nrow(LDmat) != ncol(LDmat) || nrow(LDmat) != length(zScore)) { 
+slalom <- function(zScore, LDmat, standard_error = rep(1, length(zScore)), abf_prior_variance = 0.04,
+                   nlog10p_dentist_s_threshold = 4.0, r2_threshold = 0.6, lead_variant_choice = "pvalue") {
+  if (!is.matrix(LDmat) || nrow(LDmat) != ncol(LDmat) || nrow(LDmat) != length(zScore)) {
     stop("LDmat must be a square matrix matching the length of zScore.")
   }
-  
-  pvalue <- 2 * pnorm(abs(zScore), lower.tail = FALSE) 
-  
+
+  pvalue <- 2 * pnorm(abs(zScore), lower.tail = FALSE)
+
   logSumExp <- function(x) {
     max_x <- max(x, na.rm = TRUE)
     sum_exp <- sum(exp(x - max_x), na.rm = TRUE)
     return(max_x + log(sum_exp))
   }
-  
+
   abf <- function(z, se, W = 0.04) {
     V <- se^2
     r <- W / (W + V)
@@ -48,49 +47,49 @@ slalom <- function(zScore, LDmat, standard_error = rep(1, length(zScore)), abf_p
     prob <- exp(lbf - denom)
     return(list(lbf = lbf, prob = prob))
   }
-  
-  abf_results <- abf(zScore, standard_error, W = abf_prior_variance) 
-  lbf <- abf_results$lbf 
+
+  abf_results <- abf(zScore, standard_error, W = abf_prior_variance)
+  lbf <- abf_results$lbf
   prob <- abf_results$prob
-  
-  get_cs <- function(prob, coverage = 0.95) { 
+
+  get_cs <- function(prob, coverage = 0.95) {
     ordering <- order(prob, decreasing = TRUE)
     cumprob <- cumsum(prob[ordering])
     idx <- which(cumprob > coverage)[1]
-    cs <- ordering[1:idx] 
+    cs <- ordering[1:idx]
     return(cs)
   }
-  
-  cs <- get_cs(prob, coverage = 0.95) 
+
+  cs <- get_cs(prob, coverage = 0.95)
   cs_99 <- get_cs(prob, coverage = 0.99)
-  
-  lead_idx <- if (lead_variant_choice == "pvalue") { 
+
+  lead_idx <- if (lead_variant_choice == "pvalue") {
     which.min(pvalue)
   } else {
     which.max(prob)
   }
-  
+
   r2 <- LDmat^2
   t_dentist_s <- (zScore - LDmat[, lead_idx] * zScore[lead_idx])^2 / (1 - r2[, lead_idx])
-  t_dentist_s[t_dentist_s < 0] <- Inf 
+  t_dentist_s[t_dentist_s < 0] <- Inf
   nlog10p_dentist_s <- -log10(1 - pchisq(t_dentist_s, df = 1))
   outliers <- (r2[, lead_idx] > r2_threshold) & (nlog10p_dentist_s > nlog10p_dentist_s_threshold)
-  
+
   n_r2 <- sum(r2[, lead_idx] > r2_threshold)
-  n_dentist_s_outlier <- sum(outliers, na.rm = TRUE) 
-  max_pip <- max(prob) 
-  
-  summary <- list( 
-    lead_pip_variant = lead_idx, 
-    n_total = length(zScore), 
-    n_r2 = n_r2, 
+  n_dentist_s_outlier <- sum(outliers, na.rm = TRUE)
+  max_pip <- max(prob)
+
+  summary <- list(
+    lead_pip_variant = lead_idx,
+    n_total = length(zScore),
+    n_r2 = n_r2,
     n_dentist_s_outlier = n_dentist_s_outlier,
-    fraction = ifelse(n_r2 > 0, n_dentist_s_outlier / n_r2, 0), 
+    fraction = ifelse(n_r2 > 0, n_dentist_s_outlier / n_r2, 0),
     max_pip = max_pip,
     cs_95 = cs,
     cs_99 = cs_99
-  ) 
+  )
   result <- as.data.frame(list(original_z = zScore, prob = prob, pvalue = pvalue, outliers = outliers, nlog10p_dentist_s = nlog10p_dentist_s))
-  
-  return(list(data = result, summary = summary)) 
+
+  return(list(data = result, summary = summary))
 }

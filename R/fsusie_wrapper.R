@@ -19,29 +19,31 @@
 
 cal_purity <- function(l_cs, X, method = "min") {
   tt <- list()
-  
+
   for (k in 1:length(l_cs)) {
-      cs_indices <- unlist(l_cs[[k]])  # Extract indices for the current credible set
-       # Calculate purity based on the specified method
-      if (method == "min") { 
-          if (length(cs_indices) == 1 ) {
-              tt[[k]] <- 1  # Set purity to 1 for non-"min" methods
-            } else {
-                   x <- abs(cor(X[, cs_indices]))  # Compute the absolute correlation matrix
-              x[col(x) == row(x)] <- NA  # Set diagonal elements to NA to exclude them
-            tt[[k]] <- min(x, na.rm = TRUE)  # Calculate minimum off-diagonal correlation for "min" method
-    # Check if the credible set has only one element and the method is not "min"
-    }} else {
-           
-          if (length(cs_indices) == 1 ) {
-      tt[[k]] <- c(1,1,1)  # Set purity to 1 for non-"min" methods
+    cs_indices <- unlist(l_cs[[k]]) # Extract indices for the current credible set
+    # Calculate purity based on the specified method
+    if (method == "min") {
+      if (length(cs_indices) == 1) {
+        tt[[k]] <- 1 # Set purity to 1 for non-"min" methods
+      } else {
+        x <- abs(cor(X[, cs_indices])) # Compute the absolute correlation matrix
+        x[col(x) == row(x)] <- NA # Set diagonal elements to NA to exclude them
+        tt[[k]] <- min(x, na.rm = TRUE) # Calculate minimum off-diagonal correlation for "min" method
+        # Check if the credible set has only one element and the method is not "min"
+      }
     } else {
-      x <- abs(cor(X[, cs_indices]))  # Compute the absolute correlation matrix
-      x[col(x) == row(x)] <- NA  # Set diagonal elements to NA to exclude them
+      if (length(cs_indices) == 1) {
+        tt[[k]] <- c(1, 1, 1) # Set purity to 1 for non-"min" methods
+      } else {
+        x <- abs(cor(X[, cs_indices])) # Compute the absolute correlation matrix
+        x[col(x) == row(x)] <- NA # Set diagonal elements to NA to exclude them
         # Calculate min, mean, and median of off-diagonal correlations for other methods
-        tt[[k]] <- c( min(x , na.rm = TRUE), 
-                     mean(x, na.rm = TRUE), 
-                      median(x, na.rm = TRUE))
+        tt[[k]] <- c(
+          min(x, na.rm = TRUE),
+          mean(x, na.rm = TRUE),
+          median(x, na.rm = TRUE)
+        )
       }
     }
   }
@@ -65,23 +67,23 @@ cal_purity <- function(l_cs, X, method = "min") {
 #'         (min.abs.corr, mean.abs.corr, median.abs.corr), an index of credible sets (cs_index),
 #'         coverage values for each set, and the requested coverage level. Similar to the SuSiE set output
 #' @export
-fsusie_get_cs = function(fSuSiE.obj, X ,requested_coverage = 0.95) {
+fsusie_get_cs <- function(fSuSiE.obj, X, requested_coverage = 0.95) {
   # Create 'cs' set with names
   cs_named <- setNames(object = fSuSiE.obj$cs, nm = paste0("L", seq_along(fSuSiE.obj$cs)))
-  
-  # Create 'purity' data frame without dplyr
-  purity_df <- do.call(rbind, lapply(cal_purity(fSuSiE.obj$cs,X = X,method = "susie"), function(x) as.data.frame(t(x))))
-  rownames(purity_df) <- names(cs_named)
-  colnames(purity_df) <- c("min.abs.corr","mean.abs.corr",	"median.abs.corr")
 
-  # Create 'coverage' without purrr
+  # Create 'purity' data frame
+  purity_df <- do.call(rbind, lapply(cal_purity(fSuSiE.obj$cs, X = X, method = "susie"), function(x) as.data.frame(t(x))))
+  rownames(purity_df) <- names(cs_named)
+  colnames(purity_df) <- c("min.abs.corr", "mean.abs.corr", "median.abs.corr")
+
+  # Create 'coverage' without
   coverage_vector <- numeric(length(fSuSiE.obj$alpha))
   for (i in seq_along(fSuSiE.obj$alpha)) {
     alpha_i <- fSuSiE.obj$alpha[[i]]
     cs_i <- fSuSiE.obj$cs[[i]]
     coverage_vector[i] <- sum(alpha_i[cs_i])
   }
-  
+
   # Combine all elements into a list
   sets <- list(
     cs = cs_named,
@@ -90,7 +92,7 @@ fsusie_get_cs = function(fSuSiE.obj, X ,requested_coverage = 0.95) {
     coverage = coverage_vector,
     requested_coverage = requested_coverage
   )
-  
+
   return(sets)
 }
 
@@ -116,24 +118,26 @@ fsusie_get_cs = function(fSuSiE.obj, X ,requested_coverage = 0.95) {
 #'         and without the dummy cs that do not meet the minimum purity requirement.
 #' @importFrom fsusieR cal_cor_cs susiF
 #' @export
-									 
-fsusie_wrapper <- function(X, Y, pos, L, prior, max_SNP_EM, cov_lev, min.purity,max_scale, ...) {
+
+fsusie_wrapper <- function(X, Y, pos, L, prior, max_SNP_EM, cov_lev, min.purity, max_scale, ...) {
   # Run fsusie
-  fSuSiE.obj <- susiF(X = X, Y = Y, pos = pos, L = L, prior = prior,
-                       max_SNP_EM = max_SNP_EM, cov_lev = cov_lev,
-                       min.purity = min.purity,max_scale = max_scale, ...)
- 
+  fSuSiE.obj <- susiF(
+    X = X, Y = Y, pos = pos, L = L, prior = prior,
+    max_SNP_EM = max_SNP_EM, cov_lev = cov_lev,
+    min.purity = min.purity, max_scale = max_scale, ...
+  )
+
   # Remove dummy cs based on purity threshold
   if (all(abs(as.numeric(fSuSiE.obj$purity)) < min.purity)) {
     fSuSiE.obj$cs <- list(NULL)
     fSuSiE.obj$sets <- list(cs = list(NULL), requested_coverage = cov_lev)
-    fSuSiE.obj$cs_corr <- NULL  # Set cs correlations to NULL if no credible sets meet purity criteria
+    fSuSiE.obj$cs_corr <- NULL # Set cs correlations to NULL if no credible sets meet purity criteria
   } else {
     # Create sets and add correlation for CS if purity criteria are met
-    fSuSiE.obj$sets <- fsusie_get_cs(fSuSiE.obj,X, requested_coverage = cov_lev)
+    fSuSiE.obj$sets <- fsusie_get_cs(fSuSiE.obj, X, requested_coverage = cov_lev)
     fSuSiE.obj$cs_corr <- cal_cor_cs(fSuSiE.obj, X)
   }
- # Put alpha into df
-      fSuSiE.obj$alpha = do.call(rbind, lapply(fSuSiE.obj$alpha, function(x) as.data.frame(t(x))))
+  # Put alpha into df
+  fSuSiE.obj$alpha <- do.call(rbind, lapply(fSuSiE.obj$alpha, function(x) as.data.frame(t(x))))
   return(fSuSiE.obj)
 }

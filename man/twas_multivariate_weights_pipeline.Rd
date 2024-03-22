@@ -6,30 +6,25 @@
 \usage{
 twas_multivariate_weights_pipeline(
   X,
-  y,
+  Y,
   maf,
-  mvsusie_prefit,
   mvsusie_fitted,
-  dropped_samples,
+  mrmash_fitted,
   prior,
   resid_Y,
-  X_scalar = rep(1, ncol(y)),
-  y_scalar = rep(1, ncol(y)),
   max_cv_variants = 5000,
   mvsusie_max_iter = 200,
   mrmash_max_iter = 5000,
-  pip_cutoff_to_skip = 0,
   signal_cutoff = 0.025,
   secondary_coverage = c(0.5, 0.7),
   ld_reference_meta_file = NULL,
   cv_folds = 5,
   sample_partition = NULL,
-  mrmash_weights_prior_matrices = NULL,
-  mrmash_weights_prior_matrices_cv = NULL,
-  prior_canonical_matrices = FALSE,
+  data_driven_prior_matrices = NULL,
+  data_driven_prior_matrices_cv = NULL,
+  canonical_prior_matrices = FALSE,
   cv_seed = 999,
-  cv_threads = 1,
-  ...
+  cv_threads = 1
 )
 }
 \description{

@@ -71,6 +71,25 @@ double getQuantile2(const std::vector<double>& dat, const std::vector<uint>& gro
 	return getQuantile(filteredData, whichQuantile);
 }
 
+// Get a quantile value based on grouping
+double getQuantile2_chen_et_al(const std::vector<double> &dat, std::vector<uint> grouping, double whichQuantile)
+{
+	uint sum = std::accumulate(grouping.begin(), grouping.end(), 0);
+
+	if (sum < 50)
+	{
+		return 0;
+	}
+
+	std::vector<double> diff2;
+	for (uint i = 0; i < dat.size(); i++)
+	{
+		if (grouping[i] == 1)
+			diff2.push_back(dat[i]);
+	}
+	return getQuantile(diff2, whichQuantile);
+}
+
 // Calculate minus log p-value of chi-squared statistic
 double minusLogPvalueChisq2(double stat) {
 	double p = 1.0 - gsl_cdf_chisq_P(stat, 1.0);
@@ -91,21 +110,19 @@ void oneIteration(const arma::mat& LDmat, const std::vector<uint>& idx, const st
 	arma::mat LD_it(idx2.size(), idx.size());
 	arma::mat VV(idx.size(), idx.size());
 
-    #pragma omp parallel for
-	for (size_t i = 0; i < idx.size(); i++) {
-		zScore_eigen(i) = zScore[idx[i]];
-	}
-
-	// Fill LD_it and VV matrices using a single loop
+	// Fill LD_it and VV matrices using direct indexing
     #pragma omp parallel for collapse(2)
 	for (size_t i = 0; i < idx2.size(); i++) {
 		for (size_t k = 0; k < idx.size(); k++) {
-			LD_it(i, k) = LDmat.at(idx[k] * LDmat.n_rows + idx2[i]);
-			// LD_it(i, k) = LDmat.at(idx2[i] * LDmat.n_cols + idx[k]); // Try this line if the above is not correct
-			if (i < idx.size() && k < idx.size()) {
-				VV(i, k) = LDmat.at(idx[k] * LDmat.n_rows + idx[i]);
-				// VV(i, k) = LDmat.at(idx[i] * LDmat.n_rows + idx[k]); // Try this line if the above is not correct 
-			}
+			LD_it(i, k) = LDmat.at(idx2[i] * LDmat.n_cols + idx[k]);
+		}
+	}
+
+    #pragma omp parallel for
+	for (size_t i = 0; i < idx.size(); i++) {
+		zScore_eigen(i) = zScore[idx[i]];
+		for (size_t j = 0; j < idx.size(); j++) {
+			VV(i, j) = LDmat.at(idx[i] * LDmat.n_rows + idx[j]);
 		}
 	}
 
@@ -150,7 +167,7 @@ void oneIteration(const arma::mat& LDmat, const std::vector<uint>& idx, const st
 }
 
 /**
- * @brief Executes DENTIST algorithm for quality control in GWAS summary data.
+ * @brief Executes DENTIST algorithm for quality control in GWAS summary data: the iterative imputation function.
  *
  * DENTIST (Detecting Errors iN analyses of summary staTISTics) identifies and removes problematic variants
  * in GWAS summary data by comparing observed GWAS statistics to predicted values based on linkage disequilibrium (LD)
@@ -179,9 +196,9 @@ void oneIteration(const arma::mat& LDmat, const std::vector<uint>& idx, const st
  */
 
 // [[Rcpp::export]]
-List dentist_rcpp(const arma::mat& LDmat, uint nSample, const arma::vec& zScore,
+List dentist_iterative_impute(const arma::mat& LDmat, uint nSample, const arma::vec& zScore,
                   double pValueThreshold, float propSVD, bool gcControl, int nIter,
-                  double gPvalueThreshold, int ncpus, int seed) {
+                  double gPvalueThreshold, int ncpus, int seed, bool correct_chen_et_al_bug = false) {
 	// Set number of threads for parallel processing
 	int nProcessors = omp_get_max_threads();
 	if (ncpus < nProcessors) nProcessors = ncpus;
@@ -229,19 +246,30 @@ List dentist_rcpp(const arma::mat& LDmat, uint nSample, const arma::vec& zScore,
 		}
 
 		double threshold = getQuantile(diff, 0.995);
-		double threshold1 = getQuantile2(diff, grouping_tmp, 0.995, false);
-		double threshold0 = getQuantile2(diff, grouping_tmp, 0.995, true);
+		double threshold1, threshold0;
+
+		if (correct_chen_et_al_bug) {
+			threshold1 = getQuantile2(diff, grouping_tmp, 0.995, false);
+			threshold0 = getQuantile2(diff, grouping_tmp, 0.995, true);
+		} else {
+			threshold1 = getQuantile2_chen_et_al(diff, grouping_tmp, 0.995);
+			std::transform(grouping_tmp.begin(), grouping_tmp.end(), grouping_tmp.begin(), [](uint val) {
+				return 1 - val;
+			});
+			threshold0 = getQuantile2_chen_et_al(diff, grouping_tmp, 0.995);
+		}
 
 		if (threshold1 == 0) {
 			threshold1 = threshold;
 			threshold0 = threshold;
 		}
-
-		if (t > nIter - 2) {
-			threshold0 = threshold;
-			threshold1 = threshold;
+		if (correct_chen_et_al_bug || nIter - 2 >= 0) {
+			// FIXME: Please explain the story here
+			if (t > nIter - 2) {
+				threshold0 = threshold;
+				threshold1 = threshold;
+			}
 		}
-
 		// Apply threshold-based filtering for QC
 		for (size_t i = 0; i < diff.size(); ++i) {
 			if ((grouping_tmp[i] == 1 && diff[i] <= threshold1) ||
@@ -251,7 +279,7 @@ List dentist_rcpp(const arma::mat& LDmat, uint nSample, const arma::vec& zScore,
 		}
 
 		// Perform another iteration with updated sets of indices (idx and idx2_QCed)
-		oneIteration(LDmat, idx, idx2_QCed, zScore, imputedZ, rsq, zScore_e, nSample, propSVD, ncpus);
+		oneIteration(LDmat, idx2_QCed, idx, zScore, imputedZ, rsq, zScore_e, nSample, propSVD, ncpus);
 
 		// Recalculate differences and groupings after the iteration
 		diff.resize(fullIdx.size());
@@ -263,19 +291,28 @@ List dentist_rcpp(const arma::mat& LDmat, uint nSample, const arma::vec& zScore,
 
 		// Re-determine thresholds based on the recalculated differences and groupings
 		threshold = getQuantile(diff, 0.995);
-		threshold1 = getQuantile2(diff, grouping_tmp, 0.995, false);
-		threshold0 = getQuantile2(diff, grouping_tmp, 0.995, true);
-
+		if (correct_chen_et_al_bug) {
+			// FIXME: explain the story here
+			threshold1 = getQuantile2(diff, grouping_tmp, 0.995, false);
+			threshold0 = getQuantile2(diff, grouping_tmp, 0.995, true);
+		} else {
+			threshold1 = getQuantile2_chen_et_al(diff, grouping_tmp, 0.995);
+			std::transform(grouping_tmp.begin(), grouping_tmp.end(), grouping_tmp.begin(), [](uint val) {
+				return 1 - val;
+			});
+			threshold0 = getQuantile2_chen_et_al(diff, grouping_tmp, 0.995);
+		}
 		if (threshold1 == 0) {
 			threshold1 = threshold;
 			threshold0 = threshold;
 		}
 
-		if (t > nIter - 2) {
-			threshold0 = threshold;
-			threshold1 = threshold;
+		if (correct_chen_et_al_bug || nIter - 2 >= 0) {
+			if (t > nIter - 2) {
+				threshold0 = threshold;
+				threshold1 = threshold;
+			}
 		}
-
 		// Adjust for genetic control and inflation factor if necessary
 		std::vector<double> chisq(fullIdx.size());
 		for (size_t i = 0; i < fullIdx.size(); ++i) {
@@ -319,14 +356,8 @@ List dentist_rcpp(const arma::mat& LDmat, uint nSample, const arma::vec& zScore,
 		}
 	}
 
-	// Prepare and return results using arma::vec::elem() for simplicity
-	arma::uvec problematic_indices = arma::find(arma::conv_to<arma::vec>::from(groupingGWAS) == 1);
-	arma::vec is_problematic = arma::zeros<arma::vec>(markerSize);
-	is_problematic.elem(problematic_indices).fill(1);
-
 	return List::create(Named("imputed_z") = imputedZ,
 	                    Named("rsq") = rsq,
 	                    Named("corrected_z") = zScore_e,
-	                    Named("iter_to_correct") = iterID,
-	                    Named("is_problematic") = is_problematic);
+	                    Named("iter_to_correct") = iterID);
 }

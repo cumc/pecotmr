@@ -22,13 +22,13 @@ twas_weights_cv(
 
 \item{Y}{A matrix (or vector, which will be converted to a matrix) of samples by outcomes, where each row corresponds to a sample.}
 
-\item{fold}{An optional integer specifying the number of folds for cross-validation. 
+\item{fold}{An optional integer specifying the number of folds for cross-validation.
 If NULL, 'sample_partitions' must be provided.}
 
-\item{sample_partitions}{An optional dataframe with predefined sample partitions, 
+\item{sample_partitions}{An optional dataframe with predefined sample partitions,
 containing columns 'Sample' (sample names) and 'Fold' (fold number). If NULL, 'fold' must be provided.}
 
-\item{weight_methods}{A list of methods and their specific arguments, formatted as list(method1 = method1_args, method2 = method2_args). 
+\item{weight_methods}{A list of methods and their specific arguments, formatted as list(method1 = method1_args, method2 = method2_args).
 methods in the list can be either univariate (applied to each column of Y) or multivariate (applied to the entire Y matrix).}
 
 \item{seed}{An optional integer to set the random seed for reproducibility of sample splitting.}
@@ -59,7 +59,7 @@ A list with the following components:
 }
 }
 \description{
-Performs cross-validation for TWAS, supporting both univariate and multivariate methods. 
-It can either create folds for cross-validation or use pre-defined sample partitions. 
+Performs cross-validation for TWAS, supporting both univariate and multivariate methods.
+It can either create folds for cross-validation or use pre-defined sample partitions.
 For multivariate methods, it applies the method to the entire Y matrix for each fold.
 }

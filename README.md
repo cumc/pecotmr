@@ -42,6 +42,12 @@ connected to Internet while running these commands):
    pkgdown::build_site(lazy=TRUE, examples=FALSE)
    ```
 
++ To format R codes in the `R` folder,
+
+   ```bash
+   for i in `ls R/*.R`; do bash inst/misc/format_r_code.sh $i; done
+   ```
+
 + After editing C++ code in the `src` directory, please use
 [uncrustify][uncrustify] (version >=0.74.0, available from conda-forge) 
 to format the code using configuration file

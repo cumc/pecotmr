@@ -4,6 +4,7 @@
 #include <string>
 #include <algorithm>
 #include <unordered_map>
+#include <omp.h>
 
 using namespace arma;
 using namespace std;
@@ -105,12 +106,18 @@ unordered_map<string, vec> bayes_mix_sufficient(double xTx, double xTy, double s
  * @param update_w0 Whether to update w0
  * @param update_sigma Whether to update sigma2_e
  * @param compute_ELBO Whether to compute the Evidence Lower Bound (ELBO)
+ * @param ncpus Number of CPUs to use for parallel processing
  * @return An unordered_map containing the posterior assignment probabilities (w1), the posterior mean (mu1) and variance (sigma2_1) of the coefficients, the error variance (sigma2_e), the mixture weights (w0), and optionally the ELBO
  */
 unordered_map<string, mat> mr_ash_sufficient(const vec& XTy, const mat& XTX, double yTy, int n, double& sigma2_e,
                                              const vec& sigma2_0, vec& w0, const vec& mu1_init, double tol = 1e-8,
                                              int max_iter = 1e5, bool update_w0 = true, bool update_sigma = true,
-                                             bool compute_ELBO = true, bool verbose = false) {
+                                             bool compute_ELBO = true, bool verbose = false, int ncpus = 1) {
+	// Set the number of threads for OpenMP
+	int nProcessors = omp_get_max_threads();
+	if (ncpus < nProcessors) nProcessors = ncpus;
+	omp_set_num_threads(nProcessors);
+
 	// Initialize parameters
 	int p = XTX.n_cols;
 	int K = sigma2_0.n_elem;
@@ -144,6 +151,7 @@ unordered_map<string, mat> mr_ash_sufficient(const vec& XTy, const mat& XTX, dou
 		vec XTrbar = XTy - XTX * mu1_t;
 
 		// Loop through the variables
+		#pragma omp parallel for reduction(+:var_part_ERSS,neg_KL)
 		for (int j = 0; j < p; j++) {
 			// Remove j-th effect from expected residuals
 			vec XTrbar_j = XTrbar + XTX.col(j) * mu1_t[j];
@@ -239,12 +247,13 @@ unordered_map<string, mat> rescale_post_mean_covar(const vec& mu1, const mat& si
  * @param update_sigma Whether to update the error variance
  * @param compute_ELBO Whether to compute the Evidence Lower Bound (ELBO)
  * @param standardize Whether to standardize the input data
+ * @param ncpus Number of CPUs to use for parallel processing
  * @return An unordered_map containing the posterior mean (mu1) and covariance (sigma2_1) of the coefficients, the posterior assignment probabilities (w1), the error variance (sigma2_e), the mixture weights (w0), and optionally the ELBO
  */
 unordered_map<string, mat> mr_ash_rss(const vec& bhat, const vec& shat, const vec& z, const mat& R, double var_y, int n,
                                       double sigma2_e, const vec& s0, vec& w0, const vec& mu1_init, double tol = 1e-8,
                                       int max_iter = 1e5, bool update_w0 = true, bool update_sigma = true, bool compute_ELBO = true,
-                                      bool standardize = false) {
+                                      bool standardize = false, int ncpus = 1) {
 	// Get number of variables
 	int p = z.n_elem;
 
@@ -266,7 +275,6 @@ unordered_map<string, mat> mr_ash_rss(const vec& bhat, const vec& shat, const ve
 		adj = (n - 1) / (square(z_use) + n - 2);
 		z_use %= sqrt(adj);
 	}
-
 	// Compute X'X and X'y
 	mat XtX;
 	vec Xty;
@@ -295,7 +303,7 @@ unordered_map<string, mat> mr_ash_rss(const vec& bhat, const vec& shat, const ve
 
 	// Run variational inference
 	unordered_map<string, mat> result = mr_ash_sufficient(Xty, XtX, var_y * (n - 1), n, sigma2_e, s0, w0, mu1_init_use,
-	                                                      tol, max_iter, update_w0, update_sigma, compute_ELBO);
+	                                                      tol, max_iter, update_w0, update_sigma, compute_ELBO, standardize, ncpus);
 
 	// Rescale posterior mean and covariance if X was standardized
 	if (standardize) {
@@ -306,4 +314,4 @@ unordered_map<string, mat> mr_ash_rss(const vec& bhat, const vec& shat, const ve
 
 	return {{"mu1", result["mu1"]}, {"sigma2_1", result["sigma2_1"]}, {"w1", result["w1"]},
 		{"sigma2_e", result["sigma2_e"]}, {"w0", result["w0"]}, {"ELBO", result["ELBO"]}};
-}
+};

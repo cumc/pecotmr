@@ -24,10 +24,10 @@ requirements:
   host:
     - bioconductor-qvalue
     - r-bedtoolsr
-    - r-base>=4.2
+    - r-base==4.3.3
     - r-coloc
     - r-data.table
-    - r-domc
+    - r-dofuture
     - r-dplyr
     - r-gbj
     - r-ggplot2
@@ -41,6 +41,7 @@ requirements:
     - r-matrixstats
     - r-mr.ash.alpha
     - r-mr.mash.alpha
+    - r-mvsusier
     - r-udr
     - r-fsusier
     - r-pgenlibr
@@ -58,10 +59,10 @@ requirements:
   run:
     - bioconductor-qvalue
     - r-bedtoolsr
-    - r-base>=4.2
+    - r-base>=4.3
     - r-coloc
     - r-data.table
-    - r-domc
+    - r-dofuture
     - r-dplyr
     - r-gbj
     - r-ggplot2
@@ -88,7 +89,6 @@ requirements:
     - r-rlab
     - r-stringr
     - r-susier
-    - r-mvsusier
     - r-tidyr
     - r-vctrs
 
