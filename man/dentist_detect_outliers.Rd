@@ -57,7 +57,7 @@ The returned data frame includes the following columns:
   \item{\code{iter_to_correct}}{The number of iterations required to correct the z-scores, if applicable.}
   \item{\code{index_within_window}}{The index of the observation within the window.}
   \item{\code{index_global}}{The global index of the observation.}
-  \item{\code{stat}}{The computed statistical value based on the original and imputed z-scores and R-squared.}
+  \item{\code{outlier_stat}}{The computed statistical value based on the original and imputed z-scores and R-squared.}
   \item{\code{outlier}}{A logical indicator specifying whether the observation is identified as an outlier based on the statistical test.}
 }
 }
