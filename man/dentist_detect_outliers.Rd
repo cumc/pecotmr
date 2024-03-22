@@ -9,7 +9,7 @@ dentist_detect_outliers(
   LDmat,
   nSample,
   window_size = 2e+06,
-  pValueThreshold = 5e-08,
+  pValueThreshold = 5.0369e-08,
   propSVD = 0.4,
   gcControl = FALSE,
   nIter = 10,
@@ -69,13 +69,21 @@ predicted values. It can detect errors in genotyping/imputation, allelic errors,
 heterogeneity between GWAS and LD reference samples.
 }
 \details{
-- if correct_chen_et_al_bug = FALSE, then there can never be a single window
-- if window_size is invalid (<=0 or >=range):
-  - if correct_chen_et_al_bug==TRUE, run dentist single window, so just window (0-4122)
-  - if correct_chen_et_al_bug==FALSE, run in the dentist original way, so window (0-4122) and (742-4122)
-- if window_size is valid:
-  - if correct_chen_et_al_bug==TRUE, divide the window but don't add additional window if the first window covers all, so just (0-4122)
-  - if correct_chen_et_al_bug==FALSE, divide the window in the dentist original way, so window (0-4122) and (742-4122)
+# correct_chen_et_al_bug may affect the result in three parts compared with the original DENTIST method:
+# 1. the way that window is divided
+   when there is only one window and window size >= position range, it will run two windows
+   where the first window is the whole range (e.g., 0-4122) and second is the subset of it, (e.g., 742-4122), which adds no information
+   so if we set correct_chen_et_al_bug=TRUE and this is the scenario for window_size and positions, then it only runs on the whole window
+   A more general description for this is:
+       - if correct_chen_et_al_bug = FALSE, then there can never be a single window
+       - if window_size is invalid (<=0 or >=range):
+           - if correct_chen_et_al_bug==TRUE, run dentist single window, so just window (0-4122)
+           - if correct_chen_et_al_bug==FALSE, run in the dentist original way, so window (0-4122) and (742-4122)
+       - if window_size is valid:
+           - if correct_chen_et_al_bug==TRUE, divide the window but don't add additional window if the first window covers all, so just (0-4122)
+           - if correct_chen_et_al_bug==FALSE, divide the window in the dentist original way, so window (0-4122) and (742-4122)
+2. comparison between iteration index t and nIter (explained in the source code)
+3. !grouping_tmp (explained in the source code)
 }
 \examples{
 # Example usage of dentist_detect_outliers

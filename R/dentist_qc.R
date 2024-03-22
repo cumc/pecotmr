@@ -5,7 +5,7 @@
 #' panel to identify and correct problematic variants by comparing observed GWAS statistics to
 #' predicted values. It can detect errors in genotyping/imputation, allelic errors, and
 #' heterogeneity between GWAS and LD reference samples.
-#' 
+#'
 #' @param sum_stat A data frame containing summary statistics, including 'pos' or 'position' and 'z' or 'zscore' columns.
 #' @param LDmat A matrix containing LD (linkage disequilibrium) information.
 #' @param nSample The number of samples.
@@ -18,11 +18,11 @@
 #' @param ncpus The number of CPU cores to use for parallel processing. Default is 1.
 #' @param seed The random seed for reproducibility. Default is 999.
 #' @param correct_chen_et_al_bug Logical indicating whether to correct the Chen et al. bug. Default is TRUE.
-#' 
+#'
 #' @return A data frame containing the imputed result and detected outliers.
-#' 
+#'
 #' The returned data frame includes the following columns:
-#' 
+#'
 #' \describe{
 #'   \item{\code{original_z}}{The original z-score values from the input \code{sum_stat}.}
 #'   \item{\code{imputed_z}}{The imputed z-score values computed by the Dentist algorithm.}
@@ -34,25 +34,32 @@
 #'   \item{\code{outlier_stat}}{The computed statistical value based on the original and imputed z-scores and R-squared.}
 #'   \item{\code{outlier}}{A logical indicator specifying whether the observation is identified as an outlier based on the statistical test.}
 #' }
-#' 
-#' 
+#'
+#'
 #' @examples
 #' # Example usage of dentist_detect_outliers
 #' dentist_detect_outliers(sum_stat, LDmat, nSample)
-#' 
+#'
 #' @details
-#' - if correct_chen_et_al_bug = FALSE, then there can never be a single window
-#' - if window_size is invalid (<=0 or >=range):
-#'   - if correct_chen_et_al_bug==TRUE, run dentist single window, so just window (0-4122)
-#'   - if correct_chen_et_al_bug==FALSE, run in the dentist original way, so window (0-4122) and (742-4122)
-#' - if window_size is valid:
-#'   - if correct_chen_et_al_bug==TRUE, divide the window but don't add additional window if the first window covers all, so just (0-4122)
-#'   - if correct_chen_et_al_bug==FALSE, divide the window in the dentist original way, so window (0-4122) and (742-4122)
-#' 
-#' 
-
+#' # correct_chen_et_al_bug may affect the result in three parts compared with the original DENTIST method:
+#' # 1. the way that window is divided
+#'    when there is only one window and window size >= position range, it will run two windows
+#'    where the first window is the whole range (e.g., 0-4122) and second is the subset of it, (e.g., 742-4122), which adds no information
+#'    so if we set correct_chen_et_al_bug=TRUE and this is the scenario for window_size and positions, then it only runs on the whole window
+#'    A more general description for this is:
+#'        - if correct_chen_et_al_bug = FALSE, then there can never be a single window
+#'        - if window_size is invalid (<=0 or >=range):
+#'            - if correct_chen_et_al_bug==TRUE, run dentist single window, so just window (0-4122)
+#'            - if correct_chen_et_al_bug==FALSE, run in the dentist original way, so window (0-4122) and (742-4122)
+#'        - if window_size is valid:
+#'            - if correct_chen_et_al_bug==TRUE, divide the window but don't add additional window if the first window covers all, so just (0-4122)
+#'            - if correct_chen_et_al_bug==FALSE, divide the window in the dentist original way, so window (0-4122) and (742-4122)
+#' 2. comparison between iteration index t and nIter (explained in the source code)
+#' 3. !grouping_tmp (explained in the source code)
+#'
+#' @export
 dentist_detect_outliers <- function(sum_stat, LDmat, nSample,
-                                    window_size = 2000000, pValueThreshold = 5e-8, propSVD = 0.4, gcControl = FALSE,
+                                    window_size = 2000000, pValueThreshold = 5.0369e-8, propSVD = 0.4, gcControl = FALSE,
                                     nIter = 10, gPvalueThreshold = 0.05, ncpus = 1, seed = 999, correct_chen_et_al_bug = TRUE) {
   # detect for column names and order by pos
   if (!any(tolower(c("pos", "position")) %in% tolower(colnames(sum_stat))) ||
@@ -116,9 +123,9 @@ dentist_detect_outliers <- function(sum_stat, LDmat, nSample,
 #' @param correct_chen_et_al_bug Logical indicating whether to correct the Chen et al. bug. Default is TRUE.
 #'
 #' @return A data frame containing the imputed summary statistics for the variants within the window.
-#' 
+#'
 #' The returned data frame includes columns representing the imputed summary statistics.
-#' 
+#'
 #' @examples
 #' # Example usage of dentist_impute_single_window
 #' dentist_impute_single_window(zScore, LDmat, nSample)
@@ -131,7 +138,7 @@ dentist_detect_outliers <- function(sum_stat, LDmat, nSample,
 #'
 #' @importFrom methods as, setClass, setMethod
 #'
-#' @export
+#' @noRd
 dentist_impute_single_window <- function(zScore, LDmat, nSample,
                                          pValueThreshold = 5e-8, propSVD = 0.4, gcControl = FALSE,
                                          nIter = 10, gPvalueThreshold = 0.05, ncpus = 1, seed = 999, correct_chen_et_al_bug = TRUE) {
@@ -180,7 +187,7 @@ dentist_impute_single_window <- function(zScore, LDmat, nSample,
 #' # Example usage of minusLogPvalueChisq
 #' minusLogPvalueChisq(10)
 #'
-#' @export
+#' @noRd
 minusLogPvalueChisq <- function(stat) {
   p <- pchisq(stat, df = 1, lower.tail = FALSE)
   return(-log10(p))
@@ -200,7 +207,7 @@ minusLogPvalueChisq <- function(stat) {
 #' # Example usage of calculate_stat
 #' calculate_stat(impOp_zScores = c(1, 2, 3), impOp_imputed = c(1.5, 2.2, 3.1), impOp_rsq = 0.8)
 #'
-#' @export
+#' @noRd
 calculate_stat <- function(impOp_zScores, impOp_imputed, impOp_rsq) {
   (impOp_zScores - impOp_imputed)^2 / (1 - impOp_rsq)
 }
@@ -218,7 +225,7 @@ calculate_stat <- function(impOp_zScores, impOp_imputed, impOp_rsq) {
 #' # Example usage of outlier_test
 #' outlier_test(stat = 3, lambda = 1.5)
 #'
-#' @export
+#' @noRd
 outlier_test <- function(stat, lambda) {
   ifelse(minusLogPvalueChisq(stat / lambda) > -log10(5e-8), TRUE, FALSE)
 }
@@ -245,7 +252,7 @@ outlier_test <- function(stat, lambda) {
 #' @seealso
 #' \code{\link{dentist_impute_single_window}} for imputing summary statistics for a single window using the Dentist algorithm.
 #'
-#' @export
+#' @noRd
 divide_into_windows <- function(pos, window_size, correct_chen_et_al_bug) {
   windowStartIdx <- c()
   windowEndIdx <- c()
@@ -348,7 +355,7 @@ divide_into_windows <- function(pos, window_size, correct_chen_et_al_bug) {
 #' It then merges the results by window, adding an index within the window and a global index.
 #' Finally, it extracts the results within the fillers and combines them into a single data frame.
 #'
-#' @export
+#' @noRd
 merge_windows <- function(imputed_result_by_window, window_divided_res) {
   if (length(imputed_result_by_window) != nrow(window_divided_res)) {
     stop("Different number of windows and imputed results!")
@@ -365,5 +372,3 @@ merge_windows <- function(imputed_result_by_window, window_divided_res) {
   }
   return(merged_results)
 }
-
-
