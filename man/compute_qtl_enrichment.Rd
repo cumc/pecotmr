@@ -7,7 +7,7 @@
 compute_qtl_enrichment(
   gwas_pip,
   susie_qtl_regions,
-  pi_gwas = NULL,
+  num_gwas = NULL,
   pi_qtl = NULL,
   lambda = 1,
   ImpN = 25,
@@ -19,8 +19,8 @@ compute_qtl_enrichment(
 
 \item{susie_qtl_regions}{This is a list of SuSiE fitted objects per QTL unit analyzed}
 
-\item{pi_gwas}{This parameter is highly important if GWAS input does not contain all SNPs interrogated (e.g., in some cases, only fine-mapped geomic regions are included).
-Then users must pick a value of total_variants and estimate pi_gwas beforehand by: sum(gwas_pip$pip)/total_variants}
+\item{num_gwas}{This parameter is highly important if GWAS input does not contain all SNPs interrogated (e.g., in some cases, only fine-mapped geomic regions are included).
+Then users must pick a value of total_variants and estimate pi_gwas beforehand by: sum(gwas_pip$pip)/num_gwas. If num_gwas is null, pi_gwas would be sum(gwas_pip$pip)/total_variants.}
 
 \item{pi_qtl}{This parameter can be safely left to default if your input QTL data has enough regions to estimate it.}
 

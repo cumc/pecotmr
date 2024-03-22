@@ -24,7 +24,7 @@
 xqtl_enrichment_wrapper <- function(xqtl_files, gwas_files,
                                     xqtl_finemapping_obj = NULL, gwas_finemapping_obj = NULL,
                                     xqtl_varname_obj = NULL, gwas_varname_obj = NULL,
-                                    pi_gwas = NULL, pi_qtl = NULL,
+                                    num_gwas = NULL, pi_qtl = NULL,
                                     lambda = 1.0, ImpN = 25,
                                     num_threads = 1) {
   process_finemapped_data <- function(xqtl_files, gwas_files,
@@ -66,7 +66,7 @@ xqtl_enrichment_wrapper <- function(xqtl_files, gwas_files,
   # Compute QTL enrichment
   return(compute_qtl_enrichment(
     gwas_pip = dat$gwas_pip, susie_qtl_regions = dat$xqtl_data,
-    pi_gwas = pi_gwas, pi_qtl = pi_qtl,
+    num_gwas = num_gwas, pi_qtl = pi_qtl,
     lambda = lambda, ImpN = ImpN,
     num_threads = num_threads
   ))
@@ -117,7 +117,7 @@ calculate_purity <- function(variants, ext_ld, squared) {
 #' 2. PPH4 exceeds threshold, default as 0.8.
 #' 3. We aggregate variants and cumulatively sum their PPH4 values to form a credible set until the threshold, default as 0.95.
 #' 4. The cs's purity is computed with the `get_purity` function from the `gaow/susieR` package, and the same purity criteria are employed to filter the credibility set.
-process_coloc_results <- function(coloc_result, LD_meta_file_path, analysis_script_obj, analysis_region, PPH4_thres = 0.8, coloc_pip_thres = 0.95, squared = FALSE, min_abs_corr = 0.5, null_index = 0, coloc_index = "PP.H4.abf", median_abs_corr = NULL) {
+process_coloc_results <- function(coloc_result, LD_meta_file_path, analysis_region, PPH4_thres = 0.8, coloc_pip_thres = 0.95, squared = FALSE, min_abs_corr = 0.5, null_index = 0, coloc_index = "PP.H4.abf", median_abs_corr = NULL) {
   # Extract PIP values from coloc_result summary
   coloc_summary <- as.data.frame(coloc_result$summary)
   coloc_pip <- coloc_summary[, grepl("PP", colnames(coloc_summary))]

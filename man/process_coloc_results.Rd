@@ -12,7 +12,6 @@ This function is designed to summarize coloc results based on the following crit
 process_coloc_results(
   coloc_result,
   LD_meta_file_path,
-  analysis_script_obj,
   analysis_region,
   PPH4_thres = 0.8,
   coloc_pip_thres = 0.95,

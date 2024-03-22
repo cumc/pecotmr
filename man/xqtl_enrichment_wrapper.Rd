@@ -11,7 +11,7 @@ xqtl_enrichment_wrapper(
   gwas_finemapping_obj = NULL,
   xqtl_varname_obj = NULL,
   gwas_varname_obj = NULL,
-  pi_gwas = NULL,
+  num_gwas = NULL,
   pi_qtl = NULL,
   lambda = 1,
   ImpN = 25,
@@ -31,8 +31,6 @@ xqtl_enrichment_wrapper(
 
 \item{gwas_varname_obj}{Optional table name in GWAS RDS files (default 'susie_fit').}
 
-\item{pi_gwas}{Optional parameter for GWAS enrichment estimation (see `compute_qtl_enrichment`).}
-
 \item{pi_qtl}{Optional parameter for xQTL enrichment estimation (see `compute_qtl_enrichment`).}
 
 \item{lambda}{Shrinkage parameter for enrichment computation (see `compute_qtl_enrichment`).}
@@ -40,6 +38,8 @@ xqtl_enrichment_wrapper(
 \item{ImpN}{Importance parameter for enrichment computation (see `compute_qtl_enrichment`).}
 
 \item{num_threads}{Number of threads for parallel processing (see `compute_qtl_enrichment`).}
+
+\item{pi_gwas}{Optional parameter for GWAS enrichment estimation (see `compute_qtl_enrichment`).}
 }
 \value{
 The output from the compute_qtl_enrichment function.

@@ -607,7 +607,7 @@ susie_post_processor <- function(susie_output, data_x, data_y, X_scalar, y_scala
     # Prepare for top loci table
     top_variants_idx_pri <- get_top_variants_idx(susie_output, signal_cutoff)
     cs_pri <- get_cs_info(susie_output$sets$cs, top_variants_idx_pri)
-    susie_output$cs_corr <- if (mode == "susie") get_cs_correlation(susie_output, X = data_x) else get_cs_correlation(susie_output, Xcorr = data_x)
+    susie_output$cs_corr <- if (mode %in% c("susie","mvsusie")) get_cs_correlation(susie_output, X = data_x) else get_cs_correlation(susie_output, Xcorr = data_x)
     top_loci_list <- list("coverage_0.95" = data.frame(variant_idx = top_variants_idx_pri, cs_idx = cs_pri, stringsAsFactors = FALSE))
 
     ## Loop over each secondary coverage value
