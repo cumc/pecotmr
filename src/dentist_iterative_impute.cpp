@@ -197,8 +197,8 @@ void oneIteration(const arma::mat& LDmat, const std::vector<uint>& idx, const st
 
 // [[Rcpp::export]]
 List dentist_iterative_impute(const arma::mat& LDmat, uint nSample, const arma::vec& zScore,
-                  double pValueThreshold, float propSVD, bool gcControl, int nIter,
-                  double gPvalueThreshold, int ncpus, int seed, bool correct_chen_et_al_bug = false) {
+                              double pValueThreshold, float propSVD, bool gcControl, int nIter,
+                              double gPvalueThreshold, int ncpus, int seed, bool correct_chen_et_al_bug) {
 	// Set number of threads for parallel processing
 	int nProcessors = omp_get_max_threads();
 	if (ncpus < nProcessors) nProcessors = ncpus;
@@ -247,7 +247,17 @@ List dentist_iterative_impute(const arma::mat& LDmat, uint nSample, const arma::
 
 		double threshold = getQuantile(diff, 0.995);
 		double threshold1, threshold0;
-
+		/*
+		        In the original DENTIST method, whenever you call !grouping_tmp, it is going to change the original value of grouping_tmp as well.
+		        For example, if grouping_tmp is (0,0,1,1,1), and you run:
+		        double threshold0 = getQuantile2 <double> (diff,!grouping_tmp , (99.5/100.0)) ;
+		        then your grouping_tmp will become (1,1,0,0,0) even you are just calling it in the function.
+		        https://github.com/Yves-CHEN/DENTIST/blob/2fefddb1bbee19896a30bf56229603561ea1dba8/main/inversion.cpp#L647
+		        https://github.com/Yves-CHEN/DENTIST/blob/2fefddb1bbee19896a30bf56229603561ea1dba8/main/inversion.cpp#L675
+		        Thus if we correct the original DENTIST code, i.e., correct_chen_et_al_bug = TRUE,
+		                we go through our function, getQuantile2, which doesn't have this issue
+		                else, i.e., correct_chen_et_al_bug = TRUE, it goes through the original function getQuantile2_chen_et_al
+		 */
 		if (correct_chen_et_al_bug) {
 			threshold1 = getQuantile2(diff, grouping_tmp, 0.995, false);
 			threshold0 = getQuantile2(diff, grouping_tmp, 0.995, true);
@@ -264,7 +274,15 @@ List dentist_iterative_impute(const arma::mat& LDmat, uint nSample, const arma::
 			threshold0 = threshold;
 		}
 		if (correct_chen_et_al_bug || nIter - 2 >= 0) {
-			// FIXME: Please explain the story here
+			/*
+			   In the original DENTIST method, if t=0 (first iteration) and nIter is 1,
+			   t is defined as a uint (unassigned integer)
+			   https://github.com/Yves-CHEN/DENTIST/blob/2fefddb1bbee19896a30bf56229603561ea1dba8/main/inversion.cpp#L628
+			   and it will treat t (which is 0) no larger than nIter-2 (which is -1) which is wrong
+			   Thus if we correct the original DENTIST code, i.e., correct_chen_et_al_bug = TRUE, or when nIter - 2 >=0,
+			   it will compare t and nIter as we expect.
+			   and if we want to keep the original DENTIST code, i.e., correct_chen_et_al_bug = FALSE, then it will skip this if condition for t > nIter - 2
+			 */
 			if (t > nIter - 2) {
 				threshold0 = threshold;
 				threshold1 = threshold;
@@ -356,7 +374,8 @@ List dentist_iterative_impute(const arma::mat& LDmat, uint nSample, const arma::
 		}
 	}
 
-	return List::create(Named("imputed_z") = imputedZ,
+	return List::create(Named("original_z") = zScore,
+	                    Named("imputed_z") = imputedZ,
 	                    Named("rsq") = rsq,
 	                    Named("corrected_z") = zScore_e,
 	                    Named("iter_to_correct") = iterID);
