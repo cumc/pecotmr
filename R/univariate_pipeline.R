@@ -163,19 +163,20 @@ twas_weights_pipeline <- function(X, y, maf, susie_fit, ld_reference_meta_file =
 #' @importFrom magrittr %>%
 #' @export
 rss_analysis_pipeline <- function(
-  sumstat_path, column_file_path, LD_data, n_sample = 0, n_case = 0, n_control = 0, skip_region = NULL,
-  qc_method = c("rss_qc", "dentist", "slalom"),
-  finemapping_method = c("susie_rss", "single_effect", "bayesian_conditional_regression"),
-                                           finemapping_opts = list(
-                                           init_L = 5, max_L = 20, l_step = 5,
-                                           coverage = c(0.95, 0.7, 0.5), signal_cutoff = 0.025
-                                         ),
-  impute = TRUE, impute_opts = list(rcond = 0.01, R2_threshold = 0.6, minimum_ld = 5, lamb=0.01),
-   pip_cutoff_to_skip = 0) {
-  
-  rss_input <- load_rss_data(sumstat_path = sumstat_path, column_file_path = column_file_path,
-                             n_sample = n_sample, n_case = n_case, n_control = n_control)
-  
+    sumstat_path, column_file_path, LD_data, n_sample = 0, n_case = 0, n_control = 0, skip_region = NULL,
+    qc_method = c("rss_qc", "dentist", "slalom"),
+    finemapping_method = c("susie_rss", "single_effect", "bayesian_conditional_regression"),
+    finemapping_opts = list(
+      init_L = 5, max_L = 20, l_step = 5,
+      coverage = c(0.95, 0.7, 0.5), signal_cutoff = 0.025
+    ),
+    impute = TRUE, impute_opts = list(rcond = 0.01, R2_threshold = 0.6, minimum_ld = 5, lamb = 0.01),
+    pip_cutoff_to_skip = 0) {
+  rss_input <- load_rss_data(
+    sumstat_path = sumstat_path, column_file_path = column_file_path,
+    n_sample = n_sample, n_case = n_case, n_control = n_control
+  )
+
   sumstats <- rss_input$sumstats
   n <- rss_input$n
   var_y <- rss_input$var_y
@@ -191,36 +192,38 @@ rss_analysis_pipeline <- function(
     }
   }
 
-# Preprocess the input data
-preprocess_results <- rss_basic_qc(sumstats, LD_data, skip_region)
-sumstats <- preprocess_results$sumstats
-LD_mat <- preprocess_results$LD_mat
+  # Preprocess the input data
+  preprocess_results <- rss_basic_qc(sumstats, LD_data, skip_region)
+  sumstats <- preprocess_results$sumstats
+  LD_mat <- preprocess_results$LD_mat
 
-# Perform quality control
-if (!is.null(qc_methods)) {
-  qc_results <- summary_stats_qc(sumstats, LD_data, method = qc_method)
-  sumstats <- qc_results$sumstats
-  LD_mat <- qc_results$LD_mat
-}
+  # Perform quality control
+  if (!is.null(qc_methods)) {
+    qc_results <- summary_stats_qc(sumstats, LD_data, method = qc_method)
+    sumstats <- qc_results$sumstats
+    LD_mat <- qc_results$LD_mat
+  }
 
-# Perform imputation
-if (impute) {
-  impute_results <- raiss(LD_data$ref_panel, sumstats$z, LD_data$combined_LD_matrix, rcond = 0.01, R2_threshold = 0.6, minimum_ld = 5, lamb = 0.01)
-  stop("FIXME: after calling RAISS you need to be able to put back to the original summary stats only z scores after imputation, filtered (which is impute_results$z) back into the sumstats data frame. Some of the original quantities such as beta and se, and n etc will be missing because they are not imputed but it is okay to leave them as is, as long as z-score works.")
-  sumstats <- impute_results$sumstats
-  LD_mat <- impute_results$LD_mat
-}
-res = list()
-# Perform fine-mapping
-if (!is.null(finemapping_method)) {
-  pri_coverage <- finemapping_opts$coverage[1]
-  sec_coverage <- if (length(finemapping_opts$coverage) > 1) finemapping_opts$coverage[-1] else NULL
-  res <- susie_rss_pipeline(sumstats, LD_mat, n=n, var_y=var_y, 
-  L = finemapping_opts$init_L, max_L=finemapping_opts$max_L, l_step = finemapping_opts$l_step,
-                               analysis_method = finemapping_method,
-                               coverage = pri_coverage,
-                               secondary_coverage = sec_coverage, 
-                               signal_cutoff = finemapping_opts$signal_cutoff)
-}
+  # Perform imputation
+  if (impute) {
+    impute_results <- raiss(LD_data$ref_panel, sumstats$z, LD_data$combined_LD_matrix, rcond = 0.01, R2_threshold = 0.6, minimum_ld = 5, lamb = 0.01)
+    stop("FIXME: after calling RAISS you need to be able to put back to the original summary stats only z scores after imputation, filtered (which is impute_results$z) back into the sumstats data frame. Some of the original quantities such as beta and se, and n etc will be missing because they are not imputed but it is okay to leave them as is, as long as z-score works.")
+    sumstats <- impute_results$sumstats
+    LD_mat <- impute_results$LD_mat
+  }
+  res <- list()
+  # Perform fine-mapping
+  if (!is.null(finemapping_method)) {
+    pri_coverage <- finemapping_opts$coverage[1]
+    sec_coverage <- if (length(finemapping_opts$coverage) > 1) finemapping_opts$coverage[-1] else NULL
+    res <- susie_rss_pipeline(sumstats, LD_mat,
+      n = n, var_y = var_y,
+      L = finemapping_opts$init_L, max_L = finemapping_opts$max_L, l_step = finemapping_opts$l_step,
+      analysis_method = finemapping_method,
+      coverage = pri_coverage,
+      secondary_coverage = sec_coverage,
+      signal_cutoff = finemapping_opts$signal_cutoff
+    )
+  }
   return(list(result = res, rss_data_analyzed = sumstats))
-   }
+}

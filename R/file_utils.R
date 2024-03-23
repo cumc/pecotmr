@@ -179,7 +179,7 @@ load_rss_data <- function(sumstat_path, column_file_path, n_sample = 0, n_case =
   sumstats <- fread(sumstat_path)
   column_data <- read.table(column_file_path, header = FALSE, sep = ":", stringsAsFactors = FALSE)
   colnames(column_data) <- c("standard", "original")
-  
+
   # Map column names using the column file
   for (name in colnames(sumstats)) {
     if (name %in% column_data$original) {
@@ -187,25 +187,25 @@ load_rss_data <- function(sumstat_path, column_file_path, n_sample = 0, n_case =
       colnames(sumstats)[colnames(sumstats) == name] <- column_data$standard[index]
     }
   }
-  
+
   # Calculate z-score if missing
   if (!"z" %in% colnames(sumstats) && all(c("beta", "se") %in% colnames(sumstats))) {
     sumstats$z <- sumstats$beta / sumstats$se
   }
-  
+
   # Set beta and se if missing
   if (!"beta" %in% colnames(sumstats) && "z" %in% colnames(sumstats)) {
     sumstats$beta <- sumstats$z
     sumstats$se <- 1
   }
-  
+
   # Backfill missing values with median for n_sample, n_case, and n_control
   for (col in c("n_sample", "n_case", "n_control")) {
     if (col %in% colnames(sumstats)) {
       sumstats[[col]][is.na(sumstats[[col]])] <- median(sumstats[[col]], na.rm = TRUE)
     }
   }
-  
+
   # Validate and calculate sample size and variance of Y
   if (n_sample != 0 && (n_case + n_control) != 0) {
     stop("Please provide sample size, or case number with control number, but not both")
@@ -227,6 +227,6 @@ load_rss_data <- function(sumstat_path, column_file_path, n_sample = 0, n_case =
       n <- NULL
     }
   }
-  
+
   return(list(sumstats = sumstats, n = n, var_y = var_y))
 }

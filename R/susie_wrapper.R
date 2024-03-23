@@ -137,7 +137,7 @@ susie_wrapper <- function(X, y, init_L = 10, max_L = 30, l_step = 5, ...) {
 #' @return SuSiE RSS fit object after dynamic L adjustment
 #' @importFrom susieR susie_rss
 #' @export
-susie_rss_wrapper <- function(z, R, bhat=NULL, shat=NULL, n = NULL, var_y = NULL, L = 10, max_L = 30, l_step = 5,
+susie_rss_wrapper <- function(z, R, bhat = NULL, shat = NULL, n = NULL, var_y = NULL, L = 10, max_L = 30, l_step = 5,
                               zR_discrepancy_correction = FALSE, coverage = 0.95, ...) {
   if (L == 1) {
     return(susie_rss(
@@ -175,58 +175,81 @@ susie_rss_wrapper <- function(z, R, bhat=NULL, shat=NULL, n = NULL, var_y = NULL
 
 #' Run the SuSiE RSS pipeline
 #'
-#' This function runs the SuSiE RSS pipeline, including single-effect regression, no QC analysis,
-#' and optional QC and Bayesian conditional analysis. It processes the input summary statistics and LD data
-#' to perform various SuSiE analyses, providing results in a structured output.
+#' This function runs the SuSiE RSS pipeline, performing analysis based on the specified method.
+#' It processes the input summary statistics and LD data to provide results in a structured output.
 #'
-#' @param sumstats A list or data frame containing summary statistics with necessary columns.
-#' @param R The LD matrix.
-#' @param ref_panel Reference panel for QC and imputation.
-#' @param n Sample size.
-#' @param L Initial number of causal configurations to consider in the analysis.
-#' @param var_y Variance of Y.
-#' @param QC Perform quality control (default: TRUE).
-#' @param impute Perform imputation (default: TRUE).
-#' @param bayesian_conditional_analysis Perform Bayesian conditional analysis (default: TRUE).
-#' @param lamb Regularization parameter for the RAiSS imputation method.
-#' @param rcond Condition number for the RAiSS imputation method.
-#' @param R2_threshold R-squared threshold for the RAiSS imputation method.
-#' @param max_L Maximum number of components for QC.
-#' @param l_step Step size for increasing L when the limit is reached during dynamic adjustment.
-#' @param minimum_ld Minimum LD for QC.
+#' @param sumstats A list or data frame containing summary statistics with 'z' or 'beta' and 'se' columns.
+#' @param LD_mat The LD matrix.
+#' @param n Sample size (default: NULL).
+#' @param var_y Variance of Y (default: NULL).
+#' @param L Initial number of causal configurations to consider in the analysis (default: 5).
+#' @param max_L Maximum number of causal configurations to consider in the analysis (default: 30).
+#' @param l_step Step size for increasing L when the limit is reached during dynamic adjustment (default: 5).
+#' @param analysis_method The analysis method to use. Options are "susie_rss", "single_effect", or "bayesian_conditional_regression" (default: "susie_rss").
 #' @param coverage Coverage level for susie_rss analysis (default: 0.95).
 #' @param secondary_coverage Secondary coverage levels for susie_rss analysis (default: c(0.7, 0.5)).
-#' @param pip_cutoff_to_skip PIP cutoff to skip imputation (default: 0.025).
 #' @param signal_cutoff Signal cutoff for susie_post_processor (default: 0.1).
 #'
-#' @return A list containing the results of various SuSiE RSS analyses.
+#' @return A list containing the results of the SuSiE RSS analysis based on the specified method.
+#'
+#' @details The `susie_rss_pipeline` function runs the SuSiE RSS pipeline based on the specified analysis method.
+#'   It takes the following main inputs:
+#'   - `sumstats`: A list or data frame containing summary statistics with 'z' or 'beta' and 'se' columns.
+#'   - `LD_mat`: The LD matrix.
+#'   - `n`: Sample size (optional).
+#'   - `var_y`: Variance of Y (optional).
+#'   - `L`: Initial number of causal configurations to consider in the analysis.
+#'   - `max_L`: Maximum number of causal configurations to consider in the analysis.
+#'   - `l_step`: Step size for increasing L when the limit is reached during dynamic adjustment.
+#'   - `analysis_method`: The analysis method to use. Options are "susie_rss", "single_effect", or "bayesian_conditional_regression".
+#'
+#'   The function first checks if the `sumstats` input contains 'z' or 'beta' and 'se' columns. If 'z' is present, it is used directly.
+#'   If 'beta' and 'se' are present, 'z' is calculated as 'beta' divided by 'se'.
+#'
+#'   Based on the specified `analysis_method`, the function calls the `susie_rss_wrapper` with the appropriate parameters.
+#'   - For "single_effect" method, `L` is set to 1.
+#'   - For "susie_rss" and "bayesian_conditional_regression" methods, `L`, `max_L`, and `l_step` are used.
+#'   - For "bayesian_conditional_regression" method, `max_iter` is set to 1.
+#'
+#'   The results are then post-processed using the `susie_post_processor` function with the specified `signal_cutoff` and `secondary_coverage` values.
+#'
+#'   The function returns a list containing the results of the SuSiE RSS analysis based on the specified method.
 #'
 #' @importFrom magrittr %>%
 #' @importFrom dplyr arrange select
 #' @export
-susie_rss_pipeline <- function(sumstats, LD_mat, n, L, max_L, var_y, 
+susie_rss_pipeline <- function(sumstats, LD_mat, n = NULL, var_y = NULL, L = 5, max_L = 30, l_step = 5,
                                analysis_method = c("susie_rss", "single_effect", "bayesian_conditional_regression"),
                                coverage = 0.95,
-                               secondary_coverage = c(0.7, 0.5), 
+                               secondary_coverage = c(0.7, 0.5),
                                signal_cutoff = 0.1) {
+  # Check if sumstats has z-scores or (beta and se)
   if (!is.null(sumstats$z)) {
     z <- sumstats$z
-  } else if ((!is.null(sumstats$beta)) && (!is.null(sumstats$se))) {
+  } else if (!is.null(sumstats$beta) && !is.null(sumstats$se)) {
     z <- sumstats$beta / sumstats$se
   } else {
-    stop("sumstats should have z or (bhat and shat)")
+    stop("sumstats should have 'z' or ('beta' and 'se') columns")
   }
 
+  # Perform analysis based on the specified method
   if (analysis_method == "single_effect") {
     res <- susie_rss_wrapper(z = z, R = LD_mat, L = 1, n = n, var_y = var_y, coverage = coverage)
   } else if (analysis_method == "susie_rss") {
-    res <- susie_rss_wrapper(z = z, R = LD_extract, n = n, L = L, max_L = max_L, var_y = var_y, coverage = coverage)
+    res <- susie_rss_wrapper(z = z, R = LD_mat, n = n, var_y = var_y, L = L, max_L = max_L, l_step = l_step, coverage = coverage)
   } else if (analysis_method == "bayesian_conditional_regression") {
-    res <- susie_rss_wrapper(z = z, R = LD_extract, n = n, L = L, max_L = max_L, max_iter = 1, var_y = var_y, coverage = coverage)
+    res <- susie_rss_wrapper(z = z, R = LD_mat, n = n, var_y = var_y, L = L, max_L = max_L, l_step = l_step, max_iter = 1, coverage = coverage)
   } else {
-    stop("Invalid analysis method")
+    stop("Invalid analysis method. Choose from 'susie_rss', 'single_effect', or 'bayesian_conditional_regression'")
   }
-  res <- susie_post_processor(res, data_x = LD_mat, data_y = list(z = z), signal_cutoff = signal_cutoff, secondary_coverage = secondary_coverage, mode = "susie_rss")
+
+  # Post-process the results
+  res <- susie_post_processor(res,
+    data_x = LD_mat, data_y = list(z = z),
+    signal_cutoff = signal_cutoff, secondary_coverage = secondary_coverage,
+    mode = "susie_rss"
+  )
+
   return(res)
 }
 

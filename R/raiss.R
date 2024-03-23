@@ -54,7 +54,7 @@ raiss <- function(ref_panel, known_zscores, LD_matrix, lamb = 0.01, rcond = 0.01
 
   ## Filter out variants not included in the imputation result
   filtered_out_variant <- setdiff(ref_panel$variant_id, result_filter$variant_id)
-  
+
   ## Update the LD matrix excluding filtered variants
   LD_extract_filtered <- if (length(filtered_out_variant) > 0) {
     filtered_out_id <- match(filtered_out_variant, ref_panel$variant_id)
@@ -62,7 +62,7 @@ raiss <- function(ref_panel, known_zscores, LD_matrix, lamb = 0.01, rcond = 0.01
   } else {
     as.matrix(LD_matrix)
   }
-  
+
   results <- list(z_nofilter = result_nofilter, z = result_filter, LD_mat = LD_extract_filtered)
   return(results)
 }
