@@ -2,7 +2,7 @@
 % Please edit documentation in R/twas.R
 \name{twas_weights_cv}
 \alias{twas_weights_cv}
-\title{Cross-Validation for Transcriptome-Wide Association Studies (TWAS)}
+\title{Cross-Validation for weights selection in Transcriptome-Wide Association Studies (TWAS)}
 \usage{
 twas_weights_cv(
   X,

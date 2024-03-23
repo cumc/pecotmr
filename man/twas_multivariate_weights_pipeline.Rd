@@ -12,7 +12,7 @@ twas_multivariate_weights_pipeline(
   mrmash_fitted,
   prior,
   resid_Y,
-  max_cv_variants = 5000,
+  max_cv_variants = -1,
   mvsusie_max_iter = 200,
   mrmash_max_iter = 5000,
   signal_cutoff = 0.025,

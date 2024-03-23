@@ -19,7 +19,7 @@ multivariate_analysis_pipeline(
   sample_partition = NULL,
   mrmash_max_iter = 5000,
   mvsusie_max_iter = 200,
-  max_cv_variants = 5000,
+  max_cv_variants = -1,
   cv_folds = 5,
   cv_threads = 1,
   cv_seed = 999,
@@ -57,7 +57,7 @@ multivariate_analysis_pipeline(
 
 \item{mvsusie_max_iter}{The maximum number of iterations for mvSuSiE. Default is 200.}
 
-\item{max_cv_variants}{The maximum number of variants to be included in cross-validation. Defaults to 5000.}
+\item{max_cv_variants}{The maximum number of variants to be included in cross-validation. Defaults to -1 which means no limit.}
 
 \item{cv_folds}{The number of folds to use for cross-validation. Set to 0 to skip cross-validation. Default is 5.}
 
@@ -93,9 +93,7 @@ result <- multivariate_analysis_pipeline(
   maf = 0,
   max_L = 10,
   ld_reference_meta_file = NULL,
-  mvsusie_max_iter = 20, # 200
-  mrmash_max_iter = 50, # 500
-  max_cv_variants = 100, # 5000
+  max_cv_variants = -1,
   pip_cutoff_to_skip = 0.025,
   signal_cutoff = 0.025,
   data_driven_prior_matrices = data_driven_prior_matrices,

@@ -6,7 +6,7 @@
 \usage{
 dentist_detect_outliers(
   sum_stat,
-  LDmat,
+  LD_mat,
   nSample,
   window_size = 2e+06,
   pValueThreshold = 5.0369e-08,
@@ -22,7 +22,7 @@ dentist_detect_outliers(
 \arguments{
 \item{sum_stat}{A data frame containing summary statistics, including 'pos' or 'position' and 'z' or 'zscore' columns.}
 
-\item{LDmat}{A matrix containing LD (linkage disequilibrium) information.}
+\item{LD_mat}{A matrix containing LD (linkage disequilibrium) information.}
 
 \item{nSample}{The number of samples.}
 
@@ -87,6 +87,6 @@ heterogeneity between GWAS and LD reference samples.
 }
 \examples{
 # Example usage of dentist_detect_outliers
-dentist_detect_outliers(sum_stat, LDmat, nSample)
+dentist_detect_outliers(sum_stat, LD_mat, nSample)
 
 }
