@@ -137,7 +137,7 @@ susie_wrapper <- function(X, y, init_L = 10, max_L = 30, l_step = 5, ...) {
 #' @return SuSiE RSS fit object after dynamic L adjustment
 #' @importFrom susieR susie_rss
 #' @export
-susie_rss_wrapper <- function(z, R, bhat, shat, n = NULL, var_y = NULL, L = 10, max_L = 30, l_step = 5,
+susie_rss_wrapper <- function(z, R, bhat=NULL, shat=NULL, n = NULL, var_y = NULL, L = 10, max_L = 30, l_step = 5,
                               zR_discrepancy_correction = FALSE, coverage = 0.95, ...) {
   if (L == 1) {
     return(susie_rss(
@@ -179,7 +179,7 @@ susie_rss_wrapper <- function(z, R, bhat, shat, n = NULL, var_y = NULL, L = 10, 
 #' and optional QC and Bayesian conditional analysis. It processes the input summary statistics and LD data
 #' to perform various SuSiE analyses, providing results in a structured output.
 #'
-#' @param sumstat A list or data frame containing summary statistics with necessary columns.
+#' @param sumstats A list or data frame containing summary statistics with necessary columns.
 #' @param R The LD matrix.
 #' @param ref_panel Reference panel for QC and imputation.
 #' @param n Sample size.
@@ -204,85 +204,30 @@ susie_rss_wrapper <- function(z, R, bhat, shat, n = NULL, var_y = NULL, L = 10, 
 #' @importFrom magrittr %>%
 #' @importFrom dplyr arrange select
 #' @export
-susie_rss_pipeline <- function(sumstat, R, ref_panel, n, L, var_y, QC = TRUE, impute = TRUE, bayesian_conditional_analysis = TRUE, lamb = 0.01, rcond = 0.01, R2_threshold = 0.6,
-                               max_L = 20, l_step = 5, minimum_ld = 5, coverage = 0.95,
-                               secondary_coverage = c(0.7, 0.5), pip_cutoff_to_skip = 0.025, signal_cutoff = 0.1) {
-  if (!is.null(sumstat$z)) {
-    z <- sumstat$z
-    bhat <- NULL
-    shat <- NULL
-  } else if ((!is.null(sumstat$beta)) && (!is.null(sumstat$se))) {
-    z <- sumstat$beta / sumstat$se
-    bhat <- NULL
-    shat <- NULL
+susie_rss_pipeline <- function(sumstats, LD_mat, n, L, max_L, var_y, 
+                               analysis_method = c("susie_rss", "single_effect", "bayesian_conditional_regression"),
+                               coverage = 0.95,
+                               secondary_coverage = c(0.7, 0.5), 
+                               signal_cutoff = 0.1) {
+  if (!is.null(sumstats$z)) {
+    z <- sumstats$z
+  } else if ((!is.null(sumstats$beta)) && (!is.null(sumstats$se))) {
+    z <- sumstats$beta / sumstats$se
   } else {
-    stop("Sumstat should have z or (bhat and shat)")
+    stop("sumstats should have z or (bhat and shat)")
   }
 
-  final_result <- list()
-
-  LD_extract <- R[sumstat$variant_id, sumstat$variant_id, drop = FALSE]
-  single_effect_res <- susie_rss_wrapper(z = z, R = LD_extract, bhat = bhat, shat = shat, L = 1, n = n, var_y = var_y, coverage = coverage)
-  if (max(single_effect_res$pip) < pip_cutoff_to_skip) {
-    cat(paste0("No PIP larger than ", pip_cutoff_to_skip, " in this region."))
-    if (impute) {
-      z <- sumstat$z
-      known_zscores <- sumstat %>% arrange(pos)
-      final_result$sumstats_qc_impute <- raiss(ref_panel, known_zscores, R, lamb = lamb, rcond = rcond, R2_threshold = R2_threshold, minimum_ld = minimum_ld)$result_nofilter
-      final_result$sumstats_qc_impute$chrom <- as.numeric(final_result$sumstats_qc_impute$chrom)
-    }
+  if (analysis_method == "single_effect") {
+    res <- susie_rss_wrapper(z = z, R = LD_mat, L = 1, n = n, var_y = var_y, coverage = coverage)
+  } else if (analysis_method == "susie_rss") {
+    res <- susie_rss_wrapper(z = z, R = LD_extract, n = n, L = L, max_L = max_L, var_y = var_y, coverage = coverage)
+  } else if (analysis_method == "bayesian_conditional_regression") {
+    res <- susie_rss_wrapper(z = z, R = LD_extract, n = n, L = L, max_L = max_L, max_iter = 1, var_y = var_y, coverage = coverage)
   } else {
-    single_effect_post <- susie_post_processor(single_effect_res, data_x = LD_extract, data_y = list(z = z), signal_cutoff = signal_cutoff, secondary_coverage = secondary_coverage, mode = "susie_rss")
-    final_result$single_effect_regression <- single_effect_post
-    result_noqc <- susie_rss_wrapper(z = z, R = LD_extract, bhat = bhat, shat = shat, n = n, L = L, var_y = var_y, coverage = coverage)
-    result_noqc_post <- susie_post_processor(result_noqc, data_x = LD_extract, data_y = list(z = z), signal_cutoff = signal_cutoff, secondary_coverage = secondary_coverage, mode = "susie_rss")
-    final_result$noqc <- result_noqc_post
-
-    if (QC) {
-      result_qced <- susie_rss_qc(sumstat, ref_panel = ref_panel, R = R, n = n, L = L, impute = impute, lamb = lamb, rcond = rcond, R2_threshold = R2_threshold, max_L = max_L, minimum_ld = minimum_ld, l_step = l_step, var_y = var_y, coverage = coverage)
-      var_impute_kept <- names(result_qced$qc_impute_result$pip)
-      result_qced_impute_post <- susie_post_processor(result_qced$qc_impute_result, data_x = R[var_impute_kept, var_impute_kept, drop = FALSE], data_y = list(z = result_qced$qc_impute_result$z), signal_cutoff = signal_cutoff, secondary_coverage = secondary_coverage, mode = "susie_rss")
-      result_qced_only_post <- susie_post_processor(result_qced$qc_only_result, data_x = LD_extract, data_y = list(z = z), signal_cutoff = signal_cutoff, secondary_coverage = secondary_coverage, mode = "susie_rss")
-
-      final_result$qc_impute <- result_qced_impute_post
-      final_result$qc_only <- result_qced_only_post
-      final_result$qc_only$outlier <- result_qced$qc_only_result$zR_outliers
-
-      result_qced$sumstats_qc_impute_filtered$chrom <- as.numeric(result_qced$sumstats_qc_impute_filtered$chrom)
-      result_qced$sumstats_qc_impute$chrom <- as.numeric(result_qced$sumstats_qc_impute$chrom)
-      final_result$sumstats_qc_impute_filtered <- result_qced$sumstats_qc_impute_filtered %>% select(-beta, -se)
-      final_result$sumstats_qc_impute <- result_qced$sumstats_qc_impute %>% select(-beta, -se)
-    }
-
-    if (bayesian_conditional_analysis) {
-      conditional_noqc <- susie_rss_wrapper(z = z, R = LD_extract, bhat = bhat, shat = shat, n = n, L = L, max_iter = 1, var_y = var_y, coverage = coverage)
-      conditional_noqc_post <- susie_post_processor(conditional_noqc, data_x = LD_extract, data_y = list(z = z), signal_cutoff = signal_cutoff, secondary_coverage = secondary_coverage, mode = "susie_rss")
-      final_result$conditional_regression_noqc <- conditional_noqc_post
-
-      if (QC) {
-        outlier <- result_qced$qc_only_result$zR_outliers
-        if (!is.null(outlier) & length(outlier) != 0) {
-          z_rmoutlier <- z[-outlier]
-          LD_rmoutlier <- LD_extract[-outlier, -outlier, drop = FALSE]
-        } else {
-          z_rmoutlier <- z
-          LD_rmoutlier <- LD_extract
-        }
-        conditional_qc_only <- susie_rss_wrapper(z = z_rmoutlier, R = LD_rmoutlier, bhat = bhat, shat = shat, n = n, L = L, max_iter = 1, var_y = var_y, coverage = coverage)
-        conditional_qc_only_post <- susie_post_processor(conditional_qc_only, data_x = LD_rmoutlier, data_y = list(z = z_rmoutlier), signal_cutoff = signal_cutoff, secondary_coverage = secondary_coverage, mode = "susie_rss")
-
-        if (impute) {
-          conditional_qced_impute <- susie_rss_wrapper(z = result_qced$qc_impute_result$z, R = R[var_impute_kept, var_impute_kept, drop = FALSE], bhat = bhat, shat = shat, n = n, L = L, max_iter = 1, var_y = var_y, coverage = coverage)
-          conditional_qced_impute_post <- susie_post_processor(conditional_qced_impute, data_x = R[var_impute_kept, var_impute_kept, drop = FALSE], data_y = list(z = result_qced$qc_impute_result$z), signal_cutoff = signal_cutoff, secondary_coverage = secondary_coverage, mode = "susie_rss")
-          final_result$conditional_regression_qc_impute <- conditional_qced_impute_post
-        }
-
-        final_result$conditional_regression_qc_only <- conditional_qc_only_post
-      }
-    }
+    stop("Invalid analysis method")
   }
-
-  return(final_result)
+  res <- susie_post_processor(res, data_x = LD_mat, data_y = list(z = z), signal_cutoff = signal_cutoff, secondary_coverage = secondary_coverage, mode = "susie_rss")
+  return(res)
 }
 
 #' Post-process SuSiE Analysis Results

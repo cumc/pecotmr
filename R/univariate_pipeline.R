@@ -5,7 +5,7 @@ univariate_analysis_pipeline <- function(X, Y, X_scalar, Y_scalar, maf, other_qu
                                          pip_cutoff_to_skip = 0, region_info = NULL,
                                          finemapping = TRUE, twas_weights = TRUE,
                                          finemapping_opts = list(
-                                           init_L = 5, max_L = 20,
+                                           init_L = 5, max_L = 20, l_step = 5,
                                            coverage = c(0.95, 0.7, 0.5), signal_cutoff = 0.025
                                          ),
                                          twas_weights_opts = list(
@@ -13,7 +13,6 @@ univariate_analysis_pipeline <- function(X, Y, X_scalar, Y_scalar, maf, other_qu
                                            ld_reference_meta_file = NULL, region_info = NULL
                                          )) {
   if (pip_cutoff_to_skip > 0) {
-    # return a NULL set if the top loci model does not show any potentially significant variants
     top_model_pip <- susie(X, Y, L = 1)$pip
     if (!any(top_model_pip > pip_cutoff_to_skip)) {
       message(paste("Skipping follow-up analysis: No signals above PIP threshold", pip_cutoff_to_skip, "in initial model screening."))
@@ -26,7 +25,7 @@ univariate_analysis_pipeline <- function(X, Y, X_scalar, Y_scalar, maf, other_qu
   sec_coverage <- if (length(finemapping_opts$coverage) > 1) finemapping_opts$coverage[-1] else NULL
   st <- proc.time()
   if (finemapping) {
-    res <- susie_wrapper(X, Y, init_L = finemapping_opts$init_L, max_L = finemapping_opts$max_L, refine = TRUE, coverage = pri_coverage)
+    res <- susie_wrapper(X, Y, init_L = finemapping_opts$init_L, max_L = finemapping_opts$max_L, l_step = finemapping_opts$l_step, refine = TRUE, coverage = pri_coverage)
     res <- susie_post_processor(res, X, Y, X_scalar, Y_scalar, maf,
       secondary_coverage = sec_coverage, signal_cutoff = finemapping_opts$signal_cutoff,
       other_quantities = other_quantities
@@ -165,10 +164,14 @@ twas_weights_pipeline <- function(X, y, maf, susie_fit, ld_reference_meta_file =
 #' @export
 rss_analysis_pipeline <- function(
   sumstat_path, column_file_path, LD_data, n_sample = 0, n_case = 0, n_control = 0, skip_region = NULL,
-  L = 8, max_L = 20, l_step = 5, qc_method = c("rss_qc", "dentist", "slalom"),
-  analysis_method = c("susie_rss", "single_effect", "bayesian_conditional_regression"),
-  impute = TRUE, impute_opts = list(rcond = 0.01, R2_threshold = 0.6, minimum_ld = 5),
-  coverage = c(0.95, 0.7, 0.5), pip_cutoff_to_skip = 0, signal_cutoff = 0.025) {
+  qc_method = c("rss_qc", "dentist", "slalom"),
+  finemapping_method = c("susie_rss", "single_effect", "bayesian_conditional_regression"),
+                                           finemapping_opts = list(
+                                           init_L = 5, max_L = 20, l_step = 5,
+                                           coverage = c(0.95, 0.7, 0.5), signal_cutoff = 0.025
+                                         ),
+  impute = TRUE, impute_opts = list(rcond = 0.01, R2_threshold = 0.6, minimum_ld = 5, lamb=0.01),
+   pip_cutoff_to_skip = 0) {
   
   rss_input <- load_rss_data(sumstat_path = sumstat_path, column_file_path = column_file_path,
                              n_sample = n_sample, n_case = n_case, n_control = n_control)
@@ -177,16 +180,47 @@ rss_analysis_pipeline <- function(
   n <- rss_input$n
   var_y <- rss_input$var_y
 
-  input_processed <- rss_input_preprocess(sumstats = sumstats, LD_data = LD_data, skip_region = skip_region)
-  if (!is.null(qc_method)) {
-    input_processed <- summary_stats_qc(input_processed, LD_data, method=qc_method, impute=impute, impute_opts=impute_opts)
+  if (pip_cutoff_to_skip > 0) {
+    top_model_pip <- susie(X, Y, L = 1)$pip
+    susie_rss_wrapper(z = sumstats$z, R = LD_data$combined_LD_matrix, L = 1, n = n, var_y = var_y)
+    if (!any(top_model_pip > pip_cutoff_to_skip)) {
+      message(paste("Skipping follow-up analysis: No signals above PIP threshold", pip_cutoff_to_skip, "in initial model screening."))
+      return(list())
+    } else {
+      message(paste("Follow-up on region because signals above PIP threshold", pip_cutoff_to_skip, "were detected in initial model screening."))
+    }
   }
-  
-  final_result <- susie_rss_pipeline(input_processed, LD_data, 
-                                     n = n, L = L, max_L = max_L, l_step = l_step, var_y = var_y,
-                                     analysis_method = analysis_method,
-                                     coverage = coverage,
-                                     pip_cutoff_to_skip = pip_cutoff_to_skip, 
-                                     signal_cutoff = signal_cutoff)
-  return(list(result = final_result, input_rss_data = input_processed))
+
+# Preprocess the input data
+preprocess_results <- rss_basic_qc(sumstats, LD_data, skip_region)
+sumstats <- preprocess_results$sumstats
+LD_mat <- preprocess_results$LD_mat
+
+# Perform quality control
+if (!is.null(qc_methods)) {
+  qc_results <- summary_stats_qc(sumstats, LD_data, method = qc_method)
+  sumstats <- qc_results$sumstats
+  LD_mat <- qc_results$LD_mat
 }
+
+# Perform imputation
+if (impute) {
+  impute_results <- raiss(LD_data$ref_panel, sumstats$z, LD_data$combined_LD_matrix, rcond = 0.01, R2_threshold = 0.6, minimum_ld = 5, lamb = 0.01)
+  stop("FIXME: after calling RAISS you need to be able to put back to the original summary stats only z scores after imputation, filtered (which is impute_results$z) back into the sumstats data frame. Some of the original quantities such as beta and se, and n etc will be missing because they are not imputed but it is okay to leave them as is, as long as z-score works.")
+  sumstats <- impute_results$sumstats
+  LD_mat <- impute_results$LD_mat
+}
+res = list()
+# Perform fine-mapping
+if (!is.null(finemapping_method)) {
+  pri_coverage <- finemapping_opts$coverage[1]
+  sec_coverage <- if (length(finemapping_opts$coverage) > 1) finemapping_opts$coverage[-1] else NULL
+  res <- susie_rss_pipeline(sumstats, LD_mat, n=n, var_y=var_y, 
+  L = finemapping_opts$init_L, max_L=finemapping_opts$max_L, l_step = finemapping_opts$l_step,
+                               analysis_method = finemapping_method,
+                               coverage = pri_coverage,
+                               secondary_coverage = sec_coverage, 
+                               signal_cutoff = finemapping_opts$signal_cutoff)
+}
+  return(list(result = res, rss_data_analyzed = sumstats))
+   }

@@ -51,7 +51,19 @@ raiss <- function(ref_panel, known_zscores, LD_matrix, lamb = 0.01, rcond = 0.01
   # Merge with known z-scores
   result_nofilter <- merge_raiss_df(results$zscores_nofilter, known_zscores) %>% arrange(pos)
   result_filter <- merge_raiss_df(results$zscores, known_zscores) %>% arrange(pos)
-  results <- list(result_nofilter = result_nofilter, result_filter = result_filter)
+
+  ## Filter out variants not included in the imputation result
+  filtered_out_variant <- setdiff(ref_panel$variant_id, result_filter$variant_id)
+  
+  ## Update the LD matrix excluding filtered variants
+  LD_extract_filtered <- if (length(filtered_out_variant) > 0) {
+    filtered_out_id <- match(filtered_out_variant, ref_panel$variant_id)
+    as.matrix(LD_matrix)[-filtered_out_id, -filtered_out_id]
+  } else {
+    as.matrix(LD_matrix)
+  }
+  
+  results <- list(z_nofilter = result_nofilter, z = result_filter, LD_mat = LD_extract_filtered)
   return(results)
 }
 
