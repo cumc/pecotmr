@@ -1,10 +1,13 @@
 #' Univariate analysis pipeline
 #' @importFrom susieR susie
 #' @export
-univariate_analysis_pipeline <- function(X, Y, X_scalar, Y_scalar, maf, dropped_samples,
+univariate_analysis_pipeline <- function(X, Y, X_scalar, Y_scalar, maf, other_quantities = list(),
                                          pip_cutoff_to_skip = 0, region_info = NULL,
                                          finemapping = TRUE, twas_weights = TRUE,
-                                         finemapping_opts = list(init_L = 5, max_L = 20, coverage = c(0.95, 0.7, 0.5), signal_cutoff = 0.025),
+                                         finemapping_opts = list(
+                                           init_L = 5, max_L = 20,
+                                           coverage = c(0.95, 0.7, 0.5), signal_cutoff = 0.025
+                                         ),
                                          twas_weights_opts = list(
                                            cv_folds = 5, min_cv_maf = 0, max_cv_variants = -1, seed = 999, cv_threads = 1,
                                            ld_reference_meta_file = NULL, region_info = NULL
@@ -26,7 +29,7 @@ univariate_analysis_pipeline <- function(X, Y, X_scalar, Y_scalar, maf, dropped_
     res <- susie_wrapper(X, Y, init_L = finemapping_opts$init_L, max_L = finemapping_opts$max_L, refine = TRUE, coverage = pri_coverage)
     res <- susie_post_processor(res, X, Y, X_scalar, Y_scalar, maf,
       secondary_coverage = sec_coverage, signal_cutoff = finemapping_opts$signal_cutoff,
-      other_quantities = list(dropped_samples = dropped_samples)
+      other_quantities = other_quantities
     )
   } else {
     res <- list()

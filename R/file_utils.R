@@ -155,3 +155,65 @@ find_valid_file_path <- function(reference_file_path, target_file_path) {
 }
 
 find_valid_file_paths <- function(reference_file_path, target_file_paths) sapply(target_file_paths, function(x) find_valid_file_path(reference_file_path, x))
+
+#' Load summary statistic data
+#'
+#' This function formats the input summary statistics dataframe with uniform column names
+#' to fit into the SuSiE pipeline. The mapping is performed through the specified column file.
+#' Additionally, it extracts sample size, case number, control number, and variance of Y.
+#'
+#' @param sumstat_path File path to the summary statistics.
+#' @param column_file_path File path to the column file for mapping.
+#' @param n_sample User-specified sample size. If unknown, set as 0 to retrieve from the sumstat file.
+#' @param n_case User-specified number of cases.
+#' @param n_control User-specified number of controls.
+#'
+#' @return A list of rss_input, including the column-name-formatted summary statistics,
+#' sample size (n), and var_y.
+#'
+#' @importFrom data.table fread
+#' @export
+load_rss_data <- function(sumstat_path, column_file_path, n_sample, n_case, n_control) {
+  var_y <- NULL
+  sumstats <- fread(sumstat_path)
+  column_data <- read.table(column_file_path, header = FALSE, sep = ":", stringsAsFactors = FALSE)
+  colnames(column_data) <- c("standard", "original")
+  count <- 1
+  for (name in colnames(sumstats)) {
+    if (name %in% column_data$original) {
+      index <- which(column_data$original == name)
+      colnames(sumstats)[count] <- column_data$standard[index]
+    }
+    count <- count + 1
+  }
+
+  if (length(sumstats$z) == 0) {
+    sumstats$z <- sumstats$beta / sumstats$se
+  }
+
+  if (length(sumstats$beta) == 0) {
+    sumstats$beta <- sumstats$z
+    sumstats$se <- 1
+  }
+
+  if (n_sample != 0 & (n_case + n_control) != 0) {
+    stop("Please provide sample size, or case number with control number, but not both")
+  } else if (n_sample != 0) {
+    n <- n_sample
+  } else if ((n_case + n_control) != 0) {
+    n <- n_case + n_control
+    phi <- n_case / n
+    var_y <- residual_variance <- 1 / (phi * (1 - phi))
+  } else {
+    if (length(sumstats$n_sample) != 0) {
+      n <- median(sumstats$n_sample)
+    } else if (length(sumstats$n_case) != 0 & length(sumstats$n_control) != 0) {
+      n <- median(sumstats$n_case + sumstats$n_control)
+      phi <- median(sumstats$n_case / n)
+      var_y <- residual_variance <- 1 / (phi * (1 - phi))
+    } else {
+      n <- NULL
+    }
+  }
+  return(list(sumstats = sumstats, n = n, var_y = var_y))
+}
