@@ -9,7 +9,7 @@
 #' @param skip_region A character vector specifying regions to be skipped in the analysis (optional).
 #'                    Each region should be in the format "chrom:start-end" (e.g., "1:1000000-2000000").
 #'
-#' @return A processed data frame containing summary statistics after preprocessing.
+#' @return A processed data frame containing summary statistics and LD with names after preprocessing.
 #' @importFrom dplyr filter pull arrange
 #' @importFrom tibble tibble
 #' @importFrom tidyr separate
@@ -51,83 +51,56 @@ rss_input_preprocess <- function(sumstats, LD_data, skip_region = NULL) {
   }
 
   sumstat_processed <- allele_flip$target_data_qced %>% arrange(pos)
-
   return(sumstat_processed)
 }
 
-#' Quality Control and Imputation based on SuSiE RSS
-#'
-#' Performs SuSiE RSS analysis with optional quality control steps that include
-#' z-score and LD matrix discrepancy correction and imputation for outliers. It leverages
-#' the `susie_rss` function for the core analysis and provides additional functionality
-#' for handling data discrepancies and missing values.
-#'
-#' @param z Numeric vector of z-scores corresponding to the effect size estimates, with names matching the reference panel's variant IDs.
-#' @param R Numeric matrix representing the LD (linkage disequilibrium) matrix.
-#' @param ref_panel Data frame with 'chrom', 'pos', 'variant_id', 'A1', 'A2' column that matches the names of z.
-#' @param bhat Optional numeric vector of effect size estimates.
-#' @param shat Optional numeric vector of standard errors associated with the effect size estimates.
-#' @param var_y Optional numeric value representing the total phenotypic variance.
-#' @param n Optional numeric value representing the sample size used in the analysis.
-#' @param L Initial number of causal configurations to consider in the analysis.
-#' @param max_L Maximum number of causal configurations to consider when dynamically adjusting L.
-#' @param l_step Step size for increasing L when the limit is reached during dynamic adjustment.
-#' @param lamb Regularization parameter for the RAiSS imputation method.
-#' @param rcond Condition number for the RAiSS imputation method.
-#' @param R2_threshold R-squared threshold for the RAiSS imputation method.
-#' @param minimum_ld Minimum number of LD values for the RAiSS imputation method.
-#' @param impute Logical; if TRUE, performs imputation for outliers identified in the analysis.
-#' @param output_qc Logical; if TRUE, includes QC-only results in the output.
-#' @return A list containing the results of the SuSiE RSS analysis after applying quality control measures and optional imputation.
-#' @importFrom susieR susie_rss
-#' @importFrom magrittr %>%
-#' @importFrom dplyr arrange
-#' @export
-susie_rss_qc <- function(sumstat, R, ref_panel, bhat = NULL, shat = NULL, var_y = NULL, n = NULL, L = 10, max_L = 20, l_step = 5,
-                         lamb = 0.01, rcond = 0.01, R2_threshold = 0.6, minimum_ld = 5, impute = TRUE, output_qc = TRUE, coverage = 0.95) {
-  z <- sumstat$z
-  ## Input validation for z-scores and reference panel
-  if (is.null(names(z))) {
-    warning("Z-score names are NULL. Assuming names match reference panel variant_id.")
-  } else if (!all(names(z) %in% ref_panel$variant_id)) {
-    stop("Names of z-scores do not match the reference panel variant_id.")
-  }
 
-  ## Perform SuSiE RSS analysis with discrepancy correction
-  LD_extract <- R[sumstat$variant_id, sumstat$variant_id, drop = FALSE]
+#' Perform Quality Control based on SuSiE RSS
+#'
+#' This function performs quality control on summary statistics using SuSiE RSS.
+#' It identifies and removes outliers based on z-score and LD matrix discrepancy correction.
+#'
+#' @param sumstats A data frame containing summary statistics with 'variant_id', 'z', and 'pos' columns.
+#' @param R Numeric matrix representing the LD (linkage disequilibrium) matrix.
+#' @param L Number of causal configurations to consider in the analysis.
+#'
+#' @return A list containing the quality-controlled summary statistics and updated LD matrix.
+#'   - sumstats_qc: A data frame containing the quality-controlled summary statistics.
+#'   - LD_mat_qc: The updated LD matrix excluding outlier variants.
+#'
+#' @details This function performs quality control on summary statistics using SuSiE RSS.
+#'   It first extracts the z-scores from the `sumstats` data frame and performs SuSiE RSS analysis
+#'   with discrepancy correction using the `susie_rss` function.
+#'   
+#'   Next, it identifies outlier variants based on the results of the SuSiE RSS analysis.
+#'   It removes the outlier variants from the summary statistics and updates the LD matrix accordingly.
+#'   
+#'   Finally, it returns a list containing the quality-controlled summary statistics and the updated LD matrix.
+#'
+#' @importFrom susieR susie_rss
+#' @export
+susie_rss_qc <- function(sumstats, LD_mat, L = 10) {
+  zScore <- sumstats$z
+  # Check that LD_mat dimensions match the length of zScore
+  if (!is.matrix(LD_mat) || nrow(LD_mat) != ncol(LD_mat) || nrow(LD_mat) != length(zScore)) {
+    stop("LD_mat must be a square matrix with dimensions equal to the length of zScore.")
+  }
   result <- susie_rss(
-    z = z, R = LD_extract, bhat = bhat, shat = shat, var_y = var_y, n = n, L = L,
+    z = zScore, R = LD_mat, L = L,
     correct_zR_discrepancy = TRUE, track_fit = TRUE, max_iter = 100
   )
-
-    ## Extracting known z-scores excluding outliers
-    if (!is.null(result$zR_outliers) & length(result$zR_outliers) != 0) {
-      outlier <- result$zR_outliers
-
-      known_zscores <- sumstat[-outlier, ]
-      known_zscores <- known_zscores %>% arrange(pos)
-    } else {
-      known_zscores <- sumstat %>% arrange(pos)
-    }
-
-    ## Imputation logic using RAiSS or other methods
-    imputation_res <- raiss(ref_panel, known_zscores, R,
-      lamb = lamb, rcond = rcond,
-      R2_threshold = R2_threshold, minimum_ld = minimum_ld
-    )$result_filter
-
-    ## Filter out variants not included in the imputation result
-    filtered_out_variant <- setdiff(ref_panel$variant_id, imputation_res$variant_id)
-
-    ## Update the LD matrix excluding filtered variants
-    LD_extract_filtered <- if (length(filtered_out_variant) > 0) {
-      filtered_out_id <- match(filtered_out_variant, ref_panel$variant_id)
-      as.matrix(R)[-filtered_out_id, -filtered_out_id]
-    } else {
-      as.matrix(R)
-    }
-
-  return(list(sumstats = imputation_res, LD_mat = LD_extract_filtered))
+  
+  ## Identify outlier variants
+  if (!is.null(result$zR_outliers) & length(result$zR_outliers) != 0) {
+    outlier <- result$zR_outliers
+    sumstat_qc <- sumstats[-outlier, ]
+    LD_extract_qc <- as.matrix(LD_mat)[-outlier, -outlier]
+  } else {
+    sumstat_qc <- sumstats
+    LD_extract_qc <- as.matrix(LD_mat)
+  }
+  
+  return(list(sumstats = sumstat_qc, LD_mat = LD_extract_qc))
 }
 
 #' Perform Quality Control on Summary Statistics
@@ -167,9 +140,31 @@ susie_rss_qc <- function(sumstat, R, ref_panel, bhat = NULL, shat = NULL, var_y 
 #' qc_results <- summary_stats_qc(input_processed, LD_data, method = "dentist", impute = TRUE,
 #'                                impute_opts = list(rcond = 0.05, R2_threshold = 0.7, minimum_ld = 10))
 #'
-#' @importFrom magrittr %>%
 #' @export
-summary_stats_qc <- function(input_processed, LD_data, method = c("rss_qc", "dentist", "slalom"), impute = TRUE,
-                             impute_opts = list(rcond = 0.01, R2_threshold = 0.6, minimum_ld = 5)) {
-  # Function body goes here
+summary_stats_qc <- function(sumstats, LD_data, method = c("rss_qc", "dentist", "slalom"), impute = TRUE,
+                             impute_opts = list(rcond = 0.01, R2_threshold = 0.6, minimum_ld = 5, lamb=0.01)) {
+  # assuming sumstats has been allele QC-ed, using rss_input_preprocess() function
+  LD_extract <- LD_data$combined_LD_matrix[sumstats$variant_id, sumstats$variant_id, drop = FALSE]
+  if (method == "rss_qc") {
+    sumstats = susie_rss_qc(sumstats, LD_extract)
+  }
+
+  ## Imputation logic using RAiSS
+  imputation_res <- raiss(LD_data$ref_panel, sumstats, LD_data$combined_LD_matrix,
+                          lamb = impute_opts$lamb, rcond = impute_opts$rcond,
+                          R2_threshold = impute_opts$R2_threshold, minimum_ld = impute_opts$minimum_ld
+  )$result_filter
+  
+  ## Filter out variants not included in the imputation result
+  filtered_out_variant <- setdiff(ref_panel$variant_id, imputation_res$variant_id)
+  
+  ## Update the LD matrix excluding filtered variants
+  LD_extract_filtered <- if (length(filtered_out_variant) > 0) {
+    filtered_out_id <- match(filtered_out_variant, ref_panel$variant_id)
+    as.matrix(LD_data$combined_LD_matrix)[-filtered_out_id, -filtered_out_id]
+  } else {
+    as.matrix(LD_data$combined_LD_matrix)
+  }
+  
+  return(list(sumstats = imputation_res, LD_mat = LD_extract_filtered))
 }

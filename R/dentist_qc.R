@@ -7,7 +7,7 @@
 #' heterogeneity between GWAS and LD reference samples.
 #'
 #' @param sum_stat A data frame containing summary statistics, including 'pos' or 'position' and 'z' or 'zscore' columns.
-#' @param LDmat A matrix containing LD (linkage disequilibrium) information.
+#' @param LD_mat A matrix containing LD (linkage disequilibrium) information.
 #' @param nSample The number of samples.
 #' @param window_size The size of the window for dividing the genomic region. Default is 2000000.
 #' @param pValueThreshold The p-value threshold for significance. Default is 5e-8.
@@ -38,7 +38,7 @@
 #'
 #' @examples
 #' # Example usage of dentist_detect_outliers
-#' dentist_detect_outliers(sum_stat, LDmat, nSample)
+#' dentist_detect_outliers(sum_stat, LD_mat, nSample)
 #'
 #' @details
 #' # correct_chen_et_al_bug may affect the result in three parts compared with the original DENTIST method:
@@ -58,7 +58,7 @@
 #' 3. !grouping_tmp (explained in the source code)
 #'
 #' @export
-dentist_detect_outliers <- function(sum_stat, LDmat, nSample,
+dentist_detect_outliers <- function(sum_stat, LD_mat, nSample,
                                     window_size = 2000000, pValueThreshold = 5.0369e-8, propSVD = 0.4, gcControl = FALSE,
                                     nIter = 10, gPvalueThreshold = 0.05, ncpus = 1, seed = 999, correct_chen_et_al_bug = TRUE) {
   # detect for column names and order by pos
@@ -69,7 +69,7 @@ dentist_detect_outliers <- function(sum_stat, LDmat, nSample,
   sum_stat <- sum_stat %>% arrange(pos)
   if (window_size <= 0 | ((window_size >= max(sum_stat$pos) - min(sum_stat$pos) | is.na(window_size)) & (correct_chen_et_al_bug == TRUE))) {
     imputed_result <- dentist_impute_single_window(
-      sum_stat$z, LDmat, nSample,
+      sum_stat$z, LD_mat, nSample,
       pValueThreshold, propSVD, gcControl,
       nIter, gPvalueThreshold, ncpus, seed, correct_chen_et_al_bug
     )
@@ -80,12 +80,12 @@ dentist_detect_outliers <- function(sum_stat, LDmat, nSample,
     imputed_result_by_window <- list()
     for (k in 1:nrow(window_divided_res)) {
       zScore_k <- sum_stat$z[window_divided_res$windowStartIdx[k]:window_divided_res$windowEndIdx[k]]
-      LDmat_k <- LDmat[
+      LD_mat_k <- LD_mat[
         window_divided_res$windowStartIdx[k]:window_divided_res$windowEndIdx[k],
         window_divided_res$windowStartIdx[k]:window_divided_res$windowEndIdx[k]
       ]
       imputed_result_by_window[[k]] <- dentist_impute_single_window(
-        zScore_k, LDmat_k, nSample,
+        zScore_k, LD_mat_k, nSample,
         pValueThreshold, propSVD, gcControl,
         nIter, gPvalueThreshold, ncpus, seed, correct_chen_et_al_bug
       )
@@ -111,7 +111,7 @@ dentist_detect_outliers <- function(sum_stat, LDmat, nSample,
 #' using the Dentist algorithm.
 #'
 #' @param zScore A numeric vector containing the z-score values for variants within the window.
-#' @param LDmat A square matrix containing linkage disequilibrium (LD) information for variants within the window.
+#' @param LD_mat A square matrix containing linkage disequilibrium (LD) information for variants within the window.
 #' @param nSample The total number of samples.
 #' @param pValueThreshold The p-value threshold for significance. Default is 5e-8.
 #' @param propSVD The proportion of singular value decomposition (SVD) to use. Default is 0.4.
@@ -128,7 +128,7 @@ dentist_detect_outliers <- function(sum_stat, LDmat, nSample,
 #'
 #' @examples
 #' # Example usage of dentist_impute_single_window
-#' dentist_impute_single_window(zScore, LDmat, nSample)
+#' dentist_impute_single_window(zScore, LD_mat, nSample)
 #'
 #' @seealso
 #' \code{\link{dentist_detect_outliers}} for detecting outliers using the Dentist algorithm.
@@ -139,16 +139,16 @@ dentist_detect_outliers <- function(sum_stat, LDmat, nSample,
 #' @importFrom methods as, setClass, setMethod
 #'
 #' @noRd
-dentist_impute_single_window <- function(zScore, LDmat, nSample,
+dentist_impute_single_window <- function(zScore, LD_mat, nSample,
                                          pValueThreshold = 5e-8, propSVD = 0.4, gcControl = FALSE,
                                          nIter = 10, gPvalueThreshold = 0.05, ncpus = 1, seed = 999, correct_chen_et_al_bug = TRUE) {
   # Check that number of variants cannot be below 2000
   if (length(zScore) < 2000) {
     warning("The number of variants is below 2000. The algorithm may not work as expected, as suggested by the original DENTIST.")
   }
-  # Check that LDmat dimensions match the length of zScore
-  if (!is.matrix(LDmat) || nrow(LDmat) != ncol(LDmat) || nrow(LDmat) != length(zScore)) {
-    stop("LDmat must be a square matrix with dimensions equal to the length of zScore.")
+  # Check that LD_mat dimensions match the length of zScore
+  if (!is.matrix(LD_mat) || nrow(LD_mat) != ncol(LD_mat) || nrow(LD_mat) != length(zScore)) {
+    stop("LD_mat must be a square matrix with dimensions equal to the length of zScore.")
   }
 
   # Define a custom condition to capture warnings
@@ -164,7 +164,7 @@ dentist_impute_single_window <- function(zScore, LDmat, nSample,
   res <- tryCatch(
     {
       dentist_iterative_impute(
-        LDmat, nSample, zScore,
+        LD_mat, nSample, zScore,
         pValueThreshold, propSVD, gcControl, nIter,
         gPvalueThreshold, ncpus, seed, correct_chen_et_al_bug
       )

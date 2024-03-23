@@ -96,8 +96,8 @@ double minusLogPvalueChisq2(double stat) {
 	return -log10(p);
 }
 
-// Perform one iteration of the algorithm, assuming LDmat is an arma::mat
-void oneIteration(const arma::mat& LDmat, const std::vector<uint>& idx, const std::vector<uint>& idx2,
+// Perform one iteration of the algorithm, assuming LD_mat is an arma::mat
+void oneIteration(const arma::mat& LD_mat, const std::vector<uint>& idx, const std::vector<uint>& idx2,
                   const arma::vec& zScore, arma::vec& imputedZ, arma::vec& rsqList, arma::vec& zScore_e,
                   uint nSample, float probSVD, int ncpus) {
 	int nProcessors = omp_get_max_threads();
@@ -114,7 +114,7 @@ void oneIteration(const arma::mat& LDmat, const std::vector<uint>& idx, const st
     #pragma omp parallel for collapse(2)
 	for (size_t i = 0; i < idx2.size(); i++) {
 		for (size_t k = 0; k < idx.size(); k++) {
-			LD_it(i, k) = LDmat.at(idx2[i] * LDmat.n_cols + idx[k]);
+			LD_it(i, k) = LD_mat.at(idx2[i] * LD_mat.n_cols + idx[k]);
 		}
 	}
 
@@ -122,7 +122,7 @@ void oneIteration(const arma::mat& LDmat, const std::vector<uint>& idx, const st
 	for (size_t i = 0; i < idx.size(); i++) {
 		zScore_eigen(i) = zScore[idx[i]];
 		for (size_t j = 0; j < idx.size(); j++) {
-			VV(i, j) = LDmat.at(idx[i] * LDmat.n_rows + idx[j]);
+			VV(i, j) = LD_mat.at(idx[i] * LD_mat.n_rows + idx[j]);
 		}
 	}
 
@@ -162,7 +162,7 @@ void oneIteration(const arma::mat& LDmat, const std::vector<uint>& idx, const st
 			Rcpp::warning("Adjusted rsq_eigen value exceeding 1: " + std::to_string(rsq_eigen(i)));
 		}
 		uint j = idx2[i];
-		zScore_e[j] = (zScore[j] - imputedZ[j]) / std::sqrt(LDmat(j, j) - rsqList[j]);
+		zScore_e[j] = (zScore[j] - imputedZ[j]) / std::sqrt(LD_mat(j, j) - rsqList[j]);
 	}
 }
 
@@ -174,7 +174,7 @@ void oneIteration(const arma::mat& LDmat, const std::vector<uint>& idx, const st
  * information from a reference panel. It helps detect genotyping/imputation errors, allelic errors, and heterogeneity
  * between GWAS and LD reference samples, improving the reliability of subsequent analyses.
  *
- * @param LDmat The linkage disequilibrium (LD) matrix from a reference panel, as an arma::mat object.
+ * @param LD_mat The linkage disequilibrium (LD) matrix from a reference panel, as an arma::mat object.
  * @param nSample The sample size used in the GWAS whose summary statistics are being analyzed.
  * @param zScore A vector of Z-scores from GWAS summary statistics.
  * @param pValueThreshold Threshold for the p-value below which variants are considered for quality control.
@@ -196,7 +196,7 @@ void oneIteration(const arma::mat& LDmat, const std::vector<uint>& idx, const st
  */
 
 // [[Rcpp::export]]
-List dentist_iterative_impute(const arma::mat& LDmat, uint nSample, const arma::vec& zScore,
+List dentist_iterative_impute(const arma::mat& LD_mat, uint nSample, const arma::vec& zScore,
                               double pValueThreshold, float propSVD, bool gcControl, int nIter,
                               double gPvalueThreshold, int ncpus, int seed, bool correct_chen_et_al_bug) {
 	// Set number of threads for parallel processing
@@ -237,7 +237,7 @@ List dentist_iterative_impute(const arma::mat& LDmat, uint nSample, const arma::
 		std::vector<uint> idx2_QCed;
 
 		// Perform iteration with current subsets
-		oneIteration(LDmat, idx, idx2, zScore, imputedZ, rsq, zScore_e, nSample, propSVD, ncpus);
+		oneIteration(LD_mat, idx, idx2, zScore, imputedZ, rsq, zScore_e, nSample, propSVD, ncpus);
 
 		// Assess differences and grouping for thresholding
 		for (size_t i = 0; i < idx2.size(); ++i) {
@@ -297,7 +297,7 @@ List dentist_iterative_impute(const arma::mat& LDmat, uint nSample, const arma::
 		}
 
 		// Perform another iteration with updated sets of indices (idx and idx2_QCed)
-		oneIteration(LDmat, idx2_QCed, idx, zScore, imputedZ, rsq, zScore_e, nSample, propSVD, ncpus);
+		oneIteration(LD_mat, idx2_QCed, idx, zScore, imputedZ, rsq, zScore_e, nSample, propSVD, ncpus);
 
 		// Recalculate differences and groupings after the iteration
 		diff.resize(fullIdx.size());

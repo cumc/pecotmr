@@ -13,12 +13,12 @@ Rcpp::Rostream<false>& Rcpp::Rcerr = Rcpp::Rcpp_cerr_get();
 #endif
 
 // dentist_iterative_impute
-List dentist_iterative_impute(const arma::mat& LDmat, uint nSample, const arma::vec& zScore, double pValueThreshold, float propSVD, bool gcControl, int nIter, double gPvalueThreshold, int ncpus, int seed, bool correct_chen_et_al_bug);
-RcppExport SEXP _pecotmr_dentist_iterative_impute(SEXP LDmatSEXP, SEXP nSampleSEXP, SEXP zScoreSEXP, SEXP pValueThresholdSEXP, SEXP propSVDSEXP, SEXP gcControlSEXP, SEXP nIterSEXP, SEXP gPvalueThresholdSEXP, SEXP ncpusSEXP, SEXP seedSEXP, SEXP correct_chen_et_al_bugSEXP) {
+List dentist_iterative_impute(const arma::mat& LD_mat, uint nSample, const arma::vec& zScore, double pValueThreshold, float propSVD, bool gcControl, int nIter, double gPvalueThreshold, int ncpus, int seed, bool correct_chen_et_al_bug);
+RcppExport SEXP _pecotmr_dentist_iterative_impute(SEXP LD_matSEXP, SEXP nSampleSEXP, SEXP zScoreSEXP, SEXP pValueThresholdSEXP, SEXP propSVDSEXP, SEXP gcControlSEXP, SEXP nIterSEXP, SEXP gPvalueThresholdSEXP, SEXP ncpusSEXP, SEXP seedSEXP, SEXP correct_chen_et_al_bugSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
-    Rcpp::traits::input_parameter< const arma::mat& >::type LDmat(LDmatSEXP);
+    Rcpp::traits::input_parameter< const arma::mat& >::type LD_mat(LD_matSEXP);
     Rcpp::traits::input_parameter< uint >::type nSample(nSampleSEXP);
     Rcpp::traits::input_parameter< const arma::vec& >::type zScore(zScoreSEXP);
     Rcpp::traits::input_parameter< double >::type pValueThreshold(pValueThresholdSEXP);
@@ -29,7 +29,7 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< int >::type ncpus(ncpusSEXP);
     Rcpp::traits::input_parameter< int >::type seed(seedSEXP);
     Rcpp::traits::input_parameter< bool >::type correct_chen_et_al_bug(correct_chen_et_al_bugSEXP);
-    rcpp_result_gen = Rcpp::wrap(dentist_iterative_impute(LDmat, nSample, zScore, pValueThreshold, propSVD, gcControl, nIter, gPvalueThreshold, ncpus, seed, correct_chen_et_al_bug));
+    rcpp_result_gen = Rcpp::wrap(dentist_iterative_impute(LD_mat, nSample, zScore, pValueThreshold, propSVD, gcControl, nIter, gPvalueThreshold, ncpus, seed, correct_chen_et_al_bug));
     return rcpp_result_gen;
 END_RCPP
 }
