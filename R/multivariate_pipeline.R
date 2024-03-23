@@ -19,7 +19,7 @@
 #' @param sample_partition Sample partition for cross-validation.
 #' @param mrmash_max_iter The maximum number of iterations for mr.mash. Default is 5000.
 #' @param mvsusie_max_iter The maximum number of iterations for mvSuSiE. Default is 200.
-#' @param max_cv_variants The maximum number of variants to be included in cross-validation. Defaults to 5000.
+#' @param max_cv_variants The maximum number of variants to be included in cross-validation. Defaults to -1 which means no limit.
 #' @param cv_folds The number of folds to use for cross-validation. Set to 0 to skip cross-validation. Default is 5.
 #' @param cv_threads The number of threads to use for parallel computation in cross-validation. Defaults to 1.
 #' @param cv_seed The seed for random number generation in cross-validation. Defaults to 999.
@@ -44,9 +44,7 @@
 #'   maf = 0,
 #'   max_L = 10,
 #'   ld_reference_meta_file = NULL,
-#'   mvsusie_max_iter = 20, # 200
-#'   mrmash_max_iter = 50, # 500
-#'   max_cv_variants = 100, # 5000
+#'   max_cv_variants = -1,
 #'   pip_cutoff_to_skip = 0.025,
 #'   signal_cutoff = 0.025,
 #'   data_driven_prior_matrices = data_driven_prior_matrices,
@@ -67,7 +65,7 @@ multivariate_analysis_pipeline <- function(
       ncol(Y)
     ), signal_cutoff = 0.025, secondary_coverage = c(0.7, 0.5), data_driven_prior_matrices = NULL,
     data_driven_prior_matrices_cv = NULL, canonical_prior_matrices = TRUE, sample_partition = NULL,
-    mrmash_max_iter = 5000, mvsusie_max_iter = 200, max_cv_variants = 5000, cv_folds = 5,
+    mrmash_max_iter = 5000, mvsusie_max_iter = 200, max_cv_variants = -1, cv_folds = 5,
     cv_threads = 1, cv_seed = 999, prior_weights_min = 1e-4, twas_weights = FALSE, verbose = FALSE) {
   skip_conditions <- function(X, Y, pip_cutoff_to_skip) {
     if (length(pip_cutoff_to_skip) == 1 && is.numeric(pip_cutoff_to_skip)) {
@@ -194,7 +192,7 @@ multivariate_analysis_pipeline <- function(
 #' @export
 twas_multivariate_weights_pipeline <- function(
     X, Y, maf, mvsusie_fitted, mrmash_fitted,
-    prior, resid_Y, max_cv_variants = 5000, mvsusie_max_iter = 200, mrmash_max_iter = 5000,
+    prior, resid_Y, max_cv_variants = -1, mvsusie_max_iter = 200, mrmash_max_iter = 5000,
     signal_cutoff = 0.025, secondary_coverage = c(0.5, 0.7),
     ld_reference_meta_file = NULL, cv_folds = 5, sample_partition = NULL, data_driven_prior_matrices = NULL,
     data_driven_prior_matrices_cv = NULL, canonical_prior_matrices = FALSE, cv_seed = 999,
@@ -237,10 +235,12 @@ twas_multivariate_weights_pipeline <- function(
     return(res)
   }
 
-  select_top_variants <- function(mvsusie_fitted, max_cv_variants) {
+  select_cv_variants <- function(mvsusie_fitted, max_cv_variants) {
+    if (max_cv_variants < 0) max_cv_variants <- Inf 
     if (max_cv_variants > length(mvsusie_fitted$pip)) {
       max_cv_variants <- length(mvsusie_fitted$pip)
     }
+    # FIXME: here we pick top and other random based on MAF and max number, see the univariate pipeline
     top_sig_idx <- which(mvsusie_fitted$pip %in% mvsusie_fitted$pip[order(-mvsusie_fitted$pip)[1:max_cv_variants]])
     mvsusie_fitted$coef <- mvsusie_fitted$coef[c(1, top_sig_idx + 1), ]
     return(top_sig_idx)
@@ -336,9 +336,9 @@ twas_multivariate_weights_pipeline <- function(
 
   # Perform cross-validation if specified
   if (cv_folds > 1) {
-    top_sig_idx <- select_top_variants(mvsusie_fitted, max_cv_variants)
+    cv_variants_idx <- select_cv_variants(mvsusie_fitted, max_cv_variants)
     res <- c(res, run_twas_cv(
-      res, X, Y, top_sig_idx, cv_folds, sample_partition, data_driven_prior_matrices_cv,
+      res, X, Y, cv_variants_idx, cv_folds, sample_partition, data_driven_prior_matrices_cv,
       mrmash_max_iter, canonical_prior_matrices, mvsusie_fitted, resid_Y, max_L,
       mvsusie_max_iter, cv_threads, cv_seed
     ))
