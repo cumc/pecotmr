@@ -26,7 +26,7 @@ multivariate_analysis_pipeline(
   cv_seed = 999,
   prior_weights_min = 1e-04,
   twas_weights = FALSE,
-  verbose = FALSE
+  verbose = 0
 )
 }
 \arguments{
@@ -44,6 +44,8 @@ multivariate_analysis_pipeline(
 
 \item{signal_cutoff}{Cutoff value for signal identification in PIP values for susie_post_processor. Default is 0.025.}
 
+\item{coverage}{A vector of coverage probabilities, with the first element being the primary coverage and the rest being secondary coverage probabilities for credible set refinement. Defaults to c(0.95, 0.7, 0.5).}
+
 \item{data_driven_prior_matrices}{A list of data-driven covariance matrices for mr.mash weights.}
 
 \item{data_driven_prior_matrices_cv}{A list of data-driven covariance matrices for mr.mash weights in cross-validation.}
@@ -56,6 +58,8 @@ multivariate_analysis_pipeline(
 
 \item{mvsusie_max_iter}{The maximum number of iterations for mvSuSiE. Default is 200.}
 
+\item{min_cv_maf}{The minimum minor allele frequency for variants to be included in cross-validation. Default is 0.05.}
+
 \item{max_cv_variants}{The maximum number of variants to be included in cross-validation. Defaults to -1 which means no limit.}
 
 \item{cv_folds}{The number of folds to use for cross-validation. Set to 0 to skip cross-validation. Default is 5.}
@@ -64,9 +68,14 @@ multivariate_analysis_pipeline(
 
 \item{cv_seed}{The seed for random number generation in cross-validation. Defaults to 999.}
 
-\item{dropped_sample}{A list of lists with X, Y, and covar, each list contains a list of dropped samples as vectors for each condition. Can be obtained from the output of load_regional_multivariate_data.}
+\item{prior_weights_min}{The minimum weight for prior covariance matrices. Default is 1e-4.}
 
-\item{secondary_coverage}{A vector of secondary coverage probabilities for credible set refinement. Defaults to c(0.7, 0.5).}
+\item{twas_weights}{If set to TRUE, computes TWAS weights. Default is FALSE.}
+
+\item{verbose}{Verbosity level. Default is 0.}
+}
+\value{
+A list containing the multivariate analysis results.
 }
 \description{
 This function performs weights computation for Transcriptome-Wide Association Study (TWAS) with fitting
