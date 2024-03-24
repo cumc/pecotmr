@@ -1,5 +1,4 @@
 name: Continuous Integration
-# test comment
 
 on:
   pull_request:
@@ -9,7 +8,7 @@ on:
       - README.md
 
 jobs:
-  ci:
+  ci_linux-64:
     runs-on: ubuntu-latest
     env:
       CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
@@ -37,7 +36,79 @@ jobs:
 
       - name: Check unit test code coverage
         shell: micromamba-shell {0}
-        run: R -e "covr::codecov()"
+        run: R -e "covr::codecov(quiet = FALSE)"
+
+      #- name: Run R CMD CHECK
+        #shell: micromamba-shell {0}
+        #run: R -e "rcmdcheck::rcmdcheck()"
+
+      #- name: Run BiocCheckGitClone
+        #shell: micromamba-shell {0}
+        #run: R -e "BiocCheck::BiocCheckGitClone()"
+
+      #- name: Run BiocCheck
+        #shell: micromamba-shell {0}
+        #run: R -e "BiocCheck::BiocCheck()"
+        
+  ci_osx-64:
+    runs-on: macos-latest
+    
+    steps:
+      - name: Checkout pull request branch
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Create YAML from recipe
+        run: |
+          cp .github/environment/environment.yaml /tmp/environment.yaml
+          grep -v '{%' < .github/recipe/meta.yaml | yq .requirements.host | sed 's/^/  /' >> /tmp/environment.yaml
+
+      - name: Setup micromamba
+        uses: mamba-org/setup-micromamba@v1
+        with:
+          environment-file: /tmp/environment.yaml
+          generate-run-shell: true
+
+      - name: Run unit tests
+        shell: micromamba-shell {0}
+        run: R -e "devtools::test()"
+
+      #- name: Run R CMD CHECK
+        #shell: micromamba-shell {0}
+        #run: R -e "rcmdcheck::rcmdcheck()"
+
+      #- name: Run BiocCheckGitClone
+        #shell: micromamba-shell {0}
+        #run: R -e "BiocCheck::BiocCheckGitClone()"
+
+      #- name: Run BiocCheck
+        #shell: micromamba-shell {0}
+        #run: R -e "BiocCheck::BiocCheck()"
+        #
+  ci_osx-arm64:
+    runs-on: macos-14
+    
+    steps:
+      - name: Checkout pull request branch
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Create YAML from recipe
+        run: |
+          cp .github/environment/environment.yaml /tmp/environment.yaml
+          grep -v '{%' < .github/recipe/meta.yaml | yq .requirements.host | sed 's/^/  /' >> /tmp/environment.yaml
+
+      - name: Setup micromamba
+        uses: mamba-org/setup-micromamba@v1
+        with:
+          environment-file: /tmp/environment.yaml
+          generate-run-shell: true
+
+      - name: Run unit tests
+        shell: micromamba-shell {0}
+        run: R -e "devtools::test()"
 
       #- name: Run R CMD CHECK
         #shell: micromamba-shell {0}

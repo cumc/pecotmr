@@ -12,13 +12,13 @@ Rcpp::Rostream<true>&  Rcpp::Rcout = Rcpp::Rcpp_cout_get();
 Rcpp::Rostream<false>& Rcpp::Rcerr = Rcpp::Rcpp_cerr_get();
 #endif
 
-// dentist_rcpp
-List dentist_rcpp(const arma::mat& LDmat, uint nSample, const arma::vec& zScore, double pValueThreshold, float propSVD, bool gcControl, int nIter, double gPvalueThreshold, int ncpus, int seed);
-RcppExport SEXP _pecotmr_dentist_rcpp(SEXP LDmatSEXP, SEXP nSampleSEXP, SEXP zScoreSEXP, SEXP pValueThresholdSEXP, SEXP propSVDSEXP, SEXP gcControlSEXP, SEXP nIterSEXP, SEXP gPvalueThresholdSEXP, SEXP ncpusSEXP, SEXP seedSEXP) {
+// dentist_iterative_impute
+List dentist_iterative_impute(const arma::mat& LD_mat, uint nSample, const arma::vec& zScore, double pValueThreshold, float propSVD, bool gcControl, int nIter, double gPvalueThreshold, int ncpus, int seed, bool correct_chen_et_al_bug);
+RcppExport SEXP _pecotmr_dentist_iterative_impute(SEXP LD_matSEXP, SEXP nSampleSEXP, SEXP zScoreSEXP, SEXP pValueThresholdSEXP, SEXP propSVDSEXP, SEXP gcControlSEXP, SEXP nIterSEXP, SEXP gPvalueThresholdSEXP, SEXP ncpusSEXP, SEXP seedSEXP, SEXP correct_chen_et_al_bugSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
-    Rcpp::traits::input_parameter< const arma::mat& >::type LDmat(LDmatSEXP);
+    Rcpp::traits::input_parameter< const arma::mat& >::type LD_mat(LD_matSEXP);
     Rcpp::traits::input_parameter< uint >::type nSample(nSampleSEXP);
     Rcpp::traits::input_parameter< const arma::vec& >::type zScore(zScoreSEXP);
     Rcpp::traits::input_parameter< double >::type pValueThreshold(pValueThresholdSEXP);
@@ -28,27 +28,8 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< double >::type gPvalueThreshold(gPvalueThresholdSEXP);
     Rcpp::traits::input_parameter< int >::type ncpus(ncpusSEXP);
     Rcpp::traits::input_parameter< int >::type seed(seedSEXP);
-    rcpp_result_gen = Rcpp::wrap(dentist_rcpp(LDmat, nSample, zScore, pValueThreshold, propSVD, gcControl, nIter, gPvalueThreshold, ncpus, seed));
-    return rcpp_result_gen;
-END_RCPP
-}
-// dentist_rcpp
-List dentist_rcpp(const arma::mat& LDmat, uint nSample, const arma::vec& zScore, double pValueThreshold, float propSVD, bool gcControl, int nIter, double gPvalueThreshold, int ncpus, int seed);
-RcppExport SEXP _pecotmr_dentist_rcpp(SEXP LDmatSEXP, SEXP nSampleSEXP, SEXP zScoreSEXP, SEXP pValueThresholdSEXP, SEXP propSVDSEXP, SEXP gcControlSEXP, SEXP nIterSEXP, SEXP gPvalueThresholdSEXP, SEXP ncpusSEXP, SEXP seedSEXP) {
-BEGIN_RCPP
-    Rcpp::RObject rcpp_result_gen;
-    Rcpp::RNGScope rcpp_rngScope_gen;
-    Rcpp::traits::input_parameter< const arma::mat& >::type LDmat(LDmatSEXP);
-    Rcpp::traits::input_parameter< uint >::type nSample(nSampleSEXP);
-    Rcpp::traits::input_parameter< const arma::vec& >::type zScore(zScoreSEXP);
-    Rcpp::traits::input_parameter< double >::type pValueThreshold(pValueThresholdSEXP);
-    Rcpp::traits::input_parameter< float >::type propSVD(propSVDSEXP);
-    Rcpp::traits::input_parameter< bool >::type gcControl(gcControlSEXP);
-    Rcpp::traits::input_parameter< int >::type nIter(nIterSEXP);
-    Rcpp::traits::input_parameter< double >::type gPvalueThreshold(gPvalueThresholdSEXP);
-    Rcpp::traits::input_parameter< int >::type ncpus(ncpusSEXP);
-    Rcpp::traits::input_parameter< int >::type seed(seedSEXP);
-    rcpp_result_gen = Rcpp::wrap(dentist_rcpp(LDmat, nSample, zScore, pValueThreshold, propSVD, gcControl, nIter, gPvalueThreshold, ncpus, seed));
+    Rcpp::traits::input_parameter< bool >::type correct_chen_et_al_bug(correct_chen_et_al_bugSEXP);
+    rcpp_result_gen = Rcpp::wrap(dentist_iterative_impute(LD_mat, nSample, zScore, pValueThreshold, propSVD, gcControl, nIter, gPvalueThreshold, ncpus, seed, correct_chen_et_al_bug));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -146,8 +127,7 @@ END_RCPP
 }
 
 static const R_CallMethodDef CallEntries[] = {
-    {"_pecotmr_dentist_rcpp", (DL_FUNC) &_pecotmr_dentist_rcpp, 10},
-    {"_pecotmr_dentist_rcpp", (DL_FUNC) &_pecotmr_dentist_rcpp, 10},
+    {"_pecotmr_dentist_iterative_impute", (DL_FUNC) &_pecotmr_dentist_iterative_impute, 11},
     {"_pecotmr_rcpp_mr_ash_rss", (DL_FUNC) &_pecotmr_rcpp_mr_ash_rss, 17},
     {"_pecotmr_prs_cs_rcpp", (DL_FUNC) &_pecotmr_prs_cs_rcpp, 12},
     {"_pecotmr_qtl_enrichment_rcpp", (DL_FUNC) &_pecotmr_qtl_enrichment_rcpp, 7},

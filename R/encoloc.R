@@ -24,7 +24,7 @@
 xqtl_enrichment_wrapper <- function(xqtl_files, gwas_files,
                                     xqtl_finemapping_obj = NULL, gwas_finemapping_obj = NULL,
                                     xqtl_varname_obj = NULL, gwas_varname_obj = NULL,
-                                    pi_gwas = NULL, pi_qtl = NULL,
+                                    num_gwas = NULL, pi_qtl = NULL,
                                     lambda = 1.0, ImpN = 25,
                                     num_threads = 1) {
   process_finemapped_data <- function(xqtl_files, gwas_files,
@@ -66,18 +66,13 @@ xqtl_enrichment_wrapper <- function(xqtl_files, gwas_files,
   # Compute QTL enrichment
   return(compute_qtl_enrichment(
     gwas_pip = dat$gwas_pip, susie_qtl_regions = dat$xqtl_data,
-    pi_gwas = pi_gwas, pi_qtl = pi_qtl,
+    num_gwas = num_gwas, pi_qtl = pi_qtl,
     lambda = lambda, ImpN = ImpN,
     num_threads = num_threads
   ))
 }
 
-
-
-#' Functions for  Colocalization Analysis Wrapper
-
 #' Function to filter and order colocalization results
-
 filter_and_order_coloc_results <- function(coloc_results_fil) {
   # Ensure the input has more than one column
   if (ncol(coloc_results_fil) <= 1) {
@@ -122,7 +117,7 @@ calculate_purity <- function(variants, ext_ld, squared) {
 #' 2. PPH4 exceeds threshold, default as 0.8.
 #' 3. We aggregate variants and cumulatively sum their PPH4 values to form a credible set until the threshold, default as 0.95.
 #' 4. The cs's purity is computed with the `get_purity` function from the `gaow/susieR` package, and the same purity criteria are employed to filter the credibility set.
-process_coloc_results <- function(coloc_result, LD_meta_file_path, analysis_script_obj, analysis_region, PPH4_thres = 0.8, coloc_pip_thres = 0.95, squared = FALSE, min_abs_corr = 0.5, null_index = 0, coloc_index = "PP.H4.abf", median_abs_corr = NULL) {
+process_coloc_results <- function(coloc_result, LD_meta_file_path, analysis_region, PPH4_thres = 0.8, coloc_pip_thres = 0.95, squared = FALSE, min_abs_corr = 0.5, null_index = 0, coloc_index = "PP.H4.abf", median_abs_corr = NULL) {
   # Extract PIP values from coloc_result summary
   coloc_summary <- as.data.frame(coloc_result$summary)
   coloc_pip <- coloc_summary[, grepl("PP", colnames(coloc_summary))]
@@ -196,9 +191,6 @@ process_coloc_results <- function(coloc_result, LD_meta_file_path, analysis_scri
 }
 
 
-
-
-
 #' Colocalization Analysis Wrapper
 #'
 #' This function processes xQTL and multiple GWAS finemapped data files for colocalization analysis.
@@ -243,47 +235,40 @@ coloc_wrapper <- function(xqtl_file, gwas_files,
   if (length(all_gwas_colnames) != sum(sapply(gwas_lbf_matrices, ncol))) {
     stop("Duplicate variant names found across GWAS regions analyzed. This is not expected.")
   }
-
   # Combine GWAS matrices and replace NAs with zeros
   combined_gwas_lbf_matrix <- bind_rows(gwas_lbf_matrices) %>%
     mutate(across(everything(), ~ replace_na(., 0)))
-
 
   # Process xQTL data
   xqtl_raw_data <- readRDS(xqtl_file)[[1]]
   xqtl_data <- if (!is.null(xqtl_finemapping_obj)) get_nested_element(xqtl_raw_data, xqtl_finemapping_obj) else xqtl_raw_data
   xqtl_lbf_matrix <- as.data.frame(xqtl_data$lbf_variable)
-  xqtl_lbf_matrix <- xqtl_lbf_matrix[xqtl_data$V > prior_tol, ]
-  if (!is.null(xqtl_varname_obj)) colnames(xqtl_lbf_matrix) <- get_nested_element(xqtl_raw_data, xqtl_varname_obj)
 
-  # add 'chr' in colnames
-  add_chr_prefix <- function(df) {
-    if (any(grepl("chr", colnames(df)))) {
-      colnames(df) <- colnames(df)
-    } else {
-      colnames(df) <- paste0("chr", colnames(df))
-    }
-    return(df)
+  # fsusie data does not have V element in results
+  if ("V" %in% names(xqtl_data)) xqtl_lbf_matrix <- xqtl_lbf_matrix[xqtl_data$V > prior_tol, ] else (message("No V found in orginal data."))
+      
+  if(nrow(combined_gwas_lbf_matrix) > 0 && nrow(xqtl_lbf_matrix) > 0){
+      if (!is.null(xqtl_varname_obj)) colnames(xqtl_lbf_matrix) <- get_nested_element(xqtl_raw_data, xqtl_varname_obj)
+
+      colnames(xqtl_lbf_matrix) <- align_variant_names(colnames(xqtl_lbf_matrix),  colnames(combined_gwas_lbf_matrix))$aligned_variants
+      common_colnames <- intersect(colnames(xqtl_lbf_matrix), colnames(combined_gwas_lbf_matrix))
+      xqtl_lbf_matrix <- xqtl_lbf_matrix[, common_colnames, drop = FALSE] %>% as.matrix()
+      combined_gwas_lbf_matrix <- combined_gwas_lbf_matrix[, common_colnames, drop = FALSE] %>% as.matrix()
+
+      # Report the number of dropped columns from xQTL matrix
+      num_dropped_cols <- length(setdiff(colnames(xqtl_lbf_matrix), common_colnames))
+      message("Number of columns dropped from xQTL matrix: ", num_dropped_cols)
+
+      # Function to convert region df to str
+      convert_to_string <- function(df) paste0("chr", df$chrom, ":", df$start, "-", df$end)
+      region <- if (!is.null(xqtl_region_obj)) get_nested_element(xqtl_raw_data, xqtl_region_obj) %>% convert_to_string() else NULL
+
+      # COLOC function
+      coloc_res <- coloc.bf_bf(xqtl_lbf_matrix, combined_gwas_lbf_matrix, p1 = p1, p2 = p2, p12 = p12)
+
+  } else {
+      coloc_res <- list("No coloc results due to the absence of a GWAS log Bayes factor matrix filtered by prior tolerance.")
   }
-
-  combined_gwas_lbf_matrix <- add_chr_prefix(combined_gwas_lbf_matrix)
-  xqtl_lbf_matrix <- add_chr_prefix(xqtl_lbf_matrix)
-
-  # Match column names and reorder matrices
-  common_colnames <- intersect(colnames(xqtl_lbf_matrix), colnames(combined_gwas_lbf_matrix))
-  xqtl_lbf_matrix <- xqtl_lbf_matrix[, common_colnames, drop = FALSE] %>% as.matrix()
-  combined_gwas_lbf_matrix <- combined_gwas_lbf_matrix[, common_colnames, drop = FALSE] %>% as.matrix()
-
-  # Report the number of dropped columns from xQTL matrix
-  num_dropped_cols <- length(setdiff(colnames(xqtl_lbf_matrix), common_colnames))
-  message("Number of columns dropped from xQTL matrix: ", num_dropped_cols)
-
-  # Function to convert region df to str
-  convert_to_string <- function(df) paste0("chr", df$chrom, ":", df$start, "-", df$end)
-  region <- if (!is.null(xqtl_region_obj)) get_nested_element(xqtl_raw_data, xqtl_region_obj) %>% convert_to_string() else NULL
-
-  # COLOC function
-  coloc_res <- coloc.bf_bf(xqtl_lbf_matrix, combined_gwas_lbf_matrix, p1 = p1, p2 = p2, p12 = p12, ...)
   return(c(coloc_res, analysis_region = region))
 }
 
@@ -293,7 +278,6 @@ coloc_wrapper <- function(xqtl_file, gwas_files,
 #' @param LD_meta_file_path Path to the metadata of LD reference.
 #' @param analysis_region Path to the analysis region of coloc result.
 #' @return A list containing the coloc results and post processed coloc sets.
-
 coloc_post_processor <- function(coloc_res, LD_meta_file_path = NULL, analysis_region = NULL, ...) {
   if (!is.null(LD_meta_file_path)) {
     if (is.null(analysis_region)) {

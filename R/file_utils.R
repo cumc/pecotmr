@@ -89,7 +89,9 @@ load_script <- function() {
 }
 
 #' @importFrom data.table fread
-#' @import dplyr
+#' @importFrom dplyr as_tibble mutate
+#' @importFrom tibble tibble
+#' @importFrom magrittr %>%
 tabix_region <- function(file, region, tabix_header = "auto") {
   # Execute tabix command and capture the output
   cmd_output <- tryCatch(
@@ -110,6 +112,7 @@ tabix_region <- function(file, region, tabix_header = "auto") {
       !!names(.)[2] := as.numeric(.[[2]])
     )
 }
+
 #' Find Valid File Path
 find_valid_file_path <- function(reference_file_path, target_file_path) {
   # Check if the reference file path exits
@@ -152,3 +155,78 @@ find_valid_file_path <- function(reference_file_path, target_file_path) {
 }
 
 find_valid_file_paths <- function(reference_file_path, target_file_paths) sapply(target_file_paths, function(x) find_valid_file_path(reference_file_path, x))
+
+#' Load summary statistic data
+#'
+#' This function formats the input summary statistics dataframe with uniform column names
+#' to fit into the SuSiE pipeline. The mapping is performed through the specified column file.
+#' Additionally, it extracts sample size, case number, control number, and variance of Y.
+#' Missing values in n_sample, n_case, and n_control are backfilled with median values.
+#'
+#' @param sumstat_path File path to the summary statistics.
+#' @param column_file_path File path to the column file for mapping.
+#' @param n_sample User-specified sample size. If unknown, set as 0 to retrieve from the sumstat file.
+#' @param n_case User-specified number of cases.
+#' @param n_control User-specified number of controls.
+#'
+#' @return A list of rss_input, including the column-name-formatted summary statistics,
+#' sample size (n), and var_y.
+#'
+#' @importFrom data.table fread
+#' @export
+load_rss_data <- function(sumstat_path, column_file_path, n_sample = 0, n_case = 0, n_control = 0) {
+  var_y <- NULL
+  sumstats <- fread(sumstat_path)
+  column_data <- read.table(column_file_path, header = FALSE, sep = ":", stringsAsFactors = FALSE)
+  colnames(column_data) <- c("standard", "original")
+
+  # Map column names using the column file
+  for (name in colnames(sumstats)) {
+    if (name %in% column_data$original) {
+      index <- which(column_data$original == name)
+      colnames(sumstats)[colnames(sumstats) == name] <- column_data$standard[index]
+    }
+  }
+
+  # Calculate z-score if missing
+  if (!"z" %in% colnames(sumstats) && all(c("beta", "se") %in% colnames(sumstats))) {
+    sumstats$z <- sumstats$beta / sumstats$se
+  }
+
+  # Set beta and se if missing
+  if (!"beta" %in% colnames(sumstats) && "z" %in% colnames(sumstats)) {
+    sumstats$beta <- sumstats$z
+    sumstats$se <- 1
+  }
+
+  # Backfill missing values with median for n_sample, n_case, and n_control
+  for (col in c("n_sample", "n_case", "n_control")) {
+    if (col %in% colnames(sumstats)) {
+      sumstats[[col]][is.na(sumstats[[col]])] <- median(sumstats[[col]], na.rm = TRUE)
+    }
+  }
+
+  # Validate and calculate sample size and variance of Y
+  if (n_sample != 0 && (n_case + n_control) != 0) {
+    stop("Please provide sample size, or case number with control number, but not both")
+  } else if (n_sample != 0) {
+    n <- n_sample
+  } else if ((n_case + n_control) != 0) {
+    n <- n_case + n_control
+    phi <- n_case / n
+    var_y <- 1 / (phi * (1 - phi))
+  } else {
+    if ("n_sample" %in% colnames(sumstats)) {
+      n <- median(sumstats$n_sample)
+    } else if (all(c("n_case", "n_control") %in% colnames(sumstats))) {
+      n <- median(sumstats$n_case + sumstats$n_control)
+      phi <- median(sumstats$n_case / n)
+      var_y <- 1 / (phi * (1 - phi))
+    } else {
+      warning("Sample size and variance of Y could not be determined from the summary statistics.")
+      n <- NULL
+    }
+  }
+
+  return(list(sumstats = sumstats, n = n, var_y = var_y))
+}

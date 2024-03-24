@@ -1,3 +1,40 @@
+pval_acat <- function(pvals) {
+  if (length(pvals) == 1) {
+    return(pvals[1])
+  }
+  stat <- 0.00
+  pval_min <- 1.00
+
+  stat <- sum(qcauchy(pvals))
+  pval_min <- min(pval_min, min(qcauchy(pvals)))
+
+  return(pcauchy(stat / length(pvals), lower.tail = FALSE))
+}
+
+#' @importFrom harmonicmeanp pLandau
+pval_hmp <- function(pvals) {
+  # https://search.r-project.org/CRAN/refmans/harmonicmeanp/html/pLandau.html
+  pvalues <- unique(pvals)
+  L <- length(pvalues)
+  HMP <- L / sum(pvalues^-1)
+
+  LOC_L1 <- 0.874367040387922
+  SCALE <- 1.5707963267949
+
+  return(pLandau(1 / HMP, mu = log(L) + LOC_L1, sigma = SCALE, lower.tail = FALSE))
+}
+
+pval_global <- function(pvals, comb_method = "HMP", naive = FALSE) {
+  # assuming sstats has tissues as columns and rows as pvals
+  min_pval <- min(pvals)
+  n_total_tests <- pvals %>%
+    unique() %>%
+    length() # There should be one unique pval per tissue
+  global_pval <- if (comb_method == "HMP") pval_hmp(pvals) else pval_acat(pvals) # pval vector
+  naive_pval <- min(n_total_tests * min_pval, 1.0)
+  return(if (naive) naive_pval else global_pval) # global_pval and naive_pval
+}
+
 matxMax <- function(mtx) {
   return(arrayInd(which.max(mtx), dim(mtx)))
 }
@@ -36,6 +73,33 @@ is_zero_variance <- function(x) {
   }
 }
 
+compute_LD <- function(X) {
+  if (is.null(X)) {
+    stop("X must be provided.")
+  }
+
+  # Mean impute X
+  genotype_data_imputed <- apply(X, 2, function(x) {
+    pos <- which(is.na(x))
+    if (length(pos) != 0) {
+      x[pos] <- mean(x, na.rm = TRUE)
+    }
+    return(x)
+  })
+
+  # Check if Rfast package is installed
+  if (requireNamespace("Rfast", quietly = TRUE)) {
+    # Use Rfast::cora for faster correlation calculation
+    R <- Rfast::cora(genotype_data_imputed, large = TRUE)
+  } else {
+    # Use base R cor function if Rfast is not installed
+    R <- cor(genotype_data_imputed)
+  }
+
+  colnames(R) <- rownames(R) <- colnames(genotype_data_imputed)
+  R
+}
+
 #' @importFrom matrixStats colVars
 filter_X <- function(X, missing_rate_thresh, maf_thresh, var_thresh = 0) {
   rm_col <- which(apply(X, 2, compute_missing) > missing_rate_thresh)
@@ -69,19 +133,42 @@ format_variant_id <- function(names_vector) {
   gsub("_", ":", names_vector)
 }
 
-load_genotype_data <- function(genotype, keep_indel = TRUE) {
-  # Read genotype data using plink
-  geno <- plink2R::read_plink(genotype)
-  # Process row names
-  rownames(geno$bed) <- sapply(strsplit(rownames(geno$bed), ":"), `[`, 2)
-  # Remove indels if specified
-  if (!keep_indel) {
-    is_indel <- with(geno$bim, grepl("[^ATCG]", V5) | grepl("[^ATCG]", V6) | nchar(V5) > 1 | nchar(V6) > 1)
-    geno_bed <- geno$bed[, !is_indel]
-  } else {
-    geno_bed <- geno$bed
+#' Converted  Variant ID into a properly structured data frame
+#' @param variant_id A data frame or character vector representing variant IDs.
+#'   Expected formats are a data frame with columns "chrom", "pos", "A1", "A2",
+#'   or a character vector in "chr:pos:A2:A1" or "chr:pos_A2_A1" format.
+#' @return A data frame with columns "chrom", "pos", "A1", "A2", where 'chrom'
+#'   and 'pos' are integers, and 'A1' and 'A2' are allele identifiers.
+#' @noRd
+variant_id_to_df <- function(variant_id) {
+  # Check if target_variants is already a data.frame with the required columns
+  if (is.data.frame(variant_id)) {
+    if (!all(c("chrom", "pos", "A1", "A2") %in% names(variant_id))) {
+      names(variant_id) <- c("chrom", "pos", "A2", "A1")
+    }
+    # Ensure that 'chrom' values are integers
+    variant_id$chrom <- ifelse(grepl("^chr", variant_id$chrom),
+      as.integer(sub("^chr", "", variant_id$chrom)), # Remove 'chr' and convert to integer
+      as.integer(variant_id$chrom)
+    ) # Convert to integer if not already
+    variant_id$pos <- as.integer(variant_id$pos)
+    return(variant_id)
   }
-  return(geno_bed)
+  # Function to split a string and create a data.frame
+  create_dataframe <- function(string) {
+    string <- gsub("_", ":", string)
+    parts <- strsplit(string, ":", fixed = TRUE)
+    data <- data.frame(do.call(rbind, parts), stringsAsFactors = FALSE)
+    colnames(data) <- c("chrom", "pos", "A2", "A1")
+    # Ensure that 'chrom' values are integers
+    data$chrom <- ifelse(grepl("^chr", data$chrom),
+      as.integer(sub("^chr", "", data$chrom)), # Remove 'chr' and convert to integer
+      as.integer(data$chrom)
+    ) # Convert to integer if not already
+    data$pos <- as.integer(data$pos)
+    return(data)
+  }
+  return(create_dataframe(variant_id))
 }
 
 #' @importFrom stringr str_split
@@ -124,20 +211,37 @@ NoSNPsError <- function(message) {
   structure(list(message = message), class = c("NoSNPsError", "error", "condition"))
 }
 
+load_genotype_data <- function(genotype, keep_indel = TRUE) {
+  # Read genotype data using plink
+  geno <- plink2R::read_plink(genotype)
+  # Process row names
+  rownames(geno$bed) <- sapply(strsplit(rownames(geno$bed), ":"), `[`, 2)
+  # Remove indels if specified
+  if (!keep_indel) {
+    is_indel <- with(geno$bim, grepl("[^ATCG]", V5) | grepl("[^ATCG]", V6) | nchar(V5) > 1 | nchar(V6) > 1)
+    geno_bed <- geno$bed[, !is_indel]
+  } else {
+    geno_bed <- geno$bed
+  }
+  return(geno_bed)
+}
+
 #' Load genotype data for a specific region using data.table for efficiency
 #'
-#' By default, plink usage dosage of the *major* allele, since allele A1 is
-#' usually the minor allele and the code "1" refers to the second allele A2,
-#' so that "11" is A2/A2 or major/major. We always use minor allele dosage, to
-#' be consistent with the output from plink --recodeA which used minor allele
+#' By default, plink usage dosage of the *major* allele, since "effect allele" A1 is
+#' usually the minor allele and the code "1" refers to the "other allele" A2,
+#' so that "11" is A2/A2 or major/major. We always use effect allele dosage, to
+#' be more consistent with the minor allele based convention ie, plink --recodeA which used minor allele
 #' dosage by default.
 #'
 #' @param genotype Path to the genotype data file (without extension).
 #' @param region The target region in the format "chr:start-end".
 #' @param keep_indel Whether to keep indel SNPs.
 #' @return A vector of SNP IDs in the specified region.
-#' @importFrom snpStats read.plink
+#'
 #' @importFrom data.table fread
+#' @importFrom magrittr %>%
+#' @importFrom snpStats read.plink
 #' @export
 load_genotype_region <- function(genotype, region = NULL, keep_indel = TRUE) {
   if (!is.null(region)) {
@@ -173,15 +277,14 @@ load_genotype_region <- function(genotype, region = NULL, keep_indel = TRUE) {
   } else {
     geno_bed <- geno$genotypes
   }
-  # By default, plink usage dosage of the *major* allele, since allele A1 is
-  # usually the minor allele and the code "1" refers to the second allele A2,
-  # so that "11" is A2/A2 or major/major.
-
-  # We always use minor allele dosage, to be consistent with the output from
-  # plink --recodeA which used minor allele dosage by default.
   return(2 - as(geno_bed, "numeric"))
 }
 
+#' @importFrom purrr map
+#' @importFrom readr read_delim cols
+#' @importFrom dplyr select mutate across everything
+#' @importFrom magrittr %>%
+#' @noRd
 load_covariate_data <- function(covariate_path) {
   return(map(covariate_path, ~ read_delim(.x, "\t", col_types = cols()) %>%
     select(-1) %>%
@@ -194,7 +297,9 @@ NoPhenotypeError <- function(message) {
 }
 
 #' @importFrom purrr map2 compact
-#' @importFrom dplyr filter
+#' @importFrom readr read_delim cols
+#' @importFrom dplyr filter select mutate across everything
+#' @importFrom magrittr %>%
 #' @noRd
 load_phenotype_data <- function(phenotype_path, region, extract_region_name = NULL, region_name_col = NULL, tabix_header = TRUE) {
   if (is.null(extract_region_name)) {
@@ -236,8 +341,10 @@ load_phenotype_data <- function(phenotype_path, region, extract_region_name = NU
   return(phenotype_data)
 }
 
-## extract phenotype coordiate information (first three col for each element in the list)
 #' @importFrom purrr map
+#' @importFrom tibble as_tibble
+#' @importFrom dplyr mutate
+#' @importFrom magrittr %>%
 #' @noRd
 extract_phenotype_coordinates <- function(phenotype_list) {
   return(map(phenotype_list, ~ t(.x[1:3, ]) %>%
@@ -245,11 +352,17 @@ extract_phenotype_coordinates <- function(phenotype_list) {
     mutate(start = as.numeric(start), end = as.numeric(end))))
 }
 
+#' @importFrom magrittr %>%
+#' @noRd
 filter_by_common_samples <- function(dat, common_samples) {
   dat[common_samples, , drop = FALSE] %>% .[order(rownames(.)), ]
 }
 
-#' @importFrom readr read_delim cols
+#' @importFrom tibble tibble
+#' @importFrom dplyr mutate select
+#' @importFrom purrr map map2
+#' @importFrom magrittr %>%
+#' @noRd
 prepare_data_list <- function(geno_bed, phenotype, covariate, imiss_cutoff, maf_cutoff, mac_cutoff, xvar_cutoff, phenotype_header = 4, keep_samples = NULL) {
   data_list <- tibble(
     covar = covariate,
@@ -292,6 +405,10 @@ prepare_data_list <- function(geno_bed, phenotype, covariate, imiss_cutoff, maf_
   return(data_list)
 }
 
+#' @importFrom purrr map
+#' @importFrom dplyr intersect
+#' @importFrom magrittr %>%
+#' @noRd
 prepare_X_matrix <- function(geno_bed, data_list, imiss_cutoff, maf_cutoff, mac_cutoff, xvar_cutoff) {
   # Calculate the union of all samples from data_list: any of X, covar and Y would do
   all_samples_union <- map(data_list$covar, ~ rownames(.x)) %>%
@@ -313,6 +430,11 @@ prepare_X_matrix <- function(geno_bed, data_list, imiss_cutoff, maf_cutoff, mac_
   return(X_filtered)
 }
 
+#' @importFrom purrr map map2
+#' @importFrom dplyr mutate
+#' @importFrom stats lm.fit sd
+#' @importFrom magrittr %>%
+#' @noRd
 add_X_residuals <- function(data_list, scale_residuals = FALSE) {
   # Compute residuals for X and add them to data_list
   data_list <- data_list %>%
@@ -332,6 +454,11 @@ add_X_residuals <- function(data_list, scale_residuals = FALSE) {
   return(data_list)
 }
 
+#' @importFrom purrr map map2
+#' @importFrom dplyr mutate
+#' @importFrom stats lm.fit sd
+#' @importFrom magrittr %>%
+#' @noRd
 add_Y_residuals <- function(data_list, conditions, scale_residuals = FALSE) {
   # Compute residuals, their mean, and standard deviation, and add them to data_list
   data_list <- data_list %>%
@@ -353,10 +480,45 @@ add_Y_residuals <- function(data_list, conditions, scale_residuals = FALSE) {
   return(data_list)
 }
 
-#' @import purrr dplyr tibble
-#' @importFrom utils read.table
-#' @importFrom tidyr unnest
-#' @importFrom stringr str_split
+#' Load regional association data
+#'
+#' This function loads genotype, phenotype, and covariate data for a specific region and performs data preprocessing.
+#'
+#' @param genotype PLINK bed file containing genotype data.
+#' @param phenotype A vector of phenotype file names.
+#' @param covariate A vector of covariate file names corresponding to the phenotype file vector.
+#' @param region A string of chr:start-end for the phenotype region.
+#' @param conditions A vector of strings representing different conditions or groups.
+#' @param maf_cutoff Minimum minor allele frequency (MAF) cutoff. Default is 0.
+#' @param mac_cutoff Minimum minor allele count (MAC) cutoff. Default is 0.
+#' @param xvar_cutoff Maximum variant missingness cutoff. Default is 0.
+#' @param imiss_cutoff Maximum individual missingness cutoff. Default is 0.
+#' @param association_window A string of chr:start-end for the association analysis window (cis or trans). If not provided, all genotype data will be loaded.
+#' @param extract_region_name A list of vectors of strings (e.g., gene ID ENSG00000269699) to subset the information when there are multiple regions available. Default is NULL.
+#' @param region_name_col Column name containing the region name. Default is NULL.
+#' @param keep_indel Logical indicating whether to keep insertions/deletions (INDELs). Default is TRUE.
+#' @param keep_samples A vector of sample names to keep. Default is NULL.
+#' @param phenotype_header Number of rows to skip at the beginning of the transposed phenotype file (default is 4 for chr, start, end, and ID).
+#' @param scale_residuals Logical indicating whether to scale residuals. Default is FALSE.
+#' @param tabix_header Logical indicating whether the tabix file has a header. Default is TRUE.
+#'
+#' @return A list containing the following components:
+#' \itemize{
+#'   \item residual_Y: A list of residualized phenotype values (either a vector or a matrix).
+#'   \item residual_X: A list of residualized genotype matrices for each condition.
+#'   \item residual_Y_scalar: Scaling factor for residualized phenotype values.
+#'   \item residual_X_scalar: Scaling factor for residualized genotype values.
+#'   \item dropped_sample: A list of dropped samples for X, Y, and covariates.
+#'   \item covar: Covariate data.
+#'   \item Y: Original phenotype data.
+#'   \item X_data: Original genotype data.
+#'   \item X: Filtered genotype matrix.
+#'   \item maf: Minor allele frequency (MAF) for each variant.
+#'   \item chrom: Chromosome of the region.
+#'   \item grange: Genomic range of the region (start and end positions).
+#'   \item Y_coordinates: Phenotype coordinates if a region is specified.
+#' }
+#'
 #' @export
 load_regional_association_data <- function(genotype, # PLINK file
                                            phenotype, # a vector of phenotype file names
@@ -367,8 +529,8 @@ load_regional_association_data <- function(genotype, # PLINK file
                                            mac_cutoff = 0,
                                            xvar_cutoff = 0,
                                            imiss_cutoff = 0,
-                                           association_window = NULL, #  a string of chr:start-end for association analysis window (cis or trans). If not provided all genotype data will be loaded
-                                           extract_region_name = NULL, # a string of eg gene ID ENSG00000269699, this is helpful if we only want to keep a subset of the information when there are multiple regions available
+                                           association_window = NULL,
+                                           extract_region_name = NULL,
                                            region_name_col = NULL,
                                            keep_indel = TRUE,
                                            keep_samples = NULL,
@@ -444,11 +606,18 @@ load_regional_regression_data <- function(...) {
   ))
 }
 
-
 # return matrix of R conditions, with column names being the names of the conditions (phenotypes) and row names being sample names. Even for one condition it has to be a matrix with just one column.
 #' @noRd
 pheno_list_to_mat <- function(data_list) {
-  Y_resid_matrix <- do.call(cbind, data_list$residual_Y)
+  all_row_names <- unique(unlist(lapply(data_list$residual_Y, rownames)))
+  # Step 2: Align matrices and fill with NA where necessary
+  aligned_mats <- lapply(data_list$residual_Y, function(mat) {
+    expanded_mat <- matrix(NA, nrow = length(all_row_names), ncol = 1, dimnames = list(all_row_names, NULL))
+    common_rows <- intersect(rownames(mat), all_row_names)
+    expanded_mat[common_rows, ] <- mat[common_rows, ]
+    return(expanded_mat)
+  })
+  Y_resid_matrix <- do.call(cbind, aligned_mats)
   colnames(Y_resid_matrix) <- names(data_list$residual_Y)
   data_list$residual_Y <- Y_resid_matrix
   return(data_list)
@@ -481,7 +650,7 @@ load_regional_multivariate_data <- function(matrix_y_min_complete = NULL, # when
     residual_Y_scalar = Y_scalar,
     dropped_sample = dropped_sample,
     X = X,
-    maf = dat$maf,
+    maf = compute_maf(X),
     chrom = dat$chrom,
     grange = dat$grange
   ))
@@ -492,4 +661,135 @@ load_regional_multivariate_data <- function(matrix_y_min_complete = NULL, # when
 load_regional_functional_data <- function(...) {
   dat <- load_regional_association_data(...)
   return(dat)
+}
+
+#' Load, Validate, and Consolidate TWAS Weights from Multiple RDS Files
+#'
+#' This function loads TWAS weight data from multiple RDS files, checks for the presence
+#' of specified region and condition. If variable_name_obj is provided, it aligns and
+#' consolidates weight matrices based on the object's variant names, filling missing data
+#' with zeros. If variable_name_obj is NULL, it checks that all files have the same row
+#' numbers for the condition and consolidates weights accordingly.
+#'
+#' @param weight_db_file weight_db_files Vector of file paths for RDS files containing TWAS weights..
+#' Each element organized as region/condition/weights
+#' @param condition The specific condition to be checked and consolidated across all files.
+#' @param variable_name_obj The name of the variable/object to fetch from each file, if not NULL.
+#' @return A consolidated list of weights for the specified condition and a list of SuSiE results.
+#' @examples
+#' # Example usage (replace with actual file paths, condition, region, and variable_name_obj):
+#' weight_db_files <- c("path/to/file1.rds", "path/to/file2.rds")
+#' condition <- "example_condition"
+#' region <- "example_region"
+#' variable_name_obj <- "example_variable" # or NULL for standard processing
+#' consolidated_weights <- load_twas_weights(weight_db_files, condition, region, variable_name_obj)
+#' print(consolidated_weights)
+#' @export
+load_twas_weights <- function(weight_db_files, conditions = NULL,
+                              variable_name_obj = c("preset_variants_result", "variant_names"),
+                              susie_obj = c("preset_variants_result", "susie_result_trimmed"),
+                              twas_weights_table = "twas_weights") {
+  ## Internal function to load and validate data from RDS files
+  load_and_validate_data <- function(weight_db_files, conditions, variable_name_obj) {
+    all_data <- lapply(weight_db_files, readRDS)
+    unique_regions <- unique(unlist(lapply(all_data, function(data) names(data))))
+    # Check if region from all RDS files are the same
+    if (length(unique_regions) != 1) {
+      stop("The RDS files do not refer to the same region.")
+    } else {
+      # Assuming all data refer to the same region, now combine data by conditions
+      combined_all_data <- do.call("c", lapply(all_data, function(data) data[[1]]))
+    }
+    # Set default for 'conditions' if they are not specified
+    if (is.null(conditions)) {
+      conditions <- names(combined_all_data)
+    }
+    ## Check if the specified condition and variable_name_obj are available in all files
+    if (!all(conditions %in% names(combined_all_data))) {
+      stop("The specified condition is not available in all RDS files.")
+    }
+    return(combined_all_data)
+  }
+  # Only extract the variant_names and SuSiE results
+  extract_variants_and_susie_results <- function(combined_all_data, conditions) {
+    combined_susie_result <- lapply(conditions, function(condition) {
+      result <- list(
+        variant_names = get_nested_element(combined_all_data, c(condition, variable_name_obj)),
+        susie_result = get_nested_element(combined_all_data, c(condition, susie_obj)),
+        region_info = get_nested_element(combined_all_data, c(condition, "region_info"))
+      )
+      return(result)
+    })
+    names(combined_susie_result) <- conditions
+    return(combined_susie_result)
+  }
+  # Internal function to align and merge weight matrices
+  align_and_merge <- function(weights_list, variable_objs) {
+    # Get the complete list of variant names across all files
+    all_variants <- unique(unlist(variable_objs))
+    consolidated_list <- list()
+    # Fill the matrix with weights, aligning by variant names
+    for (i in seq_along(weights_list)) {
+      # Initialize the temp matrix with zeros
+      existing_colnames <- character(0)
+      temp_matrix <- matrix(0, nrow = length(all_variants), ncol = ncol(weights_list[[i]]))
+      rownames(temp_matrix) <- all_variants
+      idx <- match(variable_objs[[i]], all_variants)
+      temp_matrix[idx, ] <- weights_list[[i]]
+      # Ensure no duplicate column names
+      new_colnames <- colnames(weights_list[[i]])
+      dups <- duplicated(c(existing_colnames, new_colnames))
+      if (any(dups)) {
+        duplicated_names <- paste(c(existing_colnames, new_colnames)[dups], collapse = ", ")
+        stop("Duplicate column names detected during merging process: ", duplicated_names, ".")
+      }
+      existing_colnames <- c(existing_colnames, new_colnames)
+
+      # consolidated_list[[i]] <- matrix(as.numeric(temp_matrix), nrow = nrow(temp_matrix), byrow = TRUE)
+      consolidated_list[[i]] <- temp_matrix
+      colnames(consolidated_list[[i]]) <- existing_colnames
+    }
+    return(consolidated_list)
+  }
+
+  # Internal function to consolidate weights for given condition
+  consolidate_weights_list <- function(combined_all_data, conditions, variable_name_obj, twas_weights_table) {
+    # Set default for 'conditions' if they are not specified
+    if (is.null(conditions)) {
+      conditions <- names(combined_all_data)
+    }
+    combined_weights_by_condition <- lapply(conditions, function(condition) {
+      temp_list <- get_nested_element(combined_all_data, c(condition, twas_weights_table))
+      temp_list <- temp_list[!names(temp_list) %in% "variant_names"]
+      sapply(temp_list, cbind)
+    })
+    names(combined_weights_by_condition) <- conditions
+    if (is.null(variable_name_obj)) {
+      # Standard processing: Check for identical row numbers and consolidate
+      row_numbers <- sapply(combined_weights_by_condition, function(data) nrow(data))
+      if (length(unique(row_numbers)) > 1) {
+        stop("Not all files have the same number of rows for the specified condition.")
+      }
+      weights <- combined_weights_by_condition
+    } else {
+      # Processing with variable_name_obj: Align and merge data, fill missing with zeros
+      variable_objs <- lapply(conditions, function(condition) {
+        get_nested_element(combined_all_data, c(condition, variable_name_obj))
+      })
+      weights <- align_and_merge(combined_weights_by_condition, variable_objs)
+    }
+    names(weights) <- conditions
+    return(weights)
+  }
+
+  ## Load, validate, and consolidate data
+  try(
+    {
+      combined_all_data <- load_and_validate_data(weight_db_files, conditions, variable_name_obj)
+      combined_susie_result <- extract_variants_and_susie_results(combined_all_data, conditions)
+      weights <- consolidate_weights_list(combined_all_data, conditions, variable_name_obj, twas_weights_table)
+      return(list(susie_results = combined_susie_result, weights = weights))
+    },
+    silent = TRUE
+  )
 }

@@ -28,7 +28,7 @@ susie_result_mock <- list(
   susie_results = list(
     condition1 = list(
       top_loci = top_loci_mock,
-      region_info = list(name = "Gene1")
+      region_info = list(region_name = "Gene1")
     )
   )
 ) 

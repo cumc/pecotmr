@@ -47,9 +47,8 @@ load_multitrait_tensorqtl_sumstat <- function(
   }
 
 
-  merge_matrices <- function(
-      matrix_list, value_column, id_column = "variants",
-      remove_any_missing = FALSE) {
+  merge_matrices <- function(matrix_list, value_column, id_column = "variants",
+                             remove_any_missing = FALSE) {
     # Convert matrices to data frames
     df_list <- lapply(seq_along(matrix_list), function(i) {
       df <- as.data.frame(matrix_list[[i]])
@@ -193,7 +192,6 @@ load_multitrait_tensorqtl_sumstat <- function(
   return(out)
 }
 
-#' @export
 merge_susie_cs <- function(susie_fit, coverage = "cs_coverage_0.95", complementary = FALSE) {
   # Initialize an empty list for the combined_sets
   combined_sets <- list()
@@ -440,9 +438,8 @@ load_multitrait_R_sumstat <- function(
     return(matched_indices)
   }
 
-  merge_matrices <- function(
-      matrix_list, value_column, id_column = "variants",
-      remove_any_missing = FALSE) {
+  merge_matrices <- function(matrix_list, value_column, id_column = "variants",
+                             remove_any_missing = FALSE) {
     # Convert matrices to data frames
     df_list <- lapply(seq_along(matrix_list), function(i) {
       df <- as.data.frame(matrix_list[[i]])
@@ -575,7 +572,7 @@ mash_rand_null_sample <- function(dat, n_random, n_null, exclude_condition, seed
 }
 
 #' @export
-merge_data <- function(res_data, one_data) {
+merge_mash_data <- function(res_data, one_data) {
   combined_data <- list()
   if (length(res_data) == 0) {
     return(one_data)
@@ -620,8 +617,8 @@ merge_data <- function(res_data, one_data) {
     return(combined_data)
   }
 }
+
 #' @importFrom udr ud_init ud_fit
-#' @import stringr
 #' @importFrom mashr mash_set_data cov_canonical estimate_null_correlation_simple
 #' @export
 mash_pipeline <- function(mash_input, alpha, unconstrained.update = "ted", set_seed = 999) {

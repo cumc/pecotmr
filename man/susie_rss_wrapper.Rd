@@ -7,8 +7,8 @@
 susie_rss_wrapper(
   z,
   R,
-  bhat,
-  shat,
+  bhat = NULL,
+  shat = NULL,
   n = NULL,
   var_y = NULL,
   L = 10,

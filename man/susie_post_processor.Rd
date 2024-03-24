@@ -2,7 +2,7 @@
 % Please edit documentation in R/susie_wrapper.R
 \name{susie_post_processor}
 \alias{susie_post_processor}
-\title{Post-process SuSiE or SuSiE_rss Analysis Results}
+\title{Post-process SuSiE Analysis Results}
 \usage{
 susie_post_processor(
   susie_output,
@@ -17,15 +17,15 @@ susie_post_processor(
   prior_eff_tol = 1e-09,
   min_abs_corr = 0.5,
   median_abs_corr = 0.8,
-  mode = c("susie", "susie_rss")
+  mode = c("susie", "susie_rss", "mvsusie")
 )
 }
 \arguments{
-\item{susie_output}{Output from running susieR::susie() or susieR::susie_rss()}
+\item{susie_output}{Output from running susieR::susie() or susieR::susie_rss() or mvsusieR::mvsusie()}
 
 \item{data_x}{Genotype data matrix for 'susie' or Xcorr matrix for 'susie_rss'.}
 
-\item{data_y}{Phenotype data vector for 'susie' or summary stats object for 'susie_rss' (a list contain attribute betahat and sebetahat AND/OR z). i.e. data_y = list(betahat = ..., sebetahat = ...)}
+\item{data_y}{Phenotype data vector for 'susie' or summary stats object for 'susie_rss' (a list contain attribute betahat and sebetahat AND/OR z). i.e. data_y = list(betahat = ..., sebetahat = ...), or NULL for mvsusie}
 
 \item{X_scalar}{Scalar for the genotype data, used in residual scaling.}
 
@@ -47,13 +47,13 @@ susie_post_processor(
 A list containing modified SuSiE object along with additional post-processing information.
 }
 \description{
-This function processes the results from SuSiE or SuSiE_rss (Sum of Single Effects) genetic analysis.
+This function processes the results from SuSiE (Sum of Single Effects) genetic analysis.
 It extracts and processes various statistics and indices based on the provided SuSiE object and other parameters.
-The function can operate in two modes: 'susie' and 'susie_rss', based on the method used for the SuSiE analysis.
+The function can operate in 3 modes: 'susie', 'susie_rss', 'mvsusie', based on the method used for the SuSiE analysis.
 }
 \examples{
 # Example usage for SuSiE
-# result <- combined_susie_post_processor(susie_output, X_data, y_data, maf, mode = "susie")
-# Example usage for SuSiE_rss
-# result <- combined_susie_post_processor(susie_output, Xcorr, z, maf, mode = "susie_rss")
+# result <- susie_post_processor(susie_output, X_data, y_data, maf, mode = "susie")
+# Example usage for SuSiE RSS
+# result <- susie_post_processor(susie_output, Xcorr, z, maf, mode = "susie_rss")
 }

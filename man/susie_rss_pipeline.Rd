@@ -5,71 +5,70 @@
 \title{Run the SuSiE RSS pipeline}
 \usage{
 susie_rss_pipeline(
-  sumstat,
-  R,
-  ref_panel,
-  n,
-  L,
-  var_y,
-  QC = TRUE,
-  impute = TRUE,
-  bayesian_conditional_analysis = TRUE,
-  lamb = 0.01,
-  rcond = 0.01,
-  R2_threshold = 0.6,
-  max_L = 20,
+  sumstats,
+  LD_mat,
+  n = NULL,
+  var_y = NULL,
+  L = 5,
+  max_L = 30,
   l_step = 5,
-  minimum_ld = 5,
+  analysis_method = c("susie_rss", "single_effect", "bayesian_conditional_regression"),
   coverage = 0.95,
   secondary_coverage = c(0.7, 0.5),
-  pip_cutoff_to_skip = 0.025,
   signal_cutoff = 0.1
 )
 }
 \arguments{
-\item{sumstat}{A list or data frame containing summary statistics with necessary columns.}
+\item{sumstats}{A list or data frame containing summary statistics with 'z' or 'beta' and 'se' columns.}
 
-\item{R}{The LD matrix.}
+\item{LD_mat}{The LD matrix.}
 
-\item{ref_panel}{Reference panel for QC and imputation.}
+\item{n}{Sample size (default: NULL).}
 
-\item{n}{Sample size.}
+\item{var_y}{Variance of Y (default: NULL).}
 
-\item{L}{Initial number of causal configurations to consider in the analysis.}
+\item{L}{Initial number of causal configurations to consider in the analysis (default: 5).}
 
-\item{var_y}{Variance of Y.}
+\item{max_L}{Maximum number of causal configurations to consider in the analysis (default: 30).}
 
-\item{QC}{Perform quality control (default: TRUE).}
+\item{l_step}{Step size for increasing L when the limit is reached during dynamic adjustment (default: 5).}
 
-\item{impute}{Perform imputation (default: TRUE).}
-
-\item{bayesian_conditional_analysis}{Perform Bayesian conditional analysis (default: TRUE).}
-
-\item{lamb}{Regularization parameter for the RAiSS imputation method.}
-
-\item{rcond}{Condition number for the RAiSS imputation method.}
-
-\item{R2_threshold}{R-squared threshold for the RAiSS imputation method.}
-
-\item{max_L}{Maximum number of components for QC.}
-
-\item{l_step}{Step size for increasing L when the limit is reached during dynamic adjustment.}
-
-\item{minimum_ld}{Minimum LD for QC.}
+\item{analysis_method}{The analysis method to use. Options are "susie_rss", "single_effect", or "bayesian_conditional_regression" (default: "susie_rss").}
 
 \item{coverage}{Coverage level for susie_rss analysis (default: 0.95).}
 
 \item{secondary_coverage}{Secondary coverage levels for susie_rss analysis (default: c(0.7, 0.5)).}
 
-\item{pip_cutoff_to_skip}{PIP cutoff to skip imputation (default: 0.025).}
-
 \item{signal_cutoff}{Signal cutoff for susie_post_processor (default: 0.1).}
 }
 \value{
-A list containing the results of various SuSiE RSS analyses.
+A list containing the results of the SuSiE RSS analysis based on the specified method.
 }
 \description{
-This function runs the SuSiE RSS pipeline, including single-effect regression, no QC analysis,
-and optional QC and Bayesian conditional analysis. It processes the input summary statistics and LD data
-to perform various SuSiE analyses, providing results in a structured output.
+This function runs the SuSiE RSS pipeline, performing analysis based on the specified method.
+It processes the input summary statistics and LD data to provide results in a structured output.
+}
+\details{
+The `susie_rss_pipeline` function runs the SuSiE RSS pipeline based on the specified analysis method.
+  It takes the following main inputs:
+  - `sumstats`: A list or data frame containing summary statistics with 'z' or 'beta' and 'se' columns.
+  - `LD_mat`: The LD matrix.
+  - `n`: Sample size (optional).
+  - `var_y`: Variance of Y (optional).
+  - `L`: Initial number of causal configurations to consider in the analysis.
+  - `max_L`: Maximum number of causal configurations to consider in the analysis.
+  - `l_step`: Step size for increasing L when the limit is reached during dynamic adjustment.
+  - `analysis_method`: The analysis method to use. Options are "susie_rss", "single_effect", or "bayesian_conditional_regression".
+
+  The function first checks if the `sumstats` input contains 'z' or 'beta' and 'se' columns. If 'z' is present, it is used directly.
+  If 'beta' and 'se' are present, 'z' is calculated as 'beta' divided by 'se'.
+
+  Based on the specified `analysis_method`, the function calls the `susie_rss_wrapper` with the appropriate parameters.
+  - For "single_effect" method, `L` is set to 1.
+  - For "susie_rss" and "bayesian_conditional_regression" methods, `L`, `max_L`, and `l_step` are used.
+  - For "bayesian_conditional_regression" method, `max_iter` is set to 1.
+
+  The results are then post-processed using the `susie_post_processor` function with the specified `signal_cutoff` and `secondary_coverage` values.
+
+  The function returns a list containing the results of the SuSiE RSS analysis based on the specified method.
 }

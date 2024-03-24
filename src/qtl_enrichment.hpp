@@ -1,13 +1,11 @@
 #ifndef QTL_ENRICHMENT_HPP
 #define QTL_ENRICHMENT_HPP
 #include <RcppArmadillo.h> // need to include this before RcppGSL otherwise it complains about conflicts
-#include <RcppGSL.h>
 #include <vector>
 #include <string>
 #include <map>
 #include <memory>
-#include <gsl/gsl_rng.h>
-#include <gsl/gsl_randist.h>
+#include <random>
 #include <omp.h>
 #include <cmath>
 #include <cstdio>
@@ -18,8 +16,6 @@
 // [[Rcpp::plugins(openmp)]]
 // Import Armadillo
 // [[Rcpp::depends(RcppArmadillo)]]
-// Import GSL
-// [[Rcpp::depends(RcppGSL)]]
 
 class SuSiEFit {
 public:
@@ -66,20 +62,14 @@ SuSiEFit(SEXP r_susie_fit) {
 	}
 }
 
-std::vector<std::string> impute_qtn(const gsl_rng *r) const {
+std::vector<std::string> impute_qtn(std::mt19937 &gen) const {
 	std::vector<std::string> qtn_names;
 
 	for (arma::uword i = 0; i < alpha.n_rows; ++i) {
 		std::vector<double> alpha_row(alpha.colptr(i), alpha.colptr(i) + alpha.n_cols);
-		std::unique_ptr<unsigned int[]> sample(new unsigned int[alpha_row.size()]);
-		gsl_ran_multinomial(r, alpha_row.size(), 1, alpha_row.data(), sample.get());
-
-		for (size_t j = 0; j < alpha_row.size(); ++j) {
-			if (sample[j] == 1) {
-				qtn_names.push_back(variable_names[j]);
-				break;
-			}
-		}
+		std::discrete_distribution<> dist(alpha_row.begin(), alpha_row.end());
+		int random_index = dist(gen);
+		qtn_names.push_back(variable_names[random_index]);
 	}
 
 	return qtn_names;
@@ -196,14 +186,9 @@ std::map<std::string, double> qtl_enrichment_workhorse(
 
 	#pragma omp parallel for num_threads(num_threads)
 	for (int k = 0; k < ImpN; k++) {
-		// Initialize the GSL RNG for this thread
-		const gsl_rng_type *T;
-		gsl_rng *r;
-		gsl_rng_env_setup();
-		T = gsl_rng_default;
-		r = gsl_rng_alloc(T);
-		// Set the seed for this thread's RNG
-		gsl_rng_set(r, static_cast<unsigned long int>(k));
+		// Initialize the RNG for this thread
+		std::random_device rd;
+		std::mt19937 gen(rd());
 
 		// Use QTL to annotate GWAS variants
 		std::vector<int> annotation_vector(gwas_pip.size(), 0);
@@ -211,7 +196,7 @@ std::map<std::string, double> qtl_enrichment_workhorse(
 		int total_qtl_count = 0;
 
 		for (size_t i = 0; i < qtl_susie_fits.size(); i++) {
-			std::vector<std::string> variants = qtl_susie_fits[i].impute_qtn(r);
+			std::vector<std::string> variants = qtl_susie_fits[i].impute_qtn(gen);
 			for (const auto &variant : variants) {
 				auto it = gwas_variant_index.find(variant);
 				if (it != gwas_variant_index.end()) {
@@ -223,7 +208,6 @@ std::map<std::string, double> qtl_enrichment_workhorse(
 			}
 			total_qtl_count += variants.size();
 		}
-		gsl_rng_free(r);
 
 		// Calculate the proportion of missing variants
 		double missing_variant_proportion = static_cast<double>(missing_qtl_count) / total_qtl_count;

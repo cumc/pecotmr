@@ -6,7 +6,7 @@
 \usage{
 slalom(
   zScore,
-  LDmat,
+  LD_mat,
   standard_error = rep(1, length(zScore)),
   abf_prior_variance = 0.04,
   nlog10p_dentist_s_threshold = 4,
@@ -17,7 +17,7 @@ slalom(
 \arguments{
 \item{zScore}{Numeric vector of z-scores corresponding to each variant.}
 
-\item{LDmat}{Square matrix representing linkage disequilibrium (LD) information
+\item{LD_mat}{Square matrix representing linkage disequilibrium (LD) information
 between variants. Must have dimensions matching the length of `zScore`.}
 
 \item{standard_error}{Optional numeric vector of standard errors corresponding
@@ -45,7 +45,7 @@ and annotates lead variants based on fine-mapping results. It computes p-values
 from z-scores assuming a two-sided standard normal distribution.
 }
 \examples{
-# Assuming `zScore` is your vector of z-scores, `LDmat` is your LD matrix,
+# Assuming `zScore` is your vector of z-scores, `LD_mat` is your LD matrix,
 # and optionally `standard_error` is your vector of standard errors:
-results <- slalom(zScore, LDmat, standard_error)
+results <- slalom(zScore, LD_mat, standard_error)
 }

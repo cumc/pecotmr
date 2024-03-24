@@ -41,20 +41,24 @@
 #' prior_grid <- runif(17, 0.00005, 0.05)
 #'
 #' sample_id <- paste0("P000", str_pad(1:400, 3, pad = "0"))
-#' X <- matrix(sample(0:2, size = n*p, replace = TRUE, prob = c(0.65, 0.30, 0.05)), nrow = n)
+#' X <- matrix(sample(0:2, size = n * p, replace = TRUE, prob = c(0.65, 0.30, 0.05)), nrow = n)
 #' rownames(X) <- sample_id
 #' colnames(X) <- paste0("rs", sample(10000:100000, p))
 #'
-#' tissues <- c("Adipose Tissue", "Muscle Tissue", "Brain Tissue", "Liver Tissue",
-#'              "Kidney Tissue", "Heart Tissue", "Lung Tissue")
-#' Y <- matrix(runif(n*r, -2, 2), nrow = n)
+#' tissues <- c(
+#'   "Adipose Tissue", "Muscle Tissue", "Brain Tissue", "Liver Tissue",
+#'   "Kidney Tissue", "Heart Tissue", "Lung Tissue"
+#' )
+#' Y <- matrix(runif(n * r, -2, 2), nrow = n)
 #' Y <- scale(Y)
 #' colnames(Y) <- tissues
 #' rownames(Y) <- sample_id
 #'
 #' set.seed(Sys.time())
-#' components <- c("XtX", "tFLASH_default", "FLASH_default", "tFLASH_nonneg",
-#'                 "FLASH_nonneg", "PCA")
+#' components <- c(
+#'   "XtX", "tFLASH_default", "FLASH_default", "tFLASH_nonneg",
+#'   "FLASH_nonneg", "PCA"
+#' )
 #'
 #' prior_data_driven_matrices <- list()
 #' for (i in components) {
@@ -65,31 +69,40 @@
 #'   prior_data_driven_matrices[[i]] <- cov
 #' }
 #'
-#' res <- mrmash_wrapper(X = X, Y = Y,
-#'                       prior_data_driven_matrices = prior_data_driven_matrices,
-#'                       prior_grid = prior_grid)
+#' res <- mrmash_wrapper(
+#'   X = X, Y = Y,
+#'   prior_data_driven_matrices = prior_data_driven_matrices,
+#'   prior_grid = prior_grid
+#' )
 #'
 #' @importFrom mr.mash.alpha compute_canonical_covs mr.mash expand_covs compute_univariate_sumstats
-#' @importFrom doMC registerDoMC
+#' @importFrom doFuture registerDoFuture
+#' @importFrom future plan multisession
 #' @importFrom glmnet cv.glmnet
 #' @export
 mrmash_wrapper <- function(X,
                            Y,
+                           sumstats = NULL,
                            prior_data_driven_matrices = NULL,
                            prior_grid = NULL,
-                           nthreads = 2,
+                           nthreads = 1,
                            prior_canonical_matrices = FALSE,
                            standardize = FALSE,
                            update_w0 = TRUE,
                            w0_threshold = 1e-8,
                            update_V = TRUE,
                            update_V_method = "full",
-                           B_init_method = "enet",
+                           B_init_method = "glasso",
                            max_iter = 5000,
                            tol = 0.01,
+                           weights_tol = 1e-4,
                            verbose = FALSE, ...) {
-  
   # Check input data
+
+  if (!is.matrix(X) || !is.matrix(Y)) {
+    stop("X and Y must be matrices.")
+  }
+
   if (nrow(X) != nrow(Y)) {
     stop("X and Y must have the same number of rows.")
   }
@@ -99,58 +112,77 @@ mrmash_wrapper <- function(X,
   if (is.null(prior_data_driven_matrices) && !isTRUE(prior_canonical_matrices)) {
     stop("Please provide prior_data_driven_matrices or set prior_canonical_matrices = TRUE.")
   }
-  
+
   Y_has_missing <- any(is.na(Y))
-  
+
   if (Y_has_missing && B_init_method == "glasso") {
-    stop("B_init_method = 'glasso' can only be used without missing values in Y.")
+    warning("B_init_method = 'glasso' can only be used without missing values in Y. Setting it to 'enet' instead")
+    B_init_method <- "enet"
   }
-  
+
   # Compute summary statistics and prior_grids
-  sumstats <- compute_univariate_sumstats(X, Y, standardize = standardize, 
-                                          standardize.response = FALSE, mc.cores = nthreads)
+  if (is.null(sumstats)) {
+    sumstats <- compute_univariate_sumstats(X, Y,
+      standardize = standardize,
+      standardize.response = FALSE, mc.cores = nthreads
+    )
+  }
   prior_grid <- compute_grid(bhat = sumstats$Bhat, sbhat = sumstats$Shat)
-  
+
+  if (!is.null(prior_data_driven_matrices)) {
+    if (inherits(prior_data_driven_matrices, "MashInitializer")) {
+      prior_data_driven_matrices <- prior_data_driven_matrices$prior_variance$xUlist[-1]
+    }
+    prior_data_driven_matrices <- filter_data_driven_mats(Y, prior_data_driven_matrices)
+  }
+
   # Compute canonical matrices, if requested
   if (isTRUE(prior_canonical_matrices)) {
-    prior_canonical_matrices <- compute_canonical_covs(ncol(Y), singletons = TRUE, 
-                                                       hetgrid = c(0, 0.25, 0.5, 0.75, 1))
+    prior_canonical_matrices <- compute_canonical_covs(ncol(Y),
+      singletons = TRUE,
+      hetgrid = c(0, 0.25, 0.5, 0.75, 1)
+    )
     if (!is.null(prior_data_driven_matrices)) {
-      prior_data_driven_matrices <- filter_datadriven_mats(Y, prior_data_driven_matrices)
       S0_raw <- c(prior_canonical_matrices, prior_data_driven_matrices)
     } else {
       S0_raw <- prior_canonical_matrices
     }
   } else {
-    S0_raw <- filter_datadriven_mats(Y, prior_data_driven_matrices)
+    S0_raw <- prior_data_driven_matrices
   }
-  
+
   # Compute prior covariance
   S0 <- expand_covs(S0_raw, prior_grid, zeromat = TRUE)
   time1 <- proc.time()
-  
-  if (B_init_method == "enet") {
-    out <- compute_coefficients_univ_glmnet(X, Y, alpha = 0.5, standardize = standardize, 
-                                            nthreads = nthreads, Xnew = NULL)
-  } else if (B_init_method == "glasso") {
-    out <- compute_coefficients_glasso(X, Y, standardize = standardize, 
-                                       nthreads = nthreads, Xnew = NULL)
+
+  if (B_init_method == "glasso") {
+    out <- compute_coefficients_glasso(X, Y,
+      standardize = standardize,
+      nthreads = nthreads, Xnew = NULL
+    )
+  } else {
+    out <- compute_coefficients_univ_glmnet(X, Y,
+      alpha = 0.5, standardize = standardize,
+      nthreads = nthreads, Xnew = NULL
+    )
   }
-  
+
   B_init <- as.matrix(out$Bhat)
   w0 <- compute_w0(B_init, length(S0))
-  
+
   # Fit mr.mash
-  fit_mrmash <- mr.mash(X = X, Y = Y, S0 = S0, w0 = w0, update_w0 = update_w0, tol = tol,
-                        max_iter = max_iter, convergence_criterion = "ELBO", compute_ELBO = TRUE,
-                        standardize = standardize, verbose = verbose, update_V = update_V, 
-                        update_V_method = update_V_method, w0_threshold = w0_threshold, 
-                        nthreads = nthreads, mu1_init = B_init)
-  
+  fit_mrmash <- mr.mash(
+    X = X, Y = Y, S0 = S0, w0 = w0, update_w0 = update_w0, tol = tol,
+    max_iter = max_iter, convergence_criterion = "ELBO", compute_ELBO = TRUE,
+    standardize = standardize, verbose = verbose, update_V = update_V,
+    update_V_method = update_V_method, w0_threshold = w0_threshold,
+    nthreads = nthreads, mu1_init = B_init
+  )
+
   time2 <- proc.time()
   elapsed_time <- time2["elapsed"] - time1["elapsed"]
   fit_mrmash$analysis_time <- elapsed_time
-  
+
   return(fit_mrmash)
 }
 
@@ -159,31 +191,34 @@ compute_coefficients_glasso <- function(X, Y, standardize, nthreads, Xnew = NULL
   n <- nrow(X)
   p <- ncol(X)
   r <- ncol(Y)
-  tissue_names <- colnames(Y)
-  
+  condition_names <- colnames(Y)
+
   # Fit group-lasso
   if (nthreads > 1) {
-    registerDoMC(nthreads)
+    registerDoFuture()
+    plan(multisession, workers = nthreads)
     paral <- TRUE
   } else {
     paral <- FALSE
   }
-  
-  cvfit_glmnet <- cv.glmnet(x = X, y = Y, family = "mgaussian", alpha = 1, 
-                            standardize = standardize, parallel = paral)
+
+  cvfit_glmnet <- cv.glmnet(
+    x = X, y = Y, family = "mgaussian", alpha = 1,
+    standardize = standardize, parallel = paral
+  )
   coeff_glmnet <- coef(cvfit_glmnet, s = "lambda.min")
-  
+
   # Build matrix of initial estimates for mr.mash
   B <- matrix(as.numeric(NA), nrow = p, ncol = r)
-  
+
   for (i in 1:length(coeff_glmnet)) {
     B[, i] <- as.vector(coeff_glmnet[[i]])[-1]
   }
-  
+
   # Make predictions if requested.
   if (!is.null(Xnew)) {
     Yhat_glmnet <- drop(predict(cvfit_glmnet, newx = Xnew, s = "lambda.min"))
-    colnames(Yhat_glmnet) <- tissue_names
+    colnames(Yhat_glmnet) <- condition_names
     res <- list(Bhat = B, Ytrain = Y, Yhat_new = Yhat_glmnet)
   } else {
     res <- list(Bhat = B, Ytrain = Y)
@@ -194,24 +229,27 @@ compute_coefficients_glasso <- function(X, Y, standardize, nthreads, Xnew = NULL
 ### Function to compute coefficients for univariate glmnet
 compute_coefficients_univ_glmnet <- function(X, Y, alpha, standardize, nthreads, Xnew = NULL) {
   r <- ncol(Y)
-  
+
   linreg <- function(i, X, Y, alpha, standardize, nthreads, Xnew) {
     if (nthreads > 1) {
-      registerDoMC(nthreads)
+      registerDoFuture()
+      plan(multisession, workers = nthreads)
       paral <- TRUE
     } else {
       paral <- FALSE
     }
-    
+
     samples_kept <- which(!is.na(Y[, i]))
-    Ynomiss <- Y[samples_kept, i]
-    Xnomiss <- X[samples_kept, ]
-    
-    cvfit <- cv.glmnet(x = Xnomiss, y = Ynomiss, family = "gaussian", alpha = alpha, 
-                       standardize = standardize, parallel = paral)
+    Ynomiss <- Y[samples_kept, i, drop = FALSE]
+    Xnomiss <- X[samples_kept, , drop = FALSE]
+
+    cvfit <- cv.glmnet(
+      x = Xnomiss, y = Ynomiss, family = "gaussian", alpha = alpha,
+      standardize = standardize, parallel = paral
+    )
     coeffic <- as.vector(coef(cvfit, s = "lambda.min"))
     lambda_seq <- cvfit$lambda
-    
+
     # Make predictions if requested
     if (!is.null(Xnew)) {
       yhat_glmnet <- drop(predict(cvfit, newx = Xnew, s = "lambda.min"))
@@ -219,14 +257,14 @@ compute_coefficients_univ_glmnet <- function(X, Y, alpha, standardize, nthreads,
     } else {
       res <- list(bhat = coeffic, lambda_seq = lambda_seq)
     }
-    
+
     return(res)
   }
-  
+
   out <- lapply(1:r, linreg, X, Y, alpha, standardize, nthreads, Xnew)
-  
+
   Bhat <- sapply(out, "[[", "bhat")
-  
+
   if (!is.null(Xnew)) {
     Yhat_new <- sapply(out, "[[", "yhat_new")
     colnames(Yhat_new) <- colnames(Y)
@@ -240,48 +278,59 @@ compute_coefficients_univ_glmnet <- function(X, Y, alpha, standardize, nthreads,
 ### Compute prior weights from coefficients estimates
 compute_w0 <- function(Bhat, ncomps) {
   prop_nonzero <- sum(rowSums(abs(Bhat)) > 0) / nrow(Bhat)
-  
+
   if (ncomps > 1) {
     w0 <- c((1 - prop_nonzero), rep(prop_nonzero / (ncomps - 1), (ncomps - 1)))
   } else {
     w0 <- 1
   }
-  
+
   if (sum(w0 != 0) < 2) {
     w0 <- rep(1 / ncomps, ncomps)
   }
-  
+
   return(w0)
 }
 
 ### Filter data-driven matrices
-filter_datadriven_mats <- function(Y, datadriven_mats) {
-  if (!is.list(datadriven_mats)) {
-    stop("datadriven_mats must be a list.")
+filter_data_driven_mats <- function(Y, data_driven_mats) {
+  conditions_to_keep <- colnames(Y)
+
+  # Check if colnames of Y is a subset of column names of each element in data_driven_mats
+  for (mat_name in names(data_driven_mats)) {
+    mat <- data_driven_mats[[mat_name]]
+    missing_conditions <- setdiff(conditions_to_keep, colnames(mat))
+
+    if (length(missing_conditions) > 0) {
+      stop(paste(
+        "Condition(s)", paste(missing_conditions, collapse = ", "),
+        "not found in matrix", mat_name
+      ))
+    }
   }
-  
-  tissues_to_keep <- colnames(Y)
-  datadriven_mats_filt <- lapply(datadriven_mats, function(x, to_keep) {
+
+  data_driven_mats_filt <- lapply(data_driven_mats, function(x, to_keep) {
     x[to_keep, to_keep]
-  }, tissues_to_keep)
-  return(datadriven_mats_filt)
+  }, conditions_to_keep)
+
+  return(data_driven_mats_filt)
 }
 
 ### Function to compute grids
 compute_grid <- function(bhat, sbhat) {
   grid_mins <- c()
   grid_maxs <- c()
-  
+
   include <- !(sbhat == 0 | !is.finite(sbhat) | is.na(sbhat) | is.na(bhat))
   gmax <- grid_max(bhat[include], sbhat[include])
   gmin <- grid_min(bhat[include], sbhat[include])
   grid_mins <- c(grid_mins, gmin)
   grid_maxs <- c(grid_maxs, gmax)
-  
+
   gmin_tot <- min(grid_mins)
   gmax_tot <- max(grid_maxs)
   grid <- autoselect_mixsd(gmin_tot, gmax_tot, mult = sqrt(2))^2
-  
+
   return(grid)
 }
 
@@ -302,9 +351,9 @@ grid_max <- function(bhat, sbhat) {
 ### Function to compute the grid
 autoselect_mixsd <- function(gmin, gmax, mult = 2) {
   if (mult == 0) {
-    return(c(0, gmax/2))
+    return(c(0, gmax / 2))
   } else {
-    npoint <- ceiling(log2(gmax/gmin) / log2(mult))
+    npoint <- ceiling(log2(gmax / gmin) / log2(mult))
     return(mult^((-npoint):0) * gmax)
   }
 }
