@@ -650,7 +650,7 @@ load_regional_multivariate_data <- function(matrix_y_min_complete = NULL, # when
     residual_Y_scalar = Y_scalar,
     dropped_sample = dropped_sample,
     X = X,
-    maf = dat$maf,
+    maf = compute_maf(X),
     chrom = dat$chrom,
     grange = dat$grange
   ))

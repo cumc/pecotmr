@@ -10,15 +10,16 @@ multivariate_analysis_pipeline(
   maf,
   max_L = 30,
   ld_reference_meta_file = NULL,
-  pip_cutoff_to_skip = rep(0, ncol(Y)),
+  pip_cutoff_to_skip = 0,
   signal_cutoff = 0.025,
-  secondary_coverage = c(0.7, 0.5),
+  coverage = c(0.95, 0.7, 0.5),
   data_driven_prior_matrices = NULL,
   data_driven_prior_matrices_cv = NULL,
   canonical_prior_matrices = TRUE,
   sample_partition = NULL,
   mrmash_max_iter = 5000,
   mvsusie_max_iter = 200,
+  min_cv_maf = 0.05,
   max_cv_variants = -1,
   cv_folds = 5,
   cv_threads = 1,
@@ -43,8 +44,6 @@ multivariate_analysis_pipeline(
 
 \item{signal_cutoff}{Cutoff value for signal identification in PIP values for susie_post_processor. Default is 0.025.}
 
-\item{secondary_coverage}{A vector of secondary coverage probabilities for credible set refinement. Defaults to c(0.7, 0.5).}
-
 \item{data_driven_prior_matrices}{A list of data-driven covariance matrices for mr.mash weights.}
 
 \item{data_driven_prior_matrices_cv}{A list of data-driven covariance matrices for mr.mash weights in cross-validation.}
@@ -66,6 +65,8 @@ multivariate_analysis_pipeline(
 \item{cv_seed}{The seed for random number generation in cross-validation. Defaults to 999.}
 
 \item{dropped_sample}{A list of lists with X, Y, and covar, each list contains a list of dropped samples as vectors for each condition. Can be obtained from the output of load_regional_multivariate_data.}
+
+\item{secondary_coverage}{A vector of secondary coverage probabilities for credible set refinement. Defaults to c(0.7, 0.5).}
 }
 \description{
 This function performs weights computation for Transcriptome-Wide Association Study (TWAS) with fitting

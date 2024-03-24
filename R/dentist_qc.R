@@ -135,9 +135,6 @@ dentist_detect_outliers <- function(sum_stat, LD_mat, nSample,
 #'
 #' @references
 #' Reference to the Dentist algorithm or related research papers.
-#'
-#' @importFrom methods as, setClass, setMethod
-#'
 #' @noRd
 dentist_impute_single_window <- function(zScore, LD_mat, nSample,
                                          pValueThreshold = 5e-8, propSVD = 0.4, gcControl = FALSE,

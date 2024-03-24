@@ -110,7 +110,7 @@ twas_weights_pipeline <- function(X, y, maf, susie_fit, ld_reference_meta_file =
   res$twas_weights <- twas_weights(X, y, weight_methods = weight_methods)
   # get TWAS predictions for possible next steps such as computing correlations between predicted expression values
   res$twas_predictions <- twas_predict(X, res$twas_weights)
-  if (cv_folds > 0) {
+  if (cv_folds > 1) {
     # A few cutting corners to run CV faster at the disadvantage of SuSiE and mr.ash:
     # 1. reset SuSiE to not using refine or adaptive L (more or less the default SuSiE)
     # 2. at most 100 iterations for mr.ash allowed
