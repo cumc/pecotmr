@@ -260,7 +260,7 @@ twas_multivariate_weights_pipeline <- function(
       X = X, Y = Y, L = max_L, prior_variance = data_driven_prior_matrices,
       residual_variance = resid_Y, precompute_covariances = T, compute_objective = T,
       estimate_residual_variance = F, estimate_prior_variance = T, estimate_prior_method = "EM",
-      max_iter = mvsusie_max_iter, n_thread = 1, approximate = F, verbosity = verbose, coverage = coverage
+      max_iter = mvsusie_max_iter, n_thread = 1, approximate = F, verbosity = F, coverage = coverage
     )
     res$preset_variants_result <- susie_post_processor(
       res$preset_variants_result, X, NULL, 1, 1,
