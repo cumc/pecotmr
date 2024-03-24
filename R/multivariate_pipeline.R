@@ -180,7 +180,7 @@ multivariate_analysis_pipeline <- function(
 
   # Run TWAS pipeline
   if (twas_weights) {
-    twas_res <- twas_multivariate_weights_pipeline(X, Y, maf, res$mnm_result$susie_result_trimmed, mrmash_fitted,
+    res <- twas_multivariate_weights_pipeline(X, Y, maf, res,
       resid_Y = resid_Y, cv_folds = cv_folds,
       ld_reference_meta_file = ld_reference_meta_file, max_cv_variants = max_cv_variants,
       mvsusie_max_iter = mvsusie_max_iter, mrmash_max_iter = mrmash_max_iter, signal_cutoff = signal_cutoff,
@@ -188,7 +188,6 @@ multivariate_analysis_pipeline <- function(
       canonical_prior_matrices = canonical_prior_matrices, data_driven_prior_matrices = data_driven_prior_matrices,
       data_driven_prior_matrices_cv = data_driven_prior_matrices_cv, cv_seed = cv_seed
     )
-    res <- c(res, twas_res)
   }
   return(res)
 }
@@ -197,9 +196,8 @@ multivariate_analysis_pipeline <- function(
 #'
 #' @importFrom mvsusieR mvsusie
 #' @export
-
 twas_multivariate_weights_pipeline <- function(
-    X, Y, maf, mvsusie_fitted, mrmash_fitted, ld_reference_meta_file = NULL, cv_folds = 5, sample_partition = NULL,
+    X, Y, maf, res, ld_reference_meta_file = NULL, cv_folds = 5, sample_partition = NULL,
     data_driven_prior_matrices = NULL, data_driven_prior_matrices_cv = NULL, canonical_prior_matrices = FALSE, resid_Y,
     mvsusie_max_iter = 200, mrmash_max_iter = 5000,
     signal_cutoff = 0.05, coverage = 0.95, secondary_coverage = c(0.7, 0.5),
@@ -216,6 +214,7 @@ twas_multivariate_weights_pipeline <- function(
 
   copy_twas_results <- function(res, twas_weight, twas_predictions) {
     for (i in names(res)) {
+      if (i == "mnm_result") next
       res[[i]]$twas_weights <- lapply(twas_weight, function(wgts) {
         wgts[, i]
       })
@@ -228,6 +227,7 @@ twas_multivariate_weights_pipeline <- function(
 
   copy_twas_cv_results <- function(res, twas_cv_result) {
     for (i in names(res)) {
+      if (i == "mnm_result") next
       res[[i]]$twas_cv_result$sample_partition <- twas_cv_result$sample_partition
       res[[i]]$twas_cv_result$prediction <- lapply(
         twas_cv_result$prediction,
@@ -243,38 +243,37 @@ twas_multivariate_weights_pipeline <- function(
       )
       res[[i]]$twas_cv_result$time_elapsed <- twas_cv_result$time_elapsed
     }
-
     return(res)
   }
 
   ## Main analysis starts
+  mvsusie_fitted <- res$mnm_result$susie_result_trimmed
   max_L <- determine_max_L(mvsusie_fitted)
-  res <- list()
   if (!is.null(ld_reference_meta_file)) {
     # Filter variants and update mvsusie_fitted
     variants_kept <- filter_variants_by_ld_reference(colnames(X), ld_reference_meta_file)
     X <- X[, variants_kept$data, drop = FALSE]
     maf <- maf[variants_kept$idx]
     message("Fitting mvSuSiE model on preset variants ...")
-    res$preset_variants_result <- mvsusie(
+    res$mnm_result$preset_variants_result <- mvsusie(
       X = X, Y = Y, L = max_L, prior_variance = data_driven_prior_matrices,
       residual_variance = resid_Y, precompute_covariances = T, compute_objective = T,
       estimate_residual_variance = F, estimate_prior_variance = T, estimate_prior_method = "EM",
       max_iter = mvsusie_max_iter, n_thread = 1, approximate = F, verbosity = 0, coverage = coverage
     )
-    res$preset_variants_result <- susie_post_processor(
-      res$preset_variants_result, X, NULL, 1, 1,
+    res$$mnm_result$preset_variants_result <- susie_post_processor(
+      res$mnm_result$preset_variants_result, X, NULL, 1, 1,
       maf = maf, secondary_coverage = secondary_coverage, signal_cutoff = signal_cutoff, mode = "mvsusie"
     )
-    res$preset_variants_result$analysis_script <- NULL
-    res$preset_variants_result$sumstats <- NULL
-    mvsusie_fitted <- res$preset_variants_result$susie_result_trimmed
+    res$mnm_result$preset_variants_result$analysis_script <- NULL
+    res$mnm_result$preset_variants_result$sumstats <- NULL
+    mvsusie_fitted <- res$mnm_result$preset_variants_result$susie_result_trimmed
   }
 
   # Compute TWAS weights and predictions
   weight_methods <- list(
     mrmash_weights = list(
-      mrmash_fit = mrmash_fitted,
+      mrmash_fit = res$mnm_result$mrmash_result
       prior_data_driven_matrices = data_driven_prior_matrices,
       canonical_prior_matrices = canonical_prior_matrices, max_iter = mrmash_max_iter
     ),
@@ -307,8 +306,8 @@ twas_multivariate_weights_pipeline <- function(
       )
     )
     variants_for_cv <- c()
-    if (!is.null(res$preset_variants_result$top_loci) && nrow(res$preset_variants_result$top_loci) > 0) {
-      variants_for_cv <- res$preset_variants_result$top_loci[, 1]
+    if (!is.null(res$mnm_result$preset_variants_result$top_loci) && nrow(res$mnm_result$preset_variants_result$top_loci) > 0) {
+      variants_for_cv <- res$mnm_result$preset_variants_result$top_loci[, 1]
     }
     common_var <- colnames(X)[which(maf > min_cv_maf)]
     if (max_cv_variants < 0) max_cv_variants <- Inf
