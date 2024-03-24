@@ -63,7 +63,7 @@ multivariate_analysis_pipeline <- function(
     X, Y, maf, max_L = 30, ld_reference_meta_file = NULL, pip_cutoff_to_skip = 0, signal_cutoff = 0.025, coverage = c(0.95, 0.7, 0.5), data_driven_prior_matrices = NULL,
     data_driven_prior_matrices_cv = NULL, canonical_prior_matrices = TRUE, sample_partition = NULL,
     mrmash_max_iter = 5000, mvsusie_max_iter = 200, min_cv_maf = 0.05, max_cv_variants = -1, cv_folds = 5,
-    cv_threads = 1, cv_seed = 999, prior_weights_min = 1e-4, twas_weights = FALSE, verbose = FALSE) {
+    cv_threads = 1, cv_seed = 999, prior_weights_min = 1e-4, twas_weights = FALSE, verbose = 0) {
   skip_conditions <- function(X, Y, pip_cutoff_to_skip) {
     if (length(pip_cutoff_to_skip) == 1 && is.numeric(pip_cutoff_to_skip)) {
       pip_cutoff_to_skip <- rep(pip_cutoff_to_skip, ncol(Y))
@@ -260,7 +260,7 @@ twas_multivariate_weights_pipeline <- function(
       X = X, Y = Y, L = max_L, prior_variance = data_driven_prior_matrices,
       residual_variance = resid_Y, precompute_covariances = T, compute_objective = T,
       estimate_residual_variance = F, estimate_prior_variance = T, estimate_prior_method = "EM",
-      max_iter = mvsusie_max_iter, n_thread = 1, approximate = F, verbosity = F, coverage = coverage
+      max_iter = mvsusie_max_iter, n_thread = 1, approximate = F, verbosity = 0, coverage = coverage
     )
     res$preset_variants_result <- susie_post_processor(
       res$preset_variants_result, X, NULL, 1, 1,
