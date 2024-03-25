@@ -26,7 +26,7 @@ handle_invalid_summary_stat <- function(dat_list, bhat = NULL, sbhat = NULL, z =
 #' @export
 load_multitrait_tensorqtl_sumstat <- function(
     sumstats_paths, region, gene = NULL,
-    trait_names = NULL, top_loci = FALSE, filter_file = NULL, remove_any_missing = TRUE,
+    trait_names = NULL, top_loci = FALSE, filter_file = NULL, remove_any_missing = FALSE,
     max_rows_selected = 300, nan_remove = TRUE) {
   if (!is.vector(sumstats_paths) || !all(file.exists(sumstats_paths))) {
     stop("sumstats_paths must be a vector of existing file paths.")
@@ -387,7 +387,7 @@ merge_susie_cs <- function(susie_fit, coverage = "cs_coverage_0.95", complementa
 #' @export
 load_multitrait_R_sumstat <- function(
     susie_fit, sumstats_db, coverage = NULL, top_loci = FALSE,
-    filter_file = NULL, remove_any_missing = TRUE, max_rows_selected = 300, nan_remove = FALSE,
+    filter_file = NULL, remove_any_missing = FALSE, max_rows_selected = 300, nan_remove = FALSE,
     exclude_condition, complementary = FALSE) {
   extract_data <- function(sumstats_db) {
     bhat <- as.data.table(cbind(sumstats_db$variant_names, sumstats_db$sumstats$betahat))

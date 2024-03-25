@@ -46,7 +46,7 @@
 #' result <- multivariate_analysis_pipeline(
 #'   X = multitrait_data$X[, 1:100],
 #'   Y = multitrait_data$Y,
-#'   maf = 0,
+#'   maf = colMeans(multitrait_data$X[, 1:100]) ,
 #'   max_L = 10,
 #'   ld_reference_meta_file = NULL,
 #'   max_cv_variants = -1,
