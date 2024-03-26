@@ -202,32 +202,7 @@ susie_rss_wrapper <- function(z, R, bhat = NULL, shat = NULL, n = NULL, var_y = 
 #'   - `max_L`: Maximum number of causal configurations to consider in the analysis.
 #'   - `l_step`: Step size for increasing L when the limit is reached during dynamic adjustment.
 #'   - `analysis_method`: The analysis method to use. Options are "susie_rss", "single_effect", or "bayesian_conditional_regression".
-#'
-#' @export
-rss_input_preprocess <- function(sumstats, LD_data, skip_region = NULL) {
-  target_variants <- sumstats[, c("chrom", "pos", "A1", "A2")]
-  ref_variants <- LD_data$combined_LD_variants
-  allele_flip <- allele_qc(target_variants, ref_variants, sumstats, col_to_flip = c("beta", "z"), match.min.prop = 0.2, remove_dups = TRUE, flip = TRUE, remove_indels = FALSE, remove_strand_ambiguous = TRUE)
 
-  if (length(skip_region) != 0) {
-    skip_table <- tibble(region = skip_region) %>% separate(region, into = c("chrom", "start", "end"), sep = "[:-]")
-    skip_variant <- c()
-    for (i in 1:nrow(skip_table)) {
-      variant <- allele_flip$target_data_qced %>%
-        filter(chrom == skip_table$chrom[i] & pos > skip_table$start[i] & pos < skip_table$end[i]) %>%
-        pull(variant_id)
-      skip_variant <- c(skip_variant, variant)
-    }
-    allele_flip$target_data_qced <- allele_flip$target_data_qced %>% filter(!(variant_id) %in% skip_variant)
-  }
-  # filter out the sumstatas 
-  sumstat_processed <- allele_flip$target_data_qced %>% arrange(pos) %>%
-  filter(!duplicated(variant_id) & !duplicated(variant_id, fromLast = TRUE))
-    
-  return(sumstat_processed)
-}
-
-#' Run the SuSiE RSS pipeline
 #'   The function first checks if the `sumstats` input contains 'z' or 'beta' and 'se' columns. If 'z' is present, it is used directly.
 #'   If 'beta' and 'se' are present, 'z' is calculated as 'beta' divided by 'se'.
 #'
