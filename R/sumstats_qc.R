@@ -52,7 +52,7 @@ rss_basic_qc <- function(sumstats, LD_data, skip_region = NULL) {
     allele_flip$target_data_qced <- allele_flip$target_data_qced %>%
       filter(!(variant_id %in% skip_variant))
   }
-
+  # remove totally same variant names, which is common to see in lifted data.
   sumstats_processed <- allele_flip$target_data_qced %>% arrange(pos) %>%
       filter(!duplicated(variant_id) & !duplicated(variant_id, fromLast = TRUE))
     
@@ -94,13 +94,14 @@ susie_rss_qc <- function(sumstats, LD_mat, n = NULL, var_y = NULL, L = 10) {
   }
   result <- susie_rss(
     z = zScore, R = LD_mat, n =n, var_y = var_y, L = L,
-    correct_zR_discrepancy = TRUE, track_fit = TRUE, max_iter = 100)
+    correct_zR_discrepancy = TRUE, track_fit = TRUE, max_iter = 100
+  )
   
   ## Identify outlier variants
   if (!is.null(result$zR_outliers) & length(result$zR_outliers) != 0) {
     outlier <- result$zR_outliers
-    sumstats_qc <- sumstats[-outlier, , drop = FALSE]
-    LD_extract_qc <- as.matrix(LD_mat)[-outlier, -outlier, drop = FALSE]
+    sumstats_qc <- sumstats[-outlier, ]
+    LD_extract_qc <- as.matrix(LD_mat)[-outlier, -outlier]
   } else {
     sumstats_qc <- sumstats
     LD_extract_qc <- as.matrix(LD_mat)
@@ -144,15 +145,9 @@ summary_stats_qc <- function(sumstats, LD_data, method = c("rss_qc", "dentist", 
     sumstats_qc <- qc_results$sumstats
     LD_mat_qc <- qc_results$LD_mat
   } else if (method == "dentist") {
-    qc_results <- dentist_detect_outliers(sumstats, LD_extract, nSample = n, correct_chen_et_al_bug = TRUE)
-    non_outlier_index = qc_results %>% filter(!outlier) %>% pull(index_global)
-    sumstats_qc = sumstats[non_outlier_index, ,drop = FALSE]
-    LD_mat_qc = LD_extract[sumstats$variant_id, sumstats$variant_id, drop = FALSE]
+      
   } else if (method == "slalom") {
-    qc_results <- slalom(zScore = sumstats$z, LD_extract)$data %>% mutate(index = row_number())
-    non_outlier_index = qc_results %>% filter(!outliers) %>% pull(index)
-    sumstats_qc = sumstats[non_outlier_index, ,drop = FALSE]
-    LD_mat_qc = LD_extract[sumstats$variant_id, sumstats$variant_id, drop = FALSE]
+  
   } else {
     stop("Invalid quality control method specified. Available methods are: 'rss_qc', 'dentist', 'slalom'.")
   }
