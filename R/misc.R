@@ -794,14 +794,14 @@ load_twas_weights <- function(weight_db_files, conditions = NULL,
   )
 }
 
-                            
-                            
+
+
 # customized functions
 load_ctwas_weights <- function(weight_db_files, conditions = NULL,
-                          variable_name_obj = c("preset_variants_result", "variant_names"),
-                          susie_obj = c("preset_variants_result", "susie_result_trimmed"),
-                          twas_weights_table = "twas_weights", max_var_selection, 
-                          min_rsq_threshold = 0.01, p_val_cutoff = 0.05) {
+                               variable_name_obj = c("preset_variants_result", "variant_names"),
+                               susie_obj = c("preset_variants_result", "susie_result_trimmed"),
+                               twas_weights_table = "twas_weights", max_var_selection,
+                               min_rsq_threshold = 0.01, p_val_cutoff = 0.05) {
   ## Internal function to load and validate data from RDS files
   load_and_validate_data <- function(weight_db_files, conditions, variable_name_obj) {
     all_data <- lapply(weight_db_files, readRDS)
@@ -826,87 +826,94 @@ load_ctwas_weights <- function(weight_db_files, conditions = NULL,
   # determine if the region is imputable and select the best model
   # Function to pick the best model based on adj_rsq and p-value
   pick_best_model <- function(combined_all_data, conditions, min_rsq_threshold, p_val_cutoff) {
-      best_adj_rsq <- min_rsq_threshold
-      # Extract performance table
-      performance_tables <- lapply(conditions, function(condition){
-          get_nested_element(combined_all_data, c(condition, "twas_cv_result", "performance"))
-      })
-      names(performance_tables) <- conditions
-      # Determine if a gene/region is imputable and select the best model
-      model_selection <- lapply(conditions, function(condition){
-          best_model <- NULL
-          for (model in names(performance_tables[[condition]])) {
-            model_data <- performance_tables[[condition]][[model]]
-            if (model_data[,"adj_rsq_pval"] < p_val_cutoff && model_data[,"adj_rsq"] >= best_adj_rsq) {
-              best_adj_rsq <- model_data[,"adj_rsq"]
-              best_model <- model
-            }
-          }
-          region_names <- do.call(c, lapply(conditions, function(condition){combined_all_data[[condition]]$region_info$region_name}))
-          if (is.null(best_model)) { 
-            print(paste0("No model has p-value < ", p_val_cutoff, " and r2 >= ", min_rsq_threshold, ", skipping condition ", condition, 
-                      " at genes/regions ",unique(region_names), ". "))
-            return(NULL) # No significant model found
-          } else {
-            best_model <- unlist(strsplit(best_model, "_performance"))
-            print(paste0("The best model for condition ",condition, " at region ", unique(region_names), " is ", best_model, ". "))
-            return(best_model)
-          }
-      })
-      names(model_selection) <- conditions
-      return(model_selection)
+    best_adj_rsq <- min_rsq_threshold
+    # Extract performance table
+    performance_tables <- lapply(conditions, function(condition) {
+      get_nested_element(combined_all_data, c(condition, "twas_cv_result", "performance"))
+    })
+    names(performance_tables) <- conditions
+    # Determine if a gene/region is imputable and select the best model
+    model_selection <- lapply(conditions, function(condition) {
+      best_model <- NULL
+      for (model in names(performance_tables[[condition]])) {
+        model_data <- performance_tables[[condition]][[model]]
+        if (model_data[, "adj_rsq_pval"] < p_val_cutoff && model_data[, "adj_rsq"] >= best_adj_rsq) {
+          best_adj_rsq <- model_data[, "adj_rsq"]
+          best_model <- model
+        }
+      }
+      region_names <- do.call(c, lapply(conditions, function(condition) {
+        combined_all_data[[condition]]$region_info$region_name
+      }))
+      if (is.null(best_model)) {
+        print(paste0(
+          "No model has p-value < ", p_val_cutoff, " and r2 >= ", min_rsq_threshold, ", skipping condition ", condition,
+          " at genes/regions ", unique(region_names), ". "
+        ))
+        return(NULL) # No significant model found
+      } else {
+        best_model <- unlist(strsplit(best_model, "_performance"))
+        print(paste0("The best model for condition ", condition, " at region ", unique(region_names), " is ", best_model, ". "))
+        return(best_model)
+      }
+    })
+    names(model_selection) <- conditions
+    return(model_selection)
   }
   # Based on selected best model and imputable conditions, select variants based on susie output
-  ctwas_select <- function(combined_all_data, conditions, max_var_selection){
-     var_selection <- lapply(conditions, function(condition) {
-        result <- list(
-            variant_names = get_nested_element(combined_all_data, c(condition, variable_name_obj)),
-            susie_result_trimmed = get_nested_element(combined_all_data, c(condition, susie_obj))
-        )
-     # Go through cs to select top variants from each set until we select all variants 
-     select_cs_var <- function(set_cs_list, max_var_selection){ 
+  ctwas_select <- function(combined_all_data, conditions, max_var_selection) {
+    var_selection <- lapply(conditions, function(condition) {
+      result <- list(
+        variant_names = get_nested_element(combined_all_data, c(condition, variable_name_obj)),
+        susie_result_trimmed = get_nested_element(combined_all_data, c(condition, susie_obj))
+      )
+      # Go through cs to select top variants from each set until we select all variants
+      select_cs_var <- function(set_cs_list, max_var_selection) {
         selected_indices <- c()
-        while(length(selected_indices) < max_var_selection) {
-           for(cs in set_cs_list$sets$cs) {
-             if(length(selected_indices) < max_var_selection) {
-               # Filter out any indices that have already been selected
-               available_indices <- setdiff(cs, selected_indices)
-               if(length(available_indices) > 0) {
-                 # Get the index with the highest PIP score
-                 top_index <- available_indices[which.max(set_cs_list$pip[available_indices])]
-                 selected_indices <- c(selected_indices, top_index)
-         }}}}
-         return(selected_indices)
-      }
-        if ('top_loci' %in% names(combined_all_data[[condition]][["preset_variants_result"]])){
-          result$top_loci = get_nested_element(combined_all_data, c(condition, "preset_variants_result", "top_loci"))
-          if (length(result$top_loci[, "variant_id"])<=max_var_selection){
-              result$variant_selection <- result$top_loci$variant_id
-            } else { 
-              # if top_loci variants more than max_var_selection, or the condition did not come with the top_loci table,
-              # we go through cs to select top variants from each set until we select all variants, 
-                if(!is.null(result$susie_result_trimmed$sets$cs)){
-                    selec_idx <- select_cs_var(result$susie_result_trimmed, max_var_selection)
-                    result$variant_selection <- result$variant_names[selec_idx]
-                } else {
-                    top_idx <- order(result$susie_result_trimmed$pip, decreasing = TRUE)[1:max_var_selection]
-                    result$variant_selection <- result$variant_names[top_idx]
-                }
-           }
-        }else {
-           if(length(result$susie_result_trimmed$sets$cs)>=1){
-                result$variant_selection <- select_cs_var(result$susie_result_trimmed, max_var_selection)
-            } else {
-                top_idx <- order(result$susie_result_trimmed$pip, decreasing = TRUE)[1:max_var_selection]
-                result$variant_selection <- result$variant_names[top_idx]
-            } 
+        while (length(selected_indices) < max_var_selection) {
+          for (cs in set_cs_list$sets$cs) {
+            if (length(selected_indices) < max_var_selection) {
+              # Filter out any indices that have already been selected
+              available_indices <- setdiff(cs, selected_indices)
+              if (length(available_indices) > 0) {
+                # Get the index with the highest PIP score
+                top_index <- available_indices[which.max(set_cs_list$pip[available_indices])]
+                selected_indices <- c(selected_indices, top_index)
+              }
+            }
+          }
         }
-        return(result)
+        return(selected_indices)
+      }
+      if ("top_loci" %in% names(combined_all_data[[condition]][["preset_variants_result"]])) {
+        result$top_loci <- get_nested_element(combined_all_data, c(condition, "preset_variants_result", "top_loci"))
+        if (length(result$top_loci[, "variant_id"]) <= max_var_selection) {
+          result$variant_selection <- result$top_loci$variant_id
+        } else {
+          # if top_loci variants more than max_var_selection, or the condition did not come with the top_loci table,
+          # we go through cs to select top variants from each set until we select all variants,
+          if (!is.null(result$susie_result_trimmed$sets$cs)) {
+            selec_idx <- select_cs_var(result$susie_result_trimmed, max_var_selection)
+            result$variant_selection <- result$variant_names[selec_idx]
+          } else {
+            top_idx <- order(result$susie_result_trimmed$pip, decreasing = TRUE)[1:max_var_selection]
+            result$variant_selection <- result$variant_names[top_idx]
+          }
+        }
+      } else {
+        if (length(result$susie_result_trimmed$sets$cs) >= 1) {
+          result$variant_selection <- select_cs_var(result$susie_result_trimmed, max_var_selection)
+        } else {
+          top_idx <- order(result$susie_result_trimmed$pip, decreasing = TRUE)[1:max_var_selection]
+          result$variant_selection <- result$variant_names[top_idx]
+        }
+      }
+      return(result)
     })
     names(var_selection) <- conditions
     return(var_selection)
-  }     
-                                               
+  }
+
   # Internal function to align and merge weight matrices
   align_and_merge <- function(weights_list, variable_objs) {
     # Get the complete list of variant names across all files
@@ -971,16 +978,18 @@ load_ctwas_weights <- function(weight_db_files, conditions = NULL,
   # combined_susie_result <- extract_variants_and_susie_results(combined_all_data, conditions)
   model_selection <- pick_best_model(combined_all_data, conditions, min_rsq_threshold, p_val_cutoff)
   model_selection$imputable <- TRUE
-  region_info <- combined_all_data[[1]]$region_info                
+  region_info <- combined_all_data[[1]]$region_info
   if (is.null(unlist(model_selection))) {
-      print("No model meets the p_value threshold and R-squared minimum in all conditions. Region is not imputable. ")
-      model_selection$imputable <- FALSE
-      return(list(model_selection=model_selection, susie_results = NULL, weights = NULL))
+    print("No model meets the p_value threshold and R-squared minimum in all conditions. Region is not imputable. ")
+    model_selection$imputable <- FALSE
+    return(list(model_selection = model_selection, susie_results = NULL, weights = NULL))
   }
   ctwas_select_result <- ctwas_select(combined_all_data, conditions, max_var_selection)
   weights <- consolidate_weights_list(combined_all_data, conditions, variable_name_obj, twas_weights_table)
-  #ctwas_weights <- extract_weights(weights, conditions, ctwas_select_result, model_selection, twas_weights_table)
-   
-  return(list(susie_results = ctwas_select_result, model_selection=model_selection, 
-              weights=weights, region_info=region_info))
+  # ctwas_weights <- extract_weights(weights, conditions, ctwas_select_result, model_selection, twas_weights_table)
+
+  return(list(
+    susie_results = ctwas_select_result, model_selection = model_selection,
+    weights = weights, region_info = region_info
+  ))
 }
