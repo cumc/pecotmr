@@ -86,22 +86,21 @@ rss_basic_qc <- function(sumstats, LD_data, skip_region = NULL) {
 #'
 #' @importFrom susieR susie_rss
 #' @export
-susie_rss_qc <- function(sumstats, LD_mat, L = 10) {
+susie_rss_qc <- function(sumstats, LD_mat, n = NULL, var_y = NULL, L = 10) {
   zScore <- sumstats$z
   # Check that LD_mat dimensions match the length of zScore
   if (!is.matrix(LD_mat) || nrow(LD_mat) != ncol(LD_mat) || nrow(LD_mat) != length(zScore)) {
     stop("LD_mat must be a square matrix with dimensions equal to the length of zScore.")
   }
   result <- susie_rss(
-    z = zScore, R = LD_mat, L = L,
-    correct_zR_discrepancy = TRUE, track_fit = TRUE, max_iter = 100
-  )
+    z = zScore, R = LD_mat, n =n, var_y = var_y, L = L,
+    correct_zR_discrepancy = TRUE, track_fit = TRUE, max_iter = 100)
   
   ## Identify outlier variants
   if (!is.null(result$zR_outliers) & length(result$zR_outliers) != 0) {
     outlier <- result$zR_outliers
-    sumstats_qc <- sumstats[-outlier, ]
-    LD_extract_qc <- as.matrix(LD_mat)[-outlier, -outlier]
+    sumstats_qc <- sumstats[-outlier, , drop = FALSE]
+    LD_extract_qc <- as.matrix(LD_mat)[-outlier, -outlier, drop = FALSE]
   } else {
     sumstats_qc <- sumstats
     LD_extract_qc <- as.matrix(LD_mat)
@@ -141,9 +140,19 @@ summary_stats_qc <- function(sumstats, LD_data, method = c("rss_qc", "dentist", 
   LD_extract <- LD_data$combined_LD_matrix[sumstats$variant_id, sumstats$variant_id, drop = FALSE]
   
   if (method == "rss_qc") {
-    qc_results <- susie_rss_qc(sumstats, LD_extract)
+    qc_results <- susie_rss_qc(sumstats, LD_extract, n = n, var_y = var_y)
     sumstats_qc <- qc_results$sumstats
     LD_mat_qc <- qc_results$LD_mat
+  } else if (method == "dentist") {
+    qc_results <- dentist_detect_outliers(sumstats, LD_extract, nSample = n, correct_chen_et_al_bug = TRUE)
+    non_outlier_index = qc_results %>% filter(!outlier) %>% pull(index_global)
+    sumstats_qc = sumstats[non_outlier_index, ,drop = FALSE]
+    LD_mat_qc = LD_extract[sumstats$variant_id, sumstats$variant_id, drop = FALSE]
+  } else if (method == "slalom") {
+    qc_results <- slalom(zScore = sumstats$z, LD_extract)$data %>% mutate(index = row_number())
+    non_outlier_index = qc_results %>% filter(!outliers) %>% pull(index)
+    sumstats_qc = sumstats[non_outlier_index, ,drop = FALSE]
+    LD_mat_qc = LD_extract[sumstats$variant_id, sumstats$variant_id, drop = FALSE]
   } else {
     stop("Invalid quality control method specified. Available methods are: 'rss_qc', 'dentist', 'slalom'.")
   }

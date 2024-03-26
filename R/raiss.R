@@ -149,6 +149,8 @@ merge_raiss_df <- function(raiss_df, known_zscores) {
   # Remove the extra columns resulted from the merge (e.g., z.x, z.y)
   merged_df <- merged_df[, !colnames(merged_df) %in% c("z.x", "z.y")]
   merged_df <- arrange(merged_df, pos)
+  # remove beta, se to avoid confusion, since they are not imputed, we only impute z
+  merged_df = merged_df[, !colnames(merged_df) %in% c("beta", "se", "pvalue")]
   return(merged_df)
 }
 
