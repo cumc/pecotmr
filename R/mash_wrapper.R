@@ -461,31 +461,31 @@ load_multitrait_R_sumstat <- function(
     }
     return(merged_df)
   }
+  if(length(sumstats_db)!=0) {
+    results <- lapply(sumstats_db[[1]], function(data) extract_data(data))
+    trait_names <- names(results)
 
-  results <- lapply(sumstats_db[[1]], function(data) extract_data(data))
-  trait_names <- names(results)
+    bhat <- merge_matrices(results,
+      value_column = "bhat", id_column = "variants",
+      remove_any_missing
+    )
+    sbhat <- merge_matrices(results,
+      value_column = "sbhat", id_column = "variants",
+      remove_any_missing
+    )
+    out <- list(bhat = bhat, sbhat = sbhat)
 
-  bhat <- merge_matrices(results,
-    value_column = "bhat", id_column = "variants",
-    remove_any_missing
-  )
-  sbhat <- merge_matrices(results,
-    value_column = "sbhat", id_column = "variants",
-    remove_any_missing
-  )
-  out <- list(bhat = bhat, sbhat = sbhat)
+   # Check if variants are the same in both bhat and sbhat
+   if (!identical(out$bhat$variants, out$sbhat$variants)) {
+     stop("Error: Variants in bhat and sbhat are not the same.")
+   }
+   var_idx <- 1:nrow(out$bhat)
+   if (!is.null(filter_file)) {
+     variants <- out$bhat$variants
+     var_idx <- split_variants_and_match(variants, filter_file, max_rows_selected)
+   }
 
-  # Check if variants are the same in both bhat and sbhat
-  if (!identical(out$bhat$variants, out$sbhat$variants)) {
-    stop("Error: Variants in bhat and sbhat are not the same.")
-  }
-  var_idx <- 1:nrow(out$bhat)
-  if (!is.null(filter_file)) {
-    variants <- out$bhat$variants
-    var_idx <- split_variants_and_match(variants, filter_file, max_rows_selected)
-  }
-
-  if (top_loci) {
+   if (top_loci) {
     union_top_loci <- merge_susie_cs(susie_fit, coverage, complementary)
     if (!is.null(union_top_loci)) {
       strong_signal_df <- union_top_loci %>%
@@ -515,15 +515,18 @@ load_multitrait_R_sumstat <- function(
   out$region <- names(susie_fit)
 
   if (length(exclude_condition) > 0) {
-    if (all(exclude_condition %in% colnames(out$bhat))) {
-      out$bhat <- out$bhat[, -exclude_condition, drop = FALSE]
-      out$sbhat <- out$sbhat[, -exclude_condition, drop = FALSE]
-    } else {
-      # Handle the case where exclude_condition names do not exist in column
-      # names of dat This could be an error
-      stop(paste("Error: exclude_condition are not present in", out$region))
-    }
-  }
+     if (all(exclude_condition %in% colnames(out$bhat))) {
+       out$bhat <- out$bhat[, -exclude_condition, drop = FALSE]
+       out$sbhat <- out$sbhat[, -exclude_condition, drop = FALSE]
+     } else {
+       # Handle the case where exclude_condition names do not exist in column
+       # names of dat This could be an error
+       stop(paste("Error: exclude_condition are not present in", out$region))
+     }
+   }
+ } else {
+   out <- NULL
+ }
   return(out)
 }
 
@@ -542,7 +545,7 @@ mash_rand_null_sample <- function(dat, n_random, n_null, exclude_condition, seed
     ])
     null.id <- which(apply(abs_z, 1, max) < 2)
     if (length(null.id) == 0) {
-      warning(paste("Null data is empty for input", dat$region))
+      warning(paste("no variants are included in the null dataset because abs_z > 2 for all variants in", dat$region))
       null <- list()
     } else {
       null_idx <- sample(null.id, min(n_null, length(null.id)), replace = FALSE)
