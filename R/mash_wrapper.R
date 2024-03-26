@@ -3,7 +3,7 @@ handle_invalid_summary_stat <- function(dat_list, bhat = NULL, sbhat = NULL, z =
   replace_values <- function(df, replace_with) {
     df <- df %>%
       mutate(across(everything(), as.numeric)) %>%
-      mutate(across(everything(), ~ replace(., is.nan(.) | is.infinite(.), replace_with)))
+      mutate(across(everything(), ~ replace(., is.nan(.) | is.infinite(.) | is.na(.), replace_with)))
   }
   if (all(c(bhat, sbhat) %in% names(dat_list))) {
     # If the element is a list with 'bhat' and 'sbhat'
@@ -534,7 +534,7 @@ load_multitrait_R_sumstat <- function(
 mash_rand_null_sample <- function(dat, n_random, n_null, exclude_condition, seed = NULL) {
   # Function to extract one data set
   extract_one_data <- function(dat, n_random, n_null) {
-    if (is.null(dat)) {
+    if (is.null(dat)||length(dat)==0) {
       return(NULL)
     }
     abs_z <- abs(dat$bhat / dat$sbhat)
@@ -577,13 +577,14 @@ mash_rand_null_sample <- function(dat, n_random, n_null, exclude_condition, seed
 #' @export
 merge_mash_data <- function(res_data, one_data) {
   combined_data <- list()
-  if (length(res_data) == 0) {
+  if (length(res_data) == 0||is.null(res_data)) {
     return(one_data)
-  } else if (is.null(one_data)) {
+  } else if (is.null(one_data)||length(one_data)==0) {
     return(res_data)
   } else {
     for (d in names(one_data)) {
-      if (is.null(one_data[[d]])) {
+      if (is.null(one_data[[d]])||length(one_data[[d]])==0) {
+        combined_data[[d]] <- res_data[[d]]  # Keep res_data[[d]] when one_data[[d]] is NULL or empty
         next
       } else {
         # Check if the number of columns matches
