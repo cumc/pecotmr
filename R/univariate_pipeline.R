@@ -182,8 +182,7 @@ rss_analysis_pipeline <- function(
   var_y <- rss_input$var_y
 
   if (pip_cutoff_to_skip > 0) {
-    top_model_pip <- susie(X, Y, L = 1)$pip
-    susie_rss_wrapper(z = sumstats$z, R = LD_data$combined_LD_matrix, L = 1, n = n, var_y = var_y)
+    top_model_pip <- susie_rss_wrapper(z = sumstats$z, R = LD_data$combined_LD_matrix, L = 1, n = n, var_y = var_y)$pip
     if (!any(top_model_pip > pip_cutoff_to_skip)) {
       message(paste("Skipping follow-up analysis: No signals above PIP threshold", pip_cutoff_to_skip, "in initial model screening."))
       return(list())
