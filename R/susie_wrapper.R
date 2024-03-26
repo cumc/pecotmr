@@ -174,6 +174,60 @@ susie_rss_wrapper <- function(z, R, bhat = NULL, shat = NULL, n = NULL, var_y = 
 }
 
 #' Run the SuSiE RSS pipeline
+#'
+#' This function runs the SuSiE RSS pipeline, performing analysis based on the specified method.
+#' It processes the input summary statistics and LD data to provide results in a structured output.
+#'
+#' @param sumstats A list or data frame containing summary statistics with 'z' or 'beta' and 'se' columns.
+#' @param LD_mat The LD matrix.
+#' @param n Sample size (default: NULL).
+#' @param var_y Variance of Y (default: NULL).
+#' @param L Initial number of causal configurations to consider in the analysis (default: 5).
+#' @param max_L Maximum number of causal configurations to consider in the analysis (default: 30).
+#' @param l_step Step size for increasing L when the limit is reached during dynamic adjustment (default: 5).
+#' @param analysis_method The analysis method to use. Options are "susie_rss", "single_effect", or "bayesian_conditional_regression" (default: "susie_rss").
+#' @param coverage Coverage level for susie_rss analysis (default: 0.95).
+#' @param secondary_coverage Secondary coverage levels for susie_rss analysis (default: c(0.7, 0.5)).
+#' @param signal_cutoff Signal cutoff for susie_post_processor (default: 0.1).
+#'
+#' @return A list containing the results of the SuSiE RSS analysis based on the specified method.
+#'
+#' @details The `susie_rss_pipeline` function runs the SuSiE RSS pipeline based on the specified analysis method.
+#'   It takes the following main inputs:
+#'   - `sumstats`: A list or data frame containing summary statistics with 'z' or 'beta' and 'se' columns.
+#'   - `LD_mat`: The LD matrix.
+#'   - `n`: Sample size (optional).
+#'   - `var_y`: Variance of Y (optional).
+#'   - `L`: Initial number of causal configurations to consider in the analysis.
+#'   - `max_L`: Maximum number of causal configurations to consider in the analysis.
+#'   - `l_step`: Step size for increasing L when the limit is reached during dynamic adjustment.
+#'   - `analysis_method`: The analysis method to use. Options are "susie_rss", "single_effect", or "bayesian_conditional_regression".
+#'
+#' @export
+rss_input_preprocess <- function(sumstats, LD_data, skip_region = NULL) {
+  target_variants <- sumstats[, c("chrom", "pos", "A1", "A2")]
+  ref_variants <- LD_data$combined_LD_variants
+  allele_flip <- allele_qc(target_variants, ref_variants, sumstats, col_to_flip = c("beta", "z"), match.min.prop = 0.2, remove_dups = TRUE, flip = TRUE, remove_indels = FALSE, remove_strand_ambiguous = TRUE)
+
+  if (length(skip_region) != 0) {
+    skip_table <- tibble(region = skip_region) %>% separate(region, into = c("chrom", "start", "end"), sep = "[:-]")
+    skip_variant <- c()
+    for (i in 1:nrow(skip_table)) {
+      variant <- allele_flip$target_data_qced %>%
+        filter(chrom == skip_table$chrom[i] & pos > skip_table$start[i] & pos < skip_table$end[i]) %>%
+        pull(variant_id)
+      skip_variant <- c(skip_variant, variant)
+    }
+    allele_flip$target_data_qced <- allele_flip$target_data_qced %>% filter(!(variant_id) %in% skip_variant)
+  }
+  # filter out the sumstatas 
+  sumstat_processed <- allele_flip$target_data_qced %>% arrange(pos) %>%
+  filter(!duplicated(variant_id) & !duplicated(variant_id, fromLast = TRUE))
+    
+  return(sumstat_processed)
+}
+
+#' Run the SuSiE RSS pipeline
 #'   The function first checks if the `sumstats` input contains 'z' or 'beta' and 'se' columns. If 'z' is present, it is used directly.
 #'   If 'beta' and 'se' are present, 'z' is calculated as 'beta' divided by 'se'.
 #'
@@ -369,27 +423,20 @@ susie_post_processor <- function(susie_output, data_x, data_y, X_scalar, y_scala
       names(top_loci_list[[i]])[2] <- paste0("cs_", names(top_loci_list)[i])
       top_loci <- full_join(top_loci, top_loci_list[[i]], by = "variant_idx")
     }
- if (nrow(top_loci) > 0) {
+    if (nrow(top_loci) > 0) {
       top_loci[is.na(top_loci)] <- 0
       variants <- res$variant_names[top_loci$variant_idx]
       pip <- susie_output$pip[top_loci$variant_idx]
-      res$top_loci$variant_id <- variants
+      top_loci_cols <- c("variant_id", if (!is.null(res$sumstats$betahat)) "betahat", if (!is.null(res$sumstats$sebetahat)) "sebetahat", if (!is.null(res$sumstats$z)) "z", if (!is.null(maf)) "maf", "pip", colnames(top_loci)[-1])
+      res$top_loci <- data.frame(variants, stringsAsFactors = FALSE)
       res$top_loci$betahat <- if (!is.null(res$sumstats$betahat)) res$sumstats$betahat[top_loci$variant_idx] else NULL
       res$top_loci$sebetahat <- if (!is.null(res$sumstats$sebetahat)) res$sumstats$sebetahat[top_loci$variant_idx] else NULL
       res$top_loci$z <- if (!is.null(res$sumstats$z)) res$sumstats$z[top_loci$variant_idx] else NULL
+      res$top_loci$maf <- if (!is.null(maf)) maf[top_loci$variant_idx] else NULL
       res$top_loci$pip <- pip
-      res$top_loci <- c(res$top_loci, as.list(top_loci[,-1]))
-      res$top_loci$maf <- lapply(maf, function(x) {
-          # Initialize a vector to hold the results for this list element
-          maf_output <- numeric(length(top_loci$variant_idx))
-          # Fill the result vector with NA or the appropriate value from x
-          for (i in seq_along(top_loci$variant_idx)) {
-               idx <- top_loci$variant_idx[i]
-               maf_output[i] <- if (!is.null(idx) && idx > 0 && idx <= length(x)) x[idx] else NA
-           }
-           # Return the result vector for this list element
-           maf_output
-      })
+      res$top_loci <- cbind(res$top_loci, top_loci[, -1])
+      colnames(res$top_loci) <- top_loci_cols
+      rownames(res$top_loci) <- NULL
     }
     names(susie_output$pip) <- NULL
     res$susie_result_trimmed <- list(
