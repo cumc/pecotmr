@@ -793,3 +793,194 @@ load_twas_weights <- function(weight_db_files, conditions = NULL,
     silent = TRUE
   )
 }
+
+                            
+                            
+# customized functions
+load_ctwas_weights <- function(weight_db_files, conditions = NULL,
+                          variable_name_obj = c("preset_variants_result", "variant_names"),
+                          susie_obj = c("preset_variants_result", "susie_result_trimmed"),
+                          twas_weights_table = "twas_weights", max_var_selection, 
+                          min_rsq_threshold = 0.01, p_val_cutoff = 0.05) {
+  ## Internal function to load and validate data from RDS files
+  load_and_validate_data <- function(weight_db_files, conditions, variable_name_obj) {
+    all_data <- lapply(weight_db_files, readRDS)
+    unique_regions <- unique(unlist(lapply(all_data, function(data) names(data))))
+    # Check if region from all RDS files are the same
+    if (length(unique_regions) != 1) {
+      stop("The RDS files do not refer to the same region.")
+    } else {
+      # Assuming all data refer to the same region, now combine data by conditions
+      combined_all_data <- do.call("c", lapply(all_data, function(data) data[[1]]))
+    }
+    # Set default for 'conditions' if they are not specified
+    if (is.null(conditions)) {
+      conditions <- names(combined_all_data)
+    }
+    ## Check if the specified condition and variable_name_obj are available in all files
+    if (!all(conditions %in% names(combined_all_data))) {
+      stop("The specified condition is not available in all RDS files.")
+    }
+    return(combined_all_data)
+  }
+  # determine if the region is imputable and select the best model
+  # Function to pick the best model based on adj_rsq and p-value
+  pick_best_model <- function(combined_all_data, conditions, min_rsq_threshold, p_val_cutoff) {
+      best_adj_rsq <- min_rsq_threshold
+      # Extract performance table
+      performance_tables <- lapply(conditions, function(condition){
+          get_nested_element(combined_all_data, c(condition, "twas_cv_result", "performance"))
+      })
+      names(performance_tables) <- conditions
+      # Determine if a gene/region is imputable and select the best model
+      model_selection <- lapply(conditions, function(condition){
+          best_model <- NULL
+          for (model in names(performance_tables[[condition]])) {
+            model_data <- performance_tables[[condition]][[model]]
+            if (model_data[,"adj_rsq_pval"] < p_val_cutoff && model_data[,"adj_rsq"] >= best_adj_rsq) {
+              best_adj_rsq <- model_data[,"adj_rsq"]
+              best_model <- model
+            }
+          }
+          region_names <- do.call(c, lapply(conditions, function(condition){combined_all_data[[condition]]$region_info$region_name}))
+          if (is.null(best_model)) { 
+            print(paste0("No model has p-value < ", p_val_cutoff, " and r2 >= ", min_rsq_threshold, ", skipping condition ", condition, 
+                      " at genes/regions ",unique(region_names), ". "))
+            return(NULL) # No significant model found
+          } else {
+            best_model <- unlist(strsplit(best_model, "_performance"))
+            print(paste0("The best model for condition ",condition, " at region ", unique(region_names), " is ", best_model, ". "))
+            return(best_model)
+          }
+      })
+      names(model_selection) <- conditions
+      return(model_selection)
+  }
+  # Based on selected best model and imputable conditions, select variants based on susie output
+  ctwas_select <- function(combined_all_data, conditions, max_var_selection){
+     var_selection <- lapply(conditions, function(condition) {
+        result <- list(
+            variant_names = get_nested_element(combined_all_data, c(condition, variable_name_obj)),
+            susie_result_trimmed = get_nested_element(combined_all_data, c(condition, susie_obj))
+        )
+     # Go through cs to select top variants from each set until we select all variants 
+     select_cs_var <- function(set_cs_list, max_var_selection){ 
+        selected_indices <- c()
+        while(length(selected_indices) < max_var_selection) {
+           for(cs in set_cs_list$sets$cs) {
+             if(length(selected_indices) < max_var_selection) {
+               # Filter out any indices that have already been selected
+               available_indices <- setdiff(cs, selected_indices)
+               if(length(available_indices) > 0) {
+                 # Get the index with the highest PIP score
+                 top_index <- available_indices[which.max(set_cs_list$pip[available_indices])]
+                 selected_indices <- c(selected_indices, top_index)
+         }}}}
+         return(selected_indices)
+      }
+        if ('top_loci' %in% names(combined_all_data[[condition]][["preset_variants_result"]])){
+          result$top_loci = get_nested_element(combined_all_data, c(condition, "preset_variants_result", "top_loci"))
+          if (length(result$top_loci[, "variant_id"])<=max_var_selection){
+              result$variant_selection <- result$top_loci$variant_id
+            } else { 
+              # if top_loci variants more than max_var_selection, or the condition did not come with the top_loci table,
+              # we go through cs to select top variants from each set until we select all variants, 
+                if(!is.null(result$susie_result_trimmed$sets$cs)){
+                    selec_idx <- select_cs_var(result$susie_result_trimmed, max_var_selection)
+                    result$variant_selection <- result$variant_names[selec_idx]
+                } else {
+                    top_idx <- order(result$susie_result_trimmed$pip, decreasing = TRUE)[1:max_var_selection]
+                    result$variant_selection <- result$variant_names[top_idx]
+                }
+           }
+        }else {
+           if(length(result$susie_result_trimmed$sets$cs)>=1){
+                result$variant_selection <- select_cs_var(result$susie_result_trimmed, max_var_selection)
+            } else {
+                top_idx <- order(result$susie_result_trimmed$pip, decreasing = TRUE)[1:max_var_selection]
+                result$variant_selection <- result$variant_names[top_idx]
+            } 
+        }
+        return(result)
+    })
+    names(var_selection) <- conditions
+    return(var_selection)
+  }     
+                                               
+  # Internal function to align and merge weight matrices
+  align_and_merge <- function(weights_list, variable_objs) {
+    # Get the complete list of variant names across all files
+    all_variants <- unique(unlist(variable_objs))
+    consolidated_list <- list()
+    # Fill the matrix with weights, aligning by variant names
+    for (i in seq_along(weights_list)) {
+      # Initialize the temp matrix with zeros
+      existing_colnames <- character(0)
+      temp_matrix <- matrix(0, nrow = length(all_variants), ncol = ncol(weights_list[[i]]))
+      rownames(temp_matrix) <- all_variants
+      idx <- match(variable_objs[[i]], all_variants)
+      temp_matrix[idx, ] <- weights_list[[i]]
+      # Ensure no duplicate column names
+      new_colnames <- colnames(weights_list[[i]])
+      dups <- duplicated(c(existing_colnames, new_colnames))
+      if (any(dups)) {
+        duplicated_names <- paste(c(existing_colnames, new_colnames)[dups], collapse = ", ")
+        stop("Duplicate column names detected during merging process: ", duplicated_names, ".")
+      }
+      existing_colnames <- c(existing_colnames, new_colnames)
+
+      # consolidated_list[[i]] <- matrix(as.numeric(temp_matrix), nrow = nrow(temp_matrix), byrow = TRUE)
+      consolidated_list[[i]] <- temp_matrix
+      colnames(consolidated_list[[i]]) <- existing_colnames
+    }
+    return(consolidated_list)
+  }
+
+  # Internal function to consolidate weights for given condition
+  consolidate_weights_list <- function(combined_all_data, conditions, variable_name_obj, twas_weights_table) {
+    # Set default for 'conditions' if they are not specified
+    if (is.null(conditions)) {
+      conditions <- names(combined_all_data)
+    }
+    combined_weights_by_condition <- lapply(conditions, function(condition) {
+      temp_list <- get_nested_element(combined_all_data, c(condition, twas_weights_table))
+      temp_list <- temp_list[!names(temp_list) %in% "variant_names"]
+      sapply(temp_list, cbind)
+    })
+    names(combined_weights_by_condition) <- conditions
+    if (is.null(variable_name_obj)) {
+      # Standard processing: Check for identical row numbers and consolidate
+      row_numbers <- sapply(combined_weights_by_condition, function(data) nrow(data))
+      if (length(unique(row_numbers)) > 1) {
+        stop("Not all files have the same number of rows for the specified condition.")
+      }
+      weights <- combined_weights_by_condition
+    } else {
+      # Processing with variable_name_obj: Align and merge data, fill missing with zeros
+      variable_objs <- lapply(conditions, function(condition) {
+        get_nested_element(combined_all_data, c(condition, variable_name_obj))
+      })
+      weights <- align_and_merge(combined_weights_by_condition, variable_objs)
+    }
+    names(weights) <- conditions
+    return(weights)
+  }
+
+  ## Load, validate, and consolidate data
+  combined_all_data <- load_and_validate_data(weight_db_files, conditions, variable_name_obj)
+  # combined_susie_result <- extract_variants_and_susie_results(combined_all_data, conditions)
+  model_selection <- pick_best_model(combined_all_data, conditions, min_rsq_threshold, p_val_cutoff)
+  model_selection$imputable <- TRUE
+  region_info <- combined_all_data[[1]]$region_info                
+  if (is.null(unlist(model_selection))) {
+      print("No model meets the p_value threshold and R-squared minimum in all conditions. Region is not imputable. ")
+      model_selection$imputable <- FALSE
+      return(list(model_selection=model_selection, susie_results = NULL, weights = NULL))
+  }
+  ctwas_select_result <- ctwas_select(combined_all_data, conditions, max_var_selection)
+  weights <- consolidate_weights_list(combined_all_data, conditions, variable_name_obj, twas_weights_table)
+  #ctwas_weights <- extract_weights(weights, conditions, ctwas_select_result, model_selection, twas_weights_table)
+   
+  return(list(susie_results = ctwas_select_result, model_selection=model_selection, 
+              weights=weights, region_info=region_info))
+}
