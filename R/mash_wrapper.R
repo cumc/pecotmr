@@ -524,8 +524,8 @@ load_multitrait_R_sumstat <- function(
        stop(paste("Error: exclude_condition are not present in", out$region))
      }
    }
- } else  out <- NULL{
-  
+ } else  {
+    out <- NULL
  }
   return(out)
 }
