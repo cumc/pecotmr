@@ -5,10 +5,6 @@ dentist_iterative_impute <- function(LD_mat, nSample, zScore, pValueThreshold, p
     .Call('_pecotmr_dentist_iterative_impute', PACKAGE = 'pecotmr', LD_mat, nSample, zScore, pValueThreshold, propSVD, gcControl, nIter, gPvalueThreshold, ncpus, seed, correct_chen_et_al_bug)
 }
 
-dentist_rcpp <- function(LDmat, nSample, zScore, pValueThreshold, propSVD, gcControl, nIter, gPvalueThreshold, ncpus, seed) {
-    .Call('_pecotmr_dentist_rcpp', PACKAGE = 'pecotmr', LDmat, nSample, zScore, pValueThreshold, propSVD, gcControl, nIter, gPvalueThreshold, ncpus, seed)
-}
-
 rcpp_mr_ash_rss <- function(bhat, shat, z, R, var_y, n, sigma2_e, s0, w0, mu1_init, tol = 1e-8, max_iter = 1e5L, update_w0 = TRUE, update_sigma = TRUE, compute_ELBO = TRUE, standardize = FALSE, ncpus = 1L) {
     .Call('_pecotmr_rcpp_mr_ash_rss', PACKAGE = 'pecotmr', bhat, shat, z, R, var_y, n, sigma2_e, s0, w0, mu1_init, tol, max_iter, update_w0, update_sigma, compute_ELBO, standardize, ncpus)
 }

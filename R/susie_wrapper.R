@@ -203,7 +203,6 @@ susie_rss_wrapper <- function(z, R, bhat = NULL, shat = NULL, n = NULL, var_y = 
 #'   - `l_step`: Step size for increasing L when the limit is reached during dynamic adjustment.
 #'   - `analysis_method`: The analysis method to use. Options are "susie_rss", "single_effect", or "bayesian_conditional_regression".
 #'
-<<<<<<< HEAD
 #' @export
 rss_input_preprocess <- function(sumstats, LD_data, skip_region = NULL) {
   target_variants <- sumstats[, c("chrom", "pos", "A1", "A2")]
@@ -229,10 +228,8 @@ rss_input_preprocess <- function(sumstats, LD_data, skip_region = NULL) {
 }
 
 #' Run the SuSiE RSS pipeline
-=======
 #'   The function first checks if the `sumstats` input contains 'z' or 'beta' and 'se' columns. If 'z' is present, it is used directly.
 #'   If 'beta' and 'se' are present, 'z' is calculated as 'beta' divided by 'se'.
->>>>>>> ab035f87771635de2473c0671ee2ec2ed953e8c0
 #'
 #'   Based on the specified `analysis_method`, the function calls the `susie_rss_wrapper` with the appropriate parameters.
 #'   - For "single_effect" method, `L` is set to 1.
