@@ -53,7 +53,9 @@ rss_basic_qc <- function(sumstats, LD_data, skip_region = NULL) {
       filter(!(variant_id %in% skip_variant))
   }
 
-  sumstats_processed <- allele_flip$target_data_qced %>% arrange(pos)
+  sumstats_processed <- allele_flip$target_data_qced %>% arrange(pos) %>%
+      filter(!duplicated(variant_id) & !duplicated(variant_id, fromLast = TRUE))
+    
   LD_mat_processed <- LD_data$combined_LD_matrix[sumstats_processed$variant_id, sumstats_processed$variant_id, drop = FALSE]
 
   return(list(sumstats = sumstats_processed, LD_mat = LD_mat_processed))
