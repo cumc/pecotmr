@@ -4,7 +4,7 @@
 \alias{susie_rss_qc}
 \title{Perform Quality Control based on SuSiE RSS}
 \usage{
-susie_rss_qc(sumstats, LD_mat, L = 10)
+susie_rss_qc(sumstats, LD_mat, n = NULL, var_y = NULL, L = 10)
 }
 \arguments{
 \item{sumstats}{A data frame containing summary statistics with 'variant_id', 'z', and 'pos' columns.}
