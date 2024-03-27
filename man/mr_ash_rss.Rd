@@ -21,7 +21,7 @@ mr_ash_rss(
   update_sigma = TRUE,
   compute_ELBO = TRUE,
   standardize = FALSE,
-  ncpu = 1
+  ncpu = 1L
 )
 }
 \arguments{
@@ -57,7 +57,7 @@ mr_ash_rss(
 
 \item{standardize}{Logical value indicating whether to standardize the input data. Default is FALSE.}
 
-\item{ncpus}{An integer specifying the number of CPU cores to use for parallel computation. Default is 1.}
+\item{ncpu}{An integer specifying the number of CPU cores to use for parallel computation. Default is 1.}
 }
 \value{
 A list containing the following components:
