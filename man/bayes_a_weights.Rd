@@ -4,7 +4,7 @@
 \alias{bayes_a_weights}
 \title{Use t-distribution as prior.}
 \usage{
-bayes_a_weights(y, X, Z = NULL)
+bayes_a_weights(X, y, Z = NULL)
 }
 \description{
 Use t-distribution as prior.

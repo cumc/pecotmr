@@ -4,7 +4,7 @@
 \alias{bayes_c_weights}
 \title{Use a rounded spike prior (low-variance Gaussian).}
 \usage{
-bayes_c_weights(y, X, Z = NULL)
+bayes_c_weights(X, y, Z = NULL)
 }
 \description{
 Use a rounded spike prior (low-variance Gaussian).

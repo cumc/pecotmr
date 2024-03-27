@@ -4,7 +4,7 @@
 \alias{bayes_n_weights}
 \title{Use Gaussian distribution as prior. Posterior means will be BLUP, equivalent to Ridge Regression.}
 \usage{
-bayes_n_weights(y, X, Z = NULL)
+bayes_n_weights(X, y, Z = NULL)
 }
 \description{
 Use Gaussian distribution as prior. Posterior means will be BLUP, equivalent to Ridge Regression.

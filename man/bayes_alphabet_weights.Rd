@@ -4,12 +4,12 @@
 \alias{bayes_alphabet_weights}
 \title{Extract Coefficients From Bayesian Linear Regression}
 \usage{
-bayes_alphabet_weights(y, X, method, Z = NULL)
+bayes_alphabet_weights(X, y, method, Z = NULL)
 }
 \arguments{
-\item{y}{A numeric vector of phenotypes.}
-
 \item{X}{A numeric matrix of genotypes.}
+
+\item{y}{A numeric vector of phenotypes.}
 
 \item{method}{A character string declaring the method/prior to be used. Options are 
 bayesN, bayesL, bayesA, bayesC, or bayesR.}
@@ -25,16 +25,16 @@ This function performs Bayesian linear regression using the `gbayes` function fr
 the `qgg` package. It then returns the estimated slopes.
 }
 \details{
-This function fits a Bayesian linear regression model
+This function fits a Bayesian linear regression model with a range of priors.
 }
 \examples{
 X <- matrix(rnorm(100000), nrow=1000)
 Z <- matrix(round(runif(3000, 0, 0.8), 0), nrow=1000)
-set1 <- sample(1:ncol(W), 5)
-set2 <- sample(1:ncol(W), 5)
+set1 <- sample(1:ncol(X), 5)
+set2 <- sample(1:ncol(X), 5)
 sets <- list(set1, set2)
-g <- rowSums(W[, c(set1, set2)])
-e <- rnorm(nrow(W), mean=0, sd=1)
+g <- rowSums(X[, c(set1, set2)])
+e <- rnorm(nrow(X), mean=0, sd=1)
 y <- g + e
 bayes_l_weights(y=y, X=X, Z=Z)
 bayes_r_weights(y=y, X=X, Z=Z)
