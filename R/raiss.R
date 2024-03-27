@@ -63,7 +63,7 @@ raiss <- function(ref_panel, known_zscores, LD_matrix, lamb = 0.01, rcond = 0.01
     as.matrix(LD_matrix)
   }
 
-  results <- list(z_nofilter = result_nofilter, z = result_filter, LD_mat = LD_extract_filtered)
+  results <- list(result_nofilter = result_nofilter, result_filter = result_filter, LD_mat = LD_extract_filtered)
   return(results)
 }
 
