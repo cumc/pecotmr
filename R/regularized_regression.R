@@ -18,7 +18,7 @@
 #' @param update_sigma Logical value indicating whether to update the error variance. Default is TRUE.
 #' @param compute_ELBO Logical value indicating whether to compute the Evidence Lower Bound (ELBO). Default is TRUE.
 #' @param standardize Logical value indicating whether to standardize the input data. Default is FALSE.
-#' @param ncpus An integer specifying the number of CPU cores to use for parallel computation. Default is 1.
+#' @param ncpu An integer specifying the number of CPU cores to use for parallel computation. Default is 1.
 #'
 #' @return A list containing the following components:
 #' \describe{
@@ -81,7 +81,7 @@ mr_ash_rss <- function(bhat, shat, z = numeric(0), R, var_y, n,
                        sigma2_e, s0, w0, mu1_init = numeric(0),
                        tol = 1e-8, max_iter = 1e5,
                        update_w0 = TRUE, update_sigma = TRUE,
-                       compute_ELBO = TRUE, standardize = FALSE, ncpu = 1) {
+                       compute_ELBO = TRUE, standardize = FALSE, ncpu = 1L) {
   # Check if ncpu is greater than 0 and is an integer
   if (ncpu <= 0 || !is.integer(ncpu)) {
     stop("ncpu must be a positive integer.")
