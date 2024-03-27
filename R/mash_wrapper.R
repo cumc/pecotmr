@@ -621,12 +621,21 @@ merge_mash_data <- function(res_data, one_data) {
 #' @importFrom udr ud_init ud_fit
 #' @importFrom mashr mash_set_data cov_canonical estimate_null_correlation_simple
 #' @export
-mash_pipeline <- function(mash_input, alpha, unconstrained.update = "ted", set_seed = 999) {
+mash_pipeline <- function(mash_input, alpha, residual_correlation = NULL, unconstrained.update = "ted", set_seed = 999) {
   set.seed(set_seed)
-  vhat <- estimate_null_correlation_simple(mash_set_data(mash_input$random.b,
-    Shat = mash_input$random.s,
-    alpha, zero_Bhat_Shat_reset = 1000
-  ))
+  if(length(mash_input$null.b)==0 && length(mash_input$null.s)==0) {
+    if (!is.null(residual_correlation)) {
+       vhat <- residual_correlation
+    } else {
+       condition_num = ncol(mash_input$random.b)
+       vhat <- diag(rep(1,condition_num))
+    }
+  } else {
+    vhat <- estimate_null_correlation_simple(mash_set_data(mash_input$null.b,
+       Shat = mash_input$null.s,
+       alpha, zero_Bhat_Shat_reset = 1000
+     ))
+  }
 
   # mash data Fit mixture model using udr package
   mash_data <- mash_set_data(mash_input$strong.b,
