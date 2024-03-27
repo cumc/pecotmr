@@ -461,7 +461,6 @@ load_multitrait_R_sumstat <- function(
     }
     return(merged_df)
   }
-  if(length(sumstats_db)!=0) {
     results <- lapply(sumstats_db[[1]], function(data) extract_data(data))
     trait_names <- names(results)
 
@@ -524,9 +523,6 @@ load_multitrait_R_sumstat <- function(
        stop(paste("Error: exclude_condition are not present in", out$region))
      }
    }
- } else  {
-    out <- NULL
- }
   return(out)
 }
 
@@ -534,7 +530,7 @@ load_multitrait_R_sumstat <- function(
 mash_rand_null_sample <- function(dat, n_random, n_null, exclude_condition, seed = NULL) {
   # Function to extract one data set
   extract_one_data <- function(dat, n_random, n_null) {
-    if (is.null(dat)||length(dat)==0) {
+    if (is.null(dat)) {
       return(NULL)
     }
     abs_z <- abs(dat$bhat / dat$sbhat)
@@ -577,13 +573,13 @@ mash_rand_null_sample <- function(dat, n_random, n_null, exclude_condition, seed
 #' @export
 merge_mash_data <- function(res_data, one_data) {
   combined_data <- list()
-  if (length(res_data) == 0||is.null(res_data)) {
+  if (length(res_data) == 0) {
     return(one_data)
-  } else if (is.null(one_data)||length(one_data)==0) {
+  } else if (length(one_data)==0) {
     return(res_data)
   } else {
     for (d in names(one_data)) {
-      if (is.null(one_data[[d]])||length(one_data[[d]])==0) {
+      if (length(one_data[[d]])==0) {
         combined_data[[d]] <- res_data[[d]]  # Keep res_data[[d]] when one_data[[d]] is NULL or empty
         next
       } else {
