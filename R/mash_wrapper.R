@@ -3,7 +3,7 @@ handle_invalid_summary_stat <- function(dat_list, bhat = NULL, sbhat = NULL, z =
   replace_values <- function(df, replace_with) {
     df <- df %>%
       mutate(across(everything(), as.numeric)) %>%
-      mutate(across(everything(), ~ replace(., is.nan(.) | is.infinite(.), replace_with)))
+      mutate(across(everything(), ~ replace(., is.nan(.) | is.infinite(.) | is.na(.), replace_with)))
   }
   if (all(c(bhat, sbhat) %in% names(dat_list))) {
     # If the element is a list with 'bhat' and 'sbhat'
@@ -461,7 +461,6 @@ load_multitrait_R_sumstat <- function(
     }
     return(merged_df)
   }
-  if(length(sumstats_db)!=0) {
     results <- lapply(sumstats_db[[1]], function(data) extract_data(data))
     trait_names <- names(results)
 
@@ -524,9 +523,6 @@ load_multitrait_R_sumstat <- function(
        stop(paste("Error: exclude_condition are not present in", out$region))
      }
    }
- } else {
-   out <- NULL
- }
   return(out)
 }
 
@@ -579,11 +575,12 @@ merge_mash_data <- function(res_data, one_data) {
   combined_data <- list()
   if (length(res_data) == 0) {
     return(one_data)
-  } else if (is.null(one_data)) {
+  } else if (length(one_data)==0) {
     return(res_data)
   } else {
     for (d in names(one_data)) {
-      if (is.null(one_data[[d]])) {
+      if (length(one_data[[d]])==0) {
+        combined_data[[d]] <- res_data[[d]]  # Keep res_data[[d]] when one_data[[d]] is NULL or empty
         next
       } else {
         # Check if the number of columns matches
@@ -624,12 +621,21 @@ merge_mash_data <- function(res_data, one_data) {
 #' @importFrom udr ud_init ud_fit
 #' @importFrom mashr mash_set_data cov_canonical estimate_null_correlation_simple
 #' @export
-mash_pipeline <- function(mash_input, alpha, unconstrained.update = "ted", set_seed = 999) {
+mash_pipeline <- function(mash_input, alpha, residual_correlation = NULL, unconstrained.update = "ted", set_seed = 999) {
   set.seed(set_seed)
-  vhat <- estimate_null_correlation_simple(mash_set_data(mash_input$random.b,
-    Shat = mash_input$random.s,
-    alpha, zero_Bhat_Shat_reset = 1000
-  ))
+  if(length(mash_input$null.b)==0 && length(mash_input$null.s)==0) {
+    if (!is.null(residual_correlation)) {
+       vhat <- residual_correlation
+    } else {
+       condition_num = ncol(mash_input$random.b)
+       vhat <- diag(rep(1,condition_num))
+    }
+  } else {
+    vhat <- estimate_null_correlation_simple(mash_set_data(mash_input$null.b,
+       Shat = mash_input$null.s,
+       alpha, zero_Bhat_Shat_reset = 1000
+     ))
+  }
 
   # mash data Fit mixture model using udr package
   mash_data <- mash_set_data(mash_input$strong.b,
