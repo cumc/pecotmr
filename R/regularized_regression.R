@@ -18,7 +18,7 @@
 #' @param update_sigma Logical value indicating whether to update the error variance. Default is TRUE.
 #' @param compute_ELBO Logical value indicating whether to compute the Evidence Lower Bound (ELBO). Default is TRUE.
 #' @param standardize Logical value indicating whether to standardize the input data. Default is FALSE.
-#' @param ncpus An integer specifying the number of CPU cores to use for parallel computation. Default is 1.
+#' @param ncpu An integer specifying the number of CPU cores to use for parallel computation. Default is 1.
 #'
 #' @return A list containing the following components:
 #' \describe{
@@ -81,7 +81,7 @@ mr_ash_rss <- function(bhat, shat, z = numeric(0), R, var_y, n,
                        sigma2_e, s0, w0, mu1_init = numeric(0),
                        tol = 1e-8, max_iter = 1e5,
                        update_w0 = TRUE, update_sigma = TRUE,
-                       compute_ELBO = TRUE, standardize = FALSE, ncpu = 1) {
+                       compute_ELBO = TRUE, standardize = FALSE, ncpu = 1L) {
   # Check if ncpu is greater than 0 and is an integer
   if (ncpu <= 0 || !is.integer(ncpu)) {
     stop("ncpu must be a positive integer.")
@@ -408,4 +408,75 @@ mrash_weights <- function(X, y, init_prior_sd = TRUE, ...) {
   }
   fit.mr.ash <- do.call("mr.ash", c(list(X = X, y = y, sa2 = if (init_prior_sd) init_prior_sd(X, y)^2 else NULL), args_list))
   predict(fit.mr.ash, type = "coefficients")[-1]
+}
+#' Extract Coefficients From Bayesian Linear Regression
+#'
+#' This function performs Bayesian linear regression using the `gbayes` function from 
+#' the `qgg` package. It then returns the estimated slopes.
+#'
+#' @param y A numeric vector of phenotypes.
+#' @param X A numeric matrix of genotypes.
+#' @param method A character string declaring the method/prior to be used. Options are 
+#' bayesN, bayesL, bayesA, bayesC, or bayesR.
+#' @param Z An optional numeric matrix of covariates.
+#' @return A vector containing the weights to be applied to each genotype in 
+#'   predicting the phenotype.
+#' @details This function fits a Bayesian linear regression model with a range of priors.
+#' @examples
+#' X <- matrix(rnorm(100000), nrow=1000)
+#' Z <- matrix(round(runif(3000, 0, 0.8), 0), nrow=1000)
+#' set1 <- sample(1:ncol(X), 5)
+#' set2 <- sample(1:ncol(X), 5)
+#' sets <- list(set1, set2)
+#' g <- rowSums(X[, c(set1, set2)])
+#' e <- rnorm(nrow(X), mean=0, sd=1)
+#' y <- g + e
+#' bayes_l_weights(y=y, X=X, Z=Z)
+#' bayes_r_weights(y=y, X=X, Z=Z)
+#' @importFrom qgg gbayes
+#' @export
+bayes_alphabet_weights <- function(X, y, method, Z=NULL){
+  # check for identical row lengths of response and genotype
+  if (!(length(y) == nrow(X))){
+    stop("All objects must have the same number of rows")
+  }
+  # check for identical row lengths of genotype and covariates
+  if (!is.null(Z)){
+      if (nrow(X) != nrow(Z)){
+        stop("Genotype and covariate matrices must have same number of rows")
+      }
+    }
+  
+  model = gbayes(y=y, 
+                 W=X,
+                 X=Z,
+                 method=method)
+  
+  return(model$bm)
+}
+#' Use Gaussian distribution as prior. Posterior means will be BLUP, equivalent to Ridge Regression.
+#' @export
+bayes_n_weights <- function(X, y, Z=NULL){
+    return(bayes_alphabet_weights(X, y, method="bayesN", Z))
+}
+#' Use laplace/double exponential distribution as prior. This is equivalent to Bayesian LASSO.
+#' @export
+bayes_l_weights <- function(X, y, Z=NULL){
+    return(bayes_alphabet_weights(X, y, method="bayesL", Z))
+}
+#' Use t-distribution as prior. 
+#' @export
+bayes_a_weights <- function(X, y, Z=NULL){
+    return(bayes_alphabet_weights(X, y, method="bayesA", Z))
+}
+#' Use a rounded spike prior (low-variance Gaussian).
+#' @export
+bayes_c_weights <- function(X, y, Z=NULL){
+    return(bayes_alphabet_weights(X, y, method="bayesC", Z))
+}
+#' Use a hierarchical Bayesian mixture model with four Gaussian components. Variances are scaled 
+#' by 0, 0.0001 , 0.001 , and 0.01 .
+#' @export
+bayes_r_weights <- function(X, y, Z=NULL){
+    return(bayes_alphabet_weights(X, y, method="bayesR", Z))
 }
