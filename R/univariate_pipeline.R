@@ -180,10 +180,14 @@ rss_analysis_pipeline <- function(
   sumstats <- rss_input$sumstats
   n <- rss_input$n
   var_y <- rss_input$var_y
+    
+  # Preprocess the input data
+  preprocess_results <- rss_basic_qc(sumstats, LD_data, skip_region = skip_region)
+  sumstats <- preprocess_results$sumstats
+  LD_mat <- preprocess_results$LD_mat
 
   if (pip_cutoff_to_skip > 0) {
-    top_model_pip <- susie(X, Y, L = 1)$pip
-    susie_rss_wrapper(z = sumstats$z, R = LD_data$combined_LD_matrix, L = 1, n = n, var_y = var_y)
+    top_model_pip <- susie_rss_wrapper(z = sumstats$z, R = LD_mat, L = 1, n = n, var_y = var_y)$pip
     if (!any(top_model_pip > pip_cutoff_to_skip)) {
       message(paste("Skipping follow-up analysis: No signals above PIP threshold", pip_cutoff_to_skip, "in initial model screening."))
       return(list())
@@ -192,23 +196,19 @@ rss_analysis_pipeline <- function(
     }
   }
 
-  # Preprocess the input data
-  preprocess_results <- rss_basic_qc(sumstats, LD_data, skip_region)
-  sumstats <- preprocess_results$sumstats
-  LD_mat <- preprocess_results$LD_mat
+
 
   # Perform quality control
-  if (!is.null(qc_methods)) {
-    qc_results <- summary_stats_qc(sumstats, LD_data, method = qc_method)
+  if (!is.null(qc_method)) {
+    qc_results <- summary_stats_qc(sumstats, LD_data, n = n, var_y = var_y, method = qc_method)
     sumstats <- qc_results$sumstats
     LD_mat <- qc_results$LD_mat
   }
 
   # Perform imputation
   if (impute) {
-    impute_results <- raiss(LD_data$ref_panel, sumstats$z, LD_data$combined_LD_matrix, rcond = 0.01, R2_threshold = 0.6, minimum_ld = 5, lamb = 0.01)
-    stop("FIXME: after calling RAISS you need to be able to put back to the original summary stats only z scores after imputation, filtered (which is impute_results$z) back into the sumstats data frame. Some of the original quantities such as beta and se, and n etc will be missing because they are not imputed but it is okay to leave them as is, as long as z-score works.")
-    sumstats <- impute_results$sumstats
+    impute_results <- raiss(LD_data$ref_panel, sumstats, LD_data$combined_LD_matrix, rcond = impute_opts$rcond, R2_threshold = impute_opts$R2_threshold, minimum_ld = impute_opts$minimum_ld, lamb = impute_opts$lamb)
+    sumstats <- impute_results$result_filter
     LD_mat <- impute_results$LD_mat
   }
   res <- list()

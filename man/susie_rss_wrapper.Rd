@@ -7,8 +7,6 @@
 susie_rss_wrapper(
   z,
   R,
-  bhat = NULL,
-  shat = NULL,
   n = NULL,
   var_y = NULL,
   L = 10,
@@ -23,10 +21,6 @@ susie_rss_wrapper(
 \item{z}{Z score vector.}
 
 \item{R}{LD matrix.}
-
-\item{bhat}{Vector of effect size estimates.}
-
-\item{shat}{Vector of standard errors for effect size estimates.}
 
 \item{n}{Sample size; if NULL, certain functionalities that require sample size will be skipped.}
 

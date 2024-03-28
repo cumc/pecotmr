@@ -125,8 +125,6 @@ susie_wrapper <- function(X, y, init_L = 10, max_L = 30, l_step = 5, ...) {
 #'
 #' @param z Z score vector.
 #' @param R LD matrix.
-#' @param bhat Vector of effect size estimates.
-#' @param shat Vector of standard errors for effect size estimates.
 #' @param var_y Total phenotypic variance.
 #' @param n Sample size; if NULL, certain functionalities that require sample size will be skipped.
 #' @param L Initial number of causal configurations to consider.
@@ -137,24 +135,24 @@ susie_wrapper <- function(X, y, init_L = 10, max_L = 30, l_step = 5, ...) {
 #' @return SuSiE RSS fit object after dynamic L adjustment
 #' @importFrom susieR susie_rss
 #' @export
-susie_rss_wrapper <- function(z, R, bhat = NULL, shat = NULL, n = NULL, var_y = NULL, L = 10, max_L = 30, l_step = 5,
+susie_rss_wrapper <- function(z, R, n = NULL, var_y = NULL, L = 10, max_L = 30, l_step = 5,
                               zR_discrepancy_correction = FALSE, coverage = 0.95, ...) {
   if (L == 1) {
     return(susie_rss(
-      z = z, R = R, bhat = bhat, shat = shat, var_y = var_y, n = n,
+      z = z, R = R, var_y = var_y, n = n,
       L = 1, max_iter = 1, median_abs_corr = 0.8, correct_zR_discrepancy = FALSE, coverage = coverage, ...
     ))
   }
   if (L == max_L) {
     return(susie_rss(
-      z = z, R = R, bhat = bhat, shat = shat, var_y = var_y, n = n, L = L, median_abs_corr = 0.8,
+      z = z, R = R, var_y = var_y, n = n, L = L, median_abs_corr = 0.8,
       correct_zR_discrepancy = zR_discrepancy_correction, coverage = coverage, ...
     ))
   }
   while (TRUE) {
     st <- proc.time()
     susie_rss_result <- susie_rss(
-      z = z, R = R, bhat = bhat, shat = shat, var_y = var_y, n = n, L = L, median_abs_corr = 0.8,
+      z = z, R = R, var_y = var_y, n = n, L = L, median_abs_corr = 0.8,
       correct_zR_discrepancy = zR_discrepancy_correction, coverage = coverage, ...
     )
     susie_rss_result$time_elapsed <- proc.time() - st
