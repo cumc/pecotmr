@@ -200,7 +200,7 @@ rss_analysis_pipeline <- function(
 
   # Perform quality control
   if (!is.null(qc_method)) {
-    qc_results <- summary_stats_qc(sumstats, LD_data, method = qc_method)
+    qc_results <- summary_stats_qc(sumstats, LD_data, n = n, var_y = var_y, method = qc_method)
     sumstats <- qc_results$sumstats
     LD_mat <- qc_results$LD_mat
   }
