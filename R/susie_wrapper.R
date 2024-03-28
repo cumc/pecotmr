@@ -41,7 +41,7 @@ lbf_to_alpha_vector <- function(lbf, prior_weights = NULL) {
 #' alpha_matrix <- lbf_to_alpha(lbf_matrix)
 #' print(alpha_matrix)
 #' @export
-lbf_to_alpha <- function(lbf) t(apply(lbf, 1, lbf_to_alpha_vector))
+lbf_to_alpha <- function(lbf) t(apply(as.matrix(lbf), 1, lbf_to_alpha_vector))
 
 # FIXME: this function does not work properly. Need to fix it in multiple aspects
 #' Adjust SuSiE Weights
