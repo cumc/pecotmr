@@ -57,6 +57,7 @@ requirements:
     - r-tidyr
     - r-vctrs
     - r-qgg
+    - r-r.utils
   run:
     - bioconductor-qvalue
     - r-bedtoolsr
@@ -93,6 +94,7 @@ requirements:
     - r-tidyr
     - r-vctrs
     - r-qgg
+    - r-r.utils
 
 test:
   commands:

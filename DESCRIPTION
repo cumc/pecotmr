@@ -37,7 +37,8 @@ Imports:
     future,
     mvsusieR,
     tibble,
-    qgg
+    qgg,
+    R.utils
 Suggests: 
     testthat,
     knitr,
