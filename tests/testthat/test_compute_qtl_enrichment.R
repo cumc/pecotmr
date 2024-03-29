@@ -46,7 +46,7 @@ test_that("compute_qtl_enrichment dummy data single thread and multi-threaded ar
   local_mocked_bindings(
       qtl_enrichment_rcpp = function(...) TRUE)
   input_data <- generate_mock_data(seed=1, num_pips=10)
-  res_single <- compute_qtl_enrichment(input_data$gwas_fit$pip, input_data$susie_fits, num_gwas=0.5141, pi_qtl=0.49819, lambda = 1, ImpN = 10, num_threads = 1)
-  res_multi <- compute_qtl_enrichment(input_data$gwas_fit$pip, input_data$susie_fits, num_gwas=0.5141, pi_qtl=0.49819, lambda = 1, ImpN = 10, num_threads = 2)
+  res_single <- compute_qtl_enrichment(input_data$gwas_fit$pip, input_data$susie_fits, num_gwas=5000, pi_qtl=0.49819, lambda = 1, ImpN = 10, num_threads = 1)
+  res_multi <- compute_qtl_enrichment(input_data$gwas_fit$pip, input_data$susie_fits, num_gwas=5000, pi_qtl=0.49819, lambda = 1, ImpN = 10, num_threads = 2)
   expect_equal(res_single, res_multi)
 })
