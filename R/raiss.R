@@ -63,7 +63,7 @@ raiss <- function(ref_panel, known_zscores, LD_matrix, lamb = 0.01, rcond = 0.01
     as.matrix(LD_matrix)
   }
 
-  results <- list(z_nofilter = result_nofilter, z = result_filter, LD_mat = LD_extract_filtered)
+  results <- list(result_nofilter = result_nofilter, result_filter = result_filter, LD_mat = LD_extract_filtered)
   return(results)
 }
 
@@ -149,6 +149,9 @@ merge_raiss_df <- function(raiss_df, known_zscores) {
   # Remove the extra columns resulted from the merge (e.g., z.x, z.y)
   merged_df <- merged_df[, !colnames(merged_df) %in% c("z.x", "z.y")]
   merged_df <- arrange(merged_df, pos)
+  # assign imputed variants beta, se as NA to avoid confusion, since they are not imputed
+  merged_df$beta[df$Var == -1] <- NA
+  merged_df$se[df$Var == -1] <- NA
   return(merged_df)
 }
 
