@@ -144,7 +144,7 @@ summary_stats_qc <- function(sumstats, LD_data, n = NULL, var_y = NULL, method =
     LD_mat_qc <- qc_results$LD_mat
   } else if (method == "dentist") {
     qc_results <- dentist_detect_outliers(sumstats, LD_extract, nSample = n)
-    keep_index = qc_results$data %>% filter(!outlier) %>% pull(index_global)
+    keep_index = qc_results  %>% mutate(index = row_number()) %>% filter(!outlier) %>% pull(index)  
     sumstats_qc = sumstats[keep_index, , drop = FALSE]
     LD_mat_qc = LD_extract[sumstats_qc$variant_id, sumstats_qc$variant_id, drop = FALSE]  
       
