@@ -36,7 +36,8 @@ Imports:
     fsusieR,
     future,
     mvsusieR,
-    tibble
+    tibble,
+    qgg
 Suggests: 
     testthat,
     knitr,

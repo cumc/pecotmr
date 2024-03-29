@@ -99,7 +99,18 @@ double minusLogPvalueChisq2(double stat) {
 // Perform one iteration of the algorithm, assuming LD_mat is an arma::mat
 void oneIteration(const arma::mat& LD_mat, const std::vector<uint>& idx, const std::vector<uint>& idx2,
                   const arma::vec& zScore, arma::vec& imputedZ, arma::vec& rsqList, arma::vec& zScore_e,
-                  uint nSample, float probSVD, int ncpus) {
+                  uint nSample, float probSVD, int ncpus, bool verbose) {
+	if (verbose) {
+		Rcpp::Rcout << "Entering oneIteration" << std::endl;
+		Rcpp::Rcout << "LD_mat dimensions: " << LD_mat.n_rows << " x " << LD_mat.n_cols << std::endl;
+		Rcpp::Rcout << "idx size: " << idx.size() << std::endl;
+		Rcpp::Rcout << "idx2 size: " << idx2.size() << std::endl;
+		Rcpp::Rcout << "zScore size: " << zScore.size() << std::endl;
+		Rcpp::Rcout << "imputedZ size: " << imputedZ.size() << std::endl;
+		Rcpp::Rcout << "rsqList size: " << rsqList.size() << std::endl;
+		Rcpp::Rcout << "zScore_e size: " << zScore_e.size() << std::endl;
+	}
+
 	int nProcessors = omp_get_max_threads();
 	if (ncpus < nProcessors) nProcessors = ncpus;
 	omp_set_num_threads(nProcessors);
@@ -110,20 +121,41 @@ void oneIteration(const arma::mat& LD_mat, const std::vector<uint>& idx, const s
 	arma::mat LD_it(idx2.size(), idx.size());
 	arma::mat VV(idx.size(), idx.size());
 
+	// Check dimensions before filling LD_it and VV matrices
+	if (idx2.size() > LD_mat.n_rows || idx.size() > LD_mat.n_cols) {
+		Rcpp::stop("Inconsistent dimensions between LD_mat and idx2/idx in oneIteration()");
+	}
+
+	if (verbose) {
+		Rcpp::Rcout << "Filling LD_it and VV matrices" << std::endl;
+	}
+
 	// Fill LD_it and VV matrices using direct indexing
-    #pragma omp parallel for collapse(2)
+#pragma omp parallel for collapse(2)
 	for (size_t i = 0; i < idx2.size(); i++) {
 		for (size_t k = 0; k < idx.size(); k++) {
+			// if (verbose) {
+			//	Rcpp::Rcout << "Filling LD_it: i = " << i << ", k = " << k << ", idx2[i] = " << idx2[i] << ", idx[k] = " << idx[k] << std::endl;
+			//}
 			LD_it(i, k) = LD_mat.at(idx2[i] * LD_mat.n_cols + idx[k]);
 		}
 	}
 
-    #pragma omp parallel for
+#pragma omp parallel for
 	for (size_t i = 0; i < idx.size(); i++) {
+		//if (verbose) {
+		//	Rcpp::Rcout << "Filling VV: i = " << i << ", idx[i] = " << idx[i] << std::endl;
+		//}
 		zScore_eigen(i) = zScore[idx[i]];
 		for (size_t j = 0; j < idx.size(); j++) {
+			//if (verbose) {
+			//	Rcpp::Rcout << "Filling VV: i = " << i << ", j = " << j << ", idx[i] = " << idx[i] << ", idx[j] = " << idx[j] << std::endl;
+			//}
 			VV(i, j) = LD_mat.at(idx[i] * LD_mat.n_rows + idx[j]);
 		}
+	}
+	if (verbose) {
+		Rcpp::Rcout << "Performing eigen decomposition" << std::endl;
 	}
 
 	// Eigen decomposition
@@ -135,6 +167,11 @@ void oneIteration(const arma::mat& LD_mat, const std::vector<uint>& idx, const s
 	int nZeros = arma::sum(eigval < 0.0001);
 	nRank -= nZeros;
 	K = std::min(K, static_cast<uint>(nRank));
+
+	if (verbose) {
+		Rcpp::Rcout << "Rank: " << nRank << ", Zeros: " << nZeros << ", K: " << K << std::endl;
+	}
+
 	if (K <= 1) {
 		Rcpp::stop("Rank of eigen matrix <= 1");
 	}
@@ -146,13 +183,17 @@ void oneIteration(const arma::mat& LD_mat, const std::vector<uint>& idx, const s
 		wi(m, m) = 1.0 / eigval(j);
 	}
 
+	if (verbose) {
+		Rcpp::Rcout << "Calculating imputed Z scores and R squared values" << std::endl;
+	}
+
 	// Calculate imputed Z scores and R squared values
 	arma::mat beta = LD_it * ui * wi;
 	arma::vec zScore_eigen_imp = beta * (ui.t() * zScore_eigen);
 	arma::mat product = beta * (ui.t() * LD_it.t());
 	arma::vec rsq_eigen = product.diag();
 
-    #pragma omp parallel for
+#pragma omp parallel for
 	for (size_t i = 0; i < idx2.size(); ++i) {
 		imputedZ[idx2[i]] = zScore_eigen_imp(i);
 		rsqList[idx2[i]] = rsq_eigen(i);
@@ -163,6 +204,10 @@ void oneIteration(const arma::mat& LD_mat, const std::vector<uint>& idx, const s
 		}
 		uint j = idx2[i];
 		zScore_e[j] = (zScore[j] - imputedZ[j]) / std::sqrt(LD_mat(j, j) - rsqList[j]);
+	}
+
+	if (verbose) {
+		Rcpp::Rcout << "Exiting oneIteration" << std::endl;
 	}
 }
 
@@ -184,6 +229,7 @@ void oneIteration(const arma::mat& LD_mat, const std::vector<uint>& idx, const s
  * @param gPvalueThreshold P-value threshold for grouping variants into significant and null categories.
  * @param ncpus The number of CPU cores to use for parallel processing.
  * @param seed Seed for random number generation, affecting the selection of variants for analysis.
+ * @param verbose A boolean flag to enable verbose output for debugging.
  *
  * @return A List object containing:
  * - imputed_z: A vector of imputed Z-scores for each marker.
@@ -198,7 +244,22 @@ void oneIteration(const arma::mat& LD_mat, const std::vector<uint>& idx, const s
 // [[Rcpp::export]]
 List dentist_iterative_impute(const arma::mat& LD_mat, uint nSample, const arma::vec& zScore,
                               double pValueThreshold, float propSVD, bool gcControl, int nIter,
-                              double gPvalueThreshold, int ncpus, int seed, bool correct_chen_et_al_bug) {
+                              double gPvalueThreshold, int ncpus, int seed, bool correct_chen_et_al_bug,
+                              bool verbose = true) {
+	if (verbose) {
+		Rcpp::Rcout << "LD_mat dimensions: " << LD_mat.n_rows << " x " << LD_mat.n_cols << std::endl;
+		Rcpp::Rcout << "nSample: " << nSample << std::endl;
+		Rcpp::Rcout << "zScore size: " << zScore.size() << std::endl;
+		Rcpp::Rcout << "pValueThreshold: " << pValueThreshold << std::endl;
+		Rcpp::Rcout << "propSVD: " << propSVD << std::endl;
+		Rcpp::Rcout << "gcControl: " << gcControl << std::endl;
+		Rcpp::Rcout << "nIter: " << nIter << std::endl;
+		Rcpp::Rcout << "gPvalueThreshold: " << gPvalueThreshold << std::endl;
+		Rcpp::Rcout << "ncpus: " << ncpus << std::endl;
+		Rcpp::Rcout << "seed: " << seed << std::endl;
+		Rcpp::Rcout << "correct_chen_et_al_bug: " << correct_chen_et_al_bug << std::endl;
+	}
+
 	// Set number of threads for parallel processing
 	int nProcessors = omp_get_max_threads();
 	if (ncpus < nProcessors) nProcessors = ncpus;
@@ -218,11 +279,19 @@ List dentist_iterative_impute(const arma::mat& LD_mat, uint nSample, const arma:
 		else idx2.push_back(i);
 	}
 
+	if (verbose) {
+		Rcpp::Rcout << "Indices partitioned" << std::endl;
+	}
+
 	std::vector<uint> groupingGWAS(markerSize, 0);
 	for (uint i = 0; i < markerSize; ++i) {
 		if (minusLogPvalueChisq2(std::pow(zScore(i), 2)) > -log10(gPvalueThreshold)) {
 			groupingGWAS[i] = 1;
 		}
+	}
+
+	if (verbose) {
+		Rcpp::Rcout << "Grouping GWAS finished" << std::endl;
 	}
 
 	arma::vec imputedZ = arma::zeros<arma::vec>(markerSize);
@@ -234,15 +303,27 @@ List dentist_iterative_impute(const arma::mat& LD_mat, uint nSample, const arma:
 	std::vector<uint> grouping_tmp(idx2.size());
 
 	for (int t = 0; t < nIter; ++t) {
+		if (verbose) {
+			Rcpp::Rcout << "\nIteration " << t << std::endl;
+		}
+
 		std::vector<uint> idx2_QCed;
 
+		if (verbose) {
+			Rcpp::Rcout << "Performing iteration with current subsets" << std::endl;
+		}
+
 		// Perform iteration with current subsets
-		oneIteration(LD_mat, idx, idx2, zScore, imputedZ, rsq, zScore_e, nSample, propSVD, ncpus);
+		oneIteration(LD_mat, idx, idx2, zScore, imputedZ, rsq, zScore_e, nSample, propSVD, ncpus, verbose);
 
 		// Assess differences and grouping for thresholding
 		for (size_t i = 0; i < idx2.size(); ++i) {
 			diff[i] = std::abs(zScore_e[idx2[i]]);
 			grouping_tmp[i] = groupingGWAS[idx2[i]];
+		}
+
+		if (verbose) {
+			Rcpp::Rcout << "Assessing differences and grouping for thresholding" << std::endl;
 		}
 
 		double threshold = getQuantile(diff, 0.995);
@@ -269,13 +350,16 @@ List dentist_iterative_impute(const arma::mat& LD_mat, uint nSample, const arma:
 			threshold0 = getQuantile2_chen_et_al(diff, grouping_tmp, 0.995);
 		}
 
+		if (verbose) {
+			Rcpp::Rcout << "Thresholds calculated: " << threshold << ", " << threshold1 << ", " << threshold0 << std::endl;
+		}
+
 		if (threshold1 == 0) {
 			threshold1 = threshold;
 			threshold0 = threshold;
 		}
 		if (correct_chen_et_al_bug || nIter - 2 >= 0) {
-			/*
-			   In the original DENTIST method, if t=0 (first iteration) and nIter is 1,
+			/*In the original DENTIST method, if t=0 (first iteration) and nIter is 1,
 			   t is defined as a uint (unassigned integer)
 			   https://github.com/Yves-CHEN/DENTIST/blob/2fefddb1bbee19896a30bf56229603561ea1dba8/main/inversion.cpp#L628
 			   and it will treat t (which is 0) no larger than nIter-2 (which is -1) which is wrong
@@ -288,6 +372,11 @@ List dentist_iterative_impute(const arma::mat& LD_mat, uint nSample, const arma:
 				threshold1 = threshold;
 			}
 		}
+
+		if (verbose) {
+			Rcpp::Rcout << "Applying threshold-based filtering for QC" << std::endl;
+		}
+
 		// Apply threshold-based filtering for QC
 		for (size_t i = 0; i < diff.size(); ++i) {
 			if ((grouping_tmp[i] == 1 && diff[i] <= threshold1) ||
@@ -296,8 +385,16 @@ List dentist_iterative_impute(const arma::mat& LD_mat, uint nSample, const arma:
 			}
 		}
 
+		if (verbose) {
+			Rcpp::Rcout << "Performing another iteration with updated sets of indices" << std::endl;
+		}
+
 		// Perform another iteration with updated sets of indices (idx and idx2_QCed)
-		oneIteration(LD_mat, idx2_QCed, idx, zScore, imputedZ, rsq, zScore_e, nSample, propSVD, ncpus);
+		oneIteration(LD_mat, idx2_QCed, idx, zScore, imputedZ, rsq, zScore_e, nSample, propSVD, ncpus, verbose);
+
+		if (verbose) {
+			Rcpp::Rcout << "Recalculating differences and groupings after the iteration" << std::endl;
+		}
 
 		// Recalculate differences and groupings after the iteration
 		diff.resize(fullIdx.size());
@@ -307,10 +404,13 @@ List dentist_iterative_impute(const arma::mat& LD_mat, uint nSample, const arma:
 			grouping_tmp[i] = groupingGWAS[fullIdx[i]];
 		}
 
+		if (verbose) {
+			Rcpp::Rcout << "Re-determining thresholds based on the recalculated differences and groupings" << std::endl;
+		}
+
 		// Re-determine thresholds based on the recalculated differences and groupings
 		threshold = getQuantile(diff, 0.995);
 		if (correct_chen_et_al_bug) {
-			// FIXME: explain the story here
 			threshold1 = getQuantile2(diff, grouping_tmp, 0.995, false);
 			threshold0 = getQuantile2(diff, grouping_tmp, 0.995, true);
 		} else {
@@ -331,7 +431,16 @@ List dentist_iterative_impute(const arma::mat& LD_mat, uint nSample, const arma:
 				threshold1 = threshold;
 			}
 		}
+
+		if (verbose) {
+			Rcpp::Rcout << "Adjusting for genetic control and inflation factor if necessary" << std::endl;
+		}
+
 		// Adjust for genetic control and inflation factor if necessary
+		// Check dimensions before calculating chisq
+		if (fullIdx.size() != zScore_e.size()) {
+			Rcpp::stop("Inconsistent dimensions between fullIdx and zScore_e in dentist_iterative_impute");
+		}
 		std::vector<double> chisq(fullIdx.size());
 		for (size_t i = 0; i < fullIdx.size(); ++i) {
 			chisq[i] = std::pow(zScore_e[fullIdx[i]], 2);
@@ -372,6 +481,10 @@ List dentist_iterative_impute(const arma::mat& LD_mat, uint nSample, const arma:
 			if (randOrder[i] > fullIdx.size() / 2) idx.push_back(fullIdx[i]);
 			else idx2.push_back(fullIdx[i]);
 		}
+	}
+
+	if (verbose) {
+		Rcpp::Rcout << "Exiting dentist_iterative_impute" << std::endl;
 	}
 
 	return List::create(Named("original_z") = zScore,

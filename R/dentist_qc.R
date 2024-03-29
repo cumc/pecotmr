@@ -128,6 +128,33 @@ dentist_detect_outliers <- function(sum_stat, LD_mat, nSample,
 #'
 #' @examples
 #' # Example usage of dentist_impute_single_window
+#' library(MASS)
+#'library(corpcor)
+#'set.seed(999)
+#'# Set the number of SNPs, sample size, and number of outliers
+#'n_snps <- 1000
+#'sample_size <- 10000
+#'n_outliers <- 5
+#'
+#'# Generate a correlation matrix with more off-diagonal correlation
+#'cor_matrix <- matrix(0, nrow = n_snps, ncol = n_snps)
+#'for (i in 1:(n_snps-1)) {
+#'  for (j in (i+1):n_snps) {
+#'    cor_matrix[i, j] <- runif(1, 0.2, 0.8)  # Generate random correlations between 0.2 and 0.8
+#'    cor_matrix[j, i] <- cor_matrix[i, j]
+#'  }
+#'}
+#'diag(cor_matrix) <- 1
+#'
+#'# Convert the correlation matrix to a positive definite matrix
+#'ld_matrix <- cov2cor(make.positive.definite(cor_matrix))
+#'
+#'# Simulate Z-scores based on the LD matrix
+#'z_scores <- mvrnorm(n = 1, mu = rep(0, n_snps), Sigma = ld_matrix)
+#'
+#'# Introduce outliers
+#'outlier_indices <- sample(1:n_snps, n_outliers)
+#'z_scores[outlier_indices] <- rnorm(n_outliers, mean = 0, sd = 5)
 #' dentist_impute_single_window(zScore, LD_mat, nSample)
 #'
 #' @seealso
