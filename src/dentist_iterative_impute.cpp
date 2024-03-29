@@ -101,7 +101,6 @@ void oneIteration(const arma::mat& LD_mat, const std::vector<uint>& idx, const s
                   const arma::vec& zScore, arma::vec& imputedZ, arma::vec& rsqList, arma::vec& zScore_e,
                   uint nSample, float probSVD, int ncpus, bool verbose) {
 	if (verbose) {
-		Rcpp::Rcout << "Entering oneIteration" << std::endl;
 		Rcpp::Rcout << "LD_mat dimensions: " << LD_mat.n_rows << " x " << LD_mat.n_cols << std::endl;
 		Rcpp::Rcout << "idx size: " << idx.size() << std::endl;
 		Rcpp::Rcout << "idx2 size: " << idx2.size() << std::endl;
@@ -124,6 +123,18 @@ void oneIteration(const arma::mat& LD_mat, const std::vector<uint>& idx, const s
 	// Check dimensions before filling LD_it and VV matrices
 	if (idx2.size() > LD_mat.n_rows || idx.size() > LD_mat.n_cols) {
 		Rcpp::stop("Inconsistent dimensions between LD_mat and idx2/idx in oneIteration()");
+	}
+
+	// Check if any index in idx or idx2 is greater than or equal to zscore size
+	for (size_t i = 0; i < idx.size(); ++i) {
+		if (idx[i] >= zScore.size()) {
+			Rcpp::stop("Invalid index in idx: " + std::to_string(idx[i]));
+		}
+	}
+	for (size_t i = 0; i < idx2.size(); ++i) {
+		if (idx2[i] >= zScore.size()) {
+			Rcpp::stop("Invalid index in idx2: " + std::to_string(idx2[i]));
+		}
 	}
 
 	if (verbose) {
@@ -206,9 +217,6 @@ void oneIteration(const arma::mat& LD_mat, const std::vector<uint>& idx, const s
 		zScore_e[j] = (zScore[j] - imputedZ[j]) / std::sqrt(LD_mat(j, j) - rsqList[j]);
 	}
 
-	if (verbose) {
-		Rcpp::Rcout << "Exiting oneIteration" << std::endl;
-	}
 }
 
 /**
@@ -314,6 +322,10 @@ List dentist_iterative_impute(const arma::mat& LD_mat, uint nSample, const arma:
 		}
 
 		// Perform iteration with current subsets
+
+		if (verbose) {
+			Rcpp::Rcout << "Performing oneIteration()" << std::endl;
+		}
 		oneIteration(LD_mat, idx, idx2, zScore, imputedZ, rsq, zScore_e, nSample, propSVD, ncpus, verbose);
 
 		// Assess differences and grouping for thresholding
@@ -385,11 +397,10 @@ List dentist_iterative_impute(const arma::mat& LD_mat, uint nSample, const arma:
 			}
 		}
 
-		if (verbose) {
-			Rcpp::Rcout << "Performing another iteration with updated sets of indices" << std::endl;
-		}
-
 		// Perform another iteration with updated sets of indices (idx and idx2_QCed)
+		if (verbose) {
+			Rcpp::Rcout << "Performing oneIteration() with updated sets of indices" << std::endl;
+		}
 		oneIteration(LD_mat, idx2_QCed, idx, zScore, imputedZ, rsq, zScore_e, nSample, propSVD, ncpus, verbose);
 
 		if (verbose) {
@@ -481,10 +492,6 @@ List dentist_iterative_impute(const arma::mat& LD_mat, uint nSample, const arma:
 			if (randOrder[i] > fullIdx.size() / 2) idx.push_back(fullIdx[i]);
 			else idx2.push_back(fullIdx[i]);
 		}
-	}
-
-	if (verbose) {
-		Rcpp::Rcout << "Exiting dentist_iterative_impute" << std::endl;
 	}
 
 	return List::create(Named("original_z") = zScore,
