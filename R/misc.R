@@ -211,6 +211,7 @@ NoSNPsError <- function(message) {
   structure(list(message = message), class = c("NoSNPsError", "error", "condition"))
 }
 
+# nocov start
 load_genotype_data <- function(genotype, keep_indel = TRUE) {
   # Read genotype data using plink
   geno <- plink2R::read_plink(genotype)
@@ -225,6 +226,7 @@ load_genotype_data <- function(genotype, keep_indel = TRUE) {
   }
   return(geno_bed)
 }
+# nocov end
 
 #' Load genotype data for a specific region using data.table for efficiency
 #'

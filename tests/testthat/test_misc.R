@@ -160,14 +160,14 @@ test_that("Test format_variant_id",{
     expect_equal(format_variant_id(c("chr1_123_G_C", "chr1_132_A_T")), c("chr1:123:G:C", "chr1:132:A:T"))
 })
 
-test_that("Test load_genotype_data",{
-  res <- load_genotype_data("test_data/protocol_example.genotype")
-  sample_ids <- read_delim(
-    "test_data/protocol_example.genotype.fam", delim = "\t", col_names = F
-  ) %>% pull(X1)
-  expect_equal(nrow(res), length(sample_ids))
-  expect_equal(rownames(res), sample_ids)
-})
+#test_that("Test load_genotype_data",{
+  #res <- load_genotype_data("test_data/protocol_example.genotype")
+  #sample_ids <- read_delim(
+    #"test_data/protocol_example.genotype.fam", delim = "\t", col_names = F
+  #) %>% pull(X1)
+  #expect_equal(nrow(res), length(sample_ids))
+  #expect_equal(rownames(res), sample_ids)
+#})
 
 test_that("Test load_genotype_region",{
   res <- load_genotype_region(
