@@ -191,7 +191,7 @@ rss_analysis_pipeline <- function(
     top_model_pip <- top_model$pip
     if (!any(top_model_pip > pip_cutoff_to_skip)) {
       message(paste("Skipping follow-up analysis: No signals above PIP threshold", pip_cutoff_to_skip, "in initial model screening."))
-      return(list())
+      return(list(rss_data_analyzed = sumstats))
     } else {
       message(paste("Follow-up on region because signals above PIP threshold", pip_cutoff_to_skip, "were detected in initial model screening."))
     }
