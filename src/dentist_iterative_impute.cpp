@@ -8,6 +8,7 @@
 #include <RcppArmadillo.h>
 #include <omp.h> // Required for parallel processing
 #include <algorithm>
+#include <cstdlib> // For srand, rand
 #include <random>
 #include <vector>
 #include <numeric> // For std::iota
@@ -22,9 +23,10 @@
 using namespace Rcpp;
 using namespace arma;
 
+
 // Assuming sort_indexes is defined as provided
-std::vector<size_t> sort_indexes(const std::vector<int>& v, unsigned int theSize) {
-	std::vector<size_t> idx(theSize);
+std::vector<size_t> sort_indexes(const std::vector<size_t>& v) {
+	std::vector<size_t> idx(v.size());
 	std::iota(idx.begin(), idx.end(), 0);
 	std::sort(idx.begin(), idx.end(), [&v](size_t i1, size_t i2) {
 		return v[i1] < v[i2];
@@ -32,22 +34,28 @@ std::vector<size_t> sort_indexes(const std::vector<int>& v, unsigned int theSize
 	return idx;
 }
 
-// Improved generateSetOfNumbers function using C++11 random and std::unordered_set
-std::vector<size_t> generateSetOfNumbers(int SIZE, int seed) {
-	std::vector<int> numbers(SIZE);
-	std::unordered_set<int> uniqueNumbers;
-	std::mt19937 rng(seed);
-	std::uniform_int_distribution<int> dist(0, INT_MAX);
+std::vector<size_t> generateSetOfNumbers(size_t size, int seed) {
+	int tempNum;        // Temp variable to hold random number
+	std::vector<size_t> numbers(size, 0); // Use size_t for size
+	srand(seed); // Fixed seeding
 
-	for (int i = 0; i < SIZE; ++i) {
-		int tempNum;
+	numbers[0] = rand(); // Generate the first number in the array
+	for (size_t index = 1; index < size; ++index) { // Use size_t for loop index
 		do {
-			tempNum = dist(rng);
-		} while (!uniqueNumbers.insert(tempNum).second);
-		numbers[i] = tempNum;
+			tempNum = rand();
+			for (size_t index2 = 0; index2 < index; ++index2) { // Check against already placed numbers
+				if (tempNum == numbers[index2]) {
+					tempNum = -1; // Mark as duplicate
+					break; // Exit inner loop early if duplicate is found
+				}
+			}
+		} while (tempNum == -1);
+		numbers[index] = tempNum; // Assign unique number
 	}
 
-	return sort_indexes(numbers, SIZE);
+	// Assuming sort_indexes is a template function or overloaded for int and size_t types
+	std::vector<size_t> aa = sort_indexes(numbers); // This line assumes sort_indexes can take these arguments
+	return aa;
 }
 
 // Get a quantile value
@@ -59,7 +67,7 @@ double getQuantile(const std::vector<double>& dat, double whichQuantile) {
 }
 
 // Get a quantile value based on grouping
-double getQuantile2(const std::vector<double>& dat, const std::vector<uint>& grouping, double whichQuantile, bool invert_grouping = false) {
+double getQuantile2(const std::vector<double>& dat, const std::vector<size_t>& grouping, double whichQuantile, bool invert_grouping = false) {
 	std::vector<double> filteredData;
 	for (size_t i = 0; i < dat.size(); ++i) {
 		// Apply grouping filter with optional inversion
@@ -72,9 +80,9 @@ double getQuantile2(const std::vector<double>& dat, const std::vector<uint>& gro
 }
 
 // Get a quantile value based on grouping
-double getQuantile2_chen_et_al(const std::vector<double> &dat, std::vector<uint> grouping, double whichQuantile)
+double getQuantile2_chen_et_al(const std::vector<double> &dat, std::vector<size_t> grouping, double whichQuantile)
 {
-	uint sum = std::accumulate(grouping.begin(), grouping.end(), 0);
+	size_t sum = std::accumulate(grouping.begin(), grouping.end(), 0);
 
 	if (sum < 50)
 	{
@@ -82,7 +90,7 @@ double getQuantile2_chen_et_al(const std::vector<double> &dat, std::vector<uint>
 	}
 
 	std::vector<double> diff2;
-	for (uint i = 0; i < dat.size(); i++)
+	for (size_t i = 0; i < dat.size(); i++)
 	{
 		if (grouping[i] == 1)
 			diff2.push_back(dat[i]);
@@ -97,9 +105,9 @@ double minusLogPvalueChisq2(double stat) {
 }
 
 // Perform one iteration of the algorithm, assuming LD_mat is an arma::mat
-void oneIteration(const arma::mat& LD_mat, const std::vector<uint>& idx, const std::vector<uint>& idx2,
+void oneIteration(const arma::mat& LD_mat, const std::vector<size_t>& idx, const std::vector<size_t>& idx2,
                   const arma::vec& zScore, arma::vec& imputedZ, arma::vec& rsqList, arma::vec& zScore_e,
-                  uint nSample, float probSVD, int ncpus, bool verbose) {
+                  size_t nSample, float probSVD, int ncpus, bool verbose) {
 	if (verbose) {
 		Rcpp::Rcout << "LD_mat dimensions: " << LD_mat.n_rows << " x " << LD_mat.n_cols << std::endl;
 		Rcpp::Rcout << "idx size: " << idx.size() << std::endl;
@@ -114,7 +122,7 @@ void oneIteration(const arma::mat& LD_mat, const std::vector<uint>& idx, const s
 	if (ncpus < nProcessors) nProcessors = ncpus;
 	omp_set_num_threads(nProcessors);
 
-	uint K = std::min(static_cast<uint>(idx.size()), nSample) * probSVD;
+	size_t K = std::min(static_cast<size_t>(idx.size()), nSample) * probSVD;
 
 	arma::vec zScore_eigen(idx.size());
 	arma::mat LD_it(idx2.size(), idx.size());
@@ -177,7 +185,7 @@ void oneIteration(const arma::mat& LD_mat, const std::vector<uint>& idx, const s
 	int nRank = eigvec.n_rows;
 	int nZeros = arma::sum(eigval < 0.0001);
 	nRank -= nZeros;
-	K = std::min(K, static_cast<uint>(nRank));
+	K = std::min(K, static_cast<size_t>(nRank));
 
 	if (verbose) {
 		Rcpp::Rcout << "Rank: " << nRank << ", Zeros: " << nZeros << ", K: " << K << std::endl;
@@ -188,7 +196,7 @@ void oneIteration(const arma::mat& LD_mat, const std::vector<uint>& idx, const s
 	}
 	arma::mat ui = arma::eye<arma::mat>(eigvec.n_rows, K);
 	arma::mat wi = arma::eye<arma::mat>(K, K);
-	for (uint m = 0; m < K; ++m) {
+	for (size_t m = 0; m < K; ++m) {
 		int j = eigvec.n_rows - m - 1;
 		ui.col(m) = eigvec.col(j);
 		wi(m, m) = 1.0 / eigval(j);
@@ -213,7 +221,7 @@ void oneIteration(const arma::mat& LD_mat, const std::vector<uint>& idx, const s
 			// Handle the case where rsq_eigen is unexpectedly high
 			Rcpp::warning("Adjusted rsq_eigen value exceeding 1: " + std::to_string(rsq_eigen(i)));
 		}
-		uint j = idx2[i];
+		size_t j = idx2[i];
 		zScore_e[j] = (zScore[j] - imputedZ[j]) / std::sqrt(LD_mat(j, j) - rsqList[j]);
 	}
 
@@ -250,7 +258,7 @@ void oneIteration(const arma::mat& LD_mat, const std::vector<uint>& idx, const s
  */
 
 // [[Rcpp::export]]
-List dentist_iterative_impute(const arma::mat& LD_mat, uint nSample, const arma::vec& zScore,
+List dentist_iterative_impute(const arma::mat& LD_mat, size_t nSample, const arma::vec& zScore,
                               double pValueThreshold, float propSVD, bool gcControl, int nIter,
                               double gPvalueThreshold, int ncpus, int seed, bool correct_chen_et_al_bug,
                               bool verbose = true) {
@@ -273,16 +281,16 @@ List dentist_iterative_impute(const arma::mat& LD_mat, uint nSample, const arma:
 	if (ncpus < nProcessors) nProcessors = ncpus;
 	omp_set_num_threads(nProcessors);
 
-	uint markerSize = zScore.size();
+	size_t markerSize = zScore.size();
 	// Initialization based on the seed input
 	std::vector<size_t> randOrder = generateSetOfNumbers(markerSize, seed);
-	std::vector<uint> idx, idx2;
+	std::vector<size_t> idx, idx2;
 	idx.reserve(markerSize / 2);
 	idx2.reserve(markerSize / 2);
-	std::vector<uint> fullIdx(randOrder.begin(), randOrder.end());
+	std::vector<size_t> fullIdx(randOrder.begin(), randOrder.end());
 
 	// Determining indices for partitioning
-	for (uint i = 0; i < markerSize; ++i) {
+	for (size_t i = 0; i < markerSize; ++i) {
 		if (randOrder[i] > markerSize / 2) idx.push_back(i);
 		else idx2.push_back(i);
 	}
@@ -291,8 +299,8 @@ List dentist_iterative_impute(const arma::mat& LD_mat, uint nSample, const arma:
 		Rcpp::Rcout << "Indices partitioned" << std::endl;
 	}
 
-	std::vector<uint> groupingGWAS(markerSize, 0);
-	for (uint i = 0; i < markerSize; ++i) {
+	std::vector<size_t> groupingGWAS(markerSize, 0);
+	for (size_t i = 0; i < markerSize; ++i) {
 		if (minusLogPvalueChisq2(std::pow(zScore(i), 2)) > -log10(gPvalueThreshold)) {
 			groupingGWAS[i] = 1;
 		}
@@ -308,14 +316,14 @@ List dentist_iterative_impute(const arma::mat& LD_mat, uint nSample, const arma:
 	arma::ivec iterID = arma::zeros<arma::ivec>(markerSize);
 
 	std::vector<double> diff(idx2.size());
-	std::vector<uint> grouping_tmp(idx2.size());
+	std::vector<size_t> grouping_tmp(idx2.size());
 
 	for (int t = 0; t < nIter; ++t) {
 		if (verbose) {
 			Rcpp::Rcout << "\nIteration " << t << std::endl;
 		}
 
-		std::vector<uint> idx2_QCed;
+		std::vector<size_t> idx2_QCed;
 
 		if (verbose) {
 			Rcpp::Rcout << "Performing iteration with current subsets" << std::endl;
@@ -356,7 +364,7 @@ List dentist_iterative_impute(const arma::mat& LD_mat, uint nSample, const arma:
 			threshold0 = getQuantile2(diff, grouping_tmp, 0.995, true);
 		} else {
 			threshold1 = getQuantile2_chen_et_al(diff, grouping_tmp, 0.995);
-			std::transform(grouping_tmp.begin(), grouping_tmp.end(), grouping_tmp.begin(), [](uint val) {
+			std::transform(grouping_tmp.begin(), grouping_tmp.end(), grouping_tmp.begin(), [](size_t val) {
 				return 1 - val;
 			});
 			threshold0 = getQuantile2_chen_et_al(diff, grouping_tmp, 0.995);
@@ -372,7 +380,7 @@ List dentist_iterative_impute(const arma::mat& LD_mat, uint nSample, const arma:
 		}
 		if (correct_chen_et_al_bug || nIter - 2 >= 0) {
 			/*In the original DENTIST method, if t=0 (first iteration) and nIter is 1,
-			   t is defined as a uint (unassigned integer)
+			   t is defined as a size_t (unassigned integer)
 			   https://github.com/Yves-CHEN/DENTIST/blob/2fefddb1bbee19896a30bf56229603561ea1dba8/main/inversion.cpp#L628
 			   and it will treat t (which is 0) no larger than nIter-2 (which is -1) which is wrong
 			   Thus if we correct the original DENTIST code, i.e., correct_chen_et_al_bug = TRUE, or when nIter - 2 >=0,
@@ -426,7 +434,7 @@ List dentist_iterative_impute(const arma::mat& LD_mat, uint nSample, const arma:
 			threshold0 = getQuantile2(diff, grouping_tmp, 0.995, true);
 		} else {
 			threshold1 = getQuantile2_chen_et_al(diff, grouping_tmp, 0.995);
-			std::transform(grouping_tmp.begin(), grouping_tmp.end(), grouping_tmp.begin(), [](uint val) {
+			std::transform(grouping_tmp.begin(), grouping_tmp.end(), grouping_tmp.begin(), [](size_t val) {
 				return 1 - val;
 			});
 			threshold0 = getQuantile2_chen_et_al(diff, grouping_tmp, 0.995);
@@ -462,7 +470,7 @@ List dentist_iterative_impute(const arma::mat& LD_mat, uint nSample, const arma:
 		double medianChisq = chisq[chisq.size() / 2];
 		double inflationFactor = medianChisq / 0.46;
 
-		std::vector<uint> fullIdx_tmp;
+		std::vector<size_t> fullIdx_tmp;
 		for (size_t i = 0; i < fullIdx.size(); ++i) {
 			double currentDiffSquared = std::pow(diff[i], 2);
 

@@ -13,13 +13,13 @@ Rcpp::Rostream<false>& Rcpp::Rcerr = Rcpp::Rcpp_cerr_get();
 #endif
 
 // dentist_iterative_impute
-List dentist_iterative_impute(const arma::mat& LD_mat, uint nSample, const arma::vec& zScore, double pValueThreshold, float propSVD, bool gcControl, int nIter, double gPvalueThreshold, int ncpus, int seed, bool correct_chen_et_al_bug, bool verbose);
+List dentist_iterative_impute(const arma::mat& LD_mat, size_t nSample, const arma::vec& zScore, double pValueThreshold, float propSVD, bool gcControl, int nIter, double gPvalueThreshold, int ncpus, int seed, bool correct_chen_et_al_bug, bool verbose);
 RcppExport SEXP _pecotmr_dentist_iterative_impute(SEXP LD_matSEXP, SEXP nSampleSEXP, SEXP zScoreSEXP, SEXP pValueThresholdSEXP, SEXP propSVDSEXP, SEXP gcControlSEXP, SEXP nIterSEXP, SEXP gPvalueThresholdSEXP, SEXP ncpusSEXP, SEXP seedSEXP, SEXP correct_chen_et_al_bugSEXP, SEXP verboseSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
     Rcpp::traits::input_parameter< const arma::mat& >::type LD_mat(LD_matSEXP);
-    Rcpp::traits::input_parameter< uint >::type nSample(nSampleSEXP);
+    Rcpp::traits::input_parameter< size_t >::type nSample(nSampleSEXP);
     Rcpp::traits::input_parameter< const arma::vec& >::type zScore(zScoreSEXP);
     Rcpp::traits::input_parameter< double >::type pValueThreshold(pValueThresholdSEXP);
     Rcpp::traits::input_parameter< float >::type propSVD(propSVDSEXP);
