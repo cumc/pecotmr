@@ -131,21 +131,29 @@ void oneIteration(const arma::mat& LD_mat, const std::vector<uint>& idx, const s
 	}
 
 	// Fill LD_it and VV matrices using direct indexing
-    #pragma omp parallel for collapse(2)
+#pragma omp parallel for collapse(2)
 	for (size_t i = 0; i < idx2.size(); i++) {
 		for (size_t k = 0; k < idx.size(); k++) {
+			// if (verbose) {
+			//	Rcpp::Rcout << "Filling LD_it: i = " << i << ", k = " << k << ", idx2[i] = " << idx2[i] << ", idx[k] = " << idx[k] << std::endl;
+			//}
 			LD_it(i, k) = LD_mat.at(idx2[i] * LD_mat.n_cols + idx[k]);
 		}
 	}
 
-    #pragma omp parallel for
+#pragma omp parallel for
 	for (size_t i = 0; i < idx.size(); i++) {
+		//if (verbose) {
+		//	Rcpp::Rcout << "Filling VV: i = " << i << ", idx[i] = " << idx[i] << std::endl;
+		//}
 		zScore_eigen(i) = zScore[idx[i]];
 		for (size_t j = 0; j < idx.size(); j++) {
+			//if (verbose) {
+			//	Rcpp::Rcout << "Filling VV: i = " << i << ", j = " << j << ", idx[i] = " << idx[i] << ", idx[j] = " << idx[j] << std::endl;
+			//}
 			VV(i, j) = LD_mat.at(idx[i] * LD_mat.n_rows + idx[j]);
 		}
 	}
-
 	if (verbose) {
 		Rcpp::Rcout << "Performing eigen decomposition" << std::endl;
 	}
@@ -185,7 +193,7 @@ void oneIteration(const arma::mat& LD_mat, const std::vector<uint>& idx, const s
 	arma::mat product = beta * (ui.t() * LD_it.t());
 	arma::vec rsq_eigen = product.diag();
 
-    #pragma omp parallel for
+#pragma omp parallel for
 	for (size_t i = 0; i < idx2.size(); ++i) {
 		imputedZ[idx2[i]] = zScore_eigen_imp(i);
 		rsqList[idx2[i]] = rsq_eigen(i);
@@ -403,7 +411,6 @@ List dentist_iterative_impute(const arma::mat& LD_mat, uint nSample, const arma:
 		// Re-determine thresholds based on the recalculated differences and groupings
 		threshold = getQuantile(diff, 0.995);
 		if (correct_chen_et_al_bug) {
-			// FIXME: explain the story here
 			threshold1 = getQuantile2(diff, grouping_tmp, 0.995, false);
 			threshold0 = getQuantile2(diff, grouping_tmp, 0.995, true);
 		} else {
