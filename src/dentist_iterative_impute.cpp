@@ -232,7 +232,7 @@ void oneIteration(const arma::mat& LD_mat, const std::vector<size_t>& idx, const
 List dentist_iterative_impute(const arma::mat& LD_mat, size_t nSample, const arma::vec& zScore,
                               double pValueThreshold, float propSVD, bool gcControl, int nIter,
                               double gPvalueThreshold, int ncpus, int seed, bool correct_chen_et_al_bug,
-                              bool verbose = true) {
+                              bool verbose = false) {
 	if (verbose) {
 		Rcpp::Rcout << "LD_mat dimensions: " << LD_mat.n_rows << " x " << LD_mat.n_cols << std::endl;
 		Rcpp::Rcout << "nSample: " << nSample << std::endl;
@@ -289,22 +289,17 @@ List dentist_iterative_impute(const arma::mat& LD_mat, size_t nSample, const arm
 	std::vector<size_t> grouping_tmp(idx2.size());
 
 	for (int t = 0; t < nIter; ++t) {
+		// Perform iteration with current subsets
 		if (verbose) {
 			Rcpp::Rcout << "\nIteration " << t << std::endl;
-		}
-
-		std::vector<size_t> idx2_QCed;
-
-		if (verbose) {
-			Rcpp::Rcout << "Performing iteration with current subsets" << std::endl;
-		}
-
-		// Perform iteration with current subsets
-
-		if (verbose) {
+			Rcpp::Rcout << "Performing  with current subsets" << std::endl;
 			Rcpp::Rcout << "Performing oneIteration()" << std::endl;
 		}
+
 		oneIteration(LD_mat, idx, idx2, zScore, imputedZ, rsq, zScore_e, nSample, propSVD, ncpus, verbose);
+
+		diff.resize(idx2.size());
+		grouping_tmp.resize(idx2.size());
 
 		// Assess differences and grouping for thresholding
 		for (size_t i = 0; i < idx2.size(); ++i) {
@@ -340,10 +335,6 @@ List dentist_iterative_impute(const arma::mat& LD_mat, size_t nSample, const arm
 			threshold0 = getQuantile2_chen_et_al(diff, grouping_tmp, 0.995);
 		}
 
-		if (verbose) {
-			Rcpp::Rcout << "Thresholds calculated: " << threshold << ", " << threshold1 << ", " << threshold0 << std::endl;
-		}
-
 		if (threshold1 == 0) {
 			threshold1 = threshold;
 			threshold0 = threshold;
@@ -364,10 +355,12 @@ List dentist_iterative_impute(const arma::mat& LD_mat, size_t nSample, const arm
 		}
 
 		if (verbose) {
+			Rcpp::Rcout << "Thresholds calculated: " << threshold << ", " << threshold1 << ", " << threshold0 << std::endl;
 			Rcpp::Rcout << "Applying threshold-based filtering for QC" << std::endl;
 		}
 
 		// Apply threshold-based filtering for QC
+		std::vector<size_t> idx2_QCed;
 		for (size_t i = 0; i < diff.size(); ++i) {
 			if ((grouping_tmp[i] == 1 && diff[i] <= threshold1) ||
 			    (grouping_tmp[i] == 0 && diff[i] <= threshold0)) {
@@ -379,6 +372,7 @@ List dentist_iterative_impute(const arma::mat& LD_mat, size_t nSample, const arm
 		if (verbose) {
 			Rcpp::Rcout << "Performing oneIteration() with updated sets of indices" << std::endl;
 		}
+
 		oneIteration(LD_mat, idx2_QCed, idx, zScore, imputedZ, rsq, zScore_e, nSample, propSVD, ncpus, verbose);
 
 		if (verbose) {
@@ -388,6 +382,7 @@ List dentist_iterative_impute(const arma::mat& LD_mat, size_t nSample, const arm
 		// Recalculate differences and groupings after the iteration
 		diff.resize(fullIdx.size());
 		grouping_tmp.resize(fullIdx.size());
+
 		for (size_t i = 0; i < fullIdx.size(); ++i) {
 			diff[i] = std::abs(zScore_e[fullIdx[i]]);
 			grouping_tmp[i] = groupingGWAS[fullIdx[i]];
@@ -409,10 +404,7 @@ List dentist_iterative_impute(const arma::mat& LD_mat, size_t nSample, const arm
 			});
 			threshold0 = getQuantile2_chen_et_al(diff, grouping_tmp, 0.995);
 		}
-		if (threshold1 == 0) {
-			threshold1 = threshold;
-			threshold0 = threshold;
-		}
+
 
 		if (correct_chen_et_al_bug || nIter - 2 >= 0) {
 			if (t > nIter - 2) {
@@ -421,18 +413,23 @@ List dentist_iterative_impute(const arma::mat& LD_mat, size_t nSample, const arm
 			}
 		}
 
+		if (threshold1 == 0) {
+			threshold1 = threshold;
+			threshold0 = threshold;
+		}
+
 		if (verbose) {
 			Rcpp::Rcout << "Adjusting for genetic control and inflation factor if necessary" << std::endl;
 		}
 
 		// Adjust for genetic control and inflation factor if necessary
-		// Check dimensions before calculating chisq
-		if (fullIdx.size() != zScore_e.size()) {
-			Rcpp::stop("Inconsistent dimensions between fullIdx and zScore_e in dentist_iterative_impute");
-		}
 		std::vector<double> chisq(fullIdx.size());
 		for (size_t i = 0; i < fullIdx.size(); ++i) {
 			chisq[i] = std::pow(zScore_e[fullIdx[i]], 2);
+		}
+
+		if (chisq.size() <= 2) {
+			Rcpp::stop("chisq.size() must be greater than 2.");
 		}
 
 		// Calculate the median chi-squared value as the inflation factor
@@ -463,6 +460,9 @@ List dentist_iterative_impute(const arma::mat& LD_mat, size_t nSample, const arm
 
 		// Update the indices for the next iteration based on filtering criteria
 		fullIdx = fullIdx_tmp;
+		if (verbose) {
+			Rcpp::Rcout << "fullIdx size: " << fullIdx.size() << std::endl;
+		}
 		randOrder = generateSetOfNumbers(fullIdx.size(), seed + t * seed);
 		idx.clear();
 		idx2.clear();
