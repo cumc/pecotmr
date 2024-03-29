@@ -150,8 +150,8 @@ merge_raiss_df <- function(raiss_df, known_zscores) {
   merged_df <- merged_df[, !colnames(merged_df) %in% c("z.x", "z.y")]
   merged_df <- arrange(merged_df, pos)
   # assign imputed variants beta, se as NA to avoid confusion, since they are not imputed
-  merged_df$beta[df$Var == -1] <- NA
-  merged_df$se[df$Var == -1] <- NA
+  merged_df$beta[merged_df$Var == -1] <- NA
+  merged_df$se[merged_df$Var == -1] <- NA
   return(merged_df)
 }
 
