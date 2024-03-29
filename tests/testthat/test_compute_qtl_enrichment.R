@@ -34,11 +34,11 @@ test_that("compute_qtl_enrichment dummy data single-threaded works",{
   input_data <- generate_mock_data(seed=1, num_pips=10)
   expect_warning(
     compute_qtl_enrichment(input_data$gwas_fit$pip, input_data$susie_fits, lambda = 1, ImpN = 10, num_threads = 1),
-    "pi_gwas is not provided. Estimating pi_gwas from the data. Note that this estimate may be biased if the input gwas_pip does not contain genome-wide variants.")
+    "num_gwas is not provided. Estimating pi_gwas from the data. Note that this estimate may be biased if the input gwas_pip does not contain genome-wide variants.")
   expect_warning(
     compute_qtl_enrichment(input_data$gwas_fit$pip, input_data$susie_fits, lambda = 1, ImpN = 10, num_threads = 1),
     "pi_qtl is not provided. Estimating pi_qtl from the data. Note that this estimate may be biased if either 1) the input susie_qtl_regions does not have enough data, or 2) the single effects only include variables inside of credible sets or signal clusters.")
-  res <- compute_qtl_enrichment(input_data$gwas_fit$pip, input_data$susie_fits, pi_gwas=0.5141, pi_qtl=0.49819, lambda = 1, ImpN = 10, num_threads = 1)
+  res <- compute_qtl_enrichment(input_data$gwas_fit$pip, input_data$susie_fits, num_gwas=5000, pi_qtl=0.49819, lambda = 1, ImpN = 10, num_threads = 1)
   expect_true(length(res) > 0)
 })
 
@@ -46,7 +46,7 @@ test_that("compute_qtl_enrichment dummy data single thread and multi-threaded ar
   local_mocked_bindings(
       qtl_enrichment_rcpp = function(...) TRUE)
   input_data <- generate_mock_data(seed=1, num_pips=10)
-  res_single <- compute_qtl_enrichment(input_data$gwas_fit$pip, input_data$susie_fits, pi_gwas=0.5141, pi_qtl=0.49819, lambda = 1, ImpN = 10, num_threads = 1)
-  res_multi <- compute_qtl_enrichment(input_data$gwas_fit$pip, input_data$susie_fits, pi_gwas=0.5141, pi_qtl=0.49819, lambda = 1, ImpN = 10, num_threads = 2)
+  res_single <- compute_qtl_enrichment(input_data$gwas_fit$pip, input_data$susie_fits, num_gwas=0.5141, pi_qtl=0.49819, lambda = 1, ImpN = 10, num_threads = 1)
+  res_multi <- compute_qtl_enrichment(input_data$gwas_fit$pip, input_data$susie_fits, num_gwas=0.5141, pi_qtl=0.49819, lambda = 1, ImpN = 10, num_threads = 2)
   expect_equal(res_single, res_multi)
 })
