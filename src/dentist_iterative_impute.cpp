@@ -8,10 +8,8 @@
 #include <RcppArmadillo.h>
 #include <omp.h> // Required for parallel processing
 #include <algorithm>
-#include <cstdlib> // For srand, rand
 #include <random>
 #include <vector>
-#include <numeric> // For std::iota
 #include <gsl/gsl_cdf.h>
 #include <unordered_set>
 
@@ -23,39 +21,12 @@
 using namespace Rcpp;
 using namespace arma;
 
-
-// Assuming sort_indexes is defined as provided
-std::vector<size_t> sort_indexes(const std::vector<size_t>& v) {
-	std::vector<size_t> idx(v.size());
-	std::iota(idx.begin(), idx.end(), 0);
-	std::sort(idx.begin(), idx.end(), [&v](size_t i1, size_t i2) {
-		return v[i1] < v[i2];
-	});
-	return idx;
-}
-
-std::vector<size_t> generateSetOfNumbers(size_t size, int seed) {
-	int tempNum;        // Temp variable to hold random number
-	std::vector<size_t> numbers(size, 0); // Use size_t for size
-	srand(seed); // Fixed seeding
-
-	numbers[0] = rand(); // Generate the first number in the array
-	for (size_t index = 1; index < size; ++index) { // Use size_t for loop index
-		do {
-			tempNum = rand();
-			for (size_t index2 = 0; index2 < index; ++index2) { // Check against already placed numbers
-				if (tempNum == numbers[index2]) {
-					tempNum = -1; // Mark as duplicate
-					break; // Exit inner loop early if duplicate is found
-				}
-			}
-		} while (tempNum == -1);
-		numbers[index] = tempNum; // Assign unique number
-	}
-
-	// Assuming sort_indexes is a template function or overloaded for int and size_t types
-	std::vector<size_t> aa = sort_indexes(numbers); // This line assumes sort_indexes can take these arguments
-	return aa;
+std::vector<size_t> generateSetOfNumbers(size_t size, unsigned int seed) {
+	std::vector<size_t> indexes(size);
+	std::iota(indexes.begin(), indexes.end(), 0);
+	std::mt19937 gen(seed);
+	std::shuffle(indexes.begin(), indexes.end(), gen);
+	return indexes;
 }
 
 // Get a quantile value
@@ -282,7 +253,6 @@ List dentist_iterative_impute(const arma::mat& LD_mat, size_t nSample, const arm
 	omp_set_num_threads(nProcessors);
 
 	size_t markerSize = zScore.size();
-	// Initialization based on the seed input
 	std::vector<size_t> randOrder = generateSetOfNumbers(markerSize, seed);
 	std::vector<size_t> idx, idx2;
 	idx.reserve(markerSize / 2);
@@ -493,7 +463,7 @@ List dentist_iterative_impute(const arma::mat& LD_mat, size_t nSample, const arm
 
 		// Update the indices for the next iteration based on filtering criteria
 		fullIdx = fullIdx_tmp;
-		randOrder = generateSetOfNumbers(fullIdx.size(), seed + t * seed); // Update seed for randomness
+		randOrder = generateSetOfNumbers(fullIdx.size(), seed + t * seed);
 		idx.clear();
 		idx2.clear();
 		for (size_t i = 0; i < fullIdx.size(); ++i) {
