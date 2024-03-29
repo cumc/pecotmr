@@ -110,6 +110,12 @@ void oneIteration(const arma::mat& LD_mat, const std::vector<uint>& idx, const s
 	arma::mat LD_it(idx2.size(), idx.size());
 	arma::mat VV(idx.size(), idx.size());
 
+
+	// Check dimensions before filling LD_it and VV matrices
+	if (idx2.size() > LD_mat.n_rows || idx.size() > LD_mat.n_cols) {
+		Rcpp::stop("Inconsistent dimensions between LD_mat and idx2/idx in oneIteration()");
+	}
+
 	// Fill LD_it and VV matrices using direct indexing
     #pragma omp parallel for collapse(2)
 	for (size_t i = 0; i < idx2.size(); i++) {
@@ -332,8 +338,11 @@ List dentist_iterative_impute(const arma::mat& LD_mat, uint nSample, const arma:
 			}
 		}
 		// Adjust for genetic control and inflation factor if necessary
+
 		std::vector<double> chisq(fullIdx.size());
 		for (size_t i = 0; i < fullIdx.size(); ++i) {
+
+
 			chisq[i] = std::pow(zScore_e[fullIdx[i]], 2);
 		}
 
