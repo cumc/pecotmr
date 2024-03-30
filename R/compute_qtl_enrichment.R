@@ -60,7 +60,7 @@ compute_qtl_enrichment <- function(gwas_pip, susie_qtl_regions,
                                    lambda = 1.0, ImpN = 25,
                                    num_threads = 1) {
   if (is.null(num_gwas)) {
-    warning("pi_gwas is not provided. Estimating pi_gwas from the data. Note that this estimate may be biased if the input gwas_pip does not contain genome-wide variants.")
+    warning("num_gwas is not provided. Estimating pi_gwas from the data. Note that this estimate may be biased if the input gwas_pip does not contain genome-wide variants.")
     pi_gwas <- sum(gwas_pip) / length(gwas_pip)
     cat(paste("Estimated pi_gwas: ", round(pi_gwas, 5), "\n"))
   } else {
