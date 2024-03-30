@@ -37,8 +37,8 @@
 #'
 #'
 #' @examples
-#' # Example usage of dentist_detect_outliers
-#' dentist_detect_outliers(sum_stat, LD_mat, nSample)
+#' # Example usage of dentist
+#' dentist(sum_stat, LD_mat, nSample)
 #'
 #' @details
 #' # correct_chen_et_al_bug may affect the result in three parts compared with the original DENTIST method:
@@ -58,9 +58,9 @@
 #' 3. !grouping_tmp (explained in the source code)
 #'
 #' @export
-dentist_detect_outliers <- function(sum_stat, LD_mat, nSample,
-                                    window_size = 2000000, pValueThreshold = 5.0369e-8, propSVD = 0.4, gcControl = FALSE,
-                                    nIter = 10, gPvalueThreshold = 0.05, ncpus = 1, seed = 999, correct_chen_et_al_bug = TRUE) {
+dentist <- function(sum_stat, LD_mat, nSample,
+                    window_size = 2000000, pValueThreshold = 5.0369e-8, propSVD = 0.4, gcControl = FALSE,
+                    nIter = 10, gPvalueThreshold = 0.05, ncpus = 1, seed = 999, correct_chen_et_al_bug = TRUE) {
   # detect for column names and order by pos
   if (!any(tolower(c("pos", "position")) %in% tolower(colnames(sum_stat))) ||
     !any(tolower(c("z", "zscore")) %in% tolower(colnames(sum_stat)))) {
@@ -68,7 +68,7 @@ dentist_detect_outliers <- function(sum_stat, LD_mat, nSample,
   }
   sum_stat <- sum_stat %>% arrange(pos)
   if (window_size <= 0 | ((window_size >= max(sum_stat$pos) - min(sum_stat$pos) | is.na(window_size)) & (correct_chen_et_al_bug == TRUE))) {
-    imputed_result <- dentist_impute_single_window(
+    dentist_result <- dentist_single_window(
       sum_stat$z, LD_mat, nSample,
       pValueThreshold, propSVD, gcControl,
       nIter, gPvalueThreshold, ncpus, seed, correct_chen_et_al_bug
@@ -77,35 +77,26 @@ dentist_detect_outliers <- function(sum_stat, LD_mat, nSample,
     # divide windows
     window_divided_res <- divide_into_windows(sum_stat$pos, window_size = window_size, correct_chen_et_al_bug = TRUE)
     # compute dentist result for each window
-    imputed_result_by_window <- list()
+    dentist_result_by_window <- list()
     for (k in 1:nrow(window_divided_res)) {
       zScore_k <- sum_stat$z[window_divided_res$windowStartIdx[k]:window_divided_res$windowEndIdx[k]]
       LD_mat_k <- LD_mat[
         window_divided_res$windowStartIdx[k]:window_divided_res$windowEndIdx[k],
         window_divided_res$windowStartIdx[k]:window_divided_res$windowEndIdx[k]
       ]
-      imputed_result_by_window[[k]] <- dentist_impute_single_window(
+      dentist_result_by_window[[k]] <- dentist_single_window(
         zScore_k, LD_mat_k, nSample,
         pValueThreshold, propSVD, gcControl,
         nIter, gPvalueThreshold, ncpus, seed, correct_chen_et_al_bug
       )
     }
-    # merge imputed result and generate a final imputed_result (similar to imputed_result above)
-    imputed_result <- merge_windows(imputed_result_by_window, window_divided_res)
+    # merge single window result and generate a final dentist_result (similar to dentist_result above)
+    dentist_result <- merge_windows(dentist_result_by_window, window_divided_res)
   }
-  # detect outlier
-  lambda_original <- 1
-  imputed_result <- imputed_result %>%
-    mutate(
-      outlier_stat = calculate_stat(original_z, imputed_z, rsq),
-      outlier = outlier_test(outlier_stat, lambda_original)
-    ) %>%
-    filter(!(imputed_z == 0 & rsq == 0))
-  return(imputed_result)
+  return(dentist_result)
 }
 
-
-#' Impute Summary Statistics for a Single Window Using Dentist Algorithm
+#' Perform DENTIST on a single window
 #'
 #' This function performs imputation of summary statistics for a single genomic window
 #' using the Dentist algorithm.
@@ -122,9 +113,7 @@ dentist_detect_outliers <- function(sum_stat, LD_mat, nSample,
 #' @param seed The random seed for reproducibility. Default is 999.
 #' @param correct_chen_et_al_bug Logical indicating whether to correct the Chen et al. bug. Default is TRUE.
 #'
-#' @return A data frame containing the imputed summary statistics for the variants within the window.
-#'
-#' The returned data frame includes columns representing the imputed summary statistics.
+#' @return data frame includes columns representing the imputed summary statistics and outlier detected.
 #'
 #' @examples
 #' # Example usage of dentist_impute_single_window
@@ -158,14 +147,25 @@ dentist_detect_outliers <- function(sum_stat, LD_mat, nSample,
 #' dentist_impute_single_window(zScore, LD_mat, nSample)
 #'
 #' @seealso
-#' \code{\link{dentist_detect_outliers}} for detecting outliers using the Dentist algorithm.
+#' \code{\link{dentist}} for detecting outliers using the Dentist algorithm.
 #'
 #' @references
 #' Reference to the Dentist algorithm or related research papers.
 #' @noRd
-dentist_impute_single_window <- function(zScore, LD_mat, nSample,
-                                         pValueThreshold = 5e-8, propSVD = 0.4, gcControl = FALSE,
-                                         nIter = 10, gPvalueThreshold = 0.05, ncpus = 1, seed = 999, correct_chen_et_al_bug = TRUE) {
+dentist_single_window <- function(zScore, LD_mat, nSample,
+                                  pValueThreshold = 5e-8, propSVD = 0.4, gcControl = FALSE,
+                                  nIter = 10, gPvalueThreshold = 0.05, ncpus = 1, seed = 999, correct_chen_et_al_bug = TRUE) {
+  calculate_stat <- function(impOp_zScores, impOp_imputed, impOp_rsq) {
+    (impOp_zScores - impOp_imputed)^2 / (1 - impOp_rsq)
+  }
+
+  outlier_test <- function(stat, lambda, alpha = 5e-8) {
+    minusLogPvalueChisq <- function(stat) {
+      p <- pchisq(stat, df = 1, lower.tail = FALSE)
+      return(-log10(p))
+    }
+    ifelse(minusLogPvalueChisq(stat / lambda) > -log10(alpha), TRUE, FALSE)
+  }
   # Check that number of variants cannot be below 2000
   if (length(zScore) < 2000) {
     warning("The number of variants is below 2000. The algorithm may not work as expected, as suggested by the original DENTIST.")
@@ -195,63 +195,14 @@ dentist_impute_single_window <- function(zScore, LD_mat, nSample,
     },
     warning = warning_handler
   )
-  res <- as.data.frame(res)
-  return(res)
-}
-
-#' Calculate Minus Log P-value for Chi-Squared Statistic
-#'
-#' This function calculates the minus logarithm of the p-value for a chi-squared statistic.
-#'
-#' @param stat The chi-squared statistic.
-#'
-#' @return The minus logarithm of the p-value.
-#'
-#' @examples
-#' # Example usage of minusLogPvalueChisq
-#' minusLogPvalueChisq(10)
-#'
-#' @noRd
-minusLogPvalueChisq <- function(stat) {
-  p <- pchisq(stat, df = 1, lower.tail = FALSE)
-  return(-log10(p))
-}
-
-#' Calculate Statistical Value
-#'
-#' This function calculates the statistical value based on the original z-scores, imputed z-scores, and the coefficient of determination (R-squared).
-#'
-#' @param impOp_zScores The original z-scores.
-#' @param impOp_imputed The imputed z-scores.
-#' @param impOp_rsq The coefficient of determination (R-squared) between original and imputed z-scores.
-#'
-#' @return The computed statistical value.
-#'
-#' @examples
-#' # Example usage of calculate_stat
-#' calculate_stat(impOp_zScores = c(1, 2, 3), impOp_imputed = c(1.5, 2.2, 3.1), impOp_rsq = 0.8)
-#'
-#' @noRd
-calculate_stat <- function(impOp_zScores, impOp_imputed, impOp_rsq) {
-  (impOp_zScores - impOp_imputed)^2 / (1 - impOp_rsq)
-}
-
-#' Outlier Test
-#'
-#' This function performs an outlier test based on a statistical value and a lambda parameter.
-#'
-#' @param stat The statistical value.
-#' @param lambda The lambda parameter.
-#'
-#' @return A logical indicating whether the observation is identified as an outlier.
-#'
-#' @examples
-#' # Example usage of outlier_test
-#' outlier_test(stat = 3, lambda = 1.5)
-#'
-#' @noRd
-outlier_test <- function(stat, lambda) {
-  ifelse(minusLogPvalueChisq(stat / lambda) > -log10(5e-8), TRUE, FALSE)
+  # detect outlier
+  lambda_original <- 1
+  as.data.frame(res) %>%
+    mutate(
+      outlier_stat = calculate_stat(original_z, imputed_z, rsq),
+      outlier = outlier_test(outlier_stat, lambda_original)
+    ) %>%
+    filter(!(imputed_z == 0 & rsq == 0))
 }
 
 #' Divide Genomic Region into Windows
@@ -274,7 +225,7 @@ outlier_test <- function(stat, lambda) {
 #'   - If \code{correct_chen_et_al_bug==FALSE}, the function divides the window in the original Dentist way.
 #'
 #' @seealso
-#' \code{\link{dentist_impute_single_window}} for imputing summary statistics for a single window using the Dentist algorithm.
+#' \code{\link{dentist_single_window}} for detecting outlier for summary statistics for a single window using the Dentist algorithm.
 #'
 #' @noRd
 divide_into_windows <- function(pos, window_size, correct_chen_et_al_bug) {
@@ -365,11 +316,11 @@ divide_into_windows <- function(pos, window_size, correct_chen_et_al_bug) {
   return(window_divided_res)
 }
 
-#' Merge Imputed Results by Window
+#' Merge dentist Results by Window
 #'
-#' This function merges imputed results by window into a single data frame.
+#' This function merges DENTIST results by window into a single data frame.
 #'
-#' @param imputed_result_by_window A list containing imputed results for each window.
+#' @param dentist_result_by_window A list containing imputed results for each window.
 #' @param window_divided_res A data frame containing information about the divided windows.
 #'
 #' @return A data frame containing merged results.
@@ -380,13 +331,13 @@ divide_into_windows <- function(pos, window_size, correct_chen_et_al_bug) {
 #' Finally, it extracts the results within the fillers and combines them into a single data frame.
 #'
 #' @noRd
-merge_windows <- function(imputed_result_by_window, window_divided_res) {
-  if (length(imputed_result_by_window) != nrow(window_divided_res)) {
+merge_windows <- function(dentist_result_by_window, window_divided_res) {
+  if (length(dentist_result_by_window) != nrow(window_divided_res)) {
     stop("Different number of windows and imputed results!")
   }
   merged_results <- c()
   for (k in 1:nrow(window_divided_res)) {
-    imputed_k <- imputed_result_by_window[[k]]
+    imputed_k <- dentist_result_by_window[[k]]
     imputed_k$index_within_window <- seq(1:nrow(imputed_k))
     imputed_k <- imputed_k %>%
       mutate(index_global = index_within_window + window_divided_res$windowStartIdx[k] - 1)

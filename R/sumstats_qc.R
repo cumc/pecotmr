@@ -145,7 +145,7 @@ summary_stats_qc <- function(sumstats, LD_data, n = NULL, var_y = NULL, method =
     LD_mat_qc <- qc_results$LD_mat
     outlier_number = qc_results$outlier_number
   } else if (method == "dentist") {
-    qc_results <- dentist_detect_outliers(sumstats, LD_extract, nSample = n)
+    qc_results <- dentist(sumstats, LD_extract, nSample = n)
     keep_index <- qc_results %>%
       mutate(index = row_number()) %>%
       filter(!outlier) %>%
