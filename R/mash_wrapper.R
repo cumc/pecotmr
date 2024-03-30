@@ -461,30 +461,30 @@ load_multitrait_R_sumstat <- function(
     }
     return(merged_df)
   }
-    results <- lapply(sumstats_db[[1]], function(data) extract_data(data))
-    trait_names <- names(results)
+  results <- lapply(sumstats_db[[1]], function(data) extract_data(data))
+  trait_names <- names(results)
 
-    bhat <- merge_matrices(results,
-      value_column = "bhat", id_column = "variants",
-      remove_any_missing
-    )
-    sbhat <- merge_matrices(results,
-      value_column = "sbhat", id_column = "variants",
-      remove_any_missing
-    )
-    out <- list(bhat = bhat, sbhat = sbhat)
+  bhat <- merge_matrices(results,
+    value_column = "bhat", id_column = "variants",
+    remove_any_missing
+  )
+  sbhat <- merge_matrices(results,
+    value_column = "sbhat", id_column = "variants",
+    remove_any_missing
+  )
+  out <- list(bhat = bhat, sbhat = sbhat)
 
-   # Check if variants are the same in both bhat and sbhat
-   if (!identical(out$bhat$variants, out$sbhat$variants)) {
-     stop("Error: Variants in bhat and sbhat are not the same.")
-   }
-   var_idx <- 1:nrow(out$bhat)
-   if (!is.null(filter_file)) {
-     variants <- out$bhat$variants
-     var_idx <- split_variants_and_match(variants, filter_file, max_rows_selected)
-   }
+  # Check if variants are the same in both bhat and sbhat
+  if (!identical(out$bhat$variants, out$sbhat$variants)) {
+    stop("Error: Variants in bhat and sbhat are not the same.")
+  }
+  var_idx <- 1:nrow(out$bhat)
+  if (!is.null(filter_file)) {
+    variants <- out$bhat$variants
+    var_idx <- split_variants_and_match(variants, filter_file, max_rows_selected)
+  }
 
-   if (top_loci) {
+  if (top_loci) {
     union_top_loci <- merge_susie_cs(susie_fit, coverage, complementary)
     if (!is.null(union_top_loci)) {
       strong_signal_df <- union_top_loci %>%
@@ -514,15 +514,15 @@ load_multitrait_R_sumstat <- function(
   out$region <- names(susie_fit)
 
   if (length(exclude_condition) > 0) {
-     if (all(exclude_condition %in% colnames(out$bhat))) {
-       out$bhat <- out$bhat[, -exclude_condition, drop = FALSE]
-       out$sbhat <- out$sbhat[, -exclude_condition, drop = FALSE]
-     } else {
-       # Handle the case where exclude_condition names do not exist in column
-       # names of dat This could be an error
-       stop(paste("Error: exclude_condition are not present in", out$region))
-     }
-   }
+    if (all(exclude_condition %in% colnames(out$bhat))) {
+      out$bhat <- out$bhat[, -exclude_condition, drop = FALSE]
+      out$sbhat <- out$sbhat[, -exclude_condition, drop = FALSE]
+    } else {
+      # Handle the case where exclude_condition names do not exist in column
+      # names of dat This could be an error
+      stop(paste("Error: exclude_condition are not present in", out$region))
+    }
+  }
   return(out)
 }
 
@@ -575,12 +575,12 @@ merge_mash_data <- function(res_data, one_data) {
   combined_data <- list()
   if (length(res_data) == 0) {
     return(one_data)
-  } else if (length(one_data)==0) {
+  } else if (length(one_data) == 0) {
     return(res_data)
   } else {
     for (d in names(one_data)) {
-      if (length(one_data[[d]])==0) {
-        combined_data[[d]] <- res_data[[d]]  # Keep res_data[[d]] when one_data[[d]] is NULL or empty
+      if (length(one_data[[d]]) == 0) {
+        combined_data[[d]] <- res_data[[d]] # Keep res_data[[d]] when one_data[[d]] is NULL or empty
         next
       } else {
         # Check if the number of columns matches
@@ -623,18 +623,18 @@ merge_mash_data <- function(res_data, one_data) {
 #' @export
 mash_pipeline <- function(mash_input, alpha, residual_correlation = NULL, unconstrained.update = "ted", set_seed = 999) {
   set.seed(set_seed)
-  if(length(mash_input$null.b)==0 && length(mash_input$null.s)==0) {
+  if (length(mash_input$null.b) == 0 && length(mash_input$null.s) == 0) {
     if (!is.null(residual_correlation)) {
-       vhat <- residual_correlation
+      vhat <- residual_correlation
     } else {
-       condition_num = ncol(mash_input$random.b)
-       vhat <- diag(rep(1,condition_num))
+      condition_num <- ncol(mash_input$random.b)
+      vhat <- diag(rep(1, condition_num))
     }
   } else {
     vhat <- estimate_null_correlation_simple(mash_set_data(mash_input$null.b,
-       Shat = mash_input$null.s,
-       alpha, zero_Bhat_Shat_reset = 1000
-     ))
+      Shat = mash_input$null.s,
+      alpha, zero_Bhat_Shat_reset = 1000
+    ))
   }
 
   # mash data Fit mixture model using udr package

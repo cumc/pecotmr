@@ -58,11 +58,13 @@
 compute_qtl_enrichment <- function(gwas_pip, susie_qtl_regions,
                                    num_gwas = NULL, pi_qtl = NULL,
                                    lambda = 1.0, ImpN = 25,
-                                   num_threads = 1) {
+                                   num_threads = 1, verbose = TRUE) {
   if (is.null(num_gwas)) {
     warning("num_gwas is not provided. Estimating pi_gwas from the data. Note that this estimate may be biased if the input gwas_pip does not contain genome-wide variants.")
     pi_gwas <- sum(gwas_pip) / length(gwas_pip)
-    cat(paste("Estimated pi_gwas: ", round(pi_gwas, 5), "\n"))
+    if (verbose) {
+      message(paste("Estimated pi_gwas: ", round(pi_gwas, 5), "\n"))
+    }
   } else {
     pi_gwas <- sum(gwas_pip) / num_gwas
   }
@@ -76,7 +78,9 @@ compute_qtl_enrichment <- function(gwas_pip, susie_qtl_regions,
       num_test <- num_test + length(d$pip)
     }
     pi_qtl <- num_signal / num_test
-    cat(paste("Estimated pi_qtl: ", round(pi_qtl, 5), "\n"))
+    if (verbose) {
+      message(paste("Estimated pi_qtl: ", round(pi_qtl, 5), "\n"))
+    }
   }
 
   if (pi_gwas == 0) stop("Cannot perform enrichment analysis. No association signal found in GWAS data.")

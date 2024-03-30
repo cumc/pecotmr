@@ -11,7 +11,8 @@ raiss(
   lamb = 0.01,
   rcond = 0.01,
   R2_threshold = 0.6,
-  minimum_ld = 5
+  minimum_ld = 5,
+  verbose = TRUE
 )
 }
 \arguments{
