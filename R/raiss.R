@@ -21,7 +21,7 @@
 #' @examples
 #' # Example usage (assuming appropriate data is available):
 #' # result <- raiss(ref_panel, known_zscores, LD_matrix, lamb = 0.01, rcond = 0.01, R2_threshold = 0.6, minimum_ld = 5)
-raiss <- function(ref_panel, known_zscores, LD_matrix, lamb = 0.01, rcond = 0.01, R2_threshold = 0.6, minimum_ld = 5) {
+raiss <- function(ref_panel, known_zscores, LD_matrix, lamb = 0.01, rcond = 0.01, R2_threshold = 0.6, minimum_ld = 5, verbose = TRUE) {
   # Check that ref_panel and known_zscores are both increasing in terms of pos
   if (is.unsorted(ref_panel$pos) || is.unsorted(known_zscores$pos)) {
     stop("ref_panel and known_zscores must be in increasing order of pos.")
@@ -46,7 +46,7 @@ raiss <- function(ref_panel, known_zscores, LD_matrix, lamb = 0.01, rcond = 0.01
   results <- format_raiss_df(results, ref_panel, unknowns)
 
   # Filter output
-  results <- filter_raiss_output(results, R2_threshold, minimum_ld)
+  results <- filter_raiss_output(results, R2_threshold, minimum_ld, verbose)
 
   # Merge with known z-scores
   result_nofilter <- merge_raiss_df(results$zscores_nofilter, known_zscores) %>% arrange(pos)
@@ -78,6 +78,7 @@ raiss <- function(ref_panel, known_zscores, LD_matrix, lamb = 0.01, rcond = 0.01
 #' @return A list containing the variance 'var', estimation 'mu', LD score 'raiss_ld_score',
 #'         condition number 'condition_number', and correctness of inversion
 #'         'correct_inversion'.
+#' @noRd
 raiss_model <- function(zt, sig_t, sig_i_t, lamb = 0.01, rcond = 0.01, batch = TRUE, report_condition_number = FALSE) {
   sig_t_inv <- invert_mat_recursive(sig_t, lamb, rcond)
   if (!is.numeric(zt) || !is.numeric(sig_t) || !is.numeric(sig_i_t)) {
@@ -106,6 +107,7 @@ raiss_model <- function(zt, sig_t, sig_i_t, lamb = 0.01, rcond = 0.01, batch = T
 
 #' @param imp is the output of raiss_model()
 #' @param ref_panel is a data frame with columns 'chrom', 'pos', 'variant_id', 'ref', and 'alt'.
+#' @noRd
 format_raiss_df <- function(imp, ref_panel, unknowns) {
   result_df <- data.frame(
     chrom = ref_panel[unknowns, "chrom"],
@@ -155,7 +157,7 @@ merge_raiss_df <- function(raiss_df, known_zscores) {
   return(merged_df)
 }
 
-filter_raiss_output <- function(zscores, R2_threshold = 0.6, minimum_ld = 5) {
+filter_raiss_output <- function(zscores, R2_threshold = 0.6, minimum_ld = 5, verbose = TRUE) {
   # Reset the index and subset the data frame
   zscores <- zscores[, c("chrom", "pos", "variant_id", "A1", "A2", "z", "Var", "raiss_ld_score")]
   zscores$raiss_R2 <- 1 - zscores$Var
@@ -173,14 +175,16 @@ filter_raiss_output <- function(zscores, R2_threshold = 0.6, minimum_ld = 5) {
   NSNPs_af_filt <- nrow(zscores)
 
   # Print report
-  cat("IMPUTATION REPORT\n")
-  cat("Number of SNPs:\n")
-  cat("before filter:", NSNPs_bf_filt, "\n")
-  cat("not imputed:", NSNPs_initial, "\n")
-  cat("imputed:", NSNPs_imputed, "\n")
-  cat("filtered because of ld:", NSNPs_ld_filt, "\n")
-  cat("filtered because of R2:", NSNPs_R2_filt, "\n")
-  cat("after filter:", NSNPs_af_filt, "\n")
+  if (verbose) {
+    message("IMPUTATION REPORT\n")
+    message("Number of SNPs:\n")
+    message("before filter:", NSNPs_bf_filt, "\n")
+    message("not imputed:", NSNPs_initial, "\n")
+    message("imputed:", NSNPs_imputed, "\n")
+    message("filtered because of LD:", NSNPs_ld_filt, "\n")
+    message("filtered because of R2:", NSNPs_R2_filt, "\n")
+    message("after filter:", NSNPs_af_filt, "\n")
+  }
   return(zscore_list = list(zscores_nofilter = zscores_nofilter, zscores = zscores))
 }
 

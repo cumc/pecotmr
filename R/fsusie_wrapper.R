@@ -1,6 +1,6 @@
 #' @title  Calculate Purity Measures for Credible Sets
 #'
-#' As an extension of the internal cal_purity function. This function computes purity metrics (minimum, mean, and median absolute correlations)
+#' @description As an extension of the internal cal_purity function. This function computes purity metrics (minimum, mean, and median absolute correlations)
 #' for each credible set in a list of credible set indices, based on the provided X matrix.
 #' The output Purity depends on the method specified: for the 'min' method,
 #' it returns a single value for single-element sets or the minimum absolute correlation for others.
@@ -54,7 +54,7 @@ cal_purity <- function(l_cs, X, method = "min") {
 
 #'  @title Create Sets Similar to SuSiE Output from fSuSiE Object
 #'
-#' This function constructs a list that mimics the structure of SuSiE output sets
+#' @description This function constructs a list that mimics the structure of SuSiE output sets
 #' from a fSuSiE object. It includes credible sets (cs) with their names, a purity
 #' dataframe, coverage information, and the requested coverage level.
 #'
@@ -98,7 +98,7 @@ fsusie_get_cs <- function(fSuSiE.obj, X, requested_coverage = 0.95) {
 
 #' @title Wrapper for fsusie Function with Automatic Post-Processing
 #'
-#' This function serves as a wrapper for the fsusie function, facilitating
+#' @description This function serves as a wrapper for the fsusie function, facilitating
 #' automatic post-processing such as removing dummy credible sets (cs) that don't meet
 #' the minimum purity threshold and calculating correlations for the remaining cs.
 #' The function parameters are identical to those of the fSuSiE function.

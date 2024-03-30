@@ -11,7 +11,8 @@ compute_qtl_enrichment(
   pi_qtl = NULL,
   lambda = 1,
   ImpN = 25,
-  num_threads = 1
+  num_threads = 1,
+  verbose = TRUE
 )
 }
 \arguments{

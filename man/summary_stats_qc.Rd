@@ -29,12 +29,12 @@ This function performs quality control on the processed summary statistics using
 }
 \details{
 This function applies the specified quality control method to the processed summary statistics.
-  
+
   The available quality control methods are:
   - "rss_qc": Applies the RSS QC quality control procedure (Sun and Dong et al 2023+).
   - "dentist": Applies the DENTIST quality control procedure (Chen et al 2021).
   - "slalom": Applies the SLALOM quality control procedure.
-  
+
   The function returns the quality-controlled summary statistics along with the updated LD matrix.
 }
 \examples{

@@ -117,7 +117,7 @@ twas_weights_pipeline <- function(X, y, maf, susie_fit, ld_reference_meta_file =
     # 3. only use a subset of top signals and common variants
     if (!is.null(susie_fit)) weight_methods$susie_weights <- list(refine = FALSE, init_L = max_L, max_L = max_L)
     variants_for_cv <- c()
-    if (!is.null(res$preset_variants_result$top_loci) && nrow(res$preset_variants_result$top_loci) > 0) {
+    if (!is.null(res$preset_variants_result$top_loci)) {
       variants_for_cv <- res$preset_variants_result$top_loci[, 1]
     }
     common_var <- colnames(X)[which(maf > min_cv_maf)]
@@ -182,7 +182,7 @@ rss_analysis_pipeline <- function(
   sumstats <- rss_input$sumstats
   n <- rss_input$n
   var_y <- rss_input$var_y
-    
+
   # Preprocess the input data
   preprocess_results <- rss_basic_qc(sumstats, LD_data, skip_region = skip_region)
   sumstats <- preprocess_results$sumstats
@@ -197,8 +197,6 @@ rss_analysis_pipeline <- function(
       message(paste("Follow-up on region because signals above PIP threshold", pip_cutoff_to_skip, "were detected in initial model screening."))
     }
   }
-
-
 
   # Perform quality control
   if (!is.null(qc_method)) {

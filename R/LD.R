@@ -337,7 +337,8 @@ load_LD_matrix <- function(LD_meta_file_path, region, extract_coordinates = NULL
 #' @param ld_reference_meta_file A data frame similar to 'genomic_data' in get_regional_ld_meta function.
 #' @return A subset of variants, filtered based on LD reference data.
 #' @importFrom stringr str_split
-#' @importFrom dplyr select
+#' @importFrom dplyr select group_by summarise
+#' @importFrom data.table fread
 #' @export
 filter_variants_by_ld_reference <- function(variant_ids, ld_reference_meta_file, keep_indel = TRUE) {
   # Step 1: Process variant IDs into a data frame and filter out non-standard nucleotides
@@ -358,7 +359,7 @@ filter_variants_by_ld_reference <- function(variant_ids, ld_reference_meta_file,
 
   # Step 4: Load bim files and consolidate into a single data frame
   bim_data <- lapply(bim_file_paths, function(path) {
-    bim_df <- read.table(path, header = FALSE, stringsAsFactors = FALSE)
+    bim_df <- fread(path, header = FALSE, stringsAsFactors = FALSE)
     data.frame(chrom = bim_df$V1, pos = bim_df$V4, stringsAsFactors = FALSE)
   }) %>%
     do.call("rbind", .)

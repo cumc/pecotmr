@@ -7,23 +7,23 @@
 twas_predict(X, weights_list)
 }
 \arguments{
-\item{X}{A matrix or data frame of predictors where each row is an observation and each 
+\item{X}{A matrix or data frame of predictors where each row is an observation and each
 column is a variable.}
 
-\item{weights_list}{A list of numeric vectors representing the weights for each predictor. 
-The names of the list elements should follow the pattern \code{[outcome]_weights}, where 
+\item{weights_list}{A list of numeric vectors representing the weights for each predictor.
+The names of the list elements should follow the pattern \code{[outcome]_weights}, where
 \code{[outcome]} is the name of the outcome variable that the weights are associated with.}
 }
 \value{
-A named list of numeric vectors, where each vector is the predicted outcome for the 
-corresponding set of weights in \code{weights_list}. The names of the list elements are 
+A named list of numeric vectors, where each vector is the predicted outcome for the
+corresponding set of weights in \code{weights_list}. The names of the list elements are
 derived from the names in \code{weights_list} by replacing "_weights" with "_predicted".
 }
 \description{
-This function takes a matrix of predictors (\code{X}) and a list of TWAS (transcriptome-wide 
-association studies) weights (\code{weights_list}), and calculates the predicted outcomes by 
-multiplying \code{X} by each set of weights in \code{weights_list}. The names of the elements 
-in the output list are derived from the names in \code{weights_list}, with "_weights" replaced 
+This function takes a matrix of predictors (\code{X}) and a list of TWAS (transcriptome-wide
+association studies) weights (\code{weights_list}), and calculates the predicted outcomes by
+multiplying \code{X} by each set of weights in \code{weights_list}. The names of the elements
+in the output list are derived from the names in \code{weights_list}, with "_weights" replaced
 by "_predicted".
 }
 \examples{

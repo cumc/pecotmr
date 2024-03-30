@@ -26,9 +26,9 @@ It identifies and removes outliers based on z-score and LD matrix discrepancy co
 This function performs quality control on summary statistics using SuSiE RSS.
   It first extracts the z-scores from the `sumstats` data frame and performs SuSiE RSS analysis
   with discrepancy correction using the `susie_rss` function.
-  
+
   Next, it identifies outlier variants based on the results of the SuSiE RSS analysis.
   It removes the outlier variants from the summary statistics and updates the LD matrix accordingly.
-  
+
   Finally, it returns a list containing the quality-controlled summary statistics and the updated LD matrix.
 }
