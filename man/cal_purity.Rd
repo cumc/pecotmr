@@ -2,13 +2,7 @@
 % Please edit documentation in R/fsusie_wrapper.R
 \name{cal_purity}
 \alias{cal_purity}
-\title{Calculate Purity Measures for Credible Sets
-
-As an extension of the internal cal_purity function. This function computes purity metrics (minimum, mean, and median absolute correlations)
-for each credible set in a list of credible set indices, based on the provided X matrix.
-The output Purity depends on the method specified: for the 'min' method,
-it returns a single value for single-element sets or the minimum absolute correlation for others.
-For other methods, it returns a vector of three values (min, mean, median) for each set.}
+\title{Calculate Purity Measures for Credible Sets}
 \usage{
 cal_purity(l_cs, X, method = "min")
 }
@@ -28,8 +22,6 @@ A list where each element corresponds to a credible set and contains either a si
         (for other methods and multi-element sets).
 }
 \description{
-Calculate Purity Measures for Credible Sets
-
 As an extension of the internal cal_purity function. This function computes purity metrics (minimum, mean, and median absolute correlations)
 for each credible set in a list of credible set indices, based on the provided X matrix.
 The output Purity depends on the method specified: for the 'min' method,

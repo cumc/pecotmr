@@ -2,12 +2,7 @@
 % Please edit documentation in R/fsusie_wrapper.R
 \name{fsusie_wrapper}
 \alias{fsusie_wrapper}
-\title{Wrapper for fsusie Function with Automatic Post-Processing
-
-This function serves as a wrapper for the fsusie function, facilitating
-automatic post-processing such as removing dummy credible sets (cs) that don't meet
-the minimum purity threshold and calculating correlations for the remaining cs.
-The function parameters are identical to those of the fSuSiE function.}
+\title{Wrapper for fsusie Function with Automatic Post-Processing}
 \usage{
 fsusie_wrapper(
   X,
@@ -49,8 +44,6 @@ A modified fsusie object with the susie sets list, correlations for cs, alpha as
         and without the dummy cs that do not meet the minimum purity requirement.
 }
 \description{
-Wrapper for fsusie Function with Automatic Post-Processing
-
 This function serves as a wrapper for the fsusie function, facilitating
 automatic post-processing such as removing dummy credible sets (cs) that don't meet
 the minimum purity threshold and calculating correlations for the remaining cs.

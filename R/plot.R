@@ -1,6 +1,6 @@
 #' Venn Diagram
 #' @param data a list with the twas siginificant gene_id results of four method "SuSiE","Lasso","Enet" and "MR.ASH"
-#' @return
+#' @return plot object
 # @importFrom ggvenn ggvenn
 # @export
 venn <- function(data) {
@@ -13,7 +13,7 @@ venn <- function(data) {
 #' @param twas_results a data frame of twas results with columns “gene_name", "gene_id","chr","susie_pval","lasso_pval","enet_pval" and "mrash_pval", where twas results are the output of the twas_scan function. "gene_name" is the ensemble ID and "gene_id" is the corresponding gene name,
 #'        "susie_pval", "lasso_pval","enet_pval" and "mrash_pval" are the pvalues of susie and other three competing twas method.
 #' @param gene_data a data frame with columns "chr", "start", "end", and "ID", "chr" is the chromosome of gene, "start" and "end" are the position, "ID" is the gene name.
-#' @return
+#' @return plot object
 # @import ggplot2
 # @importFrom ggrepel geom_label_repel
 # @importFrom stringr str_sub
