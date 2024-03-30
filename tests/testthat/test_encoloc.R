@@ -103,7 +103,7 @@ test_that("xqtl_enrichment_wrapper works with dummy input single threaded",{
         input_data$xqtl_finemapped_data,input_data$gwas_finemapped_data, 
         gwas_finemapping_obj = "susie_fit",
         xqtl_finemapping_obj = "susie_fit",
-        pi_gwas = 0.5, pi_qtl = 0.5, 
+        num_gwas = 5000, pi_qtl = 0.5, 
         lambda = 1.0, ImpN = 25,
         num_threads = 1)
     expect_true(res)
@@ -128,7 +128,7 @@ test_that("xqtl_enrichment_wrapper works with dummy input multi threaded",{
         input_data$xqtl_finemapped_data,input_data$gwas_finemapped_data, 
         gwas_finemapping_obj = "susie_fit",
         xqtl_finemapping_obj = "susie_fit",
-        pi_gwas = 0.5, pi_qtl = 0.5, 
+        num_gwas = 5000, pi_qtl = 0.5, 
         lambda = 1.0, ImpN = 25,
         num_threads = 2)
     expect_true(res)
@@ -153,14 +153,14 @@ test_that("xqtl_enrichment_wrapper works with dummy input single and multi threa
         input_data$xqtl_finemapped_data,input_data$gwas_finemapped_data, 
         gwas_finemapping_obj = "susie_fit",
         xqtl_finemapping_obj = "susie_fit",
-        pi_gwas = 0.5, pi_qtl = 0.5, 
+        num_gwas = 5000, pi_qtl = 0.5, 
         lambda = 1.0, ImpN = 25,
         num_threads = 1)
     res_multi <- xqtl_enrichment_wrapper(
         input_data$xqtl_finemapped_data,input_data$gwas_finemapped_data, 
         gwas_finemapping_obj = "susie_fit",
         xqtl_finemapping_obj = "susie_fit",
-        pi_gwas = 0.5, pi_qtl = 0.5, 
+        num_gwas = 5000, pi_qtl = 0.5, 
         lambda = 1.0, ImpN = 25,
         num_threads = 2)
     expect_equal(res_single, res_multi)
