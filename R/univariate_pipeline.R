@@ -172,6 +172,8 @@ rss_analysis_pipeline <- function(
     ),
     impute = TRUE, impute_opts = list(rcond = 0.01, R2_threshold = 0.6, minimum_ld = 5, lamb = 0.01),
     pip_cutoff_to_skip = 0) {
+    
+  res <- list()  
   rss_input <- load_rss_data(
     sumstat_path = sumstat_path, column_file_path = column_file_path,
     n_sample = n_sample, n_case = n_case, n_control = n_control
@@ -201,6 +203,7 @@ rss_analysis_pipeline <- function(
     qc_results <- summary_stats_qc(sumstats, LD_data, n = n, var_y = var_y, method = qc_method)
     sumstats <- qc_results$sumstats
     LD_mat <- qc_results$LD_mat
+    res$outlier_number = qc_results$outlier_number
   }
 
   # Perform imputation
@@ -209,7 +212,7 @@ rss_analysis_pipeline <- function(
     sumstats <- impute_results$result_filter
     LD_mat <- impute_results$LD_mat
   }
-  res <- list()
+
   # Perform fine-mapping
   if (!is.null(finemapping_method)) {
     pri_coverage <- finemapping_opts$coverage[1]

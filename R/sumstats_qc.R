@@ -102,11 +102,12 @@ susie_rss_qc <- function(sumstats, LD_mat, n = NULL, var_y = NULL, L = 10) {
     sumstats_qc <- sumstats[-outlier, ]
     LD_extract_qc <- as.matrix(LD_mat)[-outlier, -outlier]
   } else {
+    outlier <- NULL
     sumstats_qc <- sumstats
     LD_extract_qc <- as.matrix(LD_mat)
   }
-
-  return(list(sumstats = sumstats_qc, LD_mat = LD_extract_qc))
+  
+  return(list(sumstats = sumstats_qc, LD_mat = LD_extract_qc, outlier_number = length(outlier)))
 }
 
 #' Perform Quality Control on Summary Statistics
@@ -142,6 +143,7 @@ summary_stats_qc <- function(sumstats, LD_data, n = NULL, var_y = NULL, method =
     qc_results <- susie_rss_qc(sumstats, LD_extract, n = n, var_y = var_y)
     sumstats_qc <- qc_results$sumstats
     LD_mat_qc <- qc_results$LD_mat
+    outlier_number = qc_results$outlier_number
   } else if (method == "dentist") {
     qc_results <- dentist_detect_outliers(sumstats, LD_extract, nSample = n)
     keep_index <- qc_results %>%
@@ -150,6 +152,7 @@ summary_stats_qc <- function(sumstats, LD_data, n = NULL, var_y = NULL, method =
       pull(index)
     sumstats_qc <- sumstats[keep_index, , drop = FALSE]
     LD_mat_qc <- LD_extract[sumstats_qc$variant_id, sumstats_qc$variant_id, drop = FALSE]
+    outlier_number = nrow(sumstats) - nrow(sumstats_qc)  
   } else if (method == "slalom") {
     qc_results <- slalom(zScore = sumstats$z, LD_mat = LD_extract)
     keep_index <- qc_results$data %>%
@@ -158,9 +161,10 @@ summary_stats_qc <- function(sumstats, LD_data, n = NULL, var_y = NULL, method =
       pull(index)
     sumstats_qc <- sumstats[keep_index, , drop = FALSE]
     LD_mat_qc <- LD_extract[sumstats_qc$variant_id, sumstats_qc$variant_id, drop = FALSE]
+    outlier_number = nrow(sumstats) - nrow(sumstats_qc)
   } else {
     stop("Invalid quality control method specified. Available methods are: 'rss_qc', 'dentist', 'slalom'.")
   }
 
-  return(list(sumstats = sumstats_qc, LD_mat = LD_mat_qc))
+  return(list(sumstats = sumstats_qc, LD_mat = LD_mat_qc, outlier_number = outlier_number))
 }
