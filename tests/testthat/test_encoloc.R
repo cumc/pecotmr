@@ -102,13 +102,13 @@ test_that("xqtl_enrichment_wrapper works with dummy input single threaded",{
     for (i in 1:length(input_data$gwas_finemapped_data)) {
         saveRDS(list(susie_fit = generate_mock_susie_fit(seed=i)), input_data$gwas_finemapped_data[i])
     }
-    res <- xqtl_enrichment_wrapper(
+    res <- expect_warning(xqtl_enrichment_wrapper(
         input_data$xqtl_finemapped_data,input_data$gwas_finemapped_data, 
         gwas_finemapping_obj = "susie_fit", gwas_varname_obj = c("susie_fit"),
         xqtl_finemapping_obj = "susie_fit", xqtl_varname_obj = c("susie_fit"),
         num_gwas = 5000, pi_qtl = 0.5, 
         lambda = 1.0, ImpN = 25,
-        num_threads = 1)
+        num_threads = 1))
     expect_length(res,n = 2)
     file.remove(input_data$gwas_finemapped_data)
     file.remove(input_data$xqtl_finemapped_data)
@@ -127,13 +127,13 @@ test_that("xqtl_enrichment_wrapper works with dummy input multi threaded",{
     for (i in 1:length(input_data$gwas_finemapped_data)) {
         saveRDS(list(susie_fit = generate_mock_susie_fit(seed=i)), input_data$gwas_finemapped_data[i])
     }
-    res <- xqtl_enrichment_wrapper(
+    res <- expect_warning(xqtl_enrichment_wrapper(
         input_data$xqtl_finemapped_data,input_data$gwas_finemapped_data, 
         gwas_finemapping_obj = "susie_fit", gwas_varname_obj = c("susie_fit"),
         xqtl_finemapping_obj = "susie_fit", xqtl_varname_obj = c("susie_fit"),
         num_gwas = 5000, pi_qtl = 0.5, 
         lambda = 1.0, ImpN = 25,
-        num_threads = 2)
+        num_threads = 2))
     expect_length(res,n = 2)
     file.remove(input_data$gwas_finemapped_data)
     file.remove(input_data$xqtl_finemapped_data)
@@ -152,20 +152,20 @@ test_that("xqtl_enrichment_wrapper works with dummy input single and multi threa
     for (i in 1:length(input_data$gwas_finemapped_data)) {
         saveRDS(list(susie_fit = generate_mock_susie_fit(seed=i)), input_data$gwas_finemapped_data[i])
     }
-    res_single <- xqtl_enrichment_wrapper(
+    res_single <- expect_warning(xqtl_enrichment_wrapper(
         input_data$xqtl_finemapped_data,input_data$gwas_finemapped_data, 
         gwas_finemapping_obj = "susie_fit", gwas_varname_obj = c("susie_fit"),
         xqtl_finemapping_obj = "susie_fit", xqtl_varname_obj = c("susie_fit"),
         num_gwas = 5000, pi_qtl = 0.5, 
         lambda = 1.0, ImpN = 25,
-        num_threads = 1)
-    res_multi <- xqtl_enrichment_wrapper(
+        num_threads = 1))
+    res_multi <- expect_warning(xqtl_enrichment_wrapper(
         input_data$xqtl_finemapped_data,input_data$gwas_finemapped_data, 
         gwas_finemapping_obj = "susie_fit", gwas_varname_obj = c("susie_fit"),
         xqtl_finemapping_obj = "susie_fit", xqtl_varname_obj = c("susie_fit"),
         num_gwas = 5000, pi_qtl = 0.5, 
         lambda = 1.0, ImpN = 25,
-        num_threads = 2)
+        num_threads = 2))
     expect_equal(res_single, res_multi)
     file.remove(input_data$gwas_finemapped_data)
     file.remove(input_data$xqtl_finemapped_data)
