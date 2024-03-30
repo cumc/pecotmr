@@ -15,9 +15,6 @@ install.packages("devtools")
 devtools::install_github("cumc/pecotmr",build_vignettes = TRUE)
 ```
 
-This command should automatically install all required packages if
-they are not installed already.
-
 If you have cloned the repository locally, you can install the package
 with the `install_local` function from devtools. Assuming your working
 directory contains the `pecotmr` repository, run this code to
@@ -26,6 +23,31 @@ install the package:
 ```R
 devtools::install_local("pecotmr",build_vignettes = TRUE)
 ```
+
+`devtools` should automatically install all required packages if
+they are not installed already. **If automatic install fail for some packages and you cannot fix it up easily, please try to use our conda package instead.**
+
+To install using `conda` or `micromamba` for our released version,
+
+```
+micromamba install r-pecotmr -c dnachun
+```
+
+To still use `devtools` to source compile `pecotmr` we suggest you build a local `conda` environment for pecotmr and all its dependencies,
+
+```
+cp .github/environment/environment.yaml /tmp/environment.yaml
+grep -v '{%' < .github/recipe/meta.yaml | yq .requirements.host | sed 's/^/  /' >> /tmp/environment.yaml
+micromamba create -f /tmp/environment.yaml
+```
+
+then use 
+
+```
+micromamba activate pecotmr
+```
+
+to activate it. Now you should be able to source compile `pecotmr`.
 
 ## Developer's notes
 

@@ -341,7 +341,6 @@ susie_post_processor <- function(susie_output, data_x, data_y, X_scalar, y_scala
       susie_output_secondary
     }
   }
-
   # Initialize result list
   res <- list(
     variant_names = format_variant_id(names(susie_output$pip))
@@ -382,19 +381,23 @@ susie_post_processor <- function(susie_output, data_x, data_y, X_scalar, y_scala
 
     ## Loop over each secondary coverage value
     sets_secondary <- list()
-    for (sec_cov in secondary_coverage) {
-      sets_secondary[[paste0("coverage_", sec_cov)]] <- get_cs_and_corr(susie_output, sec_cov, data_x, mode)
-      top_variants_idx_sec <- get_top_variants_idx(sets_secondary[[paste0("coverage_", sec_cov)]], signal_cutoff)
-      cs_sec <- get_cs_info(sets_secondary[[paste0("coverage_", sec_cov)]]$sets$cs, top_variants_idx_sec)
-      top_loci_list[[paste0("coverage_", sec_cov)]] <- data.frame(variant_idx = top_variants_idx_sec, cs_idx = cs_sec, stringsAsFactors = FALSE)
+    if (!is.null(secondary_coverage) && length(secondary_coverage)) {
+      for (sec_cov in secondary_coverage) {
+        sets_secondary[[paste0("coverage_", sec_cov)]] <- get_cs_and_corr(susie_output, sec_cov, data_x, mode)
+        top_variants_idx_sec <- get_top_variants_idx(sets_secondary[[paste0("coverage_", sec_cov)]], signal_cutoff)
+        cs_sec <- get_cs_info(sets_secondary[[paste0("coverage_", sec_cov)]]$sets$cs, top_variants_idx_sec)
+        top_loci_list[[paste0("coverage_", sec_cov)]] <- data.frame(variant_idx = top_variants_idx_sec, cs_idx = cs_sec, stringsAsFactors = FALSE)
+      }
     }
 
     # Iterate over the remaining tables, rename and merge them
     names(top_loci_list[[1]])[2] <- paste0("cs_", names(top_loci_list)[1])
     top_loci <- top_loci_list[[1]]
-    for (i in 2:length(top_loci_list)) {
-      names(top_loci_list[[i]])[2] <- paste0("cs_", names(top_loci_list)[i])
-      top_loci <- full_join(top_loci, top_loci_list[[i]], by = "variant_idx")
+    if (length(top_loci_list) > 1) {
+      for (i in 2:length(top_loci_list)) {
+        names(top_loci_list[[i]])[2] <- paste0("cs_", names(top_loci_list)[i])
+        top_loci <- full_join(top_loci, top_loci_list[[i]], by = "variant_idx")
+      }
     }
     if (nrow(top_loci) > 0) {
       top_loci[is.na(top_loci)] <- 0
@@ -423,7 +426,7 @@ susie_post_processor <- function(susie_output, data_x, data_y, X_scalar, y_scala
       pip = susie_output$pip,
       sets = susie_output$sets,
       cs_corr = susie_output$cs_corr,
-      sets_secondary = lapply(sets_secondary, function(x) x[names(x) != "pip"]),
+      sets_secondary = if (length(sets_secondary)) lapply(sets_secondary, function(x) x[names(x) != "pip"]) else NULL,
       alpha = susie_output$alpha[eff_idx, , drop = FALSE],
       lbf_variable = susie_output$lbf_variable[eff_idx, , drop = FALSE],
       V = if (!is.null(susie_output$V)) susie_output$V[eff_idx] else NULL,
