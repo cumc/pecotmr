@@ -190,7 +190,6 @@ test_that("coloc_wrapper works with dummy input",{
     file.remove(input_data$xqtl_finemapped_data)
 })
 
-test_that("coloc_wrapper error with non-unique",{ })
 
 test_that("filter_and_order_coloc_results raises error with insufficient columns",{
     expect_error(filter_and_order_coloc_results(data.frame()))

@@ -52,9 +52,9 @@ rss_basic_qc <- function(sumstats, LD_data, skip_region = NULL) {
     allele_flip$target_data_qced <- allele_flip$target_data_qced %>%
       filter(!(variant_id %in% skip_variant))
   }
-  
-  sumstats_processed <- allele_flip$target_data_qced %>% arrange(pos) 
-    
+
+  sumstats_processed <- allele_flip$target_data_qced %>% arrange(pos)
+
   LD_mat_processed <- LD_data$combined_LD_matrix[sumstats_processed$variant_id, sumstats_processed$variant_id, drop = FALSE]
 
   return(list(sumstats = sumstats_processed, LD_mat = LD_mat_processed))
@@ -77,10 +77,10 @@ rss_basic_qc <- function(sumstats, LD_data, skip_region = NULL) {
 #' @details This function performs quality control on summary statistics using SuSiE RSS.
 #'   It first extracts the z-scores from the `sumstats` data frame and performs SuSiE RSS analysis
 #'   with discrepancy correction using the `susie_rss` function.
-#'   
+#'
 #'   Next, it identifies outlier variants based on the results of the SuSiE RSS analysis.
 #'   It removes the outlier variants from the summary statistics and updates the LD matrix accordingly.
-#'   
+#'
 #'   Finally, it returns a list containing the quality-controlled summary statistics and the updated LD matrix.
 #'
 #' @importFrom susieR susie_rss
@@ -92,10 +92,10 @@ susie_rss_qc <- function(sumstats, LD_mat, n = NULL, var_y = NULL, L = 10) {
     stop("LD_mat must be a square matrix with dimensions equal to the length of zScore.")
   }
   result <- susie_rss(
-    z = zScore, R = LD_mat, n =n, var_y = var_y, L = L,
+    z = zScore, R = LD_mat, n = n, var_y = var_y, L = L,
     correct_zR_discrepancy = TRUE, track_fit = TRUE, max_iter = 100
   )
-  
+
   ## Identify outlier variants
   if (!is.null(result$zR_outliers) & length(result$zR_outliers) != 0) {
     outlier <- result$zR_outliers
@@ -105,7 +105,7 @@ susie_rss_qc <- function(sumstats, LD_mat, n = NULL, var_y = NULL, L = 10) {
     sumstats_qc <- sumstats
     LD_extract_qc <- as.matrix(LD_mat)
   }
-  
+
   return(list(sumstats = sumstats_qc, LD_mat = LD_extract_qc))
 }
 
@@ -122,12 +122,12 @@ susie_rss_qc <- function(sumstats, LD_mat, n = NULL, var_y = NULL, L = 10) {
 #'   - LD_mat_qc: The updated LD matrix after quality control.
 #'
 #' @details This function applies the specified quality control method to the processed summary statistics.
-#'   
+#'
 #'   The available quality control methods are:
 #'   - "rss_qc": Applies the RSS QC quality control procedure (Sun and Dong et al 2023+).
 #'   - "dentist": Applies the DENTIST quality control procedure (Chen et al 2021).
 #'   - "slalom": Applies the SLALOM quality control procedure.
-#'   
+#'
 #'   The function returns the quality-controlled summary statistics along with the updated LD matrix.
 #'
 #' @examples
@@ -144,18 +144,23 @@ summary_stats_qc <- function(sumstats, LD_data, n = NULL, var_y = NULL, method =
     LD_mat_qc <- qc_results$LD_mat
   } else if (method == "dentist") {
     qc_results <- dentist_detect_outliers(sumstats, LD_extract, nSample = n)
-    keep_index = qc_results  %>% mutate(index = row_number()) %>% filter(!outlier) %>% pull(index)  
-    sumstats_qc = sumstats[keep_index, , drop = FALSE]
-    LD_mat_qc = LD_extract[sumstats_qc$variant_id, sumstats_qc$variant_id, drop = FALSE]  
-      
+    keep_index <- qc_results %>%
+      mutate(index = row_number()) %>%
+      filter(!outlier) %>%
+      pull(index)
+    sumstats_qc <- sumstats[keep_index, , drop = FALSE]
+    LD_mat_qc <- LD_extract[sumstats_qc$variant_id, sumstats_qc$variant_id, drop = FALSE]
   } else if (method == "slalom") {
-    qc_results = slalom(zScore = sumstats$z, LD_mat = LD_extract)
-    keep_index = qc_results$data %>% mutate(index = row_number()) %>% filter(!outliers) %>% pull(index)
-    sumstats_qc = sumstats[keep_index, , drop = FALSE]
-    LD_mat_qc = LD_extract[sumstats_qc$variant_id, sumstats_qc$variant_id, drop = FALSE]
+    qc_results <- slalom(zScore = sumstats$z, LD_mat = LD_extract)
+    keep_index <- qc_results$data %>%
+      mutate(index = row_number()) %>%
+      filter(!outliers) %>%
+      pull(index)
+    sumstats_qc <- sumstats[keep_index, , drop = FALSE]
+    LD_mat_qc <- LD_extract[sumstats_qc$variant_id, sumstats_qc$variant_id, drop = FALSE]
   } else {
     stop("Invalid quality control method specified. Available methods are: 'rss_qc', 'dentist', 'slalom'.")
   }
-  
+
   return(list(sumstats = sumstats_qc, LD_mat = LD_mat_qc))
 }

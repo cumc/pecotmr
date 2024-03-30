@@ -2,12 +2,12 @@
 % Please edit documentation in R/regularized_regression.R
 \name{bayes_r_weights}
 \alias{bayes_r_weights}
-\title{Use a hierarchical Bayesian mixture model with four Gaussian components. Variances are scaled 
+\title{Use a hierarchical Bayesian mixture model with four Gaussian components. Variances are scaled
 by 0, 0.0001 , 0.001 , and 0.01 .}
 \usage{
 bayes_r_weights(X, y, Z = NULL)
 }
 \description{
-Use a hierarchical Bayesian mixture model with four Gaussian components. Variances are scaled 
+Use a hierarchical Bayesian mixture model with four Gaussian components. Variances are scaled
 by 0, 0.0001 , 0.001 , and 0.01 .
 }

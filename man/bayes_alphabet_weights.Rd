@@ -11,31 +11,31 @@ bayes_alphabet_weights(X, y, method, Z = NULL)
 
 \item{y}{A numeric vector of phenotypes.}
 
-\item{method}{A character string declaring the method/prior to be used. Options are 
+\item{method}{A character string declaring the method/prior to be used. Options are
 bayesN, bayesL, bayesA, bayesC, or bayesR.}
 
 \item{Z}{An optional numeric matrix of covariates.}
 }
 \value{
-A vector containing the weights to be applied to each genotype in 
+A vector containing the weights to be applied to each genotype in
   predicting the phenotype.
 }
 \description{
-This function performs Bayesian linear regression using the `gbayes` function from 
+This function performs Bayesian linear regression using the `gbayes` function from
 the `qgg` package. It then returns the estimated slopes.
 }
 \details{
 This function fits a Bayesian linear regression model with a range of priors.
 }
 \examples{
-X <- matrix(rnorm(100000), nrow=1000)
-Z <- matrix(round(runif(3000, 0, 0.8), 0), nrow=1000)
+X <- matrix(rnorm(100000), nrow = 1000)
+Z <- matrix(round(runif(3000, 0, 0.8), 0), nrow = 1000)
 set1 <- sample(1:ncol(X), 5)
 set2 <- sample(1:ncol(X), 5)
 sets <- list(set1, set2)
 g <- rowSums(X[, c(set1, set2)])
-e <- rnorm(nrow(X), mean=0, sd=1)
+e <- rnorm(nrow(X), mean = 0, sd = 1)
 y <- g + e
-bayes_l_weights(y=y, X=X, Z=Z)
-bayes_r_weights(y=y, X=X, Z=Z)
+bayes_l_weights(y = y, X = X, Z = Z)
+bayes_r_weights(y = y, X = X, Z = Z)
 }

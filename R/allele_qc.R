@@ -187,10 +187,10 @@ allele_qc <- function(target_variants, ref_variants, target_data, col_to_flip = 
     separate(variant_id, into = c("chrom", "pos", "A2", "A1"), sep = ":", remove = FALSE) %>%
     select(chrom, pos, A1, A2, everything()) %>%
     mutate(chrom = as.integer(chrom), pos = as.integer(pos))
-    
-    if(remove_dups & any(duplicated(target_data_qced$variant_id))){
-        stop("In the input, there are duplicated varaints with different z scores. Please check the data and determine which to keep.")
-    }
+
+  if (remove_dups & any(duplicated(target_data_qced$variant_id))) {
+    stop("In the input, there are duplicated varaints with different z scores. Please check the data and determine which to keep.")
+  }
 
   return(list(target_data_qced = target_data_qced, qc_summary = qc_summary))
 }

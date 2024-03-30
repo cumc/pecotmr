@@ -180,7 +180,7 @@ rss_analysis_pipeline <- function(
   sumstats <- rss_input$sumstats
   n <- rss_input$n
   var_y <- rss_input$var_y
-    
+
   # Preprocess the input data
   preprocess_results <- rss_basic_qc(sumstats, LD_data, skip_region = skip_region)
   sumstats <- preprocess_results$sumstats
