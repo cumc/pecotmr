@@ -86,7 +86,9 @@ rss_basic_qc <- function(sumstats, LD_data, skip_region = NULL) {
 #' @importFrom susieR susie_rss
 #' @export
 susie_rss_qc <- function(sumstats, LD_mat, n = NULL, var_y = NULL, L = 10) {
-  zScore <- sumstats$z
+  if (is.data.frame(sumstats)) zScore <- sumstats$z
+  else if (is.vector(sumstats)) zScore <- sumstats
+  else stop("sumstats should either be a data frame with column z, or a vector of z-scores")
   # Check that LD_mat dimensions match the length of zScore
   if (!is.matrix(LD_mat) || nrow(LD_mat) != ncol(LD_mat) || nrow(LD_mat) != length(zScore)) {
     stop("LD_mat must be a square matrix with dimensions equal to the length of zScore.")
