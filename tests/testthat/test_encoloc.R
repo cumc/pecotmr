@@ -1,6 +1,7 @@
 context("encoloc")
 library(tidyverse)
 library(coloc)
+library(data.table)
 
 generate_mock_ld_files <- function(seed = 1, num_blocks = 5) {
     data(coloc_test_data)
@@ -76,11 +77,13 @@ generate_mock_data_for_enrichment <- function(seed=1, num_files=2) {
 generate_mock_susie_fit <- function(seed=1, num_samples = 10, num_features=10) {
     set.seed(seed)
     start_index <- sample(1:100000, 1)
+    alpha_raw <- matrix(runif(num_samples * num_features), nrow = num_samples)
+    alpha_normalized <- t(apply(alpha_raw, 1, function(x) x / sum(x)))
     susie_fit <- list(
         pip = setNames(runif(num_features), paste0("rs", start_index:(num_features+start_index-1))),
         variant_names = paste0("chr22:", start_index:(num_features + start_index -1), ":A:C"),
         lbf_variable = matrix(runif(num_features * 10), nrow = 10, ncol=num_features),
-        alpha = t(matrix(runif(num_samples * num_features), nrow = num_samples)),
+        alpha = alpha_normalized,
         V = runif(10), 
         prior_variance = runif(num_features))
     return(susie_fit)
@@ -101,12 +104,12 @@ test_that("xqtl_enrichment_wrapper works with dummy input single threaded",{
     }
     res <- xqtl_enrichment_wrapper(
         input_data$xqtl_finemapped_data,input_data$gwas_finemapped_data, 
-        gwas_finemapping_obj = "susie_fit",
-        xqtl_finemapping_obj = "susie_fit",
+        gwas_finemapping_obj = "susie_fit", gwas_varname_obj = c("susie_fit"),
+        xqtl_finemapping_obj = "susie_fit", xqtl_varname_obj = c("susie_fit"),
         num_gwas = 5000, pi_qtl = 0.5, 
         lambda = 1.0, ImpN = 25,
         num_threads = 1)
-    expect_true(res)
+    expect_length(res,n = 2)
     file.remove(input_data$gwas_finemapped_data)
     file.remove(input_data$xqtl_finemapped_data)
 })
@@ -126,12 +129,12 @@ test_that("xqtl_enrichment_wrapper works with dummy input multi threaded",{
     }
     res <- xqtl_enrichment_wrapper(
         input_data$xqtl_finemapped_data,input_data$gwas_finemapped_data, 
-        gwas_finemapping_obj = "susie_fit",
-        xqtl_finemapping_obj = "susie_fit",
+        gwas_finemapping_obj = "susie_fit", gwas_varname_obj = c("susie_fit"),
+        xqtl_finemapping_obj = "susie_fit", xqtl_varname_obj = c("susie_fit"),
         num_gwas = 5000, pi_qtl = 0.5, 
         lambda = 1.0, ImpN = 25,
         num_threads = 2)
-    expect_true(res)
+    expect_length(res,n = 2)
     file.remove(input_data$gwas_finemapped_data)
     file.remove(input_data$xqtl_finemapped_data)
 })
@@ -151,15 +154,15 @@ test_that("xqtl_enrichment_wrapper works with dummy input single and multi threa
     }
     res_single <- xqtl_enrichment_wrapper(
         input_data$xqtl_finemapped_data,input_data$gwas_finemapped_data, 
-        gwas_finemapping_obj = "susie_fit",
-        xqtl_finemapping_obj = "susie_fit",
+        gwas_finemapping_obj = "susie_fit", gwas_varname_obj = c("susie_fit"),
+        xqtl_finemapping_obj = "susie_fit", xqtl_varname_obj = c("susie_fit"),
         num_gwas = 5000, pi_qtl = 0.5, 
         lambda = 1.0, ImpN = 25,
         num_threads = 1)
     res_multi <- xqtl_enrichment_wrapper(
         input_data$xqtl_finemapped_data,input_data$gwas_finemapped_data, 
-        gwas_finemapping_obj = "susie_fit",
-        xqtl_finemapping_obj = "susie_fit",
+        gwas_finemapping_obj = "susie_fit", gwas_varname_obj = c("susie_fit"),
+        xqtl_finemapping_obj = "susie_fit", xqtl_varname_obj = c("susie_fit"),
         num_gwas = 5000, pi_qtl = 0.5, 
         lambda = 1.0, ImpN = 25,
         num_threads = 2)
@@ -300,7 +303,7 @@ test_that("process_coloc_results works with dummy data", {
     B2 <- D2
     B1$snp <- B2$snp <- colnames(B1$LD) <- colnames(B2$LD) <- rownames(B1$LD) <- rownames(B2$LD) <- paste0("1:", 1:500, ":A:G")
     mock_coloc_results <- coloc.signals(B1, B2, p12 = 1e-5)
-    res <- process_coloc_results(mock_coloc_results, data$meta_path, "dummy_analysis_obj", region)
+    res <- process_coloc_results(mock_coloc_results, data$meta_path, region)
     expect_equal(length(res$sets$cs), 1)
     lapply(unlist(data), function(x) {
         file.remove(x)
