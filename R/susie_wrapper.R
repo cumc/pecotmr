@@ -334,12 +334,11 @@ susie_post_processor <- function(susie_output, data_x, data_y, X_scalar, y_scala
     if (mode %in% c("susie", "mvsusie")) {
       susie_output_secondary <- list(sets = susie_get_cs(susie_output, X = data_x, coverage = coverage, min_abs_corr = min_abs_corr, median_abs_corr = median_abs_corr), pip = susie_output$pip)
       susie_output_secondary$cs_corr <- get_cs_correlation(susie_output_secondary, X = data_x)
-      susie_output_secondary
     } else {
       susie_output_secondary <- list(sets = susie_get_cs(susie_output, Xcorr = data_x, coverage = coverage, min_abs_corr = min_abs_corr, median_abs_corr = median_abs_corr), pip = susie_output$pip)
       susie_output_secondary$cs_corr <- get_cs_correlation(susie_output_secondary, Xcorr = data_x)
-      susie_output_secondary
     }
+    susie_output_secondary
   }
   # Initialize result list
   res <- list(
