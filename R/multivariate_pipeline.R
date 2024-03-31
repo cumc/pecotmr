@@ -190,7 +190,7 @@ multivariate_analysis_pipeline <- function(
       coverage = pri_coverage, secondary_coverage = sec_coverage,
       canonical_prior_matrices = canonical_prior_matrices, data_driven_prior_matrices = data_driven_prior_matrices,
       data_driven_prior_matrices_cv = data_driven_prior_matrices_cv, cv_seed = cv_seed,
-      min_cv_maf = min_cv_maf, cv_threads = cv_threads
+      min_cv_maf = min_cv_maf, cv_threads = cv_threads, verbose = verbose
     )
   }
   return(res)
@@ -205,7 +205,7 @@ twas_multivariate_weights_pipeline <- function(
     data_driven_prior_matrices = NULL, data_driven_prior_matrices_cv = NULL, canonical_prior_matrices = FALSE, resid_Y,
     mvsusie_max_iter = 200, mrmash_max_iter = 5000,
     signal_cutoff = 0.05, coverage = 0.95, secondary_coverage = c(0.7, 0.5),
-    min_cv_maf = 0.05, max_cv_variants = -1, cv_seed = 999, cv_threads = 1) {
+    min_cv_maf = 0.05, max_cv_variants = -1, cv_seed = 999, cv_threads = 1, verbose = FALSE) {
   determine_max_L <- function(mvsusie_prefit) {
     if (!is.null(mvsusie_prefit)) {
       L <- length(which(mvsusie_prefit$V > 1E-9)) + 2
@@ -278,13 +278,16 @@ twas_multivariate_weights_pipeline <- function(
     mrmash_weights = list(
       mrmash_fit = res$mnm_result$mrmash_result,
       data_driven_prior_matrices = data_driven_prior_matrices,
-      canonical_prior_matrices = canonical_prior_matrices, max_iter = mrmash_max_iter,
+      canonical_prior_matrices = canonical_prior_matrices,
+      max_iter = mrmash_max_iter,
       verbose = verbose
     ),
     mvsusie_weights = list(
       mvsusie_fit = mvsusie_fitted,
       prior_variance = data_driven_prior_matrices,
-      residual_variance = resid_Y, L = max_L, max_iter = mvsusie_max_iter,
+      residual_variance = resid_Y,
+      L = max_L,
+      max_iter = mvsusie_max_iter,
       verbosity = verbose
     )
   )
@@ -302,15 +305,14 @@ twas_multivariate_weights_pipeline <- function(
     weight_methods <- list(
       mrmash_weights = list(
         data_driven_prior_matrices = data_driven_prior_matrices,
-        data_driven_prior_matrices_cv = data_driven_prior_matrices_cv,
         canonical_prior_matrices = canonical_prior_matrices,
         max_iter = mrmash_max_iter,
         verbose = verbose
       ),
       mvsusie_weights = list(
         prior_variance = data_driven_prior_matrices,
-        data_driven_prior_matrices_cv = data_driven_prior_matrices_cv,
-        residual_variance = resid_Y, L = max_L,
+        residual_variance = resid_Y,
+        L = max_L,
         max_iter = mvsusie_max_iter,
         verbosity = verbose
       )

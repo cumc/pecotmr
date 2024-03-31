@@ -347,7 +347,7 @@ mrmash_weights <- function(mrmash_fit = NULL, X = NULL, Y = NULL, ...) {
 
 #' @importFrom mvsusieR mvsusie coef.mvsusie create_mixture_prior
 #' @export
-mvsusie_weights <- function(mvsusie_fit = NULL, X = NULL, Y = NULL, prior_variance = NULL, residual_variance = NULL, L = 30, mvsusie_max_iter = 200, ...) {
+mvsusie_weights <- function(mvsusie_fit = NULL, X = NULL, Y = NULL, prior_variance = NULL, residual_variance = NULL, L = 30, ...) {
   if (is.null(mvsusie_fit)) {
     message("mvsusie_fit is not provided; fitting mvSuSiE now ...")
     if (is.null(X) || is.null(Y)) {
@@ -360,8 +360,7 @@ mvsusie_weights <- function(mvsusie_fit = NULL, X = NULL, Y = NULL, prior_varian
       X = X, Y = Y, L = L, prior_variance = prior_variance,
       residual_variance = residual_variance, precompute_covariances = F,
       compute_objective = T, estimate_residual_variance = F, estimate_prior_variance = T,
-      estimate_prior_method = "EM", max_iter = mvsusie_max_iter,
-      n_thread = 1, approximate = F
+      estimate_prior_method = "EM", approximate = F, ...
     )
   }
   return(coef.mvsusie(mvsusie_fit)[-1, ])
