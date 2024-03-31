@@ -177,6 +177,7 @@ dentist_single_window <- function(zScore, LD_mat, nSample,
   }
   # Remove dups
   org_Zscore <- zScore
+  dedup_res <- NULL
   if (duprThreshold < 1.0) {
     dedup_res <- find_duplicate_variants(zScore, LD_mat, duprThreshold)
     num_dup <- sum(dedup_res$dupBearer != -1)
@@ -185,8 +186,6 @@ dentist_single_window <- function(zScore, LD_mat, nSample,
     }
     zScore <- dedup_res$filteredZ
     LD_mat <- dedup_res$filteredLD
-  } else {
-    dedup_res <- NULL
   }
 
   # Define a custom condition to capture warnings
@@ -283,19 +282,16 @@ add_dups_back_dentist <- function(zScore, dentist_output, find_dup_output) {
   )
 
   for (i in seq_len(nrows_dup)) {
+    updated_data$original_z[i] <- zScore[i]
+    updated_data$iter_to_correct[i] <- iter_to_correct[assignIdx[i]]
+    updated_data$rsq[i] <- rsq[assignIdx[i]]
+    # This may be wrong in sign but it does not really matter because we will take sqrt of it anyways
+    updated_data$z_diff[i] <- z_diff[assignIdx[i]]
     if (dupBearer[i] == -1) {
-      updated_data$original_z[i] <- zScore[i]
       updated_data$imputed_z[i] <- imputed_z[assignIdx[i]]
-      updated_data$iter_to_correct[i] <- iter_to_correct[assignIdx[i]]
-      updated_data$rsq[i] <- rsq[assignIdx[i]]
-      updated_data$z_diff[i] <- z_diff[assignIdx[i]]
       updated_data$is_duplicate[i] <- FALSE
     } else {
-      updated_data$original_z[i] <- zScore[i]
       updated_data$imputed_z[i] <- imputed_z[assignIdx[i]] * sign[i]
-      updated_data$iter_to_correct[i] <- iter_to_correct[assignIdx[i]]
-      updated_data$rsq[i] <- rsq[assignIdx[i]]
-      updated_data$z_diff[i] <- z_diff[assignIdx[i]]
       updated_data$is_duplicate[i] <- TRUE
     }
   }
