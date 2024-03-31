@@ -44,9 +44,9 @@
 #' })
 #'
 #' result <- multivariate_analysis_pipeline(
-#'   X = multitrait_data$X[, 1:100],
+#'   X = multitrait_data$X,
 #'   Y = multitrait_data$Y,
-#'   maf = colMeans(multitrait_data$X[, 1:100]),
+#'   maf = colMeans(multitrait_data$X),
 #'   max_L = 10,
 #'   ld_reference_meta_file = NULL,
 #'   max_cv_variants = -1,
@@ -165,7 +165,7 @@ multivariate_analysis_pipeline <- function(
   pri_coverage <- coverage[1]
   sec_coverage <- if (length(coverage) > 1) coverage[-1] else NULL
 
-  res <- list()
+  res <- setNames(vector("list", ncol(Y)), colnames(Y))
   message("Fitting mvSuSiE model on input data ...")
   mvsusie_fitted <- mvsusie(X,
     Y = Y, L = max_L, prior_variance = data_driven_prior_matrices,
@@ -235,13 +235,13 @@ twas_multivariate_weights_pipeline <- function(
       res[[i]]$twas_cv_result$prediction <- lapply(
         twas_cv_result$prediction,
         function(predicted) {
-          predicted[, i]
+          as.matrix(predicted[, i], ncol=1)
         }
       )
       res[[i]]$twas_cv_result$performance <- lapply(
         twas_cv_result$performance,
         function(perform) {
-          perform[i, ]
+          t(as.matrix(perform[i, ], ncol = 1))
         }
       )
       res[[i]]$twas_cv_result$time_elapsed <- twas_cv_result$time_elapsed
