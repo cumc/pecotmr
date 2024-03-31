@@ -176,6 +176,7 @@ dentist_single_window <- function(zScore, LD_mat, nSample,
     stop("LD_mat must be a square matrix with dimensions equal to the length of zScore.")
   }
   # Remove dups
+  org_Zscore <- zScore
   if (duprThreshold < 1.0) {
     dedup_res <- find_duplicate_variants(zScore, LD_mat, duprThreshold)
     num_dup <- sum(dedup_res$dupBearer != -1)
@@ -211,7 +212,7 @@ dentist_single_window <- function(zScore, LD_mat, nSample,
   res <- as.data.frame(res)
   # Recover dups
   if (duprThreshold < 1.0) {
-    res <- add_dups_back_dentist(res, dedup_res)
+    res <- add_dups_back_dentist(org_Zscore, res, dedup_res)
   }
   # detect outlier
   lambda_original <- 1
@@ -227,14 +228,14 @@ dentist_single_window <- function(zScore, LD_mat, nSample,
 #'
 #' This function takes the output from the DENTIST algorithm and adds back the duplicated variants
 #' based on the output from the `find_duplicate_variants` function.
-#'
+#' @param zScore The original zScore
 #' @param dentist_output A data frame containing the output from the DENTIST algorithm.
 #' @param find_dup_output A list containing the output from the `find_duplicate_variants` function.
 #'
 #' @return A data frame with duplicated variants added back and an additional column indicating duplicates.
 #'
 #' @noRd
-add_dups_back_dentist <- function(dentist_output, find_dup_output) {
+add_dups_back_dentist <- function(zScore, dentist_output, find_dup_output) {
   # Extract relevant columns from the DENTIST output
   original_z <- dentist_output$original_z
   imputed_z <- dentist_output$imputed_z
@@ -251,6 +252,10 @@ add_dups_back_dentist <- function(dentist_output, find_dup_output) {
 
   if (nrow(dentist_output) != sum(dupBearer == -1)) {
     stop("The number of rows in the input data does not match the occurrences of -1 in dupBearer.")
+  }
+
+  if (length(zScore) != nrows_dup) {
+    stop("Input zScore and find_dup_output have inconsistent dimension")
   }
 
   # Initialize assignIdx vector
@@ -278,14 +283,14 @@ add_dups_back_dentist <- function(dentist_output, find_dup_output) {
 
   for (i in seq_len(nrows_dup)) {
     if (dupBearer[i] == -1) {
-      updated_data$original_z[i] <- original_z[assignIdx[i]] 
+      updated_data$original_z[i] <- zScore[i] 
       updated_data$imputed_z[i] <- imputed_z[assignIdx[i]]
       updated_data$iter_to_correct[i] <- iter_to_correct[assignIdx[i]]
       updated_data$rsq[i] <- rsq[assignIdx[i]]
       updated_data$z_e[i] <- z_e[assignIdx[i]]
       updated_data$is_duplicate[i] <- FALSE
     } else {
-      updated_data$original_z[i] <- original_z[assignIdx[i]] * sign[i]
+      updated_data$original_z[i] <- zScore[i]
       updated_data$imputed_z[i] <- imputed_z[assignIdx[i]] * sign[i]
       updated_data$iter_to_correct[i] <- iter_to_correct[assignIdx[i]]
       updated_data$rsq[i] <- rsq[assignIdx[i]]
