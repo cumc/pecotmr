@@ -15,6 +15,7 @@
 #' @param gcControl Logical indicating whether genomic control should be applied. Default is FALSE.
 #' @param nIter The number of iterations for the Dentist algorithm. Default is 10.
 #' @param gPvalueThreshold The genomic p-value threshold for significance. Default is 0.05.
+#' @param duprThreshold The absolute correlation r value threshold to be considered duplicate. Default is 0.99.
 #' @param ncpus The number of CPU cores to use for parallel processing. Default is 1.
 #' @param seed The random seed for reproducibility. Default is 999.
 #' @param correct_chen_et_al_bug Logical indicating whether to correct the Chen et al. bug. Default is TRUE.
@@ -59,7 +60,7 @@
 #' @export
 dentist <- function(sum_stat, LD_mat, nSample,
                     window_size = 2000000, pValueThreshold = 5.0369e-8, propSVD = 0.4, gcControl = FALSE,
-                    nIter = 10, gPvalueThreshold = 0.05, ncpus = 1, seed = 999, correct_chen_et_al_bug = TRUE) {
+                    nIter = 10, gPvalueThreshold = 0.05, duprThreshold = 0.99, ncpus = 1, seed = 999, correct_chen_et_al_bug = TRUE) {
   # detect for column names and order by pos
   if (!any(tolower(c("pos", "position")) %in% tolower(colnames(sum_stat))) ||
     !any(tolower(c("z", "zscore")) %in% tolower(colnames(sum_stat)))) {
@@ -70,7 +71,8 @@ dentist <- function(sum_stat, LD_mat, nSample,
     dentist_result <- dentist_single_window(
       sum_stat$z, LD_mat, nSample,
       pValueThreshold, propSVD, gcControl,
-      nIter, gPvalueThreshold, ncpus, seed, correct_chen_et_al_bug
+      nIter, gPvalueThreshold, duprThreshold, 
+      ncpus, seed, correct_chen_et_al_bug
     )
   } else {
     # divide windows
@@ -86,7 +88,8 @@ dentist <- function(sum_stat, LD_mat, nSample,
       dentist_result_by_window[[k]] <- dentist_single_window(
         zScore_k, LD_mat_k, nSample,
         pValueThreshold, propSVD, gcControl,
-        nIter, gPvalueThreshold, ncpus, seed, correct_chen_et_al_bug
+        nIter, gPvalueThreshold, duprThreshold,
+        ncpus, seed, correct_chen_et_al_bug
       )
     }
     # merge single window result and generate a final dentist_result (similar to dentist_result above)
@@ -108,7 +111,7 @@ dentist <- function(sum_stat, LD_mat, nSample,
 #' @param gcControl Logical indicating whether genomic control should be applied. Default is FALSE.
 #' @param nIter The number of iterations for the Dentist algorithm. Default is 10.
 #' @param gPvalueThreshold The genomic p-value threshold for significance. Default is 0.05.
-#' @param duprThreshold The absolute correlation r value threshold to be considered duplicate. Default is 1.0.
+#' @param duprThreshold The absolute correlation r value threshold to be considered duplicate. Default is 0.99.
 #' @param ncpus The number of CPU cores to use for parallel processing. Default is 1.
 #' @param seed The random seed for reproducibility. Default is 999.
 #' @param correct_chen_et_al_bug Logical indicating whether to correct the Chen et al. bug. Default is TRUE.
@@ -154,7 +157,7 @@ dentist <- function(sum_stat, LD_mat, nSample,
 #' @export
 dentist_single_window <- function(zScore, LD_mat, nSample,
                                   pValueThreshold = 5e-8, propSVD = 0.4, gcControl = FALSE,
-                                  nIter = 10, gPvalueThreshold = 0.05, duprThreshold = 1.0,
+                                  nIter = 10, gPvalueThreshold = 0.05, duprThreshold = 0.99,
                                   ncpus = 1, seed = 999, correct_chen_et_al_bug = TRUE) {
   calculate_stat <- function(impOp_zScores, impOp_imputed, impOp_rsq) {
     (impOp_zScores - impOp_imputed)^2 / (1 - impOp_rsq)
