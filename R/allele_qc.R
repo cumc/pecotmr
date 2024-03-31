@@ -96,8 +96,6 @@ allele_qc <- function(target_variants, ref_variants, target_data, col_to_flip = 
     result <- sapply(vec, check_element, USE.NAMES = FALSE)
     return(result)
   }
-    
-    
 
   non_ATCG <- !(check_ATCG(a1) & check_ATCG(a2))
 
