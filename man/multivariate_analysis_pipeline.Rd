@@ -98,9 +98,9 @@ data_driven_prior_matrices_cv <- lapply(prior_matrices_cv, function(x) {
 })
 
 result <- multivariate_analysis_pipeline(
-  X = multitrait_data$X[, 1:100],
+  X = multitrait_data$X,
   Y = multitrait_data$Y,
-  maf = colMeans(multitrait_data$X[, 1:100]),
+  maf = colMeans(multitrait_data$X),
   max_L = 10,
   ld_reference_meta_file = NULL,
   max_cv_variants = -1,
@@ -114,6 +114,6 @@ result <- multivariate_analysis_pipeline(
   cv_seed = 999,
   cv_threads = 2,
   prior_weights_min = 1e-4,
-  twas_weights = FALSE
+  twas_weights = TRUE
 )
 }
