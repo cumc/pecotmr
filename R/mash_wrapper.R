@@ -300,7 +300,7 @@ merge_susie_cs <- function(susie_fit, coverage = "cs_coverage_0.95", complementa
     return(updated_credible_sets)
   }
   # Loop through each condition and their credible sets
-  extract_top_loci <- function(susie_fit, complementary) {
+  extract_top_loci <- function(susie_fit, complementary, coverage) {
     results <- list()
     for (i in 1:length(names(susie_fit[[1]]))) {
       if (!is.null(susie_fit[[1]][[i]][["top_loci"]]) && nrow(susie_fit[[1]][[i]][["top_loci"]]) !=
@@ -375,7 +375,7 @@ merge_susie_cs <- function(susie_fit, coverage = "cs_coverage_0.95", complementa
     return(top_loci_df)
   }
 
-  extracted_top_loci <- extract_top_loci(susie_fit, complementary)
+  extracted_top_loci <- extract_top_loci(susie_fit, complementary, coverage = coverage)
   combined_top_loci_df <- combine_top_loci(extracted_top_loci)
   # Clean up row names and make sure variant_id is unique
   combined_top_loci_df <- combined_top_loci_df[!duplicated(combined_top_loci_df$variant_id), ]
