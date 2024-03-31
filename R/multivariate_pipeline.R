@@ -60,7 +60,7 @@
 #'   cv_seed = 999,
 #'   cv_threads = 2,
 #'   prior_weights_min = 1e-4,
-#'   twas_weights = TRUE 
+#'   twas_weights = TRUE
 #' )
 #' @importFrom mvsusieR mvsusie create_mixture_prior
 #' @export
@@ -262,7 +262,7 @@ twas_multivariate_weights_pipeline <- function(
       X = X, Y = Y, L = max_L, prior_variance = data_driven_prior_matrices,
       residual_variance = resid_Y, precompute_covariances = T, compute_objective = T,
       estimate_residual_variance = F, estimate_prior_variance = T, estimate_prior_method = "EM",
-      max_iter = mvsusie_max_iter, n_thread = 1, approximate = F, verbosity = 0, coverage = coverage
+      max_iter = mvsusie_max_iter, n_thread = 1, approximate = F, verbosity = verbose, coverage = coverage
     )
     res$mnm_result$preset_variants_result <- susie_post_processor(
       res$mnm_result$preset_variants_result, X, NULL, 1, 1,
@@ -278,12 +278,14 @@ twas_multivariate_weights_pipeline <- function(
     mrmash_weights = list(
       mrmash_fit = res$mnm_result$mrmash_result,
       data_driven_prior_matrices = data_driven_prior_matrices,
-      canonical_prior_matrices = canonical_prior_matrices, max_iter = mrmash_max_iter
+      canonical_prior_matrices = canonical_prior_matrices, max_iter = mrmash_max_iter,
+      verbose = verbose
     ),
     mvsusie_weights = list(
       mvsusie_fit = mvsusie_fitted,
       prior_variance = data_driven_prior_matrices,
-      residual_variance = resid_Y, L = max_L, max_iter = mvsusie_max_iter
+      residual_variance = resid_Y, L = max_L, max_iter = mvsusie_max_iter,
+      verbosity = verbose
     )
   )
   message("Computing TWAS weights for multivariate analysis methods ...")
@@ -300,13 +302,17 @@ twas_multivariate_weights_pipeline <- function(
     weight_methods <- list(
       mrmash_weights = list(
         data_driven_prior_matrices = data_driven_prior_matrices,
-        canonical_prior_matrices = canonical_prior_matrices, 
-        max_iter = mrmash_max_iter
+        data_driven_prior_matrices_cv = data_driven_prior_matrices_cv,
+        canonical_prior_matrices = canonical_prior_matrices,
+        max_iter = mrmash_max_iter,
+        verbose = verbose
       ),
       mvsusie_weights = list(
         prior_variance = data_driven_prior_matrices,
-        residual_variance = resid_Y, L = max_L, 
-        max_iter = mvsusie_max_iter
+        data_driven_prior_matrices_cv = data_driven_prior_matrices_cv,
+        residual_variance = resid_Y, L = max_L,
+        max_iter = mvsusie_max_iter,
+        verbosity = verbose
       )
     )
     variants_for_cv <- c()
@@ -322,7 +328,7 @@ twas_multivariate_weights_pipeline <- function(
     message("Performing cross-validation to assess TWAS weights ...")
     twas_cv_result <- twas_weights_cv(
       X = X, Y = Y, fold = cv_folds,
-      weight_methods = weight_methods, 
+      weight_methods = weight_methods,
       sample_partition = sample_partition,
       num_threads = cv_threads, seed = cv_seed,
       max_num_variants = max_cv_variants,

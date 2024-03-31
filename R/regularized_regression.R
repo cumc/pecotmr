@@ -340,7 +340,7 @@ mrmash_weights <- function(mrmash_fit = NULL, X = NULL, Y = NULL, ...) {
     if (is.null(X) || is.null(Y)) {
       stop("Both X and Y must be provided if mrmash_fit is NULL.")
     }
-    mrmash_fit <- mrmash_wrapper(...)
+    mrmash_fit <- mrmash_wrapper(X, Y, ...)
   }
   return(coef.mr.mash(mrmash_fit)[-1, ])
 }
