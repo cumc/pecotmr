@@ -76,9 +76,6 @@ test_that("Test format_variant_id",{
     expect_equal(format_variant_id(c("chr1_123_G_C", "chr1_132_A_T")), c("chr1:123:G:C", "chr1:132:A:T"))
 })
 
-library(testthat)
-
-# Test data
 z <- c(1, 2, 3, 4, 5)
 LD <- matrix(c(1.0, 0.8, 0.2, 0.1, 0.3,
                0.8, 1.0, 0.4, 0.2, 0.5,
