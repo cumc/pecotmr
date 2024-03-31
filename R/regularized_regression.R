@@ -336,7 +336,7 @@ susie_weights <- function(X = NULL, y = NULL, susie_fit = NULL, ...) {
 #' @export
 mrmash_weights <- function(mrmash_fit = NULL, X = NULL, Y = NULL, ...) {
   if (is.null(mrmash_fit)) {
-    message("Did not provide mrmash_fit, fitting mr.mash now ...")
+    message("mrmash_fit is not provided; fitting mr.mash now ...")
     if (is.null(X) || is.null(Y)) {
       stop("Both X and Y must be provided if mrmash_fit is NULL.")
     }
@@ -349,7 +349,7 @@ mrmash_weights <- function(mrmash_fit = NULL, X = NULL, Y = NULL, ...) {
 #' @export
 mvsusie_weights <- function(mvsusie_fit = NULL, X = NULL, Y = NULL, prior_variance = NULL, residual_variance = NULL, L = 30, mvsusie_max_iter = 200, ...) {
   if (is.null(mvsusie_fit)) {
-    message("Did not provide mvsusie_fit, fitting mvSuSiE now ...")
+    message("mvsusie_fit is not provided; fitting mvSuSiE now ...")
     if (is.null(X) || is.null(Y)) {
       stop("Both X and Y must be provided if mvsusie_fit is NULL.")
     }

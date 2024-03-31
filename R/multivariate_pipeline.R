@@ -60,7 +60,7 @@
 #'   cv_seed = 999,
 #'   cv_threads = 2,
 #'   prior_weights_min = 1e-4,
-#'   twas_weights = FALSE
+#'   twas_weights = TRUE 
 #' )
 #' @importFrom mvsusieR mvsusie create_mixture_prior
 #' @export
@@ -184,10 +184,10 @@ multivariate_analysis_pipeline <- function(
   # Run TWAS pipeline
   if (twas_weights) {
     res <- twas_multivariate_weights_pipeline(X, Y, maf, res,
-      resid_Y = resid_Y, cv_folds = cv_folds,
+      resid_Y = resid_Y, cv_folds = cv_folds, sample_partition = sample_partition,
       ld_reference_meta_file = ld_reference_meta_file, max_cv_variants = max_cv_variants,
       mvsusie_max_iter = mvsusie_max_iter, mrmash_max_iter = mrmash_max_iter, signal_cutoff = signal_cutoff,
-      secondary_coverage = sec_coverage, coverage = pri_coverage,
+      coverage = pri_coverage, secondary_coverage = sec_coverage,
       canonical_prior_matrices = canonical_prior_matrices, data_driven_prior_matrices = data_driven_prior_matrices,
       data_driven_prior_matrices_cv = data_driven_prior_matrices_cv, cv_seed = cv_seed,
       min_cv_maf = min_cv_maf, cv_threads = cv_threads
@@ -249,7 +249,7 @@ twas_multivariate_weights_pipeline <- function(
     return(res)
   }
 
-  ## Main analysis starts
+  # Main analysis starts
   mvsusie_fitted <- res$mnm_result$susie_result_trimmed
   max_L <- determine_max_L(mvsusie_fitted)
   if (!is.null(ld_reference_meta_file)) {
@@ -300,11 +300,13 @@ twas_multivariate_weights_pipeline <- function(
     weight_methods <- list(
       mrmash_weights = list(
         data_driven_prior_matrices = data_driven_prior_matrices,
-        canonical_prior_matrices = canonical_prior_matrices, max_iter = mrmash_max_iter
+        canonical_prior_matrices = canonical_prior_matrices, 
+        max_iter = mrmash_max_iter
       ),
       mvsusie_weights = list(
         prior_variance = data_driven_prior_matrices,
-        residual_variance = resid_Y, L = max_L, max_iter = mvsusie_max_iter
+        residual_variance = resid_Y, L = max_L, 
+        max_iter = mvsusie_max_iter
       )
     )
     variants_for_cv <- c()
@@ -317,10 +319,11 @@ twas_multivariate_weights_pipeline <- function(
       common_var <- sample(common_var, max_cv_variants - length(variants_for_cv), replace = FALSE)
     }
     variants_for_cv <- unique(c(variants_for_cv, common_var))
-
+    message("Performing cross-validation to assess TWAS weights ...")
     twas_cv_result <- twas_weights_cv(
       X = X, Y = Y, fold = cv_folds,
-      weight_methods = weight_methods, sample_partition = sample_partition,
+      weight_methods = weight_methods, 
+      sample_partition = sample_partition,
       num_threads = cv_threads, seed = cv_seed,
       max_num_variants = max_cv_variants,
       variants_to_keep = if (length(variants_for_cv) > 0) variants_for_cv else NULL,
