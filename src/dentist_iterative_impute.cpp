@@ -219,11 +219,11 @@ void oneIteration(const arma::mat& LD_mat, const std::vector<size_t>& idx, const
  * @param verbose A boolean flag to enable verbose output for debugging.
  *
  * @return A List object containing:
+ * - original_z: A vector of original Z-scores for each marker.
  * - imputed_z: A vector of imputed Z-scores for each marker.
+ * - z_diff: A vector of outlier test z-scores
  * - rsq: A vector of R-squared values for each marker, indicating goodness of fit.
- * - corrected_z: A vector of adjusted Z-scores after error detection.
  * - iter_to_correct: An integer vector indicating the iteration in which each marker passed the quality control.
- * - is_problematic: A binary vector indicating whether each marker is considered problematic (1) or not (0).
  *
  * @note The function is designed for use in Rcpp and requires Armadillo for matrix operations and OpenMP for parallel processing.
  */
@@ -439,16 +439,14 @@ List dentist_iterative_impute(const arma::mat& LD_mat, size_t nSample, const arm
 
 		std::vector<size_t> fullIdx_tmp;
 		for (size_t i = 0; i < fullIdx.size(); ++i) {
-			double currentDiffSquared = std::pow(diff[i], 2);
-
 			if (gcControl) {
 				// When gcControl is true, check if the variant passes the adjusted threshold
-				if (!(diff[i] > threshold && minusLogPvalueChisq2(currentDiffSquared / inflationFactor) > -log10(pValueThreshold))) {
+				if (!(diff[i] > threshold && minusLogPvalueChisq2(chisq[i] / inflationFactor) > -log10(pValueThreshold))) {
 					fullIdx_tmp.push_back(fullIdx[i]);
 				}
 			} else {
 				// When gcControl is false, simply check if the variant passes the basic threshold
-				if (minusLogPvalueChisq2(currentDiffSquared) < -log10(pValueThreshold)) {
+				if (minusLogPvalueChisq2(chisq[i]) < -log10(pValueThreshold)) {
 					if ((groupingGWAS[fullIdx[i]] == 1 && diff[i] <= threshold1) ||
 					    (groupingGWAS[fullIdx[i]] == 0 && diff[i] <= threshold0)) {
 						fullIdx_tmp.push_back(fullIdx[i]);
@@ -475,6 +473,6 @@ List dentist_iterative_impute(const arma::mat& LD_mat, size_t nSample, const arm
 	return List::create(Named("original_z") = zScore,
 	                    Named("imputed_z") = imputedZ,
 	                    Named("rsq") = rsq,
-	                    Named("corrected_z") = zScore_e,
+	                    Named("z_diff") = zScore_e,
 	                    Named("iter_to_correct") = iterID);
 }
