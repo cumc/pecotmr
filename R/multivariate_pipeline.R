@@ -181,8 +181,6 @@ multivariate_analysis_pipeline <- function(
   )
   res$mnm_result$mrmash_result <- mrmash_fitted
 
-  # FIXME: need to add some codes to get single condition inference results using lfsr and somehow recover the top_loci table equivalent
-
   # Run TWAS pipeline
   if (twas_weights) {
     res <- twas_multivariate_weights_pipeline(X, Y, maf, res,
