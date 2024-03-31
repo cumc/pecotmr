@@ -87,6 +87,7 @@ test_that("find_duplicate_variants returns the expected output", {
   rThreshold <- 0.5
   expected_output <- list(
     filteredZ = c(1, 3, 5),
+    filteredLD= LD[c(1,3,5), c(1,3,5)],
     dupBearer = c(-1, 1, -1, 2, -1),
     corABS = c(0, 0.8, 0, 0.6, 0),
     sign = c(1, 1, 1, 1, 1),
@@ -102,6 +103,7 @@ test_that("find_duplicate_variants handles a high correlation threshold", {
   rThreshold <- 1.0
   expected_output <- list(
     filteredZ = c(1, 2, 3, 4, 5),
+    filteredLD=LD,
     dupBearer = c(-1, -1, -1, -1, -1),
     corABS = c(0, 0, 0, 0, 0),
     sign = c(1, 1, 1, 1, 1),
@@ -116,6 +118,7 @@ test_that("find_duplicate_variants handles a low correlation threshold", {
   rThreshold <- 0.0
   expected_output <- list(
     filteredZ = c(1),
+    filteredLD=LD[1,1,drop=F],
     dupBearer = c(-1, 1, 1, 1, 1),
     corABS = c(0, 0.8, 0.2, 0.1, 0.3),
     sign = c(1, 1, 1, 1, 1),
@@ -133,6 +136,7 @@ test_that("find_duplicate_variants handles negative correlations", {
   rThreshold <- 0.5
   expected_output <- list(
     filteredZ = c(1, 3, 5),
+    filteredLD= LD[c(1,3,5), c(1,3,5)],
     dupBearer = c(-1, 1, -1, 2, -1),
     corABS = c(0, 0.8, 0, 0.6, 0),
     sign = c(1, -1, 1, 1, 1),

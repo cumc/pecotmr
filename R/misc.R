@@ -284,6 +284,7 @@ find_valid_file_paths <- function(reference_file_path, target_file_paths) sapply
 #' @return A list containing the following elements:
 #'   \describe{
 #'     \item{filteredZ}{The filtered vector `z` based on the correlation threshold.}
+#'     \item{filteredLD}{The filtered matrix `LD` based on the correlation threshold.}
 #'     \item{dupBearer}{A vector indicating the duplicate status of each element in `z`.}
 #'     \item{corABS}{A vector storing the absolute correlation values of duplicates.}
 #'     \item{sign}{A vector storing the sign of the correlation values (-1 for negative, 1 for positive).}
@@ -331,6 +332,7 @@ find_duplicate_variants <- function(z, LD, rThreshold) {
   
   # Filter z based on dupBearer
   filteredZ <- z[dupBearer == -1]
+  filteredLD <- LD[dupBearer == -1, dupBearer == -1, drop=F]
   
-  return(list(filteredZ = filteredZ, dupBearer = dupBearer, corABS = corABS, sign = sign, minValue = minValue))
+  return(list(filteredZ = filteredZ, filteredLD = filteredLD, dupBearer = dupBearer, corABS = corABS, sign = sign, minValue = minValue))
 }
