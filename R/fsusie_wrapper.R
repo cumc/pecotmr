@@ -15,7 +15,7 @@
 #' @return A list where each element corresponds to a credible set and contains either a single
 #'         purity value (for 'min' method and single-element sets) or a vector of purity metrics
 #'         (for other methods and multi-element sets).
-#' @export
+#' @noRd
 
 cal_purity <- function(l_cs, X, method = "min") {
   tt <- list()

@@ -62,6 +62,7 @@ find_intersection_rows <- function(genomic_data, region_chrom, region_start, reg
 }
 
 #' Function to Validate Selected Region
+#' @noRd
 validate_selected_region <- function(start_row, end_row, region_start, region_end) {
   if (!(start_row$start <= region_start && end_row$end >= region_end)) {
     stop("The selected region is not fully covered by the merged region.")

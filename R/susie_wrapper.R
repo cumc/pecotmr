@@ -11,6 +11,7 @@
 #' lbf <- c(-0.5, 1.2, 0.3)
 #' alpha <- lbf_to_alpha_vector(lbf)
 #' print(alpha)
+#' @noRd
 lbf_to_alpha_vector <- function(lbf, prior_weights = NULL) {
   if (is.null(prior_weights)) prior_weights <- rep(1 / length(lbf), length(lbf))
   maxlbf <- max(lbf)

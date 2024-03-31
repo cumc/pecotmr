@@ -4,10 +4,10 @@
 #'
 #' @param X An n x p matrix of genotype data, where n is the total number of individuals and p is the number of SNPs.
 #' @param Y An n x r matrix of residual expression data, where n is the total number of individuals and r is the total number of conditions (tissue/cell-types).
-#' @param prior_data_driven_matrices A list of data-driven covariance matrices. Default is NULL.
+#' @param data_driven_prior_matrices A list of data-driven covariance matrices. Default is NULL.
 #' @param prior_grid A vector of scaling factors to be used in fitting the mr.mash model. Default is NULL.
 #' @param nthreads The number of threads to use for parallel computation. Default is 2.
-#' @param prior_canonical_matrices A logical indicating whether to use canonical matrices as priors. Default is FALSE.
+#' @param canonical_prior_matrices A logical indicating whether to use canonical matrices as priors. Default is FALSE.
 #' @param standardize A logical indicating whether to standardize the input data. Default is FALSE.
 #' @param update_w0 A logical indicating whether to update the prior mixture weights. Default is TRUE.
 #' @param w0_threshold The threshold for updating prior mixture weights. Default is 1e-8.
@@ -60,18 +60,18 @@
 #'   "FLASH_nonneg", "PCA"
 #' )
 #'
-#' prior_data_driven_matrices <- list()
+#' data_driven_prior_matrices <- list()
 #' for (i in components) {
 #'   A <- matrix(runif(r^2) * 2 - 1, ncol = r)
 #'   cov <- t(A) %*% A
 #'   colnames(cov) <- tissues
 #'   rownames(cov) <- tissues
-#'   prior_data_driven_matrices[[i]] <- cov
+#'   data_driven_prior_matrices[[i]] <- cov
 #' }
 #'
 #' res <- mrmash_wrapper(
 #'   X = X, Y = Y,
-#'   prior_data_driven_matrices = prior_data_driven_matrices,
+#'   data_driven_prior_matrices = data_driven_prior_matrices,
 #'   prior_grid = prior_grid
 #' )
 #'
@@ -83,10 +83,10 @@
 mrmash_wrapper <- function(X,
                            Y,
                            sumstats = NULL,
-                           prior_data_driven_matrices = NULL,
+                           data_driven_prior_matrices = NULL,
                            prior_grid = NULL,
                            nthreads = 1,
-                           prior_canonical_matrices = FALSE,
+                           canonical_prior_matrices = FALSE,
                            standardize = FALSE,
                            update_w0 = TRUE,
                            w0_threshold = 1e-8,
@@ -109,8 +109,8 @@ mrmash_wrapper <- function(X,
   if (!is.null(prior_grid) && !is.vector(prior_grid)) {
     stop("prior_grid must be a vector.")
   }
-  if (is.null(prior_data_driven_matrices) && !isTRUE(prior_canonical_matrices)) {
-    stop("Please provide prior_data_driven_matrices or set prior_canonical_matrices = TRUE.")
+  if (is.null(data_driven_prior_matrices) && !isTRUE(canonical_prior_matrices)) {
+    stop("Please provide data_driven_prior_matrices or set canonical_prior_matrices = TRUE.")
   }
 
   Y_has_missing <- any(is.na(Y))
@@ -129,26 +129,26 @@ mrmash_wrapper <- function(X,
   }
   prior_grid <- compute_grid(bhat = sumstats$Bhat, sbhat = sumstats$Shat)
 
-  if (!is.null(prior_data_driven_matrices)) {
-    if (inherits(prior_data_driven_matrices, "MashInitializer")) {
-      prior_data_driven_matrices <- prior_data_driven_matrices$prior_variance$xUlist[-1]
+  if (!is.null(data_driven_prior_matrices)) {
+    if (inherits(data_driven_prior_matrices, "MashInitializer")) {
+      data_driven_prior_matrices <- data_driven_prior_matrices$prior_variance$xUlist[-1]
     }
-    prior_data_driven_matrices <- filter_data_driven_mats(Y, prior_data_driven_matrices)
+    data_driven_prior_matrices <- filter_data_driven_mats(Y, data_driven_prior_matrices)
   }
 
   # Compute canonical matrices, if requested
-  if (isTRUE(prior_canonical_matrices)) {
-    prior_canonical_matrices <- compute_canonical_covs(ncol(Y),
+  if (isTRUE(canonical_prior_matrices)) {
+    canonical_prior_matrices <- compute_canonical_covs(ncol(Y),
       singletons = TRUE,
       hetgrid = c(0, 0.25, 0.5, 0.75, 1)
     )
-    if (!is.null(prior_data_driven_matrices)) {
-      S0_raw <- c(prior_canonical_matrices, prior_data_driven_matrices)
+    if (!is.null(data_driven_prior_matrices)) {
+      S0_raw <- c(canonical_prior_matrices, data_driven_prior_matrices)
     } else {
-      S0_raw <- prior_canonical_matrices
+      S0_raw <- canonical_prior_matrices
     }
   } else {
-    S0_raw <- prior_data_driven_matrices
+    S0_raw <- data_driven_prior_matrices
   }
 
   # Compute prior covariance

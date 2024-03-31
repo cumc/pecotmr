@@ -261,8 +261,6 @@ twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_
     X <- X[, selected_columns]
   }
 
-  arg <- list(...)
-
   # Create or use provided folds
   if (!is.null(fold)) {
     if (!is.null(seed)) set.seed(seed)
@@ -303,6 +301,8 @@ twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_
     num_cores <- ifelse(num_threads == -1, availableCores(), num_threads)
     num_cores <- min(num_cores, availableCores())
 
+    cv_args <- list(...)
+
     # Perform CV with parallel processing
     compute_method_predictions <- function(j) {
       dat_split <- split_data(X, Y, sample_partition = sample_partition, fold = j)
@@ -317,15 +317,18 @@ twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_
 
       setNames(lapply(names(weight_methods), function(method) {
         args <- weight_methods[[method]]
+
         if (method %in% multivariate_weight_methods) {
           # Apply multivariate method to entire Y for this fold
-          prior_matrices <- arg$mrmash_weights_prior_matrices
-          prior_matrices <- prior_matrices[[paste0("fold_", j)]]
-          weights_matrix <- do.call(method, c(list(
-            X = X_train, Y = Y_train, prior_data_driven_matrices = prior_matrices,
-            cannonical_matrices = arg$prior_canonical_matrices,
-            max_iter = arg$mrmash_max_iter
-          ), arg))
+          if (!is.null(cv_args$data_driven_prior_matrices_cv)) {
+            if (method == "mrmash_weights") {
+              args$data_driven_prior_matrices <- cv_args$data_driven_prior_matrices_cv[[j]]
+            }
+            if (method == "mvsusie_weights") {
+              args$prior_variance <- cv_args$data_driven_prior_matrices_cv[[j]]
+            }
+          }
+          weights_matrix <- do.call(method, c(list(X = X_train, Y = Y_train), args))
           # Adjust the weights matrix to include zeros for invalid columns
           full_weights_matrix <- matrix(0, nrow = ncol(X), ncol = ncol(Y))
           rownames(full_weights_matrix) <- rownames(weights_matrix)
