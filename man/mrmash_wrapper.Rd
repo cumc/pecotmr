@@ -8,10 +8,10 @@ mrmash_wrapper(
   X,
   Y,
   sumstats = NULL,
-  prior_data_driven_matrices = NULL,
+  data_driven_prior_matrices = NULL,
   prior_grid = NULL,
   nthreads = 1,
-  prior_canonical_matrices = FALSE,
+  canonical_prior_matrices = FALSE,
   standardize = FALSE,
   update_w0 = TRUE,
   w0_threshold = 1e-08,
@@ -30,13 +30,13 @@ mrmash_wrapper(
 
 \item{Y}{An n x r matrix of residual expression data, where n is the total number of individuals and r is the total number of conditions (tissue/cell-types).}
 
-\item{prior_data_driven_matrices}{A list of data-driven covariance matrices. Default is NULL.}
+\item{data_driven_prior_matrices}{A list of data-driven covariance matrices. Default is NULL.}
 
 \item{prior_grid}{A vector of scaling factors to be used in fitting the mr.mash model. Default is NULL.}
 
 \item{nthreads}{The number of threads to use for parallel computation. Default is 2.}
 
-\item{prior_canonical_matrices}{A logical indicating whether to use canonical matrices as priors. Default is FALSE.}
+\item{canonical_prior_matrices}{A logical indicating whether to use canonical matrices as priors. Default is FALSE.}
 
 \item{standardize}{A logical indicating whether to standardize the input data. Default is FALSE.}
 
@@ -103,18 +103,18 @@ components <- c(
   "FLASH_nonneg", "PCA"
 )
 
-prior_data_driven_matrices <- list()
+data_driven_prior_matrices <- list()
 for (i in components) {
   A <- matrix(runif(r^2) * 2 - 1, ncol = r)
   cov <- t(A) \%*\% A
   colnames(cov) <- tissues
   rownames(cov) <- tissues
-  prior_data_driven_matrices[[i]] <- cov
+  data_driven_prior_matrices[[i]] <- cov
 }
 
 res <- mrmash_wrapper(
   X = X, Y = Y,
-  prior_data_driven_matrices = prior_data_driven_matrices,
+  data_driven_prior_matrices = data_driven_prior_matrices,
   prior_grid = prior_grid
 )
 

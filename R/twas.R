@@ -301,7 +301,7 @@ twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_
     num_cores <- ifelse(num_threads == -1, availableCores(), num_threads)
     num_cores <- min(num_cores, availableCores())
 
-    extra_arg <- list(...)
+    cv_args <- list(...)
 
     # Perform CV with parallel processing
     compute_method_predictions <- function(j) {
@@ -320,8 +320,8 @@ twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_
 
         if (method %in% multivariate_weight_methods) {
           # Apply multivariate method to entire Y for this fold
-          if (prior_data_driven_matrices_cv %in% names(extra_arg)) {
-            args$prior_data_driven_matrices <- extra_arg$prior_data_driven_matrices_cv[[j]]
+          if (!is.null(cv_args$data_driven_prior_matrices_cv)) {
+            args$data_driven_prior_matrices <- cv_args$data_driven_prior_matrices_cv[[j]]
           }
           weights_matrix <- do.call(method, c(list(X = X_train, Y = Y_train), args))
           # Adjust the weights matrix to include zeros for invalid columns
