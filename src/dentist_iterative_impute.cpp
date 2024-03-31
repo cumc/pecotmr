@@ -221,6 +221,7 @@ void oneIteration(const arma::mat& LD_mat, const std::vector<size_t>& idx, const
  * @return A List object containing:
  * - original_z: A vector of original Z-scores for each marker.
  * - imputed_z: A vector of imputed Z-scores for each marker.
+ * - z_diff: A vector of outlier test z-scores
  * - rsq: A vector of R-squared values for each marker, indicating goodness of fit.
  * - iter_to_correct: An integer vector indicating the iteration in which each marker passed the quality control.
  *
@@ -474,6 +475,6 @@ List dentist_iterative_impute(const arma::mat& LD_mat, size_t nSample, const arm
 	return List::create(Named("original_z") = zScore,
 	                    Named("imputed_z") = imputedZ,
 	                    Named("rsq") = rsq,
-	                    Named("z_e") = zScore_e,
+	                    Named("z_diff") = zScore_e,
 	                    Named("iter_to_correct") = iterID);
 }

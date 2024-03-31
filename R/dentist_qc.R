@@ -144,7 +144,7 @@ dentist <- function(sum_stat, LD_mat, nSample,
 #' # Introduce outliers
 #' outlier_indices <- sample(1:n_snps, n_outliers)
 #' z_scores[outlier_indices] <- rnorm(n_outliers, mean = 0, sd = 5)
-#' dentist_impute_single_window(zScore, LD_mat, nSample)
+#' dentist_single_window(zScore, LD_mat, nSample)
 #'
 #' @seealso
 #' \code{\link{dentist}} for detecting outliers using the Dentist algorithm.
@@ -218,9 +218,10 @@ dentist_single_window <- function(zScore, LD_mat, nSample,
   lambda_original <- 1
   res %>%
     mutate(
-      outlier_stat = calculate_stat(original_z, imputed_z, rsq),
+      outlier_stat = z_diff^2,
       outlier = outlier_test(outlier_stat, lambda_original)
     ) %>%
+    select(-z_diff) %>%
     filter(!(imputed_z == 0 & rsq == 0))
 }
 
@@ -241,7 +242,7 @@ add_dups_back_dentist <- function(zScore, dentist_output, find_dup_output) {
   imputed_z <- dentist_output$imputed_z
   iter_to_correct <- dentist_output$iter_to_correct
   rsq <- dentist_output$rsq
-  z_e <- dentist_output$z_e
+  z_diff <- dentist_output$z_diff
 
   # Extract output from find_duplicate_variants
   dupBearer <- find_dup_output$dupBearer
@@ -277,24 +278,24 @@ add_dups_back_dentist <- function(zScore, dentist_output, find_dup_output) {
     imputed_z = numeric(nrows_dup),
     iter_to_correct = numeric(nrows_dup),
     rsq = numeric(nrows_dup),
-    z_e = numeric(nrows_dup),
+    z_diff = numeric(nrows_dup),
     is_duplicate = logical(nrows_dup)
   )
 
   for (i in seq_len(nrows_dup)) {
     if (dupBearer[i] == -1) {
-      updated_data$original_z[i] <- zScore[i] 
+      updated_data$original_z[i] <- zScore[i]
       updated_data$imputed_z[i] <- imputed_z[assignIdx[i]]
       updated_data$iter_to_correct[i] <- iter_to_correct[assignIdx[i]]
       updated_data$rsq[i] <- rsq[assignIdx[i]]
-      updated_data$z_e[i] <- z_e[assignIdx[i]]
+      updated_data$z_diff[i] <- z_diff[assignIdx[i]]
       updated_data$is_duplicate[i] <- FALSE
     } else {
       updated_data$original_z[i] <- zScore[i]
       updated_data$imputed_z[i] <- imputed_z[assignIdx[i]] * sign[i]
       updated_data$iter_to_correct[i] <- iter_to_correct[assignIdx[i]]
       updated_data$rsq[i] <- rsq[assignIdx[i]]
-      updated_data$z_e[i] <- z_e[assignIdx[i]]
+      updated_data$z_diff[i] <- z_diff[assignIdx[i]]
       updated_data$is_duplicate[i] <- TRUE
     }
   }
