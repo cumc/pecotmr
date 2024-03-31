@@ -219,11 +219,10 @@ void oneIteration(const arma::mat& LD_mat, const std::vector<size_t>& idx, const
  * @param verbose A boolean flag to enable verbose output for debugging.
  *
  * @return A List object containing:
+ * - original_z: A vector of original Z-scores for each marker.
  * - imputed_z: A vector of imputed Z-scores for each marker.
  * - rsq: A vector of R-squared values for each marker, indicating goodness of fit.
- * - corrected_z: A vector of adjusted Z-scores after error detection.
  * - iter_to_correct: An integer vector indicating the iteration in which each marker passed the quality control.
- * - is_problematic: A binary vector indicating whether each marker is considered problematic (1) or not (0).
  *
  * @note The function is designed for use in Rcpp and requires Armadillo for matrix operations and OpenMP for parallel processing.
  */
@@ -475,6 +474,6 @@ List dentist_iterative_impute(const arma::mat& LD_mat, size_t nSample, const arm
 	return List::create(Named("original_z") = zScore,
 	                    Named("imputed_z") = imputedZ,
 	                    Named("rsq") = rsq,
-	                    Named("corrected_z") = zScore_e,
+	                    Named("z_e") = zScore_e,
 	                    Named("iter_to_correct") = iterID);
 }

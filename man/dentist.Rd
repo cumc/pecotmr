@@ -53,7 +53,6 @@ The returned data frame includes the following columns:
   \item{\code{original_z}}{The original z-score values from the input \code{sum_stat}.}
   \item{\code{imputed_z}}{The imputed z-score values computed by the Dentist algorithm.}
   \item{\code{rsq}}{The coefficient of determination (R-squared) between original and imputed z-scores.}
-  \item{\code{corrected_z}}{The corrected z-score values, if applicable.}
   \item{\code{iter_to_correct}}{The number of iterations required to correct the z-scores, if applicable.}
   \item{\code{index_within_window}}{The index of the observation within the window.}
   \item{\code{index_global}}{The global index of the observation.}

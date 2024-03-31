@@ -17,6 +17,7 @@ find_duplicate_variants(z, LD, rThreshold)
 A list containing the following elements:
   \describe{
     \item{filteredZ}{The filtered vector `z` based on the correlation threshold.}
+    \item{filteredLD}{The filtered matrix `LD` based on the correlation threshold.}
     \item{dupBearer}{A vector indicating the duplicate status of each element in `z`.}
     \item{corABS}{A vector storing the absolute correlation values of duplicates.}
     \item{sign}{A vector storing the sign of the correlation values (-1 for negative, 1 for positive).}

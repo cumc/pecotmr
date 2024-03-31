@@ -27,7 +27,6 @@
 #'   \item{\code{original_z}}{The original z-score values from the input \code{sum_stat}.}
 #'   \item{\code{imputed_z}}{The imputed z-score values computed by the Dentist algorithm.}
 #'   \item{\code{rsq}}{The coefficient of determination (R-squared) between original and imputed z-scores.}
-#'   \item{\code{corrected_z}}{The corrected z-score values, if applicable.}
 #'   \item{\code{iter_to_correct}}{The number of iterations required to correct the z-scores, if applicable.}
 #'   \item{\code{index_within_window}}{The index of the observation within the window.}
 #'   \item{\code{index_global}}{The global index of the observation.}
@@ -109,6 +108,7 @@ dentist <- function(sum_stat, LD_mat, nSample,
 #' @param gcControl Logical indicating whether genomic control should be applied. Default is FALSE.
 #' @param nIter The number of iterations for the Dentist algorithm. Default is 10.
 #' @param gPvalueThreshold The genomic p-value threshold for significance. Default is 0.05.
+#' @param duprThreshold The absolute correlation r value threshold to be considered duplicate. Default is 1.0.
 #' @param ncpus The number of CPU cores to use for parallel processing. Default is 1.
 #' @param seed The random seed for reproducibility. Default is 999.
 #' @param correct_chen_et_al_bug Logical indicating whether to correct the Chen et al. bug. Default is TRUE.
@@ -154,7 +154,8 @@ dentist <- function(sum_stat, LD_mat, nSample,
 #' @noRd
 dentist_single_window <- function(zScore, LD_mat, nSample,
                                   pValueThreshold = 5e-8, propSVD = 0.4, gcControl = FALSE,
-                                  nIter = 10, gPvalueThreshold = 0.05, ncpus = 1, seed = 999, correct_chen_et_al_bug = TRUE) {
+                                  nIter = 10, gPvalueThreshold = 0.05, duprThreshold = 1.0,
+                                  ncpus = 1, seed = 999, correct_chen_et_al_bug = TRUE) {
   calculate_stat <- function(impOp_zScores, impOp_imputed, impOp_rsq) {
     (impOp_zScores - impOp_imputed)^2 / (1 - impOp_rsq)
   }
@@ -173,6 +174,18 @@ dentist_single_window <- function(zScore, LD_mat, nSample,
   # Check that LD_mat dimensions match the length of zScore
   if (!is.matrix(LD_mat) || nrow(LD_mat) != ncol(LD_mat) || nrow(LD_mat) != length(zScore)) {
     stop("LD_mat must be a square matrix with dimensions equal to the length of zScore.")
+  }
+  # Remove dups
+  if (duprThreshold < 1.0) {
+    dedup_res <- find_duplicate_variants(zScore, LD_mat, duprThreshold)
+    num_dup <- sum(dedup_res$dupBearer != -1)
+    if (num_dup > 0) {
+      message(paste(num_dup, "duplicated variants out of a total of", length(zScore), "were found at r threshold of", duprThreshold))
+    }
+    zScore <- dedup_res$filteredZ
+    LD_mat <- dedup_res$filteredLD
+  } else {
+    dedup_res <- NULL
   }
 
   # Define a custom condition to capture warnings
@@ -195,14 +208,93 @@ dentist_single_window <- function(zScore, LD_mat, nSample,
     },
     warning = warning_handler
   )
+  res <- as.data.frame(res)
+  # Recover dups
+  if (duprThreshold < 1.0) {
+    res <- add_dups_back_dentist(res, dedup_res)
+  }
   # detect outlier
   lambda_original <- 1
-  as.data.frame(res) %>%
+  res %>%
     mutate(
       outlier_stat = calculate_stat(original_z, imputed_z, rsq),
       outlier = outlier_test(outlier_stat, lambda_original)
     ) %>%
     filter(!(imputed_z == 0 & rsq == 0))
+}
+
+#' Add duplicates back to DENTIST output
+#'
+#' This function takes the output from the DENTIST algorithm and adds back the duplicated variants
+#' based on the output from the `find_duplicate_variants` function.
+#'
+#' @param dentist_output A data frame containing the output from the DENTIST algorithm.
+#' @param find_dup_output A list containing the output from the `find_duplicate_variants` function.
+#'
+#' @return A data frame with duplicated variants added back and an additional column indicating duplicates.
+#'
+#' @noRd
+add_dups_back_dentist <- function(dentist_output, find_dup_output) {
+  # Extract relevant columns from the DENTIST output
+  original_z <- dentist_output$original_z
+  imputed_z <- dentist_output$imputed_z
+  iter_to_correct <- dentist_output$iter_to_correct
+  rsq <- dentist_output$rsq
+  z_e <- dentist_output$z_e
+
+  # Extract output from find_duplicate_variants
+  dupBearer <- find_dup_output$dupBearer
+  sign <- find_dup_output$sign
+
+  # Get the number of rows in dupBearer
+  nrows_dup <- length(dupBearer)
+
+  if (nrow(dentist_output) != sum(dupBearer == -1)) {
+    stop("The number of rows in the input data does not match the occurrences of -1 in dupBearer.")
+  }
+
+  # Initialize assignIdx vector
+  count <- 1
+  assignIdx <- rep(0, nrows_dup)
+
+  for (i in seq_along(dupBearer)) {
+    if (dupBearer[i] == -1) {
+      assignIdx[i] <- count
+      count <- count + 1
+    } else {
+      assignIdx[i] <- dupBearer[i]
+    }
+  }
+
+  # Create a new data frame to store the updated values
+  updated_data <- data.frame(
+    original_z = numeric(nrows_dup),
+    imputed_z = numeric(nrows_dup),
+    iter_to_correct = numeric(nrows_dup),
+    rsq = numeric(nrows_dup),
+    z_e = numeric(nrows_dup),
+    is_duplicate = logical(nrows_dup)
+  )
+
+  for (i in seq_len(nrows_dup)) {
+    if (dupBearer[i] == -1) {
+      updated_data$original_z[i] <- original_z[assignIdx[i]] 
+      updated_data$imputed_z[i] <- imputed_z[assignIdx[i]]
+      updated_data$iter_to_correct[i] <- iter_to_correct[assignIdx[i]]
+      updated_data$rsq[i] <- rsq[assignIdx[i]]
+      updated_data$z_e[i] <- z_e[assignIdx[i]]
+      updated_data$is_duplicate[i] <- FALSE
+    } else {
+      updated_data$original_z[i] <- original_z[assignIdx[i]] * sign[i]
+      updated_data$imputed_z[i] <- imputed_z[assignIdx[i]] * sign[i]
+      updated_data$iter_to_correct[i] <- iter_to_correct[assignIdx[i]]
+      updated_data$rsq[i] <- rsq[assignIdx[i]]
+      updated_data$z_e[i] <- z_e[assignIdx[i]]
+      updated_data$is_duplicate[i] <- TRUE
+    }
+  }
+
+  return(updated_data)
 }
 
 #' Divide Genomic Region into Windows
