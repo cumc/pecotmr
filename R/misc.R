@@ -271,3 +271,66 @@ find_valid_file_path <- function(reference_file_path, target_file_path) {
 }
 
 find_valid_file_paths <- function(reference_file_path, target_file_paths) sapply(target_file_paths, function(x) find_valid_file_path(reference_file_path, x))
+
+#' Filter a vector based on a correlation matrix
+#'
+#' This function filters a vector `z` based on a correlation matrix `LD` and a correlation threshold `rThreshold`.
+#' It keeps only one element among those having an absolute correlation value greater than the threshold.
+#'
+#' @param z A numeric vector to be filtered.
+#' @param LD A square correlation matrix with dimensions equal to the length of `z`.
+#' @param rThreshold The correlation threshold for filtering.
+#'
+#' @return A list containing the following elements:
+#'   \describe{
+#'     \item{filteredZ}{The filtered vector `z` based on the correlation threshold.}
+#'     \item{dupBearer}{A vector indicating the duplicate status of each element in `z`.}
+#'     \item{corABS}{A vector storing the absolute correlation values of duplicates.}
+#'     \item{sign}{A vector storing the sign of the correlation values (-1 for negative, 1 for positive).}
+#'     \item{minValue}{The minimum absolute correlation value encountered.}
+#'   }
+#'
+#' @examples
+#' z <- c(1, 2, 3, 4, 5)
+#' LD <- matrix(c(1.0, 0.8, 0.2, 0.1, 0.3,
+#'                0.8, 1.0, 0.4, 0.2, 0.5,
+#'                0.2, 0.4, 1.0, 0.6, 0.1,
+#'                0.1, 0.2, 0.6, 1.0, 0.3,
+#'                0.3, 0.5, 0.1, 0.3, 1.0), nrow = 5, ncol = 5)
+#' rThreshold <- 0.5
+#'
+#' result <- find_duplicate_variants(z, LD, rThreshold)
+#' print(result)
+#'
+#' @export
+find_duplicate_variants <- function(z, LD, rThreshold) {
+  p <- length(z)
+  dupBearer <- rep(-1, p)
+  corABS <- rep(0, p)
+  sign <- rep(1, p)
+  count <- 1
+  minValue <- 1
+  
+  for (i in 1:(p-1)) {
+    if (dupBearer[i] != -1) next
+    
+    idx <- (i+1):p
+    corVec <- abs(LD[i, idx])
+    dupIdx <- which(dupBearer[idx] == -1 & corVec > rThreshold)
+    
+    if (length(dupIdx) > 0) {
+      j <- idx[dupIdx]
+      sign[j] <- ifelse(LD[i, j] < 0, -1, sign[j])
+      corABS[j] <- corVec[dupIdx]
+      dupBearer[j] <- count
+    }
+    
+    minValue <- min(minValue, min(corVec))
+    count <- count + 1
+  }
+  
+  # Filter z based on dupBearer
+  filteredZ <- z[dupBearer == -1]
+  
+  return(list(filteredZ = filteredZ, dupBearer = dupBearer, corABS = corABS, sign = sign, minValue = minValue))
+}

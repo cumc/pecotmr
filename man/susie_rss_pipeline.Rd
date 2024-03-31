@@ -59,7 +59,6 @@ The `susie_rss_pipeline` function runs the SuSiE RSS pipeline based on the speci
   - `max_L`: Maximum number of causal configurations to consider in the analysis.
   - `l_step`: Step size for increasing L when the limit is reached during dynamic adjustment.
   - `analysis_method`: The analysis method to use. Options are "susie_rss", "single_effect", or "bayesian_conditional_regression".
-
   The function first checks if the `sumstats` input contains 'z' or 'beta' and 'se' columns. If 'z' is present, it is used directly.
   If 'beta' and 'se' are present, 'z' is calculated as 'beta' divided by 'se'.
 

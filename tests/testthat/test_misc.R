@@ -75,3 +75,73 @@ test_that("Test filter_Y is-matrix",{
 test_that("Test format_variant_id",{
     expect_equal(format_variant_id(c("chr1_123_G_C", "chr1_132_A_T")), c("chr1:123:G:C", "chr1:132:A:T"))
 })
+
+library(testthat)
+
+# Test data
+z <- c(1, 2, 3, 4, 5)
+LD <- matrix(c(1.0, 0.8, 0.2, 0.1, 0.3,
+               0.8, 1.0, 0.4, 0.2, 0.5,
+               0.2, 0.4, 1.0, 0.6, 0.1,
+               0.1, 0.2, 0.6, 1.0, 0.3,
+               0.3, 0.5, 0.1, 0.3, 1.0), nrow = 5, ncol = 5)
+
+test_that("find_duplicate_variants returns the expected output", {
+  rThreshold <- 0.5
+  expected_output <- list(
+    filteredZ = c(1, 3, 5),
+    dupBearer = c(-1, 1, -1, 2, -1),
+    corABS = c(0, 0.8, 0, 0.6, 0),
+    sign = c(1, 1, 1, 1, 1),
+    minValue = 0.1
+  )
+  
+  result <- find_duplicate_variants(z, LD, rThreshold)
+  expect_equal(result, expected_output)
+})
+
+
+test_that("find_duplicate_variants handles a high correlation threshold", {
+  rThreshold <- 1.0
+  expected_output <- list(
+    filteredZ = c(1, 2, 3, 4, 5),
+    dupBearer = c(-1, -1, -1, -1, -1),
+    corABS = c(0, 0, 0, 0, 0),
+    sign = c(1, 1, 1, 1, 1),
+    minValue = 0.1
+  )
+  
+  result <- find_duplicate_variants(z, LD, rThreshold)
+  expect_equal(result, expected_output)
+})
+
+test_that("find_duplicate_variants handles a low correlation threshold", {
+  rThreshold <- 0.0
+  expected_output <- list(
+    filteredZ = c(1),
+    dupBearer = c(-1, 1, 1, 1, 1),
+    corABS = c(0, 0.8, 0.2, 0.1, 0.3),
+    sign = c(1, 1, 1, 1, 1),
+    minValue = 0.1
+  )
+  
+  result <- find_duplicate_variants(z, LD, rThreshold)
+  expect_equal(result, expected_output)
+})
+
+test_that("find_duplicate_variants handles negative correlations", {
+  LD_negative <- LD
+  LD_negative[1, 2] <- -0.8
+  LD_negative[2, 1] <- -0.8
+  rThreshold <- 0.5
+  expected_output <- list(
+    filteredZ = c(1, 3, 5),
+    dupBearer = c(-1, 1, -1, 2, -1),
+    corABS = c(0, 0.8, 0, 0.6, 0),
+    sign = c(1, -1, 1, 1, 1),
+    minValue = 0.1
+  )
+  
+  result <- find_duplicate_variants(z, LD_negative, rThreshold)
+  expect_equal(result, expected_output)
+})
