@@ -150,8 +150,8 @@ dentist <- function(sum_stat, LD_mat, nSample,
 #' \code{\link{dentist}} for detecting outliers using the Dentist algorithm.
 #'
 #' @references
-#' Reference to the Dentist algorithm or related research papers.
-#' @noRd
+#' https://github.com/Yves-CHEN/DENTIST
+#' @export
 dentist_single_window <- function(zScore, LD_mat, nSample,
                                   pValueThreshold = 5e-8, propSVD = 0.4, gcControl = FALSE,
                                   nIter = 10, gPvalueThreshold = 0.05, duprThreshold = 1.0,

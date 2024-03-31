@@ -1,4 +1,5 @@
-# heterogeneity:  calculate I2 statistics based on the Cochran's Q statistic
+#' heterogeneity:  calculate I2 statistics based on the Cochran's Q statistic
+#' @noRd 
 calc_I2 <- function(Q, Est) {
   Q <- Q[[1]]
   Est <- length(unique(Est))
