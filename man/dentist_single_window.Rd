@@ -13,7 +13,7 @@ dentist_single_window(
   gcControl = FALSE,
   nIter = 10,
   gPvalueThreshold = 0.05,
-  duprThreshold = 1,
+  duprThreshold = 0.99,
   ncpus = 1,
   seed = 999,
   correct_chen_et_al_bug = TRUE
@@ -36,7 +36,7 @@ dentist_single_window(
 
 \item{gPvalueThreshold}{The genomic p-value threshold for significance. Default is 0.05.}
 
-\item{duprThreshold}{The absolute correlation r value threshold to be considered duplicate. Default is 1.0.}
+\item{duprThreshold}{The absolute correlation r value threshold to be considered duplicate. Default is 0.99.}
 
 \item{ncpus}{The number of CPU cores to use for parallel processing. Default is 1.}
 

@@ -14,6 +14,7 @@ dentist(
   gcControl = FALSE,
   nIter = 10,
   gPvalueThreshold = 0.05,
+  duprThreshold = 0.99,
   ncpus = 1,
   seed = 999,
   correct_chen_et_al_bug = TRUE
@@ -37,6 +38,8 @@ dentist(
 \item{nIter}{The number of iterations for the Dentist algorithm. Default is 10.}
 
 \item{gPvalueThreshold}{The genomic p-value threshold for significance. Default is 0.05.}
+
+\item{duprThreshold}{The absolute correlation r value threshold to be considered duplicate. Default is 0.99.}
 
 \item{ncpus}{The number of CPU cores to use for parallel processing. Default is 1.}
 
