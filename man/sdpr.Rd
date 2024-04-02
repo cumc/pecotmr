@@ -108,10 +108,9 @@ R.hat <- cor(X)
 var_y <- var(y)
 sigmasq_init <- 1.5
 
-# Run PRS CS
-maf <- rep(0.5, length(b.hat)) # fake MAF
+# Run SDPR
 LD <- list(blk1 = R.hat)
-out <- sdpr(b.hat, LD, n, maf = maf)
+out <- sdpr(b.hat, LD, n)
 # In sample prediction correlations
 cor(X \%*\% out$beta_est, y) #
 

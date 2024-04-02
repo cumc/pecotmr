@@ -573,48 +573,53 @@ mash_rand_null_sample <- function(dat, n_random, n_null, exclude_condition, seed
 #' @export
 merge_mash_data <- function(res_data, one_data) {
   combined_data <- list()
-  if (length(res_data) == 0) {
+  if (length(res_data) == 0|is.null(res_data)) {
     return(one_data)
-  } else if (length(one_data) == 0) {
+  } else if (length(one_data) == 0|is.null(one_data)) {
     return(res_data)
   } else {
     for (d in names(one_data)) {
-      if (length(one_data[[d]]) == 0) {
+      if (length(one_data[[d]]) == 0|is.null(one_data[[d]])) {
         combined_data[[d]] <- res_data[[d]] # Keep res_data[[d]] when one_data[[d]] is NULL or empty
         next
       } else {
-        # Check if the number of columns matches
-        if (!identical(colnames(res_data[[d]]), colnames(one_data[[d]]))) {
-          # Get all column names from both data frames
-          all_cols <- union(colnames(res_data[[d]]), colnames(one_data[[d]]))
+        # Check if the res_data is NULL
+        if (!is.null(res_data[[d]]) | length(res_data[[d]])!=0) {
+          # Check if the number of columns matches
+          if (!identical(colnames(res_data[[d]]), colnames(one_data[[d]]))) {
+             # Get all column names from both data frames
+             all_cols <- union(colnames(res_data[[d]]), colnames(one_data[[d]]))
 
-          # Align res[[d]]
-          res_aligned <- setNames(as.data.frame(matrix(NaN,
-            nrow = nrow(res_data[[d]]),
-            ncol = length(all_cols)
-          )), all_cols)
-          rownames(res_aligned) <- rownames(res_data[[d]])
-          common_cols_res <- intersect(colnames(res_data[[d]]), all_cols)
-          res_aligned[common_cols_res] <- res_data[[d]][common_cols_res]
+             # Align res[[d]]
+             res_aligned <- setNames(as.data.frame(matrix(NaN,
+                nrow = nrow(res_data[[d]]),
+                ncol = length(all_cols)
+             )), all_cols)
+             rownames(res_aligned) <- rownames(res_data[[d]])
+             common_cols_res <- intersect(colnames(res_data[[d]]), all_cols)
+             res_aligned[common_cols_res] <- res_data[[d]][common_cols_res]
 
-          # Align one_data[[d]]
-          one_data_aligned <- setNames(as.data.frame(matrix(NaN,
-            nrow = nrow(one_data[[d]]),
-            ncol = length(all_cols)
-          )), all_cols)
-          rownames(one_data_aligned) <- rownames(one_data[[d]])
-          common_cols_one_data <- intersect(colnames(one_data[[d]]), all_cols)
-          one_data_aligned[common_cols_one_data] <- one_data[[d]][common_cols_one_data]
+             # Align one_data[[d]]
+             one_data_aligned <- setNames(as.data.frame(matrix(NaN,
+                nrow = nrow(one_data[[d]]),
+                ncol = length(all_cols)
+             )), all_cols)
+             rownames(one_data_aligned) <- rownames(one_data[[d]])
+             common_cols_one_data <- intersect(colnames(one_data[[d]]), all_cols)
+             one_data_aligned[common_cols_one_data] <- one_data[[d]][common_cols_one_data]
 
-          # Now both have the same columns, we can rbind them
-          combined_data[[d]] <- rbind(res_aligned, one_data_aligned)
+             # Now both have the same columns, we can rbind them
+             combined_data[[d]] <- rbind(res_aligned, one_data_aligned)
+          } else {
+            # If they already have the same number of columns, just rbind
+             combined_data[[d]] <- rbind(as.data.frame(res_data[[d]]), as.data.frame(one_data[[d]]))
+          }
         } else {
-          # If they already have the same number of columns, just rbind
-          combined_data[[d]] <- rbind(as.data.frame(res_data[[d]]), as.data.frame(one_data[[d]]))
+            combined_data[[d]] <- one_data[[d]]
         }
       }
-    }
-    return(combined_data)
+     }
+      return(combined_data)
   }
 }
 
