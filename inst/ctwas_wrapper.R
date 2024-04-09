@@ -426,12 +426,13 @@ select_ctwas_weights <- function(weight_db_files, conditions = NULL,
   combined_all_data <- load_and_validate_data(weight_db_files, conditions, variable_name_obj)
   # combined_susie_result <- extract_variants_and_susie_results(combined_all_data, conditions)
   model_selection <- pick_best_model(combined_all_data, conditions, min_rsq_threshold, p_val_cutoff)
-  model_selection$imputable <- TRUE
   region_info <- combined_all_data[[1]]$region_info
   if (is.null(unlist(model_selection))) {
     print("No model meets the p_value threshold and R-squared minimum in all conditions. Region is not imputable. ")
     model_selection$imputable <- FALSE
     return(list(model_selection = model_selection, susie_results = NULL, weights = NULL))
+  } else {
+    model_selection$imputable <- TRUE
   }
   # conditions_imputable <- unlist(lapply(conditions, function(condition){if(!is.null(model_selection[[condition]])) return(condition)}))
   ctwas_select_result <- ctwas_select(combined_all_data, conditions, max_var_selection)
