@@ -1,5 +1,5 @@
 #' @export
-handle_invalid_summary_stat <- function(dat_list, bhat = NULL, sbhat = NULL, z = TRUE) {
+filter_invalid_summary_stat <- function(dat_list, bhat = NULL, sbhat = NULL, z = TRUE, sig_p_cutoff = 1E-6, filter_by_missing_rate = 0.2) {
   replace_values <- function(df, replace_with) {
     df <- df %>%
       mutate(across(everything(), as.numeric)) %>%
@@ -9,6 +9,15 @@ handle_invalid_summary_stat <- function(dat_list, bhat = NULL, sbhat = NULL, z =
     # If the element is a list with 'bhat' and 'sbhat'
     dat_list[[bhat]] <- as.matrix(replace_values(dat_list[[bhat]], 0))
     dat_list[[sbhat]] <- as.matrix(replace_values(dat_list[[sbhat]], 1000))
+    if (("null.b" %in% names(dat_list)) || ("random.b" %in% names(dat_list))) {
+      if (!is.null(filter_by_missing_rate)) {
+        proportion_nonzero <- apply(dat_list[[bhat]], 1, function(row) {
+          mean(row != 0)
+        })
+        dat_list[[bhat]] <- dat_list[[bhat]][proportion_nonzero >= filter_by_missing_rate, ]
+        dat_list[[sbhat]] <- dat_list[[sbhat]][proportion_nonzero >= filter_by_missing_rate, ]
+      }
+    }
   }
   if (z) {
     if (any(grepl("\\.b$", bhat)) | any(grepl("\\.s$", sbhat))) {
@@ -17,7 +26,18 @@ handle_invalid_summary_stat <- function(dat_list, bhat = NULL, sbhat = NULL, z =
     } else {
       dat_list[["z"]] <- as.matrix(dat_list[[bhat]] / dat_list[[sbhat]])
     }
+    if ("strong.z" %in% names(dat_list)) {
+      if (!is.null(sig_p_cutoff)) {
+        chi_square_stat <- qchisq(sig_p_cutoff, df = 1, lower.tail = FALSE)
+        z_score <- sqrt(chi_square_stat)
+        keep_index <- which(apply(dat_list$strong.z, 1, function(row) any(abs(row) >= z_score)))
+        dat_list[["strong.z"]] <- dat_list$strong.z[keep_index, ]
+        dat_list[["strong.b"]] <- dat_list$strong.b[keep_index, ]
+        dat_list[["strong.s"]] <- dat_list$strong.s[keep_index, ]
+      }
+    }
   }
+
   return(dat_list)
 }
 
@@ -573,53 +593,53 @@ mash_rand_null_sample <- function(dat, n_random, n_null, exclude_condition, seed
 #' @export
 merge_mash_data <- function(res_data, one_data) {
   combined_data <- list()
-  if (length(res_data) == 0|is.null(res_data)) {
+  if (length(res_data) == 0 | is.null(res_data)) {
     return(one_data)
-  } else if (length(one_data) == 0|is.null(one_data)) {
+  } else if (length(one_data) == 0 | is.null(one_data)) {
     return(res_data)
   } else {
     for (d in names(one_data)) {
-      if (length(one_data[[d]]) == 0|is.null(one_data[[d]])) {
+      if (length(one_data[[d]]) == 0 | is.null(one_data[[d]])) {
         combined_data[[d]] <- res_data[[d]] # Keep res_data[[d]] when one_data[[d]] is NULL or empty
         next
       } else {
         # Check if the res_data is NULL
-        if (!is.null(res_data[[d]]) | length(res_data[[d]])!=0) {
+        if (!is.null(res_data[[d]]) | length(res_data[[d]]) != 0) {
           # Check if the number of columns matches
           if (!identical(colnames(res_data[[d]]), colnames(one_data[[d]]))) {
-             # Get all column names from both data frames
-             all_cols <- union(colnames(res_data[[d]]), colnames(one_data[[d]]))
+            # Get all column names from both data frames
+            all_cols <- union(colnames(res_data[[d]]), colnames(one_data[[d]]))
 
-             # Align res[[d]]
-             res_aligned <- setNames(as.data.frame(matrix(NaN,
-                nrow = nrow(res_data[[d]]),
-                ncol = length(all_cols)
-             )), all_cols)
-             rownames(res_aligned) <- rownames(res_data[[d]])
-             common_cols_res <- intersect(colnames(res_data[[d]]), all_cols)
-             res_aligned[common_cols_res] <- res_data[[d]][common_cols_res]
+            # Align res[[d]]
+            res_aligned <- setNames(as.data.frame(matrix(NaN,
+              nrow = nrow(res_data[[d]]),
+              ncol = length(all_cols)
+            )), all_cols)
+            rownames(res_aligned) <- rownames(res_data[[d]])
+            common_cols_res <- intersect(colnames(res_data[[d]]), all_cols)
+            res_aligned[common_cols_res] <- res_data[[d]][common_cols_res]
 
-             # Align one_data[[d]]
-             one_data_aligned <- setNames(as.data.frame(matrix(NaN,
-                nrow = nrow(one_data[[d]]),
-                ncol = length(all_cols)
-             )), all_cols)
-             rownames(one_data_aligned) <- rownames(one_data[[d]])
-             common_cols_one_data <- intersect(colnames(one_data[[d]]), all_cols)
-             one_data_aligned[common_cols_one_data] <- one_data[[d]][common_cols_one_data]
+            # Align one_data[[d]]
+            one_data_aligned <- setNames(as.data.frame(matrix(NaN,
+              nrow = nrow(one_data[[d]]),
+              ncol = length(all_cols)
+            )), all_cols)
+            rownames(one_data_aligned) <- rownames(one_data[[d]])
+            common_cols_one_data <- intersect(colnames(one_data[[d]]), all_cols)
+            one_data_aligned[common_cols_one_data] <- one_data[[d]][common_cols_one_data]
 
-             # Now both have the same columns, we can rbind them
-             combined_data[[d]] <- rbind(res_aligned, one_data_aligned)
+            # Now both have the same columns, we can rbind them
+            combined_data[[d]] <- rbind(res_aligned, one_data_aligned)
           } else {
             # If they already have the same number of columns, just rbind
-             combined_data[[d]] <- rbind(as.data.frame(res_data[[d]]), as.data.frame(one_data[[d]]))
+            combined_data[[d]] <- rbind(as.data.frame(res_data[[d]]), as.data.frame(one_data[[d]]))
           }
         } else {
-            combined_data[[d]] <- one_data[[d]]
+          combined_data[[d]] <- one_data[[d]]
         }
       }
-     }
-      return(combined_data)
+    }
+    return(combined_data)
   }
 }
 
