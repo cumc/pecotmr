@@ -343,8 +343,16 @@ select_ctwas_weights <- function(weight_db_files, conditions = NULL,
           # if top_loci variants more than max_var_selection, we loop through CS set to select top pip variants from each CS set
           # out$out$susie_result_trimmed is from "preset_variants_result"-"susie_result_trimmed"
           if (!is.null(out$susie_result_trimmed$sets$cs)) {
-            selec_idx <- select_cs_var(out$susie_result_trimmed, max_var_selection)
-            out$variant_selection <- out$variant_names[selec_idx]
+            # check total variant number in the CS sets
+            totl_cs_indice <- do.call(sum, lapply(names(out$susie_result_trimmed$sets$cs), function(L){length(out$susie_result_trimmed$sets$cs[[L]])}))
+            if (max_var_selection <= totl_cs_indice) {
+              selec_idx <- select_cs_var(out$susie_result_trimmed, max_var_selection)
+              out$variant_selection <- out$variant_names[selec_idx]
+            }else{
+              #when top loci has larger number of variants than max_var_selection, but CS sets has less number than max_var_selection
+              selec_idx <- unlist(out$susie_result_trimmed$sets$cs)
+              out$variant_selection <- out$variant_names[selec_idx]
+            }
           } else {
             top_idx <- order(out$susie_result_trimmed$pip, decreasing = TRUE)[1:max_var_selection]
             out$variant_selection <- out$variant_names[top_idx]
@@ -352,12 +360,8 @@ select_ctwas_weights <- function(weight_db_files, conditions = NULL,
         }
       } else {
         # if the condition did not come with the top_loci table, we select top pip variants from [[condition]]$preset_variants_result$susie_result_trimmed$pip 
-        if (length(out$susie_result_trimmed$sets$cs) >= 1) {
-          out$variant_selection <- select_cs_var(out$susie_result_trimmed, max_var_selection)
-        } else {
           top_idx <- order(out$susie_result_trimmed$pip, decreasing = TRUE)[1:max_var_selection]
           out$variant_selection <- out$variant_names[top_idx]
-        }
       }
       return(out)
     })
@@ -426,12 +430,13 @@ select_ctwas_weights <- function(weight_db_files, conditions = NULL,
   combined_all_data <- load_and_validate_data(weight_db_files, conditions, variable_name_obj)
   # combined_susie_result <- extract_variants_and_susie_results(combined_all_data, conditions)
   model_selection <- pick_best_model(combined_all_data, conditions, min_rsq_threshold, p_val_cutoff)
-  model_selection$imputable <- TRUE
   region_info <- combined_all_data[[1]]$region_info
   if (is.null(unlist(model_selection))) {
     print("No model meets the p_value threshold and R-squared minimum in all conditions. Region is not imputable. ")
     model_selection$imputable <- FALSE
     return(list(model_selection = model_selection, susie_results = NULL, weights = NULL))
+  } else {
+    model_selection$imputable <- TRUE
   }
   # conditions_imputable <- unlist(lapply(conditions, function(condition){if(!is.null(model_selection[[condition]])) return(condition)}))
   ctwas_select_result <- ctwas_select(combined_all_data, conditions, max_var_selection)
