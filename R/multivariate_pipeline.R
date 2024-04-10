@@ -132,15 +132,33 @@ multivariate_analysis_pipeline <- function(
       data_driven_prior_matrices = data_driven_prior_matrices, data_driven_prior_matrices_cv = data_driven_prior_matrices_cv
     ))
   }
-
+  # filter X and Y missing
+  filter_X_Y_missing <- function(X, Y) {
+    Y_rows_with_missing <- apply(Y, 1, function(row) all(is.na(row)))
+    if (any(Y_rows_with_missing)) {
+      Y_filtered <- Y[-which(Y_rows_with_missing), , drop = FALSE]
+      X_rows_to_remove <- match(names(which(Y_rows_with_missing)), rownames(X))
+      X_filtered <- X[-X_rows_to_remove, , drop = FALSE]
+      X_columns_with_missing <- apply(X_filtered, 2, function(column) all(is.na(column)))
+      if (any(X_columns_with_missing)) {
+        columns_to_remove <- which(X_columns_with_missing)
+        X_filtered <- X_filtered[, -columns_to_remove, drop = FALSE]
+      }
+    }
+    return(list(X_filtered = X_filtered, Y_filtered = Y_filtered))
+  }
   # Skip conditions based on PIP values
   Y <- skip_conditions(X, Y, pip_cutoff_to_skip)
-
-  # Return empty list if all conditions are skipped
   if (is.null(Y)) {
     return(list())
   }
-
+  # filter X and Y missing
+  X_Y_filtered <- filter_X_Y_missing(X, Y)
+  X <- X_Y_filtered$X_filtered
+  Y <- X_Y_filtered$Y_filtered
+  if (nrow(Y) == 0 || is.null(Y)) {
+    return(list())
+  }
   # Filter data based on remaining conditions
   filtered_data <- initialize_multivariate_prior(colnames(Y), data_driven_prior_matrices,
     data_driven_prior_matrices_cv, cv_folds,
@@ -175,6 +193,7 @@ multivariate_analysis_pipeline <- function(
   )
 
   # Process mvSuSiE results
+  res$mvsusie_fitted <- mvsusie_fitted
   res$mnm_result <- susie_post_processor(
     mvsusie_fitted, X, NULL, 1, 1,
     maf = maf, secondary_coverage = sec_coverage, signal_cutoff = signal_cutoff, mode = "mvsusie"
@@ -235,7 +254,7 @@ twas_multivariate_weights_pipeline <- function(
       res[[i]]$twas_cv_result$prediction <- lapply(
         twas_cv_result$prediction,
         function(predicted) {
-          as.matrix(predicted[, i], ncol=1)
+          as.matrix(predicted[, i], ncol = 1)
         }
       )
       res[[i]]$twas_cv_result$performance <- lapply(
