@@ -11,7 +11,7 @@ univariate_analysis_pipeline <- function(X, Y, X_scalar, Y_scalar, maf, other_qu
                                          twas_weights_opts = list(
                                            cv_folds = 5, min_cv_maf = 0, max_cv_variants = -1, seed = 999, cv_threads = 1,
                                            ld_reference_meta_file = NULL, region_info = NULL
-                                         )) {
+                                         ) ) {
   if (pip_cutoff_to_skip > 0) {
     top_model_pip <- susie(X, Y, L = 1)$pip
     if (!any(top_model_pip > pip_cutoff_to_skip)) {
@@ -171,7 +171,7 @@ rss_analysis_pipeline <- function(
       coverage = c(0.95, 0.7, 0.5), signal_cutoff = 0.025
     ),
     impute = TRUE, impute_opts = list(rcond = 0.01, R2_threshold = 0.6, minimum_ld = 5, lamb = 0.01),
-    pip_cutoff_to_skip = 0) {
+    pip_cutoff_to_skip = 0 , remove_indels = FALSE ) {
     
   res <- list()  
   rss_input <- load_rss_data(
@@ -184,7 +184,7 @@ rss_analysis_pipeline <- function(
   var_y <- rss_input$var_y
 
   # Preprocess the input data
-  preprocess_results <- rss_basic_qc(sumstats, LD_data, skip_region = skip_region)
+  preprocess_results <- rss_basic_qc(sumstats, LD_data, skip_region = skip_region,remove_indels = remove_indels )
   sumstats <- preprocess_results$sumstats
   LD_mat <- preprocess_results$LD_mat
 
