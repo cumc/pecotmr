@@ -67,10 +67,11 @@ read_pgen <- function(pgen, variantidx = NULL, meanimpute = F) {
 }
 
 #' @importFrom data.table fread
-#' @importFrom dplyr as_tibble mutate
+#' @importFrom dplyr as_tibble mutate filter
 #' @importFrom tibble tibble
 #' @importFrom magrittr %>%
-tabix_region <- function(file, region, tabix_header = "auto") {
+#' @importFrom stringr str_detect
+tabix_region <- function(file, region, tabix_header = "auto",pattern = "") {
   # Execute tabix command and capture the output
   cmd_output <- tryCatch(
     {
@@ -78,7 +79,12 @@ tabix_region <- function(file, region, tabix_header = "auto") {
     },
     error = function(e) NULL
   )
-
+    # Grep specific pattern from the file
+    if(pattern != ""){
+    cmd_output = cmd_output%>%mutate(text = apply(., 1, function(row) paste(row, collapse = "_"))) %>%
+      filter(str_detect(text, pattern)) %>%
+      select(-text)          
+    }
   # Check if the output is empty and return an empty tibble if so
   if (is.null(cmd_output) || nrow(cmd_output) == 0) {
     return(tibble())
@@ -696,10 +702,11 @@ load_twas_weights <- function(weight_db_files, conditions = NULL,
 #' @return A list of rss_input, including the column-name-formatted summary statistics,
 #' sample size (n), and var_y.
 #'
-#' @importFrom dplyr mutate group_by summarise %>%
+#' @importFrom dplyr mutate group_by summarise
+#' @importFrom magrittr %>%
 #' @importFrom data.table fread
 #' @export
-load_rss_data = function(sumstat_path, column_file_path, subset = TRUE, n_sample = 0, n_case = 0, n_control = 0,pattern = "") {
+load_rss_data = function(sumstat_path, column_file_path, subset = TRUE, n_sample = 0, n_case = 0, n_control = 0,pattern = "",region = "") {
 	# Read and preprocess column mapping
 	column_data <- read.table(column_file_path, header = FALSE, sep = ":", stringsAsFactors = FALSE) %>%
 		rename(standard = V1, original = V2)
@@ -707,10 +714,8 @@ load_rss_data = function(sumstat_path, column_file_path, subset = TRUE, n_sample
 	# Initialize sumstats variable
 	sumstats <- NULL
 	var_y <- NULL
-	if (subset) {
-		# Use updated version with awk command for eQTL data
-		cmd <- sprintf("zcat %s | awk 'BEGIN{p=0} /^##/{if (p==0) next} !/^##/{if (p==0) {print; p=1} else if (/%s/) print}'", sumstat_path, pattern)
-		sumstats <- fread(cmd = cmd)
+	if (region != "" &&  pattern != "" ) {
+		sumstats <-	tabix_region(sumstat_path,  region = region, pattern = pattern)
 	} else {
 		# Use original method for regular data
 		sumstats <- fread(sumstat_path)
@@ -724,7 +729,7 @@ load_rss_data = function(sumstat_path, column_file_path, subset = TRUE, n_sample
 		}
 	}
 # Additional processing if TRAIT is in the column names and pattern is not empty
-	if ("TRAIT" %in% colnames(sumstats) && pattern != "") {
+	if ("trait_id" %in% colnames(sumstats) && pattern != "") {
 		sumstats <- sumstats %>%
 			group_by(ID, CHROM, POS, A1, A2, AF) %>%
 			summarise(
