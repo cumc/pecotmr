@@ -696,6 +696,7 @@ load_twas_weights <- function(weight_db_files, conditions = NULL,
 #' @return A list of rss_input, including the column-name-formatted summary statistics,
 #' sample size (n), and var_y.
 #'
+#' @importFrom dplyr mutate group_by summarise %>%
 #' @importFrom data.table fread
 #' @export
 load_rss_data = function(sumstat_path, column_file_path, subset = TRUE, n_sample = 0, n_case = 0, n_control = 0,pattern = "") {
@@ -722,7 +723,20 @@ load_rss_data = function(sumstat_path, column_file_path, subset = TRUE, n_sample
 			colnames(sumstats)[colnames(sumstats) == name] <- column_data$standard[index]
 		}
 	}
- if (!"z" %in% colnames(sumstats) && all(c("beta", "se") %in% 
+# Additional processing if TRAIT is in the column names and pattern is not empty
+	if ("TRAIT" %in% colnames(sumstats) && pattern != "") {
+		sumstats <- sumstats %>%
+			group_by(ID, CHROM, POS, A1, A2, AF) %>%
+			summarise(
+				z = Z[which.max(abs(Z))],
+				beta = beta[which.max(abs(Z))],
+				se = se[which.max(abs(Z))],
+				TRAIT = TRAIT[which.max(abs(Z))],
+				.groups = 'drop'  # Important to avoid regrouping issues post summarisation
+			)
+	}
+
+	if (!"z" %in% colnames(sumstats) && all(c("beta", "se") %in% 
 		colnames(sumstats))) {
 		sumstats$z <- sumstats$beta/sumstats$se
 	}
