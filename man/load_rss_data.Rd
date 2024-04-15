@@ -7,9 +7,11 @@
 load_rss_data(
   sumstat_path,
   column_file_path,
+  subset = TRUE,
   n_sample = 0,
   n_case = 0,
-  n_control = 0
+  n_control = 0,
+  pattern = ""
 )
 }
 \arguments{
