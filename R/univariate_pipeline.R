@@ -163,20 +163,20 @@ twas_weights_pipeline <- function(X, y, maf, susie_fit, ld_reference_meta_file =
 #' @importFrom magrittr %>%
 #' @export
 rss_analysis_pipeline <- function(
-    sumstat_path, column_file_path, LD_data, n_sample = 0, n_case = 0, n_control = 0, skip_region = NULL,
-    qc_method = c("rss_qc", "dentist", "slalom"),
-    finemapping_method = c("susie_rss", "single_effect", "bayesian_conditional_regression"),
-    finemapping_opts = list(
-      init_L = 5, max_L = 20, l_step = 5,
-      coverage = c(0.95, 0.7, 0.5), signal_cutoff = 0.025
-    ),
-    impute = TRUE, impute_opts = list(rcond = 0.01, R2_threshold = 0.6, minimum_ld = 5, lamb = 0.01),
-    pip_cutoff_to_skip = 0 , remove_indels = FALSE ) {
-    
+	sumstat_path, column_file_path, LD_data, n_sample = 0, n_case = 0, n_control = 0, skip_region = NULL,
+	qc_method = c("rss_qc", "dentist", "slalom"),
+	finemapping_method = c("susie_rss", "single_effect", "bayesian_conditional_regression"),
+	finemapping_opts = list(
+	  init_L = 5, max_L = 20, l_step = 5,
+	  coverage = c(0.95, 0.7, 0.5), signal_cutoff = 0.025
+	),
+	impute = TRUE, impute_opts = list(rcond = 0.01, R2_threshold = 0.6, minimum_ld = 5, lamb = 0.01),
+	pip_cutoff_to_skip = 0 ,remove_indels  = FALSE,pattern  = pattern ) {
+	
   res <- list()  
   rss_input <- load_rss_data(
-    sumstat_path = sumstat_path, column_file_path = column_file_path,
-    n_sample = n_sample, n_case = n_case, n_control = n_control
+	sumstat_path = sumstat_path, column_file_path = column_file_path,
+	n_sample = n_sample, n_case = n_case, n_control = n_control,pattern = pattern
   )
 
   sumstats <- rss_input$sumstats
@@ -184,49 +184,49 @@ rss_analysis_pipeline <- function(
   var_y <- rss_input$var_y
 
   # Preprocess the input data
-  preprocess_results <- rss_basic_qc(sumstats, LD_data, skip_region = skip_region,remove_indels = remove_indels )
+  preprocess_results <- rss_basic_qc(sumstats, LD_data, skip_region = skip_region,remove_indels =  remove_indels )
   sumstats <- preprocess_results$sumstats
   LD_mat <- preprocess_results$LD_mat
 
   if (pip_cutoff_to_skip > 0) {
-    top_model_pip <- susie_rss_wrapper(z = sumstats$z, R = LD_mat, L = 1, n = n, var_y = var_y)$pip
-    if (!any(top_model_pip > pip_cutoff_to_skip)) {
-      message(paste("Skipping follow-up analysis: No signals above PIP threshold", pip_cutoff_to_skip, "in initial model screening."))
-      return(list(rss_data_analyzed = sumstats))
-    } else {
-      message(paste("Follow-up on region because signals above PIP threshold", pip_cutoff_to_skip, "were detected in initial model screening."))
-    }
+	top_model_pip <- susie_rss_wrapper(z = sumstats$z, R = LD_mat, L = 1, n = n, var_y = var_y)$pip
+	if (!any(top_model_pip > pip_cutoff_to_skip)) {
+	  message(paste("Skipping follow-up analysis: No signals above PIP threshold", pip_cutoff_to_skip, "in initial model screening."))
+	  return(list(rss_data_analyzed = sumstats))
+	} else {
+	  message(paste("Follow-up on region because signals above PIP threshold", pip_cutoff_to_skip, "were detected in initial model screening."))
+	}
   }
 
   # Perform quality control
   if (!is.null(qc_method)) {
-    qc_results <- summary_stats_qc(sumstats, LD_data, n = n, var_y = var_y, method = qc_method)
-    sumstats <- qc_results$sumstats
-    LD_mat <- qc_results$LD_mat
+	qc_results <- summary_stats_qc(sumstats, LD_data, n = n, var_y = var_y, method = qc_method)
+	sumstats <- qc_results$sumstats
+	LD_mat <- qc_results$LD_mat
   }
 
   # Perform imputation
   if (impute) {
-    impute_results <- raiss(LD_data$ref_panel, sumstats, LD_data$combined_LD_matrix, rcond = impute_opts$rcond, R2_threshold = impute_opts$R2_threshold, minimum_ld = impute_opts$minimum_ld, lamb = impute_opts$lamb)
-    sumstats <- impute_results$result_filter
-    LD_mat <- impute_results$LD_mat
+	impute_results <- raiss(LD_data$ref_panel, sumstats, LD_data$combined_LD_matrix, rcond = impute_opts$rcond, R2_threshold = impute_opts$R2_threshold, minimum_ld = impute_opts$minimum_ld, lamb = impute_opts$lamb)
+	sumstats <- impute_results$result_filter
+	LD_mat <- impute_results$LD_mat
   }
 
   # Perform fine-mapping
   if (!is.null(finemapping_method)) {
-    pri_coverage <- finemapping_opts$coverage[1]
-    sec_coverage <- if (length(finemapping_opts$coverage) > 1) finemapping_opts$coverage[-1] else NULL
-    res <- susie_rss_pipeline(sumstats, LD_mat,
-      n = n, var_y = var_y,
-      L = finemapping_opts$init_L, max_L = finemapping_opts$max_L, l_step = finemapping_opts$l_step,
-      analysis_method = finemapping_method,
-      coverage = pri_coverage,
-      secondary_coverage = sec_coverage,
-      signal_cutoff = finemapping_opts$signal_cutoff
-    )
-      if (!is.null(qc_method)) {
-           res$outlier_number = qc_results$outlier_number
-      }
+	pri_coverage <- finemapping_opts$coverage[1]
+	sec_coverage <- if (length(finemapping_opts$coverage) > 1) finemapping_opts$coverage[-1] else NULL
+	res <- susie_rss_pipeline(sumstats, LD_mat,
+	  n = n, var_y = var_y,
+	  L = finemapping_opts$init_L, max_L = finemapping_opts$max_L, l_step = finemapping_opts$l_step,
+	  analysis_method = finemapping_method,
+	  coverage = pri_coverage,
+	  secondary_coverage = sec_coverage,
+	  signal_cutoff = finemapping_opts$signal_cutoff
+	)
+	  if (!is.null(qc_method)) {
+		   res$outlier_number = qc_results$outlier_number
+	  }
   }
   return(list(result = res, rss_data_analyzed = sumstats))
 }
