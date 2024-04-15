@@ -252,40 +252,7 @@ susie_rss_pipeline <- function(sumstats, LD_mat, n = NULL, var_y = NULL, L = 5, 
   return(res)
 }
 
-#' Post-process SuSiE Analysis Results
-#'
-#' This function processes the results from SuSiE (Sum of Single Effects) genetic analysis.
-#' It extracts and processes various statistics and indices based on the provided SuSiE object and other parameters.
-#' The function can operate in 3 modes: 'susie', 'susie_rss', 'mvsusie', based on the method used for the SuSiE analysis.
-#'
-#' @param susie_output Output from running susieR::susie() or susieR::susie_rss() or mvsusieR::mvsusie()
-#' @param data_x Genotype data matrix for 'susie' or Xcorr matrix for 'susie_rss'.
-#' @param data_y Phenotype data vector for 'susie' or summary stats object for 'susie_rss' (a list contain attribute betahat and sebetahat AND/OR z). i.e. data_y = list(betahat = ..., sebetahat = ...), or NULL for mvsusie
-#' @param X_scalar Scalar for the genotype data, used in residual scaling.
-#' @param y_scalar Scalar for the phenotype data, used in residual scaling.
-#' @param maf Minor Allele Frequencies vector.
-#' @param secondary_coverage Vector of coverage thresholds for secondary conditional analysis.
-#' @param signal_cutoff Cutoff value for signal identification in PIP values.
-#' @param other_quantities A list of other quantities to be added to the final object.
-#' @param prior_eff_tol Prior effective tolerance.
-#' @param mode Specify the analysis mode: 'susie' or 'susie_rss'.
-#' @return A list containing modified SuSiE object along with additional post-processing information.
-#' @examples
-#' # Example usage for SuSiE
-#' # result <- susie_post_processor(susie_output, X_data, y_data, maf, mode = "susie")
-#' # Example usage for SuSiE RSS
-#' # result <- susie_post_processor(susie_output, Xcorr, z, maf, mode = "susie_rss")
-#' @importFrom dplyr full_join
-#' @importFrom purrr map_int pmap
-#' @importFrom susieR get_cs_correlation susie_get_cs
-#' @importFrom stringr str_replace
-#' @export
-susie_post_processor <- function(susie_output, data_x, data_y, X_scalar, y_scalar, maf = NULL,
-                                 secondary_coverage = c(0.5, 0.7), signal_cutoff = 0.1,
-                                 other_quantities = NULL, prior_eff_tol = 1e-9, min_abs_corr = 0.5,
-                                 median_abs_corr = 0.8,
-                                 mode = c("susie", "susie_rss", "mvsusie")) {
-  mode <- match.arg(mode)
+#' @noRd 
   get_cs_index <- function(snps_idx, susie_cs) {
     # Use pmap to iterate over each vector in susie_cs
     idx_lengths <- tryCatch(
@@ -322,15 +289,18 @@ susie_post_processor <- function(susie_output, data_x, data_y, X_scalar, y_scala
       return(NA_integer_)
     }
   }
+#' @noRd 
   get_top_variants_idx <- function(susie_output, signal_cutoff) {
     c(which(susie_output$pip >= signal_cutoff), unlist(susie_output$sets$cs)) %>%
       unique() %>%
       sort()
   }
+#' @noRd 
   get_cs_info <- function(susie_output_sets_cs, top_variants_idx) {
     cs_info_pri <- map_int(top_variants_idx, ~ get_cs_index(.x, susie_output_sets_cs))
     ifelse(is.na(cs_info_pri), 0, as.numeric(str_replace(names(susie_output_sets_cs)[cs_info_pri], "L", "")))
   }
+#' @noRd 
   get_cs_and_corr <- function(susie_output, coverage, data_x, mode = c("susie", "susie_rss", "mvsusie")) {
     if (mode %in% c("susie", "mvsusie")) {
       susie_output_secondary <- list(sets = susie_get_cs(susie_output, X = data_x, coverage = coverage, min_abs_corr = min_abs_corr, median_abs_corr = median_abs_corr), pip = susie_output$pip)
@@ -341,6 +311,41 @@ susie_post_processor <- function(susie_output, data_x, data_y, X_scalar, y_scala
     }
     susie_output_secondary
   }
+
+#' Post-process SuSiE Analysis Results
+#'
+#' This function processes the results from SuSiE (Sum of Single Effects) genetic analysis.
+#' It extracts and processes various statistics and indices based on the provided SuSiE object and other parameters.
+#' The function can operate in 3 modes: 'susie', 'susie_rss', 'mvsusie', based on the method used for the SuSiE analysis.
+#'
+#' @param susie_output Output from running susieR::susie() or susieR::susie_rss() or mvsusieR::mvsusie()
+#' @param data_x Genotype data matrix for 'susie' or Xcorr matrix for 'susie_rss'.
+#' @param data_y Phenotype data vector for 'susie' or summary stats object for 'susie_rss' (a list contain attribute betahat and sebetahat AND/OR z). i.e. data_y = list(betahat = ..., sebetahat = ...), or NULL for mvsusie
+#' @param X_scalar Scalar for the genotype data, used in residual scaling.
+#' @param y_scalar Scalar for the phenotype data, used in residual scaling.
+#' @param maf Minor Allele Frequencies vector.
+#' @param secondary_coverage Vector of coverage thresholds for secondary conditional analysis.
+#' @param signal_cutoff Cutoff value for signal identification in PIP values.
+#' @param other_quantities A list of other quantities to be added to the final object.
+#' @param prior_eff_tol Prior effective tolerance.
+#' @param mode Specify the analysis mode: 'susie' or 'susie_rss'.
+#' @return A list containing modified SuSiE object along with additional post-processing information.
+#' @examples
+#' # Example usage for SuSiE
+#' # result <- susie_post_processor(susie_output, X_data, y_data, maf, mode = "susie")
+#' # Example usage for SuSiE RSS
+#' # result <- susie_post_processor(susie_output, Xcorr, z, maf, mode = "susie_rss")
+#' @importFrom dplyr full_join
+#' @importFrom purrr map_int pmap
+#' @importFrom susieR get_cs_correlation susie_get_cs
+#' @importFrom stringr str_replace
+#' @export
+susie_post_processor <- function(susie_output, data_x, data_y, X_scalar, y_scalar, maf = NULL,
+                                 secondary_coverage = c(0.5, 0.7), signal_cutoff = 0.1,
+                                 other_quantities = NULL, prior_eff_tol = 1e-9, min_abs_corr = 0.5,
+                                 median_abs_corr = 0.8,
+                                 mode = c("susie", "susie_rss", "mvsusie")) {
+  mode <- match.arg(mode)
   # Initialize result list
   res <- list(
     variant_names = format_variant_id(names(susie_output$pip))
