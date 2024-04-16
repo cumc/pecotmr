@@ -82,7 +82,7 @@ multivariate_analysis_pipeline <- function(
         X_non_missing <- X[match(names(Y[,r])[non_missing_indices],rownames(X)),]
         Y_non_missing <- Y[non_missing_indices, r]
 
-        top_model_pip <- susie(X_non_missing, Y_non_missing, L = 10)$pip
+        top_model_pip <- susie(X_non_missing, Y_non_missing, L = 1)$pip
 
         if (any(top_model_pip > pip_cutoff_to_skip[r])) {
           cols_to_keep[r] <- TRUE
