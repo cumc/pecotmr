@@ -203,7 +203,6 @@ rss_analysis_pipeline <- function(
     qc_results <- summary_stats_qc(sumstats, LD_data, n = n, var_y = var_y, method = qc_method)
     sumstats <- qc_results$sumstats
     LD_mat <- qc_results$LD_mat
-    res$outlier_number = qc_results$outlier_number
   }
 
   # Perform imputation
@@ -225,6 +224,9 @@ rss_analysis_pipeline <- function(
       secondary_coverage = sec_coverage,
       signal_cutoff = finemapping_opts$signal_cutoff
     )
+      if (!is.null(qc_method)) {
+           res$outlier_number = qc_results$outlier_number
+      }
   }
   return(list(result = res, rss_data_analyzed = sumstats))
 }

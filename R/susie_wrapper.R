@@ -42,7 +42,7 @@ lbf_to_alpha_vector <- function(lbf, prior_weights = NULL) {
 #' alpha_matrix <- lbf_to_alpha(lbf_matrix)
 #' print(alpha_matrix)
 #' @export
-lbf_to_alpha <- function(lbf) t(apply(lbf, 1, lbf_to_alpha_vector))
+lbf_to_alpha <- function(lbf) t(apply(as.matrix(lbf), 1, lbf_to_alpha_vector))
 
 # FIXME: this function does not work properly. Need to fix it in multiple aspects
 #' Adjust SuSiE Weights
@@ -62,7 +62,7 @@ adjust_susie_weights <- function(twas_weights_results, condition, keep_variants,
   # allele flip twas weights matrix variants name
   if (allele_qc) {
     weights_matrix <- get_nested_element(twas_weights_results, c("weights", condition))
-    weights_matrix_qced <- allele_qc(twas_weights_variants, gwas_LD_list$combined_LD_variants, weights_matrix, 1:ncol(weights_matrix))
+    weights_matrix_qced <- allele_qc(twas_weights_variants, gwas_LD_list$combined_LD_variants, weights_matrix, 1:ncol(weights_matrix), target_gwas = FALSE)
     intersected_indices <- which(weights_matrix_qced$qc_summary$keep == TRUE)
   } else {
     keep_variants_transformed <- ifelse(!startsWith(keep_variants, "chr"), paste0("chr", keep_variants), keep_variants)
@@ -252,6 +252,66 @@ susie_rss_pipeline <- function(sumstats, LD_mat, n = NULL, var_y = NULL, L = 5, 
   return(res)
 }
 
+#' @noRd
+get_cs_index <- function(snps_idx, susie_cs) {
+  # Use pmap to iterate over each vector in susie_cs
+  idx_lengths <- tryCatch(
+    {
+      pmap(list(x = susie_cs), function(x) {
+        # Check if snps_idx is in the CS and return the length of the CS if it is
+        if (snps_idx %in% x) {
+          return(length(x))
+        } else {
+          return(NA_integer_)
+        }
+      }) %>% unlist()
+    },
+    error = function(e) NA_integer_
+  )
+  idx <- which(!is.na(idx_lengths))
+  # idx length should be either 1 or 0
+  # But in some rare cases there will be a convergence issue resulting in a variant belong to multiple CS
+  # In which case we will keep one of them, with a warning
+  if (length(idx) > 0) {
+    if (length(idx) > 1) {
+      smallest_cs_idx <- which.min(idx_lengths[idx])
+      selected_cs <- idx[smallest_cs_idx]
+      selected_length <- idx_lengths[selected_cs]
+
+      warning(sprintf(
+        "Variable %d found in multiple CS: %s. Keeping smallest: CS %d (length %d).",
+        snps_idx, paste(idx, collapse = ", "), selected_cs, selected_length
+      ))
+      idx <- selected_cs # Keep index with smallest length
+    }
+    return(idx)
+  } else {
+    return(NA_integer_)
+  }
+}
+#' @noRd
+get_top_variants_idx <- function(susie_output, signal_cutoff) {
+  c(which(susie_output$pip >= signal_cutoff), unlist(susie_output$sets$cs)) %>%
+    unique() %>%
+    sort()
+}
+#' @noRd
+get_cs_info <- function(susie_output_sets_cs, top_variants_idx) {
+  cs_info_pri <- map_int(top_variants_idx, ~ get_cs_index(.x, susie_output_sets_cs))
+  ifelse(is.na(cs_info_pri), 0, as.numeric(str_replace(names(susie_output_sets_cs)[cs_info_pri], "L", "")))
+}
+#' @noRd
+get_cs_and_corr <- function(susie_output, coverage, data_x, mode = c("susie", "susie_rss", "mvsusie")) {
+  if (mode %in% c("susie", "mvsusie")) {
+    susie_output_secondary <- list(sets = susie_get_cs(susie_output, X = data_x, coverage = coverage, min_abs_corr = min_abs_corr, median_abs_corr = median_abs_corr), pip = susie_output$pip)
+    susie_output_secondary$cs_corr <- get_cs_correlation(susie_output_secondary, X = data_x)
+  } else {
+    susie_output_secondary <- list(sets = susie_get_cs(susie_output, Xcorr = data_x, coverage = coverage, min_abs_corr = min_abs_corr, median_abs_corr = median_abs_corr), pip = susie_output$pip)
+    susie_output_secondary$cs_corr <- get_cs_correlation(susie_output_secondary, Xcorr = data_x)
+  }
+  susie_output_secondary
+}
+
 #' Post-process SuSiE Analysis Results
 #'
 #' This function processes the results from SuSiE (Sum of Single Effects) genetic analysis.
@@ -286,61 +346,6 @@ susie_post_processor <- function(susie_output, data_x, data_y, X_scalar, y_scala
                                  median_abs_corr = 0.8,
                                  mode = c("susie", "susie_rss", "mvsusie")) {
   mode <- match.arg(mode)
-  get_cs_index <- function(snps_idx, susie_cs) {
-    # Use pmap to iterate over each vector in susie_cs
-    idx_lengths <- tryCatch(
-      {
-        pmap(list(x = susie_cs), function(x) {
-          # Check if snps_idx is in the CS and return the length of the CS if it is
-          if (snps_idx %in% x) {
-            return(length(x))
-          } else {
-            return(NA_integer_)
-          }
-        }) %>% unlist()
-      },
-      error = function(e) NA_integer_
-    )
-    idx <- which(!is.na(idx_lengths))
-    # idx length should be either 1 or 0
-    # But in some rare cases there will be a convergence issue resulting in a variant belong to multiple CS
-    # In which case we will keep one of them, with a warning
-    if (length(idx) > 0) {
-      if (length(idx) > 1) {
-        smallest_cs_idx <- which.min(idx_lengths[idx])
-        selected_cs <- idx[smallest_cs_idx]
-        selected_length <- idx_lengths[selected_cs]
-
-        warning(sprintf(
-          "Variable %d found in multiple CS: %s. Keeping smallest: CS %d (length %d).",
-          snps_idx, paste(idx, collapse = ", "), selected_cs, selected_length
-        ))
-        idx <- selected_cs # Keep index with smallest length
-      }
-      return(idx)
-    } else {
-      return(NA_integer_)
-    }
-  }
-  get_top_variants_idx <- function(susie_output, signal_cutoff) {
-    c(which(susie_output$pip >= signal_cutoff), unlist(susie_output$sets$cs)) %>%
-      unique() %>%
-      sort()
-  }
-  get_cs_info <- function(susie_output_sets_cs, top_variants_idx) {
-    cs_info_pri <- map_int(top_variants_idx, ~ get_cs_index(.x, susie_output_sets_cs))
-    ifelse(is.na(cs_info_pri), 0, as.numeric(str_replace(names(susie_output_sets_cs)[cs_info_pri], "L", "")))
-  }
-  get_cs_and_corr <- function(susie_output, coverage, data_x, mode = c("susie", "susie_rss", "mvsusie")) {
-    if (mode %in% c("susie", "mvsusie")) {
-      susie_output_secondary <- list(sets = susie_get_cs(susie_output, X = data_x, coverage = coverage, min_abs_corr = min_abs_corr, median_abs_corr = median_abs_corr), pip = susie_output$pip)
-      susie_output_secondary$cs_corr <- get_cs_correlation(susie_output_secondary, X = data_x)
-    } else {
-      susie_output_secondary <- list(sets = susie_get_cs(susie_output, Xcorr = data_x, coverage = coverage, min_abs_corr = min_abs_corr, median_abs_corr = median_abs_corr), pip = susie_output$pip)
-      susie_output_secondary$cs_corr <- get_cs_correlation(susie_output_secondary, Xcorr = data_x)
-    }
-    susie_output_secondary
-  }
   # Initialize result list
   res <- list(
     variant_names = format_variant_id(names(susie_output$pip))
