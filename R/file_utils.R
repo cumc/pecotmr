@@ -70,6 +70,8 @@ read_pgen <- function(pgen, variantidx = NULL, meanimpute = F) {
 #' @importFrom dplyr as_tibble mutate
 #' @importFrom tibble tibble
 #' @importFrom magrittr %>%
+#' @export
+
 tabix_region <- function(file, region, tabix_header = "auto") {
   # Execute tabix command and capture the output
   cmd_output <- tryCatch(
