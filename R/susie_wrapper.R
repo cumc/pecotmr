@@ -301,7 +301,7 @@ get_cs_info <- function(susie_output_sets_cs, top_variants_idx) {
   ifelse(is.na(cs_info_pri), 0, as.numeric(str_replace(names(susie_output_sets_cs)[cs_info_pri], "L", "")))
 }
 #' @noRd
-get_cs_and_corr <- function(susie_output, coverage, data_x, mode = c("susie", "susie_rss", "mvsusie")) {
+get_cs_and_corr <- function(susie_output, coverage, data_x, mode = c("susie", "susie_rss", "mvsusie"), min_abs_corr = NULL, median_abs_corr = NULL) {
   if (mode %in% c("susie", "mvsusie")) {
     susie_output_secondary <- list(sets = susie_get_cs(susie_output, X = data_x, coverage = coverage, min_abs_corr = min_abs_corr, median_abs_corr = median_abs_corr), pip = susie_output$pip)
     susie_output_secondary$cs_corr <- get_cs_correlation(susie_output_secondary, X = data_x)
