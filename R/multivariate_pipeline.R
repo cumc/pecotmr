@@ -134,18 +134,20 @@ multivariate_analysis_pipeline <- function(
   }
   # filter X and Y missing
   filter_X_Y_missing <-  function(X, Y) {
-  Y_rows_with_missing <- apply(Y, 1, function(row) all(is.na(row)))
-  if (any(Y_rows_with_missing)) {                             
-     Y_filtered <- Y[-which(Y_rows_with_missing),,drop = FALSE]                             
-     X_filtered <- X[match(rownames(Y_filtered), rownames(X)),]                             
+     Y_rows_with_missing <- apply(Y, 1, function(row) all(is.na(row)))
+     if (any(Y_rows_with_missing)) {                             
+        Y_filtered <- Y[-which(Y_rows_with_missing),,drop = FALSE]
+     } else {
+        Y_filtered <- Y
+     }
+     X_filtered <- X[match(rownames(Y_filtered), rownames(X)),]
      X_columns_with_missing <- apply(X_filtered, 2, function(column) all(is.na(column)))
-    if (any(X_columns_with_missing)) {
-       columns_to_remove <- which(X_columns_with_missing)
-       X_filtered <- X_filtered[,-columns_to_remove, drop = FALSE]
-    }
-  }
+     if (any(X_columns_with_missing)) {
+         columns_to_remove <- which(X_columns_with_missing)
+         X_filtered <- X_filtered[,-columns_to_remove, drop = FALSE]
+     }                                
   return(list(X_filtered = X_filtered, Y_filtered = Y_filtered))
-}
+  }
   # Skip conditions based on PIP values
   Y <- skip_conditions(X, Y, pip_cutoff_to_skip)
   if (is.null(Y)) {
