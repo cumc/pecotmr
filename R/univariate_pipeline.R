@@ -228,5 +228,15 @@ rss_analysis_pipeline <- function(
            res$outlier_number = qc_results$outlier_number
       }
   }
-  return(list(result = res, rss_data_analyzed = sumstats))
+    if (impute & !is.null(qc_method)) {
+        method_name = paste0(toupper(qc_method), "_RAISS_imputed")
+    }else if (!impute & !is.null(qc_method)){
+        method_name = toupper(qc_method)
+    }else{
+         method_name = "NO_QC"
+    }
+    result_list = list()
+    result_list[[method_name]] = res
+    result_list[["rss_data_analyzed"]] = sumstats
+  return(result_list)
 }
