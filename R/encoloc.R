@@ -33,7 +33,7 @@ xqtl_enrichment_wrapper <- function(xqtl_files, gwas_files,
     # Load and process GWAS data
     gwas_pip <- list()
     for (file in gwas_files) {
-      raw_data <- readRDS(file)
+      raw_data <- readRDS(file)[[1]]
       gwas_data <- if (!is.null(gwas_finemapping_obj)) get_nested_element(raw_data, gwas_finemapping_obj) else raw_data
       pip <- gwas_data$pip
       if (!is.null(gwas_varname_obj)) names(pip) <- get_nested_element(raw_data, gwas_varname_obj)
@@ -227,7 +227,7 @@ coloc_wrapper <- function(xqtl_file, gwas_files,
                           prior_tol = 1e-9, p1 = 1e-4, p2 = 1e-4, p12 = 5e-6, ...) {
   # Load and process GWAS data
   gwas_lbf_matrices <- lapply(gwas_files, function(file) {
-    raw_data <- readRDS(file)
+    raw_data <- readRDS(file)[[1]]
     gwas_data <- if (!is.null(gwas_finemapping_obj)) get_nested_element(raw_data, gwas_finemapping_obj) else raw_data
     gwas_lbf_matrix <- as.data.frame(gwas_data$lbf_variable)
     gwas_lbf_matrix <- gwas_lbf_matrix[gwas_data$V > prior_tol, ]
