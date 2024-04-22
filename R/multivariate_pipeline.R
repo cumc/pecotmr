@@ -110,6 +110,8 @@ multivariate_analysis_pipeline <- function(
     if (!is.null(data_driven_prior_matrices)) {
       data_driven_prior_matrices <- list(matrices = data_driven_prior_matrices$U, weights = data_driven_prior_matrices$w)
       data_driven_prior_matrices <- create_mixture_prior(mixture_prior = data_driven_prior_matrices, weights_tol = prior_weights_min, include_indices = condition_names)
+    } else {
+      data_driven_prior_matrices <- create_mixture_prior(R = length(condition_names), include_indices = condition_names)
     }
 
     if (!is.null(data_driven_prior_matrices_cv)) {
