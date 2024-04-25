@@ -13,6 +13,7 @@ coloc_wrapper(
   gwas_finemapping_obj = NULL,
   gwas_varname_obj = NULL,
   gwas_region_obj = NULL,
+  filter_lbf_cs = FALSE,
   prior_tol = 1e-09,
   p1 = 1e-04,
   p2 = 1e-04,
