@@ -241,7 +241,7 @@ align_variant_names <- function(source, reference) {
     target_data = source_df,
     col_to_flip = NULL,
     match_min_prop = 0,
-    remove_dups = FALSE,
+    remove_dups = TRUE,
     flip_strand = TRUE,
     remove_indels = FALSE,
     remove_strand_ambiguous = FALSE,
