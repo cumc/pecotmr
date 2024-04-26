@@ -51,7 +51,7 @@ jobs:
         #run: R -e "BiocCheck::BiocCheck()"
         
   ci_osx-64:
-    runs-on: macos-latest
+    runs-on: macos-13
     
     steps:
       - name: Checkout pull request branch
