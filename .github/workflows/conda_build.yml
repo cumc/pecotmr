@@ -65,7 +65,7 @@ jobs:
 
   build_package_osx-64:
     name: Build conda package for osx-64
-    runs-on: macos-latest
+    runs-on: macos-13
     strategy:
       fail-fast: false
     env:
