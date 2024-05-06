@@ -213,48 +213,55 @@ get_extra <- function(wgt_list, region_list){
     return(extra)  
 }
 
+
+# function to format LD matrices for cTWAS
 write_ld_matrix <- function(ld_dir, ld_R_dir, all_snps) {
-    rvar_file <- data.table::fread(paste0(ld_dir, "/" ,i,".cor.xz.bim"), header=FALSE)
-    colnames(rvar_file) <- c("chrom", "id","posg", "pos", "alt", "ref") 
-    rvar_file <- rvar_file[,c("chrom", "id", "pos", "alt", "ref")]
-    indx <- which(rvar_file$id %in% all_snps)
+  rvar_file <- data.table::fread(paste0(ld_dir, "/", i, ".cor.xz.bim"), header = FALSE)
+  colnames(rvar_file) <- c("chrom", "id", "posg", "pos", "alt", "ref")
+  rvar_file <- rvar_file[, c("chrom", "id", "pos", "alt", "ref")]
+  indx <- which(rvar_file$id %in% all_snps)
 
-    if (length(indx) >=2){
-        rvar <- rvar_file[indx, ]
-        rvar$variance <- 1 
-        rvar$chrom <- as.integer(rvar$chrom)
-        
-        ld_fname <- paste0(ld_dir, "/", i,".cor")
-        if (!file.exists(ld_fname)){
-            system(paste("xz -dk", paste0(ld_fname, ".xz")))
-            }
-        ld <- data.table::fread(paste0(ld_dir, "/", i,".cor"), sep=" ")
-        ld <- as.matrix(ld)
-        ld <- ld[indx, indx]
-        ld[upper.tri(ld)] <- t(ld)[upper.tri(ld)] 
-        start <- min(rvar$pos)
-        stop <-  max(rvar$pos)
-        CHR <- as.integer(unique(rvar$chrom))
-        if(length(CHR)>=2) {stop("has more than one chromosome provided in the LD file")}
+  if (length(indx) >= 2) {
+    rvar <- rvar_file[indx, ]
+    rvar$variance <- 1
+    rvar$chrom <- as.integer(rvar$chrom)
 
-        saveRDS(ld, paste0(ld_R_dir, "/ld_chr",CHR, ".R_snp.",start,"_",stop,".RDS"))
-        data.table::fwrite(rvar, file = paste0(ld_R_dir, "/ld_chr",CHR, ".R_snp.",start,"_",stop, ".Rvar"), 
-                           sep="\t", quote = F)
+    ld_fname <- paste0(ld_dir, "/", i, ".cor")
+    if (!file.exists(ld_fname)) {
+      system(paste("xz -dk", paste0(ld_fname, ".xz")))
     }
+    ld <- data.table::fread(paste0(ld_dir, "/", i, ".cor"), sep = " ")
+    ld <- as.matrix(ld)
+    ld <- ld[indx, indx]
+    ld[upper.tri(ld)] <- t(ld)[upper.tri(ld)]
+    start <- min(rvar$pos)
+    stop <- max(rvar$pos)
+    CHR <- as.integer(unique(rvar$chrom))
+    if (length(CHR) >= 2) {
+      stop("has more than one chromosome provided in the LD file")
+    }
+
+    saveRDS(ld, paste0(ld_R_dir, "/ld_chr", CHR, ".R_snp.", start, "_", stop, ".RDS"))
+    data.table::fwrite(rvar,
+      file = paste0(ld_R_dir, "/ld_chr", CHR, ".R_snp.", start, "_", stop, ".Rvar"),
+      sep = "\t", quote = F
+    )
+  }
 }
 
 
-                               
-# select variants for ctwas weights input 
+
+# select variants for ctwas weights input
 select_ctwas_weights <- function(weight_db_files, conditions = NULL,
-                               variable_name_obj = c("preset_variants_result", "variant_names"),
-                               susie_obj = c("preset_variants_result", "susie_result_trimmed"),
-                               twas_weights_table = "twas_weights", max_var_selection,
-                               min_rsq_threshold = 0.01, p_val_cutoff = 0.05) {
+                                 variable_name_obj = c("preset_variants_result", "variant_names"),
+                                 susie_obj = c("preset_variants_result", "susie_result_trimmed"),
+                                 twas_weights_table = "twas_weights", max_var_selection,
+                                 min_rsq_threshold = 0.01, p_val_cutoff = 0.05) {
   ## Internal function to load and validate data from RDS files
   load_and_validate_data <- function(weight_db_files, conditions, variable_name_obj) {
     all_data <- lapply(weight_db_files, readRDS)
     unique_regions <- unique(unlist(lapply(all_data, function(data) names(data))))
+
     # Check if region from all RDS files are the same
     if (length(unique_regions) != 1) {
       stop("The RDS files do not refer to the same region.")
@@ -264,7 +271,7 @@ select_ctwas_weights <- function(weight_db_files, conditions = NULL,
     }
     # Set default for 'conditions' if they are not specified
     if (is.null(conditions)) {
-      conditions <- names(combined_all_data)
+      conditions <- names(combined_all_data) # get only condition name
     }
     ## Check if the specified condition and variable_name_obj are available in all files
     if (!all(conditions %in% names(combined_all_data))) {
@@ -284,7 +291,16 @@ select_ctwas_weights <- function(weight_db_files, conditions = NULL,
     # Determine if a gene/region is imputable and select the best model
     model_selection <- lapply(conditions, function(condition) {
       best_model <- NULL
-      for (model in names(performance_tables[[condition]])) {
+      available_models <- do.call(c, lapply(names(performance_tables[[condition]]), function(model) {
+        if (!is.na(performance_tables[[condition]][[model]][, "adj_rsq"])) {
+          return(model)
+        }
+      }))
+      if (length(available_models) <= 0) {
+        print(paste0("No model provided TWAS cross validation performance metrics information at condition ", condition, ". "))
+        return(NULL)
+      }
+      for (model in available_models) {
         model_data <- performance_tables[[condition]][[model]]
         if (model_data[, "adj_rsq"] >= best_adj_rsq) {
           best_adj_rsq <- model_data[, "adj_rsq"]
@@ -310,11 +326,23 @@ select_ctwas_weights <- function(weight_db_files, conditions = NULL,
     return(model_selection)
   }
   # Based on selected best model and imputable conditions, select variants based on susie output
-  ctwas_select <- function(combined_all_data, conditions, max_var_selection) {
+  ctwas_select <- function(combined_all_data, conditions, imputable_status, max_var_selection, variable_name_obj, susie_obj) {
+    names(imputable_status) <- conditions
     var_selection_list <- lapply(conditions, function(condition) {
+      if (imputable_status[condition] == "non_imputable") {
+        out <- list(
+          variant_selection = rep(NA, max_var_selection),
+          susie_result_trimmed = list(
+            sets = list(cs = c(NULL)),
+            pip = rep(NA, max_var_selection)
+          )
+        )
+        return(out)
+      }
+      # if the condition is imputable
       out <- list(
         variant_names = get_nested_element(combined_all_data, c(condition, variable_name_obj)),
-        susie_result_trimmed = get_nested_element(combined_all_data, c(condition, susie_obj)) # need susie_result_trimmed for later adjust susie weights
+        susie_result_trimmed = get_nested_element(combined_all_data, c(condition, susie_obj))
       )
       # Go through cs to select top variants from each set until we select all variants
       select_cs_var <- function(set_cs_list, max_var_selection) {
@@ -344,12 +372,14 @@ select_ctwas_weights <- function(weight_db_files, conditions = NULL,
           # out$out$susie_result_trimmed is from "preset_variants_result"-"susie_result_trimmed"
           if (!is.null(out$susie_result_trimmed$sets$cs)) {
             # check total variant number in the CS sets
-            totl_cs_indice <- do.call(sum, lapply(names(out$susie_result_trimmed$sets$cs), function(L){length(out$susie_result_trimmed$sets$cs[[L]])}))
+            totl_cs_indice <- do.call(sum, lapply(names(out$susie_result_trimmed$sets$cs), function(L) {
+              length(out$susie_result_trimmed$sets$cs[[L]])
+            }))
             if (max_var_selection <= totl_cs_indice) {
               selec_idx <- select_cs_var(out$susie_result_trimmed, max_var_selection)
               out$variant_selection <- out$variant_names[selec_idx]
-            }else{
-              #when top loci has larger number of variants than max_var_selection, but CS sets has less number than max_var_selection
+            } else {
+              # when top loci has larger number of variants than max_var_selection, but CS sets has less number than max_var_selection
               selec_idx <- unlist(out$susie_result_trimmed$sets$cs)
               out$variant_selection <- out$variant_names[selec_idx]
             }
@@ -359,9 +389,10 @@ select_ctwas_weights <- function(weight_db_files, conditions = NULL,
           }
         }
       } else {
-        # if the condition did not come with the top_loci table, we select top pip variants from [[condition]]$preset_variants_result$susie_result_trimmed$pip 
-          top_idx <- order(out$susie_result_trimmed$pip, decreasing = TRUE)[1:max_var_selection]
-          out$variant_selection <- out$variant_names[top_idx]
+        # if the condition did not come with the top_loci table, we select top pip variants from [[condition]]$preset_variants_result$susie_result_trimmed$pip
+        print(paste0(condition, " do not have top_loci table, select top pip variants. "))
+        top_idx <- order(out$susie_result_trimmed$pip, decreasing = TRUE)[1:max_var_selection]
+        out$variant_selection <- out$variant_names[top_idx]
       }
       return(out)
     })
@@ -428,21 +459,46 @@ select_ctwas_weights <- function(weight_db_files, conditions = NULL,
 
   ## Load, validate, and consolidate data
   combined_all_data <- load_and_validate_data(weight_db_files, conditions, variable_name_obj)
-  # combined_susie_result <- extract_variants_and_susie_results(combined_all_data, conditions)
+  ## we first select best model, then select variants based on susie obj output, then extract weight value for these variants in selected model
   model_selection <- pick_best_model(combined_all_data, conditions, min_rsq_threshold, p_val_cutoff)
   region_info <- combined_all_data[[1]]$region_info
   if (is.null(unlist(model_selection))) {
     print("No model meets the p_value threshold and R-squared minimum in all conditions. Region is not imputable. ")
     model_selection$imputable <- FALSE
-    return(list(model_selection = model_selection, susie_results = NULL, weights = NULL))
+    return(list(susie_results = NULL, model_selection = model_selection, weights = NULL, region_info = region_info))
   } else {
     model_selection$imputable <- TRUE
   }
-  # conditions_imputable <- unlist(lapply(conditions, function(condition){if(!is.null(model_selection[[condition]])) return(condition)}))
-  ctwas_select_result <- ctwas_select(combined_all_data, conditions, max_var_selection)
+  # check for non-imputable conditions for this gene
+  names(conditions) <- rep("impputable", length(conditions))
+  non_imp_conditions <- na.omit(unlist(lapply(conditions, function(condition) {
+    if (is.null(model_selection[[condition]])) {
+      return(condition)
+    }
+  })))
+  if (length(non_imp_conditions) >= 1) {
+    names(conditions)[which(conditions %in% non_imp_conditions)] <- "non_imputable"
+  }
+  # at imputable conditions, sometimes susie_obj is not available.
+  # if susie_obj is not available
+  if (model_selection$imputable == TRUE) {
+    for (k in conditions) {
+      if (is.null(combined_all_data[[k]][[susie_obj[1]]][[susie_obj[2]]])) {
+        model_selection[k] <- list(NULL)
+        names(conditions)[match(k, conditions)] <- "non_imputable"
+      }
+    }
+  }
+  # run ctwas_select on all conditions first to keep list structure the same, regardless of imputable status.
+  ctwas_select_result <- ctwas_select(combined_all_data, conditions, names(conditions), max_var_selection, variable_name_obj, susie_obj)
   weights <- consolidate_weights_list(combined_all_data, conditions, variable_name_obj, twas_weights_table)
-  # ctwas_weights <- extract_weights(weights, conditions, ctwas_select_result, model_selection, twas_weights_table)
-
+  # assign the weights_selection as NULL in ctwas_select_result #
+  if (length(non_imp_conditions) >= 1) {
+    for (unimp_conds in non_imp_conditions) {
+      ctwas_select_result[[unimp_conds]][["variant_selection"]] <- rep(NA, length(ctwas_select_result[[unimp_conds]][["variant_selection"]]))
+    }
+  }
+  # return results
   return(list(
     susie_results = ctwas_select_result, model_selection = model_selection,
     weights = weights, region_info = region_info
@@ -450,99 +506,133 @@ select_ctwas_weights <- function(weight_db_files, conditions = NULL,
 }
 
 
-
 # ctwas input formatting functions for multigroup ctwas
-get_ctwas_input <- function(summary_report, xqtl_meta_data, outdir) {
-    out <- list()
-    # chr <- as.integer(unique(xqtl_meta_data$chrom))
-    # merge inputs by chromosome
-    genes <- xqtl_meta_data$region_id
-    file_list <- summary_report$path[summary_report$gene %in% genes]
-    file_list <- na.omit(file_list[summary_report$IsImputable])
-    if (length(file_list)>=1) {
-        #loop through genes in a chromosome
-        for (file in file_list){
-            twas_rs <- readRDS(file)
-            gene <- summary_report$gene[summary_report$path==file]
-            chr <- as.integer(xqtl_meta_data$chrom[which(xqtl_meta_data$region_id==gene)])
-            studies <- names(twas_rs)
+get_ctwas_input <- function(summary_report, xqtl_meta_data, outdir, outname, chr_input_file = NULL) {
+  if (!is.null(chr_input_file)) {
+    out <- readRDS(chr_input_file)
+  } else {
+    out <- NULL
+  }
+  # only process new genes and add to pre-existing ctwas input file
+  summary_report <- summary_report[summary_report$IsImputable, ]
+  genes <- summary_report$gene[summary_report$gene %in% xqtl_meta_data$region_id]
+  if (!is.null(chr_input_file)) {
+    processed_genes <- unique(do.call(c, lapply(names(out[[1]]), function(chr) {
+      gsub("\\|.*$", "", names(out[[1]][[chr]]$weights))
+    })))
+    genes <- genes[!genes %in% processed_genes]
+  }
+  file_list <- na.omit(summary_report$path[summary_report$gene %in% genes])
+  if (length(file_list) >= 1) {
+    # loop through genes in a chromosome
+    foreach(file = file_list) %do% {
+      twas_rs <- readRDS(file) # file is the ctwas variant selection output
+      gene <- summary_report$gene[summary_report$path == file]
+      chr <- as.integer(summary_report$chrom[summary_report$path == file])
+      data_type <- summary_report$type[summary_report$path == file]
+      studies <- na.omit(names(twas_rs))
 
-            for (study in studies){
-                #update colnames of gwas sumstat z_snp
-                gwas <- twas_rs[[study]][[1]]$gwas_qced
-                id_idx <- match("variant_id", colnames(gwas$sumstats))
-                colnames(gwas$sumstats)[id_idx] <- "id"
-                #merge gwas sumstats and weights info
-                out[[study]][[paste0("chr", chr)]][["z_snp"]] <- rbind(out[[study]][[paste0("chr", chr)]][["z_snp"]], gwas$sumstats[,c("id", "A1", "A2", "z")])
-                out[[study]][[paste0("chr", chr)]][["z_snp"]] <- out[[study]][[paste0("chr", chr)]][["z_snp"]][!duplicated(out[[study]][[paste0("chr", chr)]][["z_snp"]][ , "id"]), ] 
-                out[[study]][[paste0("chr", chr)]][["weights_list"]] <- c(out[[study]][[paste0("chr", chr)]][["weights_list"]], format_ctwas_weights(twas_rs, study))
-             }
-        }
-   print(paste0("saving formated output as ", outdir, "/ctwas_input.rds. "))
-   saveRDS(out, paste0(outdir, "/ctwas_input.rds"))
-   return(out)
-   }
-   print(paste0("No ctwas input file found. "))
-   return(NULL)
+      for (study in studies) {
+        # update colnames of gwas sumstat z_snp
+        gwas <- twas_rs[[study]]$gwas_qced
+        id_idx <- match("variant_id", colnames(gwas$sumstats))
+        colnames(gwas$sumstats)[id_idx] <- "id"
+        # merge gwas sumstats and weights info
+        out[[study]][[paste0("chr", chr)]][["z_snp"]] <- rbind(out[[study]][[paste0("chr", chr)]][["z_snp"]], gwas$sumstats[, c("id", "A1", "A2", "z")])
+        out[[study]][[paste0("chr", chr)]][["z_snp"]] <- out[[study]][[paste0("chr", chr)]][["z_snp"]][!duplicated(out[[study]][[paste0("chr", chr)]][["z_snp"]][, "id"]), ]
+        out[[study]][[paste0("chr", chr)]][["weights_list"]] <- c(out[[study]][[paste0("chr", chr)]][["weights_list"]], format_ctwas_weights(twas_rs, study, data_type))
+      }
+    }
+    if (!is.null(chr_input_file)) {
+      if (is.null(outdir)) outdir <- dirname(chr_input_file)
+      if (is.null(outname)) outname <- ""
+      print(paste0("saving formated output as ", outdir, "/", strsplit(basename(chr_input_file), ".rds")[[1]], "_", outname, "_updated.rds. "))
+      saveRDS(out, paste0(outdir, "/", strsplit(basename(chr_input_file), ".rds")[[1]], "_", outname, "_updated.rds"))
+      return(out)
+    } else {
+      if (is.null(outdir)) outdir <- getwd()
+      print(paste0("saving formated output as ", outdir, "/ctwas_input_", outname, ".rds. "))
+      saveRDS(out, paste0(outdir, "/ctwas_input_", outname, ".rds"))
+      return(out)
+    }
+  }
+  print(paste0("No ctwas input file found. "))
+  return(NULL)
 }
-                            
+
 
 # extract selected weights from a gene
-format_ctwas_weights <- function(twas_rs, study){
-    region_info <- twas_rs[[study]][[1]][["region_info"]]
-    chrom=as.integer(region_info$grange$chrom)
-    gene=unique(region_info$region_name)
-    # check if this gene is imputable at study 
-    if (twas_rs[[study]][[1]][["model_selection"]][["imputable"]]){
-        conditions <- names(twas_rs[[study]])
-        imputable_conditions <- unlist(lapply(conditions, function(condition){
-            ifelse(is.null(twas_rs[[study]][[condition]]$model_selection$method), return(NULL), return(condition))
-        }))
-        weights_list <- lapply(imputable_conditions, function(condition){
-            # remove NA weights
-            wgt <- twas_rs[[study]][[condition]][["selected_weights"]]
-            wgt_idx <- !is.na(wgt)
-            wgt <- wgt[wgt_idx]
-            if (length(wgt)==0) return(NULL)
-            variants <- twas_rs[[study]][[condition]][["variant_selection"]][wgt_idx]
-            var_idx <- na.omit(match(variants, paste0("chr", colnames(twas_rs[[study]][[condition]]$gwas_qced$LD))))
-            #return NULL if no variants found in common of weights and LD
-            if(length(var_idx)==0) return(NULL)
-            variants <- paste0("chr", colnames(twas_rs[[study]][[condition]]$gwas_qced$LD))[var_idx] #get final variants name
-            wgt <- as.matrix(wgt[variants])
-            colnames(wgt) <- "weight"
-            # get LD - correlation matrix for selected variance 
-            ld_wgt <- as.matrix(twas_rs[[study]][[condition]]$gwas_qced$LD[var_idx, var_idx])
-            colnames(ld_wgt) <- rownames(ld_wgt) <- variants
-            # p0 and p1 represent the min max position of weights variants
-            p0 = min(sapply(variants, function(x){as.integer(unlist(strsplit(x, ":"))[2])}))
-            p1 = max(sapply(variants, function(x){as.integer(unlist(strsplit(x, ":"))[2])}))
-            return(list(
-                chrom=chrom,
-                p0 = p0,
-                p1 = p1,
-                wgt= wgt,
-                R_wgt = ld_wgt,
-                gene_name=gene,
-                weight_name=condition,
-                n=length(var_idx)
-            ))
-        })
-        names(weights_list) <- paste0(gene,"|",imputable_conditions)
-        return(weights_list)
-    } else {
-        print(paste0("Gene ", gene, " is not imputable, skipping. "))
-    }
+format_ctwas_weights <- function(twas_rs, study, type) {
+  # Register parallel backend to use multiple cores
+  region_info <- twas_rs[[study]][["region_info"]]
+  chrom <- as.integer(region_info$grange$chrom)
+  gene <- unique(region_info$region_name)
+  # check if this gene is imputable at study
+  if (twas_rs[[study]]$model_selection[[1]]$imputable) {
+    conditions <- names(twas_rs[[study]]$weights)
+    imputable_conditions <- unlist(lapply(conditions, function(condition) {
+      ifelse(is.null(twas_rs[[study]][["model_selection"]][[condition]][["method"]]), return(NULL), return(condition))
+    }))
+    weights_list <- lapply(imputable_conditions, function(condition) {
+      # remove NA weights
+      wgt <- twas_rs[[study]][["weights"]][[condition]][["selected_weights"]]
+      wgt_idx <- !is.na(wgt)
+      wgt <- wgt[wgt_idx]
+      if (length(wgt) == 0) {
+        return(NULL)
+      }
+      variants <- twas_rs[[study]][["weights"]][[condition]][["variant_selection"]][wgt_idx]
+      var_idx <- na.omit(match(variants, paste0("chr", colnames(twas_rs[[study]]$gwas_qced$LD))))
+      # return NULL if no variants found in common of weights and LD
+      if (length(var_idx) == 0) {
+        return(NULL)
+      }
+      variants <- paste0("chr", colnames(twas_rs[[study]]$gwas_qced$LD))[var_idx] # get final variants name
+      # get variant's variance to scale weights
+      variance_idx <- match(variants, paste0("chr", twas_rs[[study]]$gwas_qced$sumstats$variant_id))
+      variance_snp <- twas_rs[[study]]$gwas_qced$variance[variance_idx]
+      # scale weights
+      wgt <- wgt * sqrt(variance_snp) # wgt <- wgt*sqrt(ld_snpinfo_wgt$variance[ld_snpinfo_wgt.idx])
+      wgt <- as.matrix(wgt[variants])
+      colnames(wgt) <- "weight"
+      # get LD - correlation matrix for selected variance
+      ld_wgt <- as.matrix(twas_rs[[study]]$gwas_qced$LD[var_idx, var_idx])
+      colnames(ld_wgt) <- rownames(ld_wgt) <- variants
+      # p0 and p1 represent the min max position of weights variants
+      p0 <- min(sapply(variants, function(x) {
+        as.integer(unlist(strsplit(x, ":"))[2])
+      }))
+      p1 <- max(sapply(variants, function(x) {
+        as.integer(unlist(strsplit(x, ":"))[2])
+      }))
+      return(list(
+        chrom = chrom,
+        p0 = p0,
+        p1 = p1,
+        wgt = wgt,
+        R_wgt = ld_wgt,
+        gene_name = gene,
+        weight_name = gsub("_.*$", "", condition),
+        type = type,
+        context = gsub("_.*$", "", condition),
+        n_wgt = length(var_idx)
+      ))
+    })
+    names(weights_list) <- paste0(gene, "|", gsub("_.*$", "", imputable_conditions))
+    return(weights_list)
+  } else {
+    print(paste0("Gene ", gene, " is not imputable, skipping. "))
+  }
 }
-                            
-                            
-                            
-                            
+
+
+
+
 # extract ld file name from ld meta file
-ld_meta_to_list <- function(ld_meta_file){ 
-    ld_meta <- data.table::fread(ld_meta_file, data.table=FALSE, header=TRUE) 
-    ld_file_list <- gsub( ",.*$", "",  ld_meta$path) 
-    return(ld_file_list)
+ld_meta_to_list <- function(ld_meta_file) {
+  ld_meta <- data.table::fread(ld_meta_file, data.table = FALSE, header = TRUE)
+  ld_file_list <- gsub(",.*$", "", ld_meta$path)
+  return(ld_file_list)
 }
 
 # convert to symmetrical full matrix, save into RDS/Rvar format
@@ -553,8 +643,8 @@ format_ctwas_ld <- function(ld_paths, outdir) {
     ld[lower.tri(ld)] <- t(ld)[lower.tri(ld)]
     saveRDS(ld, paste0(outdir, "/LD_", basename(ld_path), ".RDS"))
 
-    bim <- read.table(paste0(ld_path, ".bim"), header = FALSE)[, -3]
-    colnames(bim) <- c("chrom", "id", "pos", "alt", "ref")
+    bim <- read.table(paste0(ld_path, ".bim"), header = FALSE)[, -c(3, 9)] # remove posg and number missing sample column
+    colnames(bim) <- c("chrom", "id", "pos", "alt", "ref", "variance", "allele_freq")
     bim$id <- gsub("_", ":", bim$id)
     data.table::fwrite(bim, file = paste0(outdir, "/LD_", basename(ld_path), ".Rvar"), sep = "\t", quote = F)
     print(paste0("writing ld file ", outdir, "/LD_", basename(ld_path), ".RDS"))
@@ -570,4 +660,29 @@ format_ctwas_ld <- function(ld_paths, outdir) {
     region_info <- rbind(region_info, ld_info)
   }
   return(region_info)
+}
+
+
+# function to scan all the ld files in a directory and generate region_info table
+get_dir_region_info <- function(ld_dir) {
+  ld_file_names <- list.files(path = ld_dir, pattern = "*.RDS", all.files = FALSE, full.names = FALSE)
+
+  # Initialize vectors to store the positions, a2, and a1 elements
+  chrom <- start <- stop <- vector("numeric", length(ld_file_names))
+  # Extract the elements
+  for (i in seq_along(ld_file_names)) {
+    parts <- strsplit(ld_file_names[i], "_")[[1]]
+    chrom[i] <- parts[2]
+    start[i] <- parts[3]
+    stop[i] <- gsub("\\..*", "", parts[4])
+  }
+  chrom <- as.integer(readr::parse_number(chrom))
+  start <- as.integer(start)
+  stop <- as.integer(stop)
+  return(data.frame(
+    chrom = chrom, start = start, stop = stop,
+    region_tag = paste0("chr", chrom, ":", start, "-", stop),
+    LD_matrix = paste0(ld_dir, "/", ld_file_names),
+    SNP_info = paste0(ld_dir, "/", sub(".[^.]+$", "", ld_file_names), ".Rvar")
+  ))
 }
