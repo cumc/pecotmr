@@ -581,7 +581,8 @@ bayes_r_weights <- function(X, y, Z = NULL) {
 #' \item{ve}{mean residual variance}
 #' \item{vg}{mean genomic variance}
 #'
-#' @importFrom qgg sbayes_spa
+#' @import qgg, Rcpp
+#' @useDynLib qgg                                         
 #'
 #' @export
 gbayes_rss <- function(stat=NULL, LD=NULL, rsids=NULL, nit=100, nburn=0, nthin=4, method="bayesR",
