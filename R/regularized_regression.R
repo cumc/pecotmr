@@ -535,7 +535,6 @@ bayes_r_weights <- function(X, y, Z = NULL) {
 #' @param rsids is an optional character vector of rsids, provided outside of the stat dataframe
 #' @param nit is the number of iterations
 #' @param nburn is the number of burnin iterations
-#' @param nthin is the thinning parameter
 #' @param method specifies the methods used (method="bayesN","bayesA","bayesL","bayesC","bayesR")
 #' @param vg is a scalar or matrix of genetic (co)variances
 #' @param vb is a scalar or matrix of marker (co)variances
@@ -557,6 +556,7 @@ bayes_r_weights <- function(X, y, Z = NULL) {
 #' @param mask is a vector or matrix of TRUE/FALSE specifying if marker should be ignored 
 #' @param ve_prior is a scalar or matrix of prior residual (co)variances
 #' @param vg_prior is a scalar or matrix of prior genetic (co)variances
+#' @param algorithm is the algorithm to use. Should take on values ("mcmc", "em-mcmc")
 #' @param tol is tolerance, i.e. convergence criteria used in gbayes
 #' @param nit_local is the number of local iterations
 #' @param nit_global is the number of global iterations
@@ -585,11 +585,11 @@ bayes_r_weights <- function(X, y, Z = NULL) {
 #' @useDynLib qgg                                         
 #'
 #' @export
-gbayes_rss <- function(stat=NULL, LD=NULL, rsids=NULL, nit=100, nburn=0, nthin=4, method="bayesR",
+gbayes_rss <- function(stat=NULL, LD=NULL, rsids=NULL, nit=100, nburn=0, method="bayesR",
                        vg=NULL, vb=NULL, ve=NULL, ssg_prior=NULL, ssb_prior=NULL, sse_prior=NULL, 
                        lambda=NULL, h2=NULL, pi=0.001, updateB=TRUE, updateG=TRUE, updateE=TRUE, 
                        updatePi=TRUE, adjustE=TRUE, nug=4, nub=4, nue=4, mask=NULL, ve_prior=NULL,
-                       vg_prior=NULL, tol=0.001, nit_local=NULL,nit_global=NULL) {
+                       vg_prior=NULL, algorithm="mcmc", tol=0.001, nit_local=NULL, nit_global=NULL) {
   
   # Check methods
   methods <- c("bayesN","bayesA","bayesL","bayesC","bayesR")
@@ -600,6 +600,11 @@ gbayes_rss <- function(stat=NULL, LD=NULL, rsids=NULL, nit=100, nburn=0, nthin=4
     updateB=FALSE;
     updateE=FALSE;
   }
+
+  # Set algorithm
+  if (algorithm == "em-mcmc"){
+      algo = 2
+  } else {algo = 1}
   
   # Check that LD matrix is provided and of same length as stats
   if(is.null(LD)) stop("Must provide LD matrix")
@@ -681,7 +686,7 @@ gbayes_rss <- function(stat=NULL, LD=NULL, rsids=NULL, nit=100, nburn=0, nthin=4
   
   seed <- sample.int(.Machine$integer.max, 1)
   
-  fit <- .Call("_qgg_sbayes_spa",
+  fit <- qgg:::sbayes_spa(
                wy=wy, 
                ww=ww, 
                LDvalues=LD_values, 
@@ -707,8 +712,8 @@ gbayes_rss <- function(stat=NULL, LD=NULL, rsids=NULL, nit=100, nburn=0, nthin=4
                n=n,
                nit=nit,
                nburn=nburn, 
-               nthin=nthin, 
-               method=as.integer(method), 
+               algo=algo,
+               method=as.integer(method),
                seed=seed)
   
   names(fit[[1]]) <- names(LD_values)
