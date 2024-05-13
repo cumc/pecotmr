@@ -41,12 +41,7 @@ univariate_analysis_pipeline <- function(X, Y, X_scalar, Y_scalar, maf, other_qu
       cv_folds = twas_weights_opts$cv_folds, coverage = pri_coverage, secondary_coverage = sec_coverage, signal_cutoff = finemapping_opts$signal_cutoff,
       min_cv_maf = twas_weights_opts$min_cv_maf, max_cv_variants = twas_weights_opts$max_cv_variants, cv_seed = twas_weights_opts$seed, cv_threads = twas_weights_opts$cv_threads
     )
-    # clean up the output database
     res <- c(res, twas_weights_output)
-    res$twas_weights <- lapply(res$twas_weights, function(x) {
-      rownames(x) <- NULL
-      return(x)
-    })
   }
   if (!is.null(region_info)) res$region_info <- region_info
   res$total_time_elapsed <- proc.time() - st
