@@ -30,11 +30,13 @@ It keeps only one element among those having an absolute correlation value great
 }
 \examples{
 z <- c(1, 2, 3, 4, 5)
-LD <- matrix(c(1.0, 0.8, 0.2, 0.1, 0.3,
-               0.8, 1.0, 0.4, 0.2, 0.5,
-               0.2, 0.4, 1.0, 0.6, 0.1,
-               0.1, 0.2, 0.6, 1.0, 0.3,
-               0.3, 0.5, 0.1, 0.3, 1.0), nrow = 5, ncol = 5)
+LD <- matrix(c(
+  1.0, 0.8, 0.2, 0.1, 0.3,
+  0.8, 1.0, 0.4, 0.2, 0.5,
+  0.2, 0.4, 1.0, 0.6, 0.1,
+  0.1, 0.2, 0.6, 1.0, 0.3,
+  0.3, 0.5, 0.1, 0.3, 1.0
+), nrow = 5, ncol = 5)
 rThreshold <- 0.5
 
 result <- find_duplicate_variants(z, LD, rThreshold)

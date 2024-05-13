@@ -28,12 +28,12 @@ xqtl_enrichment_wrapper <- function(xqtl_files, gwas_files,
                                     lambda = 1.0, ImpN = 25,
                                     num_threads = 1) {
   process_finemapped_data <- function(xqtl_files, gwas_files,
-                                      xqtl_finemapping_obj = NULL, gwas_finemapping_obj = NULL,
-                                      xqtl_varname_obj = NULL, gwas_varname_obj = NULL) {
+                                    xqtl_finemapping_obj = NULL, gwas_finemapping_obj = NULL,
+                                    xqtl_varname_obj = NULL, gwas_varname_obj = NULL) {
     # Load and process GWAS data
     gwas_pip <- list()
     for (file in gwas_files) {
-      raw_data <- readRDS(file)
+      raw_data <- readRDS(file)[[1]] #changed
       gwas_data <- if (!is.null(gwas_finemapping_obj)) get_nested_element(raw_data, gwas_finemapping_obj) else raw_data
       pip <- gwas_data$pip
       if (!is.null(gwas_varname_obj)) names(pip) <- get_nested_element(raw_data, gwas_varname_obj)
@@ -50,11 +50,20 @@ xqtl_enrichment_wrapper <- function(xqtl_files, gwas_files,
     # Process xQTL data
     xqtl_data <- lapply(xqtl_files, function(file) {
       raw_data <- readRDS(file)[[1]]
-      xqtl_data <- if (!is.null(xqtl_finemapping_obj)) get_nested_element(raw_data, xqtl_finemapping_obj) else raw_data
-      list(
-        alpha = xqtl_data$alpha, pip = setNames(xqtl_data$pip, get_nested_element(raw_data, xqtl_varname_obj)),
-        prior_variance = xqtl_data$V
-      )
+      xqtl_data <- tryCatch({
+          if (!is.null(xqtl_finemapping_obj)) get_nested_element(raw_data, xqtl_finemapping_obj) else raw_data
+      }, error = function(e) {
+          return(NULL)
+      })
+      if (!is.null(xqtl_data)) {
+          list(
+              alpha = xqtl_data$alpha,
+              pip = setNames(xqtl_data$pip, get_nested_element(raw_data, xqtl_varname_obj)),
+              prior_variance = xqtl_data$V
+          )
+      } else {
+          NULL
+      }
     })
 
     # Return results as a list
@@ -224,56 +233,77 @@ process_coloc_results <- function(coloc_result, LD_meta_file_path, analysis_regi
 coloc_wrapper <- function(xqtl_file, gwas_files,
                           xqtl_finemapping_obj = NULL, xqtl_varname_obj = NULL, xqtl_region_obj = NULL,
                           gwas_finemapping_obj = NULL, gwas_varname_obj = NULL, gwas_region_obj = NULL,
-                          prior_tol = 1e-9, p1 = 1e-4, p2 = 1e-4, p12 = 5e-6, ...) {
+                          filter_lbf_cs = FALSE, prior_tol = 1e-9, p1 = 1e-4, p2 = 1e-4, p12 = 5e-6, ...) {
   # Load and process GWAS data
   gwas_lbf_matrices <- lapply(gwas_files, function(file) {
-    raw_data <- readRDS(file)
+    raw_data <- readRDS(file)[[1]]
     gwas_data <- if (!is.null(gwas_finemapping_obj)) get_nested_element(raw_data, gwas_finemapping_obj) else raw_data
     gwas_lbf_matrix <- as.data.frame(gwas_data$lbf_variable)
-    gwas_lbf_matrix <- gwas_lbf_matrix[gwas_data$V > prior_tol, ]
+    if(filter_lbf_cs){
+      gwas_lbf_matrix <- gwas_lbf_matrix[gwas_data$sets$cs_index,]
+    } else {
+      gwas_lbf_matrix <- gwas_lbf_matrix[gwas_data$V > prior_tol, ]
+    }
     if (!is.null(gwas_varname_obj)) colnames(gwas_lbf_matrix) <- get_nested_element(raw_data, gwas_varname_obj)
     return(gwas_lbf_matrix)
   })
 
-  # Validate uniqueness of column names across GWAS matrices
-  all_gwas_colnames <- unique(unlist(lapply(gwas_lbf_matrices, colnames)))
-  if (length(all_gwas_colnames) != sum(sapply(gwas_lbf_matrices, ncol))) {
-    stop("Duplicate variant names found across GWAS regions analyzed. This is not expected.")
-  }
+  # changed: need to remove this check, as the last variant of former block could overlapped with first variant of later block
+  # # Validate uniqueness of column names across GWAS matrices
+  # all_gwas_colnames <- unique(unlist(lapply(gwas_lbf_matrices, colnames)))
+  # if (length(all_gwas_colnames) != sum(sapply(gwas_lbf_matrices, ncol))) {
+  #   stop("Duplicate variant names found across GWAS regions analyzed. This is not expected.")
+  # }
   # Combine GWAS matrices and replace NAs with zeros
   combined_gwas_lbf_matrix <- bind_rows(gwas_lbf_matrices) %>%
     mutate(across(everything(), ~ replace_na(., 0)))
 
   # Process xQTL data
   xqtl_raw_data <- readRDS(xqtl_file)[[1]]
-  xqtl_data <- if (!is.null(xqtl_finemapping_obj)) get_nested_element(xqtl_raw_data, xqtl_finemapping_obj) else xqtl_raw_data
-  xqtl_lbf_matrix <- as.data.frame(xqtl_data$lbf_variable)
+    xqtl_data <- if (!is.null(xqtl_finemapping_obj)) {
+      tryCatch({
+        get_nested_element(xqtl_raw_data, xqtl_finemapping_obj)
+      }, error = function(e) {
+        message(paste("no", xqtl_finemapping_obj[2], "in", xqtl_finemapping_obj[1]))
+        NULL  
+      })
+    } else {
+      xqtl_raw_data
+    }
+    if(!is.null(xqtl_data)){
+      xqtl_lbf_matrix <- as.data.frame(xqtl_data$lbf_variable)
+      # fsusie data does not have V element in results
+      if(filter_lbf_cs){
+          xqtl_lbf_matrix <- xqtl_lbf_matrix[xqtl_data$sets$cs_index,]
+      } else {
+          if ("V" %in% names(xqtl_data)) xqtl_lbf_matrix <- xqtl_lbf_matrix[xqtl_data$V > prior_tol, ] else (message("No V found in orginal data."))
+      }
+      if (nrow(combined_gwas_lbf_matrix) > 0 && nrow(xqtl_lbf_matrix) > 0) {
+        if (!is.null(xqtl_varname_obj)) colnames(xqtl_lbf_matrix) <- get_nested_element(xqtl_raw_data, xqtl_varname_obj)
 
-  # fsusie data does not have V element in results
-  if ("V" %in% names(xqtl_data)) xqtl_lbf_matrix <- xqtl_lbf_matrix[xqtl_data$V > prior_tol, ] else (message("No V found in orginal data."))
+        colnames(xqtl_lbf_matrix) <- align_variant_names(colnames(xqtl_lbf_matrix), colnames(combined_gwas_lbf_matrix))$aligned_variants
+        common_colnames <- intersect(colnames(xqtl_lbf_matrix), colnames(combined_gwas_lbf_matrix))
+        xqtl_lbf_matrix <- xqtl_lbf_matrix[, common_colnames, drop = FALSE] %>% as.matrix()
+        combined_gwas_lbf_matrix <- combined_gwas_lbf_matrix[, common_colnames, drop = FALSE] %>% as.matrix()
 
-  if (nrow(combined_gwas_lbf_matrix) > 0 && nrow(xqtl_lbf_matrix) > 0) {
-    if (!is.null(xqtl_varname_obj)) colnames(xqtl_lbf_matrix) <- get_nested_element(xqtl_raw_data, xqtl_varname_obj)
+        # Report the number of dropped columns from xQTL matrix
+        num_dropped_cols <- length(setdiff(colnames(xqtl_lbf_matrix), common_colnames))
+        message("Number of columns dropped from xQTL matrix: ", num_dropped_cols)
 
-    colnames(xqtl_lbf_matrix) <- align_variant_names(colnames(xqtl_lbf_matrix), colnames(combined_gwas_lbf_matrix))$aligned_variants
-    common_colnames <- intersect(colnames(xqtl_lbf_matrix), colnames(combined_gwas_lbf_matrix))
-    xqtl_lbf_matrix <- xqtl_lbf_matrix[, common_colnames, drop = FALSE] %>% as.matrix()
-    combined_gwas_lbf_matrix <- combined_gwas_lbf_matrix[, common_colnames, drop = FALSE] %>% as.matrix()
+        # Function to convert region df to str
+        convert_to_string <- function(df) paste0("chr", df$chrom, ":", df$start, "-", df$end)
+        region <- if (!is.null(xqtl_region_obj)) get_nested_element(xqtl_raw_data, xqtl_region_obj) %>% convert_to_string() else NULL
 
-    # Report the number of dropped columns from xQTL matrix
-    num_dropped_cols <- length(setdiff(colnames(xqtl_lbf_matrix), common_colnames))
-    message("Number of columns dropped from xQTL matrix: ", num_dropped_cols)
+        # COLOC function
+        coloc_res <- coloc.bf_bf(xqtl_lbf_matrix, combined_gwas_lbf_matrix, p1 = p1, p2 = p2, p12 = p12)
 
-    # Function to convert region df to str
-    convert_to_string <- function(df) paste0("chr", df$chrom, ":", df$start, "-", df$end)
-    region <- if (!is.null(xqtl_region_obj)) get_nested_element(xqtl_raw_data, xqtl_region_obj) %>% convert_to_string() else NULL
-
-    # COLOC function
-    coloc_res <- coloc.bf_bf(xqtl_lbf_matrix, combined_gwas_lbf_matrix, p1 = p1, p2 = p2, p12 = p12)
-  } else {
-    coloc_res <- list("No coloc results due to the absence of a GWAS log Bayes factor matrix filtered by prior tolerance.")
-  }
-  return(c(coloc_res, analysis_region = region))
+          } else {
+            coloc_res <- list("No coloc results due to the absence of a GWAS log Bayes factor matrix filtered by prior tolerance.")
+          }
+      } else {
+      coloc_res <- list(paste("no", xqtl_finemapping_obj[2], "in", xqtl_finemapping_obj[1]))
+      }
+ return(c(coloc_res, analysis_region = region))
 }
 
 #' coloc_post_processor function
