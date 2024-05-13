@@ -82,8 +82,7 @@ twas_weights_pipeline <- function(X, y, maf, susie_fit, ld_reference_meta_file =
                                     enet_weights = list(),
                                     lasso_weights = list(),
                                     mrash_weights = list(init_prior_sd = TRUE, max.iter = 100),
-                                    bayes_n_weights = list(), bayes_l_weights = list(),
-                                    bayes_a_weights = list(), bayes_c_weights = list(),
+                                    bayes_c_weights = list(),
                                     bayes_r_weights = list()
                                   ),
                                   min_cv_maf = 0.05, max_cv_variants = -1, cv_seed = 999, cv_threads = 1, cv_weight_methods = NULL) {
