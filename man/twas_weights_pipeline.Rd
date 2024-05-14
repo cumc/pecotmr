@@ -16,11 +16,14 @@ twas_weights_pipeline(
   coverage = 0.95,
   secondary_coverage = c(0.7, 0.5),
   signal_cutoff = 0.05,
-  mr_ash_max_iter = 100,
+  weight_methods = list(enet_weights = list(), lasso_weights = list(), mrash_weights =
+    list(init_prior_sd = TRUE, max.iter = 100), bayes_c_weights = list(), bayes_r_weights
+    = list()),
   min_cv_maf = 0.05,
   max_cv_variants = -1,
   cv_seed = 999,
-  cv_threads = 1
+  cv_threads = 1,
+  cv_weight_methods = NULL
 )
 }
 \arguments{
@@ -46,7 +49,7 @@ twas_weights_pipeline(
 
 \item{signal_cutoff}{A threshold for determining significant signals in the SuSiE output. Defaults to 0.05.}
 
-\item{mr_ash_max_iter}{The maximum number of iterations for the MR-ASH method. Defaults to 100.}
+\item{weight_methods}{List of methods to use to compute weights for TWAS; along with their parameters.}
 
 \item{min_cv_maf}{The minimum minor allele frequency for variants to be included in cross-validation. Defaults to 0.05.}
 
