@@ -544,6 +544,7 @@ bayes_r_weights <- function(X, y, Z = NULL) {
 #' @param rsids is an optional character vector of rsids, provided outside of the stat dataframe
 #' @param nit is the number of iterations
 #' @param nburn is the number of burnin iterations
+#' @param nthin is the thinning parameter
 #' @param method specifies the methods used (method="bayesN","bayesA","bayesL","bayesC","bayesR")
 #' @param vg is a scalar or matrix of genetic (co)variances
 #' @param vb is a scalar or matrix of marker (co)variances
@@ -590,11 +591,10 @@ bayes_r_weights <- function(X, y, Z = NULL) {
 #' \item{ve}{mean residual variance}
 #' \item{vg}{mean genomic variance}
 #'
-#' @import qgg Rcpp
-#' @useDynLib qgg                                         
+#' @import qgg Rcpp                                     
 #'
 #' @export
-gbayes_rss <- function(stat=NULL, LD=NULL, rsids=NULL, nit=100, nburn=0, method="bayesR",
+gbayes_rss <- function(stat=NULL, LD=NULL, rsids=NULL, nit=100, nburn=0, nthin=4, method="bayesR",
                        vg=NULL, vb=NULL, ve=NULL, ssg_prior=NULL, ssb_prior=NULL, sse_prior=NULL, 
                        lambda=NULL, h2=NULL, pi=0.001, updateB=TRUE, updateG=TRUE, updateE=TRUE, 
                        updatePi=TRUE, adjustE=TRUE, nug=4, nub=4, nue=4, mask=NULL, ve_prior=NULL,
@@ -720,7 +720,8 @@ gbayes_rss <- function(stat=NULL, LD=NULL, rsids=NULL, nit=100, nburn=0, method=
                adjustE = adjustE,
                n=n,
                nit=nit,
-               nburn=nburn, 
+               nburn=nburn,
+               nthin=nthin,
                algo=algo,
                method=as.integer(method),
                seed=seed)

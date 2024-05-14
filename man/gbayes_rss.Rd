@@ -10,6 +10,7 @@ gbayes_rss(
   rsids = NULL,
   nit = 100,
   nburn = 0,
+  nthin = 4,
   method = "bayesR",
   vg = NULL,
   vb = NULL,
@@ -49,6 +50,8 @@ major allele frequency (af).}
 \item{nit}{is the number of iterations}
 
 \item{nburn}{is the number of burnin iterations}
+
+\item{nthin}{is the thinning parameter}
 
 \item{method}{specifies the methods used (method="bayesN","bayesA","bayesL","bayesC","bayesR")}
 
