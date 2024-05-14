@@ -105,11 +105,11 @@ mr_ash_rss <- function(bhat, shat, z = numeric(0), R, var_y, n,
 #' Extract weights from mr_ash_rss function
 #' @return A numeric vector of the posterior mean of the coefficients.
 #' @export
-mr_ash_rss_weights <- function(bhat, shat, R, var_y, n, z = numeric(0), sigma2_e, s0, w0, ...) {
+mr_ash_rss_weights <- function(stat, LD, var_y, z = numeric(0), sigma2_e, s0, w0, ...) {
   
     model <- mr_ash_rss(
-        bhat = bhat, shat = shat, z = z, R = R,
-        var_y = var_y, n = n, sigma2_e = sigma2_e,
+        bhat = stat$b, shat = stat$seb, z = z, R = LD,
+        var_y = var_y, n = median(stat$n), sigma2_e = sigma2_e,
         s0 = s0, w0 = w0, ...)
 
   return(model$mu1)
@@ -224,8 +224,8 @@ prs_cs <- function(bhat, LD, n,
 #' Extract weights from prs_cs function
 #' @return A numeric vector of the posterior SNP coefficients.
 #' @export
-prs_cs_weights <- function(bhat, LD, n, ...){
-    model <- prs_cs(bhat, LD, n, ...)
+prs_cs_weights <- function(stat, LD, ...){
+    model <- prs_cs(bhat = stat$b, LD = list(blk1 = LD), n = median(stat$n), ...)
     
     return(model$beta_est)
 }
@@ -334,6 +334,15 @@ sdpr <- function(bhat, LD, n, per_variant_sample_size = NULL, array = NULL, a = 
   )
 
   return(result)
+}
+
+#' Extract weights from sdpr function
+#' @return A numeric vector of the posterior SNP coefficients.
+#' @export
+sdpr_weights <- function(stat, LD, ...){
+    model <- sdpr(bhat = stat$b, LD = list(blk1 = LD), n = median(stat$n), ...)
+    
+    return(model$beta_est)
 }
 
 #' @importFrom susieR coef.susie
