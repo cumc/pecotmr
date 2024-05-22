@@ -464,11 +464,23 @@ twas_weights <- function(X, Y, weight_methods, num_threads = 1, seed = NULL) {
     # Hardcoded vector of multivariate methods
     multivariate_weight_methods <- c("mrmash_weights", "mvsusie_weights")
     args <- weight_methods[[method_name]]
-
+    
     # Remove columns with zero standard error
     valid_columns <- apply(X, 2, function(col) sd(col) != 0)
-    X_filtered <- X[, valid_columns]
-
+    X_filtered <- as.matrix(X[, valid_columns])
+                           
+    if (method_name=="susie_weights"){
+        if(length(args$susie_fit$pip)>ncol(X_filtered)){
+          # update args of susie_weights 
+          variants_keep_idx <- match(colnames(X_filtered), names(args$susie_fit$X_column_scale_factors))
+          for(element in c("alpha", "lbf_variable", "mu", "mu2")){
+              args$susie_fit[[element]] <-  as.matrix(args$susie_fit[[element]][, variants_keep_idx])
+          }
+          for(element in c("pip", "X_column_scale_factors")){
+              args$susie_fit[[element]] <-  args$susie_fit[[element]][variants_keep_idx]
+          }
+        }
+    }
     if (method_name %in% multivariate_weight_methods) {
       # Apply multivariate method
       weights_matrix <- do.call(method_name, c(list(X = X_filtered, Y = Y), args))
@@ -489,7 +501,7 @@ twas_weights <- function(X, Y, weight_methods, num_threads = 1, seed = NULL) {
     rownames(full_weights_matrix) <- colnames(X)
     colnames(full_weights_matrix) <- colnames(Y)
     full_weights_matrix[valid_columns, ] <- weights_matrix
-
+    
     return(full_weights_matrix)
   }
 
