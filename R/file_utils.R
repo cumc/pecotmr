@@ -702,7 +702,11 @@ load_twas_weights <- function(weight_db_files, conditions = NULL,
 #' @export
 load_rss_data <- function(sumstat_path, column_file_path, n_sample = 0, n_case = 0, n_control = 0) {
   var_y <- NULL
-  sumstats <- fread(sumstat_path)
+  if(is.data.frame(sumstat_path)){
+      sumstats = sumstat_path
+  }else{
+      sumstats <- fread(sumstat_path)
+  }
   column_data <- read.table(column_file_path, header = FALSE, sep = ":", stringsAsFactors = FALSE)
   colnames(column_data) <- c("standard", "original")
 
