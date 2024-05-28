@@ -470,15 +470,9 @@ twas_weights <- function(X, Y, weight_methods, num_threads = 1, seed = NULL) {
     X_filtered <- as.matrix(X[, valid_columns])
                            
     if (method_name=="susie_weights"){
-        if(length(args$susie_fit$pip)>ncol(X_filtered)){
-          # update args of susie_weights 
-          variants_keep_idx <- match(colnames(X_filtered), names(args$susie_fit$X_column_scale_factors))
-          for(element in c("alpha", "lbf_variable", "mu", "mu2")){
-              args$susie_fit[[element]] <-  as.matrix(args$susie_fit[[element]][, variants_keep_idx])
-          }
-          for(element in c("pip", "X_column_scale_factors")){
-              args$susie_fit[[element]] <-  args$susie_fit[[element]][variants_keep_idx]
-          }
+        if(length(args$susie_fit$pip)!=ncol(X_filtered)){
+          stop(paste0("Dimension mismatch on number of variant in susie_fit ", length(args$susie_fit$pip), 
+                      " and TWAS weights ", ncol(X_filtered),". "))
         }
     }
     if (method_name %in% multivariate_weight_methods) {
