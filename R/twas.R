@@ -54,7 +54,7 @@ twas_z <- function(weights, z, R = NULL, X = NULL) {
 #' @importFrom stats cor pnorm
 #'
 #' @export
-twas_joint_z <- function(R = NULL, X = NULL, weights, z) {
+twas_joint_z <- function(weights, z, R = NULL, X = NULL) {
   # Check that weights and z-scores have the same number of rows
   if (nrow(weights) != length(z)) {
     stop("Number of rows in weights must match the length of z-scores.")
