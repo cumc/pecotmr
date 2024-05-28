@@ -163,7 +163,7 @@ twas_weights_pipeline <- function(X, y, maf, susie_fit, ld_reference_meta_file =
 #' @importFrom magrittr %>%
 #' @export
 rss_analysis_pipeline <- function(
-    sumstat_path, column_file_path, LD_data, n_sample = 0, n_case = 0, n_control = 0, skip_region = NULL,
+    sumstat_path, column_file_path, LD_data, gene = NULL, n_sample = 0, n_case = 0, n_control = 0, skip_region = NULL,
     qc_method = c("rss_qc", "dentist", "slalom"),
     finemapping_method = c("susie_rss", "single_effect", "bayesian_conditional_regression"),
     finemapping_opts = list(
@@ -175,7 +175,7 @@ rss_analysis_pipeline <- function(
     
   res <- list()  
   rss_input <- load_rss_data(
-    sumstat_path = sumstat_path, column_file_path = column_file_path,
+    sumstat_path = sumstat_path, column_file_path = column_file_path, gene = gene,
     n_sample = n_sample, n_case = n_case, n_control = n_control
   )
 

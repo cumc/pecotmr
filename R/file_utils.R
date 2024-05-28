@@ -700,7 +700,7 @@ load_twas_weights <- function(weight_db_files, conditions = NULL,
 #'
 #' @importFrom data.table fread
 #' @export
-load_rss_data <- function(sumstat_path, column_file_path, n_sample = 0, n_case = 0, n_control = 0) {
+load_rss_data <- function(sumstat_path, column_file_path, gene = NULL, n_sample = 0, n_case = 0, n_control = 0) {
   var_y <- NULL
   if(is.data.frame(sumstat_path)){
       sumstats = sumstat_path
@@ -756,6 +756,10 @@ load_rss_data <- function(sumstat_path, column_file_path, n_sample = 0, n_case =
       warning("Sample size and variance of Y could not be determined from the summary statistics.")
       n <- NULL
     }
+  }
+    
+  if(!is.null(gene)){
+      sumstats = sumstats %>% filter(str_detect(Gene, gene))
   }
 
   return(list(sumstats = sumstats, n = n, var_y = var_y))
