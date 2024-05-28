@@ -464,7 +464,7 @@ mrash_weights <- function(X, y, init_prior_sd = TRUE, ...) {
 #' bayes_r_weights(y = y, X = X, Z = Z)
 #' @importFrom qgg gbayes
 #' @export
-bayes_alphabet_weights <- function(X, y, method, Z = NULL) {
+bayes_alphabet_weights <- function(X, y, method, Z = NULL, nit = 5000, nburn = 1000, nthin=5) {
   # check for identical row lengths of response and genotype
   if (!(length(y) == nrow(X))) {
     stop("All objects must have the same number of rows")
@@ -480,7 +480,10 @@ bayes_alphabet_weights <- function(X, y, method, Z = NULL) {
     y = y,
     W = X,
     X = Z,
-    method = method
+    method = method,
+    nit = nit,
+    nburn = nburn,
+    nthin= nthin
   )
 
   return(model$bm)
