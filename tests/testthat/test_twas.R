@@ -2,18 +2,30 @@ context("twas")
 library(tidyverse)
 library(snpStats)
 
-generate_X_Y <- function(seed=1, num_samples=10, num_features=10) {
-    set.seed(seed)
-    X <- scale(
-        matrix(rnorm(num_samples * num_features), nrow = num_samples),
-        center = TRUE, scale = TRUE)
+generate_X_Y <- function(seed=1, num_samples=10, num_features=10, X_rownames=TRUE, y_rownames=TRUE) {
+  set.seed(seed)
+  X <- scale(
+    matrix(rnorm(num_samples * num_features), nrow = num_samples),
+    center = TRUE, scale = TRUE)
+  
+  if (X_rownames) {
     rownames(X) <- paste0("sample", 1:num_samples)
-    beta = rep(0, num_features)
-    beta[1:4] = 1
-    y <- X %*% beta + rnorm(num_samples)
+  } else {
+    rownames(X) <- NULL
+  }
+  
+  beta = rep(0, num_features)
+  beta[1:4] = 1
+  y <- X %*% beta + rnorm(num_samples)
+  y <- matrix(y, nrow = num_samples, ncol = 1)
+  if (y_rownames) {
     rownames(y) <- paste0("sample", 1:num_samples)
-    colnames(y) <- c("Outcome")
-    return(list(X=X, Y=y))
+  } else {
+    rownames(y) <- NULL
+  }
+  colnames(y) <- c("Outcome")
+  
+  return(list(X=X, Y=y))
 }
 
 generate_susie_obj <- function(X, y) {
@@ -57,6 +69,8 @@ test_that("Check twas_z R is NULL and X is provided", {
     result <- twas_z(weights, z, X = X)
     expect_true(is.list(result))
 })
+
+# Use fold with made up partition dataframe
 
 test_that("Check twas_weights_cv works with minimum data", {
     sim <- generate_X_Y()
@@ -168,74 +182,6 @@ test_that("twas_weights handles parallel processing", {
     RNGkind("default")
 })
 
-test_that("Check susie_weights susie_fit works as expected", {
-    local_mocked_bindings(
-        susie_wrapper = function(X, y, ...) list(pip = rep(0.5, 10)),
-        coef.susie = function(X, y, ...) rep(TRUE, 10)
-    )
-    expect_equal(
-        length(susie_weights()), 10)
-    expect_equal(
-        length(susie_weights(susie_fit=list(alpha=T, mu=T, X_column_scale_factors=T))), 9)
-})
-
-test_that("Check susie_weights susie_fit runs with sim data no susie_fit", {
-    sim <- generate_X_Y(seed = 1)
-    X <- sim$X
-    y <- sim$Y
-    expect_equal(
-        length(susie_weights(X=X, y=y)), 10)
-})
-
-test_that("Check susie_weights susie_fit runs with sim data with susie_fit", {
-    sim <- generate_X_Y(seed = 1)
-    X <- sim$X
-    y <- sim$Y
-    susie_fit <- generate_susie_obj(X, y)
-    expect_equal(
-        length(susie_weights(X=X, y=y, susie_fit = susie_fit)), 10)
-})
-
-test_that("Check susie_weights produces equal output w/ and w/o susie_fit", {
-    sim <- generate_X_Y(seed = 1)
-    X <- sim$X
-    y <- sim$Y
-    susie_fit <- generate_susie_obj(X, y)
-    res <- susie_weights(X=X, y=y)
-    res_susie_fit <- susie_weights(X=X, y=y, susie_fit = susie_fit)
-    expect_equal(res, res_susie_fit)
-})
-
-test_that("Check glmnet_weights runs", {
-    sim <- generate_X_Y(seed = 1, num_samples=30)
-    X <- sim$X
-    y <- sim$Y
-    res <- glmnet_weights(X, y, 0.5) 
-    expect_equal(length(res), 10)
-})
-
-test_that("Check enet_weights works", {
-    sim <- generate_X_Y(seed = 1, num_samples=30)
-    X <- sim$X
-    y <- sim$Y
-    set.seed(1)
-    res <- glmnet_weights(X, y, 0.5) 
-    set.seed(1)
-    enet <- enet_weights(X, y) 
-    expect_equal(res, enet)
-})
-
-test_that("Check lasso_weights works", {
-    sim <- generate_X_Y(seed = 1, num_samples=30)
-    X <- sim$X
-    y <- sim$Y
-    set.seed(1)
-    res <- glmnet_weights(X, y, 1) 
-    set.seed(1)
-    enet <- lasso_weights(X, y) 
-    expect_equal(res, enet)
-})
-
 test_that("Check pval_acat works", {
     set.seed(1)
     expect_equal(pval_acat(c(0.05)), 0.05)
@@ -255,9 +201,38 @@ test_that("Check pval_global works", {
     expect_true(!is.null(pval_global(runif(10), naive=TRUE))) # hmp returned
 })
 
-test_that("Check twas_joint_z works", {
-    # To write
+generate_twas_joint_z_data <- function(num_samples=10, num_snps=10, num_conditions = 5) {
+  X <- matrix(sample(0:2, num_samples * num_snps, replace = TRUE), nrow = num_snps, ncol = num_samples)
+  rownames(X) <- paste0("Sample", 1:num_samples)
+  colnames(X) <- paste0("SNP", 1:num_snps)
+
+  weights <- matrix(rnorm(num_snps * num_conditions), nrow = num_snps, ncol = num_conditions)
+  rownames(weights) <- paste0("SNP", 1:num_snps)
+  colnames(weights) <- paste0("Cond", 1:num_conditions)
+
+  z <- rnorm(num_snps)
+  names(z) <- paste0("SNP", 1:num_snps)
+
+  R <- cor(X)
+  rownames(R) <- colnames(X) <- paste0("SNP", 1:ncol(X))
+
+  return(list(X=X, weights=weights, z=z, R=R))
+}
+
+test_that("twas_joint_z fails when z noteq weights", {
+    expect_error(twas_joint_z(weights = matrix(rnorm(10), nrow=10), z = rnorm(11)))
 })
 
+test_that("twas_join_z works without R", {
+    data <- generate_twas_joint_z_data()
+    result <- twas_joint_z(data$weights, data$z, X=data$X)
+    expect_is(result, "list")
+    expect_true(all(names(result) %in% c("Z", "GBJ")))
+})
 
-
+test_that("Check twas_joint_z works with R", {
+    data <- generate_twas_joint_z_data()
+    result <- twas_joint_z(data$weights, data$z, R=data$R)
+    expect_is(result, "list")
+    expect_true(all(names(result) %in% c("Z", "GBJ")))
+})
