@@ -1,256 +1,32 @@
 # requires ctwas package.
-# remotes::install_github("xinhe-lab/ctwas",ref = "main")
+# remotes::install_github("xinhe-lab/ctwas",ref = "multigroup_test")
 #
-#' Causal inference for TWAS with Summary Statistics
+#' Causal inference for TWAS with Summary Statistics with Multigroup Data
 #'
 #' @title cTWAS (causal-TWAS) wrapper
-#' 
-#' @description 
-#' 
-#' @param weight_matrices a list of weight vectors, one weight vector corresponds
-#' to one gene, name of each list is gene name.
-#' 
-#' @param gwas_sumstat a data frame of gwas summary statistics with the columns of:
-#' "id", "A1", "A2", "z". 
-#' 
-#' @param ld_dir a string, pointing to a directory containing all LD matrix files 
-#' (*.cor.xz) and variant information (*.bim). The .bim file has 5 required columns: 
-#' "chrom", "id", "pos", "alt", "ref" . 
-#'
-#' @param wd is a path as working directory that will later create folders for output
-#' files and formatted LDs. 
-#'
-#' @param outputdir a string, the directory to store output
-#' 
-#' @param harmonize_z TRUE/FALSE. If TRUE, GWAS and eQTL genotype alleles are 
-#' harmonized
-#'
-#' @param harmonize_wgt TRUE/FALSE. If TRUE, GWAS and eQTL genotype alleles are 
-#' harmonized
-#'
-#' @param recover_strand_ambig_wgt TRUE/FALSE. If TRUE, a procedure is used to 
-#' recover strand ambiguous variants. If FALSE, these variants are dropped from 
-#' the prediction model. 
-
-#' @param strand_ambig_action_z the action to take to harmonize strand ambiguous variants 
-#' (A/T, G/C) between the z scores and LD reference. "drop" removes the ambiguous variant 
-#' from the z scores. "none" treats the variant as unambiguous, flipping the z score to 
-#' match the LD reference and then taking no additional action. "recover" imputes the sign 
-#' of ambiguous z scores using unambiguous z scores and the LD reference and flips the z 
-#' scores if there is a mismatch between the imputed sign and the observed sign of the z 
-#' score. This option is computationally intensive.
-#'
-#' @param outname a string, the output name. 
-#'
-#' @return 
-#'
-#' 
-#'
-#'
-# @importFrom ctwas impute_expr_z ctwas_rss
-# @importFrom biomaRt useMart getBM
-# @importFrom RSQLite dbConnect dbDisconnect dbWriteTable
-#' @importFrom data.table fread read_delim
-#' @importFrom readr read_delim
-#' @importFrom reshape2 melt 
-#' @importFrom purrr map
-
-# work in progress 
-# library("biomaRt")
-# library("DBI")
-# library("RSQLite")
-# library("data.table")
-# library("ctwas")
-# library("reshape2")
-# library("readr")
-# library("map")
-#
-## raw example 
-# z_snp <- data.table::fread("/mnt/vast/hpc/csg/cl4215/mrmash/workflow/ctwas_gwas.tsv", 
-#     data.table=FALSE, header=TRUE)
-#
-# wgt_all <- readRDS("/mnt/vast/hpc/csg/cl4215/mrmash/workflow/weight_all.rds")
-#
-# region_list <- read.table("/mnt/vast/hpc/csg/snuc_pseudo_bulk/eight_celltypes_analysis/output/data_preprocessing/ALL/phenotype_data/ALL.log2cpm.region_list", 
-#                          sep="\t", header=FALSE)
-# colnames(region_list) <- c("chrom", "start", "stop", "id", "gene_name")
 #
 #
-# k <- ctwas_wrapper(weight_matrices=wgt_all, 
-#               gwas_sumstat=z_snp,
-#               ld_dir="/mnt/vast/hpc/csg/cl4215/mrmash/workflow/LD_WGS/",
-#               wd="/mnt/vast/hpc/csg/cl4215/mrmash/workflow/",
-#               region_list=region_list,
-#               plot=FALSE,
-#               harmonize_z = T,
-#               harmonize_wgt = T,
-#               outname="test",
-#               strand_ambig_action_z = "none",
-#               recover_strand_ambig_wgt = T)
-# 
-
-ctwas_wrapper <- function(weight_matrices, 
-                          gwas_sumstat,
-                          ld_dir,
-                          wd,
-                          region_list,
-                          plot=FALSE,
-                          harmonize_z = T,
-                          harmonize_wgt = T,
-                          outname="test",
-                          strand_ambig_action_z = "none",
-                          recover_strand_ambig_wgt = T,
-                          estimate_group_prior = T,
-                          estimate_group_prior_var = T,
-                          ncore = 16
-                          ){
-    
-    
-    # FORMAT WEIGHTS - > make db file
-    all_snps <- c()
-    for ( i in names(wgt_all)){
-        all_snps <- c(all_snps, names(wgt_all[[i]]))
-        }
-    length(all_snps)
-
-    wgt_table <- do.call(rbind, lapply(names(wgt_all), get_wgt_table, wgt_list=wgt_all)) 
-    extra <- get_extra(wgt_list=wgt_all, region_list)
-    
-    extra <-  extra[extra$gene_type=="protein_coding",,drop=F]
-    wgt_table <- wgt_table[wgt_table$gene %in% extra$gene,]
-    
-    mydb <- dbConnect(RSQLite::SQLite(), paste0(wd, "/weights.db"))
-    dbWriteTable(mydb, "weights", wgt_table, overwrite=TRUE)
-    dbWriteTable(mydb,"extra", extra, overwrite=TRUE)                            
-    dbDisconnect(mydb)
-    
-    # FORMAT LD
-    ifelse(!dir.exists(file.path(paste0(wd), "LD_format")), dir.create(file.path(paste0(wd), "LD_format")), FALSE)
-    ld_R_dir <- paste0(wd, "/LD_format/") # output of formatted ld
-    
-    # get original LD
-    lds <- list.files(path=ld_dir, pattern="*.cor.xz.bim", all.files=TRUE, full.names=FALSE)
-    lds <- strsplit(lds, "*.cor.xz.bim")
-
-    map(lds, write_ld_matrix, ld_dir, ld_R_dir, all_snps)
-    
-    # get pair-wise covariance /LD for harmonization
-    ls <- list.files(path=ld_R_dir, pattern="*.RDS", all.files=TRUE, full.names=FALSE)
-    ls <- strsplit(ls, ".RDS")
-    
-    covariance <- do.call(rbind, lapply(ls ,function(x){
-            myld <- readRDS(paste0(ld_R_dir, "/", x, ".RDS"))
-            Rvar <- data.table::fread(paste0(ld_R_dir, x, ".Rvar"), header = T)
-    
-            rownames(myld) <- paste0("chr", Rvar$chrom, "_", sub("^.*?\\:", "", Rvar$id), "_b38")
-            colnames(myld) <- rownames(myld)
-    
-            cov <- reshape2::melt(myld)
-            cov <- data.frame(t(apply(cov, 1, sort)))
-            cov <- cov[duplicated(cov[, 1 : 2], MARGIN = 1), ]
-            cov <- cov[, 3 : 1]
-            colnames(cov) <- c("RSID1", "RSID2", "VALUE")
-            return(cov)}
-       )
-    )
-    
-    data.table::fwrite(covariance, paste0(wd, "/weights.txt.gz"), sep="\t", 
-                   quote = FALSE, row.names=FALSE)
-    data.table::fwrite(region_list, paste0(wd, "/region_list.txt"), sep="\t", 
-                   quote = FALSE, row.names=FALSE)
-    
-    ifelse(!dir.exists(file.path(paste0(wd), "output")), dir.create(file.path(paste0(wd), "output")), FALSE)
-    
-    res <- impute_expr_z(z_snp = z_snp,
-                     weight = paste0(wd, "/weights.db"), 
-                     ld_R_dir = ld_R_dir, 
-                     outputdir = paste0(wd, "/output/"), 
-                     outname = outname,
-                     harmonize_z = harmonize_z,
-                     harmonize_wgt = harmonize_wgt,
-                     strand_ambig_action_z = strand_ambig_action_z,
-                     recover_strand_ambig_wgt = T)
-
-     
-    # pars <- ctwas_rss(z_gene=res$z_gene,
-    #              z_snp = res$z_snp, 
-    #              ld_R_dir = ld_R_dir, 
-    #              ld_regions_custom = paste0(wd, "/region_list.txt"), 
-    #              outputdir = paste0(wd, "/output/"), 
-    #              outname = outname,
-    #              ncore = ncore)
-
-    return(res)
-    
-}
 
 
-
-get_wgt_table <- function(gene, wgt_list){
-    wgt_table <- data.frame(gene=gene, 
-                     rsid=names(wgt_list[[gene]]), 
-                     varID=paste0(gsub( ":.*$", "", names(wgt_list[[gene]])) , "_" ,sub("^.*?\\:", "", names(wgt_list[[gene]])),"_b38"),
-                     ref_allele=gsub( "_.*$", "", sub("^.*?\\_", "", names(wgt_list[[gene]]))), 
-                     eff_allele=sub("^.*?\\_", "", sub("^.*?\\_", "", names(wgt_list[[gene]]))), 
-                     weight=wgt_list[[gene]])
-    return(wgt_table)
-}
-
-
-get_extra <- function(wgt_list, region_list){
-    mart <- useMart(biomart="ensembl", dataset="hsapiens_gene_ensembl")
-    gtype_table <- getBM(values = names(wgt_all), attributes = c("ensembl_gene_id", "gene_biotype"), mart=mart)
-    
-    extra <- data.frame(
-        gene=names(wgt_list),
-        genename=unlist(lapply(names(wgt_list), function(x) region_list$gene_name[region_list$id == x])),
-        n.snps.in.model=unlist(lapply(names(wgt_list), function(x) length(wgt_list[[x]]))),
-        gene_type=gtype_table$gene_biotype[gtype_table$ensembl_gene_id %in% names(wgt_list)], 
-        pred.perf.R2=NA,
-        pred.perf.pval=NA,
-        pred.perf.qval=NA
-        )
-    return(extra)  
-}
-
-
-# function to format LD matrices for cTWAS
-write_ld_matrix <- function(ld_dir, ld_R_dir, all_snps) {
-  rvar_file <- data.table::fread(paste0(ld_dir, "/", i, ".cor.xz.bim"), header = FALSE)
-  colnames(rvar_file) <- c("chrom", "id", "posg", "pos", "alt", "ref")
-  rvar_file <- rvar_file[, c("chrom", "id", "pos", "alt", "ref")]
-  indx <- which(rvar_file$id %in% all_snps)
-
-  if (length(indx) >= 2) {
-    rvar <- rvar_file[indx, ]
-    rvar$variance <- 1
-    rvar$chrom <- as.integer(rvar$chrom)
-
-    ld_fname <- paste0(ld_dir, "/", i, ".cor")
-    if (!file.exists(ld_fname)) {
-      system(paste("xz -dk", paste0(ld_fname, ".xz")))
-    }
-    ld <- data.table::fread(paste0(ld_dir, "/", i, ".cor"), sep = " ")
-    ld <- as.matrix(ld)
-    ld <- ld[indx, indx]
-    ld[upper.tri(ld)] <- t(ld)[upper.tri(ld)]
-    start <- min(rvar$pos)
-    stop <- max(rvar$pos)
-    CHR <- as.integer(unique(rvar$chrom))
-    if (length(CHR) >= 2) {
-      stop("has more than one chromosome provided in the LD file")
-    }
-
-    saveRDS(ld, paste0(ld_R_dir, "/ld_chr", CHR, ".R_snp.", start, "_", stop, ".RDS"))
-    data.table::fwrite(rvar,
-      file = paste0(ld_R_dir, "/ld_chr", CHR, ".R_snp.", start, "_", stop, ".Rvar"),
-      sep = "\t", quote = F
-    )
-  }
-}
-
-
-
+#' Determine Imputability and Variant Selection
+#'
+#' Assesses the imputability of genes across different contexts and selects a subset of SNPs with high Posterior Inclusion Probabilities (PIPs) from SuSiE fine-mapping results. It retrieves variant weights and identifies the best-performing methods based on cross-validation metrics. This function is essential for preparing data for complex trait weighted analysis.
+#' @param weight_db_files File paths to `.rds` files containing SuSiE-TWAS weights.
+#' @param variable_name_obj Name of the element in SuSiE-TWAS output that lists variant names aligned with TWAS weights.
+#' @param max_var_selection Maximum number of SNPs to be selected from each gene-context pair.
+#' @param min_rsq_threshold Minimum \(R^2\) threshold for determining imputability of a gene-context pair.
+#' @param p_val_cutoff Maximum allowable p-value for a gene to be considered imputable in a given context.
+#' @return A list of elements containing fine-mapping and TWAS related data:
+#' \itemize{
+#'   \item{susie_results}{SuSiE fine-mapping results, including variant selection from the SuSiE-TWAS pipeline.}
+#'   \item{model_selection}{Identification of the best-performing TWAS method for each context, based on cross-validation.}
+#'   \item{weights}{TWAS weights from the SuSiE-TWAS pipeline, to be harmonized for further analysis.}
+#'   \item{region_info}{Region information corresponding to each gene, critical for interpreting SuSiE-TWAS weight inputs.}
+#' }
+#' @export
+#' @examples
+#' results <- determine_imputability(weight_db_files = "path/to/weights.rds", conditions=c("Mic", "Oli", "Exc"),
+#'                                   max_var_selection = 10, min_rsq_threshold = 0.01, p_val_cutoff = 0.05)
 # select variants for ctwas weights input
 select_ctwas_weights <- function(weight_db_files, conditions = NULL,
                                  variable_name_obj = c("preset_variants_result", "variant_names"),
@@ -427,7 +203,7 @@ select_ctwas_weights <- function(weight_db_files, conditions = NULL,
     return(consolidated_list)
   }
 
-  # Internal function to consolidate weights for given condition
+  # Internal function to consolidate weights for a given context
   consolidate_weights_list <- function(combined_all_data, conditions, variable_name_obj, twas_weights_table) {
     # Set default for 'conditions' if they are not specified
     if (is.null(conditions)) {
@@ -506,17 +282,25 @@ select_ctwas_weights <- function(weight_db_files, conditions = NULL,
 }
 
 
-# ctwas input formatting functions for multigroup ctwas
-get_ctwas_input <- function(summary_report, xqtl_meta_data, outdir, outname, chr_input_file = NULL) {
-  if (!is.null(chr_input_file)) {
-    out <- readRDS(chr_input_file)
+#' Format Multigroup cTWAS Input Lists
+#' Aggregates gene data from the 'summary_report' table and organizes it into nested lists. These lists are hierarchically structured by `gwas_study_name`, chromosome (chr`chr_number`), and then grouped under "weights_list" with each gene identified by `gene_name` and its `context` (`gene_name`|`context`).  
+#' @param summary_report A data frame containing metadata about each gene, including imputable contexts and the best-performing TWAS methods.
+#' @param outdir The directory where the output will be saved. If not specified, the current working directory is used.
+#' @param weights_input_file Path to an existing weight list file. This file is used to append additional weights based on new entries in the `summary_report`.
+#' @param auto_save Boolean flag indicating whether to automatically save the output to the `outdir` or use the current working directory if `outdir` is not specified. Default is `FALSE`.
+#' @importFrom foreach foreach %do%
+#' @export
+# weights_input_file is an existing weight file that we want to add additional weights on top of it.  
+get_ctwas_input <- function(summary_report, outdir=NULL, outname=NULL, weights_input_file = NULL, auto_save = TRUE) {
+  if (!is.null(weights_input_file)) {
+    out <- readRDS(weights_input_file)
   } else {
     out <- NULL
   }
   # only process new genes and add to pre-existing ctwas input file
   summary_report <- summary_report[summary_report$IsImputable, ]
-  genes <- summary_report$gene[summary_report$gene %in% xqtl_meta_data$region_id]
-  if (!is.null(chr_input_file)) {
+  genes <- summary_report$gene
+  if (!is.null(weights_input_file)) {
     processed_genes <- unique(do.call(c, lapply(names(out[[1]]), function(chr) {
       gsub("\\|.*$", "", names(out[[1]][[chr]]$weights))
     })))
@@ -543,25 +327,34 @@ get_ctwas_input <- function(summary_report, xqtl_meta_data, outdir, outname, chr
         out[[study]][[paste0("chr", chr)]][["weights_list"]] <- c(out[[study]][[paste0("chr", chr)]][["weights_list"]], format_ctwas_weights(twas_rs, study, data_type))
       }
     }
-    if (!is.null(chr_input_file)) {
-      if (is.null(outdir)) outdir <- dirname(chr_input_file)
-      if (is.null(outname)) outname <- ""
-      print(paste0("saving formated output as ", outdir, "/", strsplit(basename(chr_input_file), ".rds")[[1]], "_", outname, "_updated.rds. "))
-      saveRDS(out, paste0(outdir, "/", strsplit(basename(chr_input_file), ".rds")[[1]], "_", outname, "_updated.rds"))
+    if (!is.null(weights_input_file)) {
+      if (auto_save){
+        if (is.null(outdir)) outdir <- dirname(weights_input_file)
+        print(paste0("Updating formated weights list of ", outdir, "/", basename(weights_input_file)))
+        saveRDS(out, paste0(outdir, "/", basename(weights_input_file)), compress='xz')
+      }
       return(out)
     } else {
-      if (is.null(outdir)) outdir <- getwd()
-      print(paste0("saving formated output as ", outdir, "/ctwas_input_", outname, ".rds. "))
-      saveRDS(out, paste0(outdir, "/ctwas_input_", outname, ".rds"))
+      if (auto_save){
+        if (is.null(outdir)) outdir <- getwd()
+        print(paste0("saving formated output as ", outdir, "/ctwas_weights_", outname, ".rds. "))
+        saveRDS(out, paste0(outdir, "/ctwas_weights_", outname, ".rds"), compress='xz')
+      }
       return(out)
     }
+  } else {
+    print(paste0("No ctwas input file found. "))
+    return(NULL)
   }
-  print(paste0("No ctwas input file found. "))
-  return(NULL)
 }
 
 
-# extract selected weights from a gene
+#' Function to extract selected weights from a gene across all contexts for cTWAS multigroup analysis
+#' @param twas_rs twas_sparse pipeline selection results.
+#' @param study Study name of the GWAS data that was incorporated for TWAS analysis.   
+#' @param type xQTL data type such as expression or protein
+#' @return A list of list for weight information for each gene-context pair.  
+#' @export
 format_ctwas_weights <- function(twas_rs, study, type) {
   # Register parallel backend to use multiple cores
   region_info <- twas_rs[[study]][["region_info"]]
@@ -626,29 +419,40 @@ format_ctwas_weights <- function(twas_rs, study, type) {
 }
 
 
+#' Convert Lower Triangle LD Matrix to Symmetrical Full Matrix fot cTWAS analysis. 
+#'
+#' This function converts a lower triangle LD (Linkage Disequilibrium) matrix into a symmetrical full matrix suitable for cTWAS analysis. It then saves the result in both RDS and Rvar formats in the specified output directory. This is particularly useful for genetic analysis workflows that require full matrix formats for computational processes.
+#'
+#' @param ld_paths A vector of full pathnames to LD matrix files, expected to follow the naming convention `/LD_path/chrN/chrN_start_end.cor.xz` with a corresponding bim file in the same directory, e.g., `/LD_path/chrN/chrN_start_end.cor.xz.bim`.
+#' @param outdir A character string specifying the output directory where the processed files will be saved.
+#' @return A data frame containing region information for each formatted LD file, detailing the locations and specifics of the regions processed.
+#' @details On execution, the function writes two types of files to the `outdir`:
+#' \itemize{
+#'   \item An `.RDS` file, which contains the fully processed symmetrical LD matrix.
+#'   \item A `.Rvar` file, which includes variance estimates for the LD regions processed.
+#' }
+#' @importFrom data.table fwrite
+#' @export
+#' @examples
+#' convert_ld_matrix(ld_paths = c("/path/to/ld/chr1/chr1_12345_17755.cor.xz"),
+#'                   outdir = "path/to/output")
 
-
-# extract ld file name from ld meta file
-ld_meta_to_list <- function(ld_meta_file) {
-  ld_meta <- data.table::fread(ld_meta_file, data.table = FALSE, header = TRUE)
-  ld_file_list <- gsub(",.*$", "", ld_meta$path)
-  return(ld_file_list)
-}
-
-# convert to symmetrical full matrix, save into RDS/Rvar format
 format_ctwas_ld <- function(ld_paths, outdir) {
   region_info <- data.frame()
   for (ld_path in ld_paths) {
-    ld <- as.matrix(read.table(ld_path, sep = " "))
-    ld[lower.tri(ld)] <- t(ld)[lower.tri(ld)]
-    saveRDS(ld, paste0(outdir, "/LD_", basename(ld_path), ".RDS"))
-
-    bim <- read.table(paste0(ld_path, ".bim"), header = FALSE)[, -c(3, 9)] # remove posg and number missing sample column
-    colnames(bim) <- c("chrom", "id", "pos", "alt", "ref", "variance", "allele_freq")
-    bim$id <- gsub("_", ":", bim$id)
-    data.table::fwrite(bim, file = paste0(outdir, "/LD_", basename(ld_path), ".Rvar"), sep = "\t", quote = F)
-    print(paste0("writing ld file ", outdir, "/LD_", basename(ld_path), ".RDS"))
-    print(paste0("writing ld file ", outdir, "/LD_", basename(ld_path), ".Rvar"))
+    if (!file.exists(paste0(outdir, "/LD_", basename(ld_path), ".RDS"))){
+      ld <- as.matrix(read.table(ld_path, sep = " "))
+      ld[lower.tri(ld)] <- t(ld)[lower.tri(ld)]
+      print(paste0("writing ld file ", outdir, "/LD_", basename(ld_path), ".RDS"))
+      saveRDS(ld, paste0(outdir, "/LD_", basename(ld_path), ".RDS"), compress='xz')
+    }
+    if (!file.exists(paste0(outdir, "/LD_", basename(ld_path), ".Rvar"))){
+      bim <- read.table(paste0(ld_path, ".bim"), header = FALSE)[, -c(3, 9)] # remove posg and number missing sample column
+      colnames(bim) <- c("chrom", "id", "pos", "alt", "ref", "variance", "allele_freq")
+      bim$id <- gsub("_", ":", bim$id)
+      print(paste0("writing ld file ", outdir, "/LD_", basename(ld_path), ".Rvar"))
+      data.table::fwrite(bim, file = paste0(outdir, "/LD_", basename(ld_path), ".Rvar"), sep = "\t", quote = F)
+    }
     ld_info <- data.frame(
       chrom = as.integer(sub(".*chr", "", gsub("_.*$", "", basename(ld_path)))),
       start = as.integer(unlist(strsplit(basename(ld_path), "_"))[2]),
@@ -663,7 +467,14 @@ format_ctwas_ld <- function(ld_paths, outdir) {
 }
 
 
-# function to scan all the ld files in a directory and generate region_info table
+#' Scan Directory for LD Files and Generate Region Information Table
+#'
+#' Scans a specified directory for formatted LD (Linkage Disequilibrium) matrix files and corresponding bim files, generating a table with detailed region information. This function is designed to handle files named in a structured format, such as `LD_chr2_12345_17755.cor.xz.RDS` for RDS files and `LD_chr2_12345_17755.cor.xz.Rvar` for variance files.
+#' @param ld_dir Path to the directory containing the LD matrix RDS files.
+#' @return A data frame containing region information for all formatted LD matrices located in the specified directory. This includes details such as chromosome number, start and end positions, and file types.
+#' @export
+#' @examples
+#' region_info <- scan_ld_files("path/to/ld_directory")                          
 get_dir_region_info <- function(ld_dir) {
   ld_file_names <- list.files(path = ld_dir, pattern = "*.RDS", all.files = FALSE, full.names = FALSE)
 

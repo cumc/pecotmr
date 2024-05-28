@@ -4,16 +4,16 @@
 \alias{twas_joint_z}
 \title{Multi-condition TWAS joint test}
 \usage{
-twas_joint_z(R = NULL, X = NULL, weights, z)
+twas_joint_z(weights, z, R = NULL, X = NULL)
 }
 \arguments{
-\item{R}{An optional correlation matrix. If not provided, it will be calculated from the genotype matrix X.}
-
-\item{X}{An optional genotype matrix. If R is not provided, X must be supplied to calculate the correlation matrix.}
-
 \item{weights}{A matrix of weights, where each column corresponds to a different condition.}
 
 \item{z}{A vector of GWAS z-scores.}
+
+\item{R}{An optional correlation matrix. If not provided, it will be calculated from the genotype matrix X.}
+
+\item{X}{An optional genotype matrix. If R is not provided, X must be supplied to calculate the correlation matrix.}
 }
 \value{
 A list containing the following elements:

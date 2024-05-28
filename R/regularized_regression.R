@@ -77,9 +77,9 @@
 #' # In sample prediction correlations
 #' cor(X %*% out1$mu1, y) # 0.9984064
 #' @export
-mr_ash_rss <- function(bhat, shat, z = numeric(0), R, var_y, n,
+mr_ash_rss <- function(bhat, shat, R, var_y, n,
                        sigma2_e, s0, w0, mu1_init = numeric(0),
-                       tol = 1e-8, max_iter = 1e5,
+                       tol = 1e-8, max_iter = 1e5,  z = numeric(0),
                        update_w0 = TRUE, update_sigma = TRUE,
                        compute_ELBO = TRUE, standardize = FALSE, ncpu = 1L) {
   # Check if ncpu is greater than 0 and is an integer
@@ -88,7 +88,7 @@ mr_ash_rss <- function(bhat, shat, z = numeric(0), R, var_y, n,
   }
 
   if (is.null(var_y)) var_y <- Inf
-
+  if (identical(z, numeric(0))) z <- bhat / shat # rcpp_mr_ass_rss throws error at line 269 of mr_ash.h
   result <- rcpp_mr_ash_rss(
     bhat = bhat, shat = shat, z = z, R = R,
     var_y = var_y, n = n, sigma2_e = sigma2_e,
@@ -105,7 +105,7 @@ mr_ash_rss <- function(bhat, shat, z = numeric(0), R, var_y, n,
 #' Extract weights from mr_ash_rss function
 #' @return A numeric vector of the posterior mean of the coefficients.
 #' @export
-mr_ash_rss_weights <- function(stat, LD, var_y, z = numeric(0), sigma2_e, s0, w0, ...) {
+mr_ash_rss_weights <- function(stat, LD, var_y, sigma2_e, s0, w0, z = numeric(0), ...) {
   
     model <- mr_ash_rss(
         bhat = stat$b, shat = stat$seb, z = z, R = LD,
@@ -464,7 +464,7 @@ mrash_weights <- function(X, y, init_prior_sd = TRUE, ...) {
 #' bayes_r_weights(y = y, X = X, Z = Z)
 #' @importFrom qgg gbayes
 #' @export
-bayes_alphabet_weights <- function(X, y, method, Z = NULL) {
+bayes_alphabet_weights <- function(X, y, method, Z = NULL, nit = 5000, nburn = 1000, nthin=5) {
   # check for identical row lengths of response and genotype
   if (!(length(y) == nrow(X))) {
     stop("All objects must have the same number of rows")
@@ -480,7 +480,10 @@ bayes_alphabet_weights <- function(X, y, method, Z = NULL) {
     y = y,
     W = X,
     X = Z,
-    method = method
+    method = method,
+    nit = nit,
+    nburn = nburn,
+    nthin= nthin
   )
 
   return(model$bm)
