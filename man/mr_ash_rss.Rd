@@ -7,7 +7,6 @@
 mr_ash_rss(
   bhat,
   shat,
-  z = numeric(0),
   R,
   var_y,
   n,
@@ -17,6 +16,7 @@ mr_ash_rss(
   mu1_init = numeric(0),
   tol = 1e-08,
   max_iter = 1e+05,
+  z = numeric(0),
   update_w0 = TRUE,
   update_sigma = TRUE,
   compute_ELBO = TRUE,
@@ -28,8 +28,6 @@ mr_ash_rss(
 \item{bhat}{Numeric vector of observed effect sizes (standardized).}
 
 \item{shat}{Numeric vector of standard errors of effect sizes.}
-
-\item{z}{Numeric vector of Z-scores.}
 
 \item{R}{Numeric matrix of the correlation matrix.}
 
@@ -48,6 +46,8 @@ mr_ash_rss(
 \item{tol}{Numeric value of the convergence tolerance. Default is 1e-8.}
 
 \item{max_iter}{Integer value of the maximum number of iterations. Default is 1e5.}
+
+\item{z}{Numeric vector of Z-scores.}
 
 \item{update_w0}{Logical value indicating whether to update the mixture weights. Default is TRUE.}
 

@@ -4,7 +4,7 @@
 \alias{mr_ash_rss_weights}
 \title{Extract weights from mr_ash_rss function}
 \usage{
-mr_ash_rss_weights(stat, LD, var_y, z = numeric(0), sigma2_e, s0, w0, ...)
+mr_ash_rss_weights(stat, LD, var_y, sigma2_e, s0, w0, z = numeric(0), ...)
 }
 \value{
 A numeric vector of the posterior mean of the coefficients.
