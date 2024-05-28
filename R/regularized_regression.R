@@ -102,6 +102,19 @@ mr_ash_rss <- function(bhat, shat, z = numeric(0), R, var_y, n,
   return(result)
 }
 
+#' Extract weights from mr_ash_rss function
+#' @return A numeric vector of the posterior mean of the coefficients.
+#' @export
+mr_ash_rss_weights <- function(stat, LD, var_y, z = numeric(0), sigma2_e, s0, w0, ...) {
+  
+    model <- mr_ash_rss(
+        bhat = stat$b, shat = stat$seb, z = z, R = LD,
+        var_y = var_y, n = median(stat$n), sigma2_e = sigma2_e,
+        s0 = s0, w0 = w0, ...)
+
+  return(model$mu1)
+}
+
 #' PRS-CS: a polygenic prediction method that infers posterior SNP effect sizes under continuous shrinkage (CS) priors
 #'
 #' This function is a wrapper for the PRS-CS method implemented in C++. It takes marginal effect size estimates from regression and an external LD reference panel
@@ -208,6 +221,15 @@ prs_cs <- function(bhat, LD, n,
   )
 }
 
+#' Extract weights from prs_cs function
+#' @return A numeric vector of the posterior SNP coefficients.
+#' @export
+prs_cs_weights <- function(stat, LD, ...){
+    model <- prs_cs(bhat = stat$b, LD = list(blk1 = LD), n = median(stat$n), ...)
+    
+    return(model$beta_est)
+}
+
 #' SDPR (Summary-Statistics-Based Dirichelt Process Regression for Polygenic Risk Prediction)
 #'
 #' This function is a wrapper for the SDPR C++ implementation, which performs Markov Chain Monte Carlo (MCMC)
@@ -312,6 +334,15 @@ sdpr <- function(bhat, LD, n, per_variant_sample_size = NULL, array = NULL, a = 
   )
 
   return(result)
+}
+
+#' Extract weights from sdpr function
+#' @return A numeric vector of the posterior SNP coefficients.
+#' @export
+sdpr_weights <- function(stat, LD, ...){
+    model <- sdpr(bhat = stat$b, LD = list(blk1 = LD), n = median(stat$n), ...)
+    
+    return(model$beta_est)
 }
 
 #' @importFrom susieR coef.susie
@@ -479,4 +510,287 @@ bayes_c_weights <- function(X, y, Z = NULL) {
 #' @export
 bayes_r_weights <- function(X, y, Z = NULL) {
   return(bayes_alphabet_weights(X, y, method = "bayesR", Z))
+}
+
+                                         
+#' Bayesian linear regression using summary statistics
+#'
+#' @description
+#'
+#' This function is adapted from those written by Peter Sørensen in the qgg package.
+#' The following prior distributions are provided:
+#' 
+#' Bayes N: Assigning a Gaussian prior to marker effects implies that the posterior means are the 
+#' BLUP estimates (same as Ridge Regression).
+#' 
+#' Bayes L: Assigning a double-exponential or Laplace prior is the density used in 
+#' the Bayesian LASSO
+#' 
+#' Bayes A: similar to ridge regression but t-distribution prior (rather than Gaussian) 
+#' for the marker effects ; variance comes from an inverse-chi-square distribution instead of being fixed. Estimation 
+#' via Gibbs sampling. 
+#' 
+#' Bayes C: uses a “rounded spike” (low-variance Gaussian) at origin many small 
+#' effects can contribute to polygenic component, reduces the dimensionality of 
+#' the model (makes Gibbs sampling feasible). 
+#' 
+#' Bayes R: Hierarchical Bayesian mixture model with 4 Gaussian components, with 
+#' variances scaled by 0, 0.0001 , 0.001 , and 0.01 . 
+#'
+#' @param stat dataframe with marker summary statistics. Required: beta coefficient (b), standard error 
+#'        of the beta coefficient (seb), GWAS sample size (n). Optional: rsids, alleles (a1 and a2), 
+#'        major allele frequency (af).
+#' @param LD is a the LD matrix corresponding to the same markers as in the stat dataframe
+#' @param rsids is an optional character vector of rsids, provided outside of the stat dataframe
+#' @param nit is the number of iterations
+#' @param nburn is the number of burnin iterations
+#' @param nthin is the thinning parameter
+#' @param method specifies the methods used (method="bayesN","bayesA","bayesL","bayesC","bayesR")
+#' @param vg is a scalar or matrix of genetic (co)variances
+#' @param vb is a scalar or matrix of marker (co)variances
+#' @param ve is a scalar or matrix of residual (co)variances
+#' @param ssg_prior is a scalar or matrix of prior genetic (co)variances
+#' @param ssb_prior is a scalar or matrix of prior marker (co)variances
+#' @param sse_prior is a scalar or matrix of prior residual (co)variances
+#' @param lambda is a vector or matrix of lambda values 
+#' @param h2 is the trait heritability
+#' @param pi is the proportion of markers in each marker variance class
+#' @param updateB is a logical for updating marker (co)variances
+#' @param updateG is a logical for updating genetic (co)variances
+#' @param updateE is a logical for updating residual (co)variances
+#' @param updatePi is a logical for updating pi
+#' @param adjustE is a logical for adjusting residual variance
+#' @param nug is a scalar or vector of prior degrees of freedom for prior genetic (co)variances
+#' @param nub is a scalar or vector of prior degrees of freedom for marker (co)variances
+#' @param nue is a scalar or vector of prior degrees of freedom for prior residual (co)variances
+#' @param mask is a vector or matrix of TRUE/FALSE specifying if marker should be ignored 
+#' @param ve_prior is a scalar or matrix of prior residual (co)variances
+#' @param vg_prior is a scalar or matrix of prior genetic (co)variances
+#' @param algorithm is the algorithm to use. Should take on values ("mcmc", "em-mcmc")
+#' @param tol is tolerance, i.e. convergence criteria used in gbayes
+#' @param nit_local is the number of local iterations
+#' @param nit_global is the number of global iterations
+#'
+#' @return Returns a list structure including
+#' \item{bm}{vector of posterior means for marker effects}
+#' \item{dm}{vector of posterior means for marker inclusion probabilities}
+#' \item{vbs}{scalar or vector (t) of posterior means for marker variances}
+#' \item{vgs}{scalar or vector (t) of posterior means for genomic variances}
+#' \item{ves}{scalar or vector (t) of posterior means for residual variances}
+#' \item{pis}{vector of probabilites for each mcmc iteration}
+#' \item{pim}{posterior distribution probabilities}
+#' \item{r}{vector of residuals}
+#' \item{b}{vector of estimates from the final mcmc iteration}
+#' \item{param}{a list current parameters (same information as item listed above) 
+#'              used for restart of the analysis}
+#' \item{stat}{matrix (mxt) of marker information and effects used for genomic risk scoring}
+#' \item{method}{the method used}
+#' \item{mask}{which loci were masked from analysis}
+#' \item{conv}{dataframe of convergence metrics}
+#' \item{post}{posterior parameter estimates}
+#' \item{ve}{mean residual variance}
+#' \item{vg}{mean genomic variance}
+#'
+#' @import qgg Rcpp                                     
+#'
+#' @export
+gbayes_rss <- function(stat=NULL, LD=NULL, rsids=NULL, nit=100, nburn=0, nthin=4, method="bayesR",
+                       vg=NULL, vb=NULL, ve=NULL, ssg_prior=NULL, ssb_prior=NULL, sse_prior=NULL, 
+                       lambda=NULL, h2=NULL, pi=0.001, updateB=TRUE, updateG=TRUE, updateE=TRUE, 
+                       updatePi=TRUE, adjustE=TRUE, nug=4, nub=4, nue=4, mask=NULL, ve_prior=NULL,
+                       vg_prior=NULL, algorithm="mcmc", tol=0.001, nit_local=NULL, nit_global=NULL) {
+  
+  # Check methods
+  methods <- c("bayesN","bayesA","bayesL","bayesC","bayesR")
+  method <- match(method, methods)
+  if( !sum(method%in%c(1:5))== 1 ) stop("Method specified not valid") 
+  if(method==0) {
+    # BLUP and we do not estimate parameters
+    updateB=FALSE;
+    updateE=FALSE;
+  }
+
+  # Set algorithm
+  if (algorithm == "em-mcmc"){
+      algo = 2
+  } else {algo = 1}
+  
+  # Check that LD matrix is provided and of same length as stats
+  if(is.null(LD)) stop("Must provide LD matrix")
+  if (nrow(stat) != nrow(LD)) stop("LD matrix must correspond to summary statistics")
+  
+  # Parameters from stat df
+  if(is.data.frame(stat)) {
+    
+    if (!is.null(rsids)){
+      rsidsLD <- rsids
+    } else if (!is.null(stat$rsids)){
+      rsidsLD <- stat$rsids
+    } else {
+      rsidsLD <- paste0("snp", 1:nrow(stat))
+      stat$rsids <- rsidsLD
+    }
+    
+    m <- length(rsidsLD)
+    b <- wy <- ww <- matrix(0,nrow=length(rsidsLD),ncol=1)
+    mask <- matrix(FALSE,nrow=length(rsidsLD),ncol=1) 
+    rownames(b) <- rownames(wy) <- rownames(ww) <- rownames(mask) <- rsidsLD   
+    
+    if(is.null(stat$ww)) stat$ww <- 1/(stat$seb^2 + stat$b^2/stat$n)
+    if(is.null(stat$wy)) stat$wy <- stat$b*stat$ww
+    if(!is.null(stat$n)) n <- as.integer(median(stat$n))
+    ww[rownames(stat),1] <-  stat$ww
+    wy[rownames(stat),1] <- stat$wy
+    mask[rownames(stat),1] <- FALSE
+    
+    if(any(is.na(wy))) stop("Missing values in wy")
+    if(any(is.na(ww))) stop("Missing values in ww")
+    
+    b2 <- stat$b^2
+    seb2 <- stat$seb^2
+    yy <- (b2 + (n-2)*seb2)*stat$ww
+    yy <- median(yy)
+      
+    if (is.null(stat$a1)) stat$a1 <- rep("Unknown", length = nrow(stat))
+    if (is.null(stat$a2)) stat$a2 <- rep("Unknown", length = nrow(stat))
+    if (is.null(stat$af)) {
+        stat$af <- rep("Unknown", length = nrow(stat))
+        af_prov = 0
+    } else {af_prov = 1}
+    
+  } else {stop("Summary statistics must be provided in dataframe")}
+  
+  
+  # prep LD for gbayes
+  LD_values <- lapply(1:nrow(LD), function(i) as.numeric(LD_matrix[i,]))
+  names(LD_values) <- rsidsLD
+  
+  LD_indices <- list(indices = vector("list", length = nrow(LD)))
+  for (i in 1:nrow(LD)) {
+    LD_indices[[i]] <- 1:nrow(LD) - 1
+  }
+  
+  bm <- dm <- fit <- res <- vector(length=1,mode="list")
+  names(bm) <- names(dm) <- names(fit) <- names(res) <- 1
+  
+  # Set parameters if not otherwise specified
+  if(is.null(m)) m <- length(LD_values)
+  vy <- yy/(n-1)
+  if(is.null(pi)) pi <- 0.001
+  if(is.null(h2)) h2 <- 0.5
+  if(is.null(ve)) ve <- vy*(1-h2)
+  if(is.null(vg)) vg <- vy*h2
+  if(method<4 && is.null(vb)) vb <- vg/m
+  if(method>=4 && is.null(vb)) vb <- vg/(m*pi)
+  if(is.null(lambda)) lambda <- rep(ve/vb,m)
+  if(method<4 && is.null(ssb_prior))  ssb_prior <-  ((nub-2.0)/nub)*(vg/m)
+  if(method>=4 && is.null(ssb_prior))  ssb_prior <-  ((nub-2.0)/nub)*(vg/(m*pi))
+  if(is.null(sse_prior)) sse_prior <- ((nue-2.0)/nue)*ve
+  if(is.null(b)) b <- rep(0,m)
+  
+  pi <- c(1-pi,pi)
+  gamma <- c(0,1.0)
+  if(method==5) pi <- c(0.95,0.02,0.02,0.01)
+  if(method==5) gamma <- c(0,0.01,0.1,1.0)
+  
+  seed <- sample.int(.Machine$integer.max, 1)
+  
+  fit <- qgg:::sbayes_spa(
+               wy=wy, 
+               ww=ww, 
+               LDvalues=LD_values, 
+               LDindices=LD_indices, 
+               b = b,
+               lambda = lambda,
+               mask=mask,
+               yy = yy,
+               pi = pi, 
+               gamma = gamma, 
+               vg = vg,
+               vb = vb,
+               ve = ve, 
+               ssb_prior=ssb_prior, 
+               sse_prior=sse_prior, 
+               nub=nub,
+               nue=nue, 
+               updateB = updateB,
+               updateE = updateE,
+               updatePi = updatePi,
+               updateG = updateG, 
+               adjustE = adjustE,
+               n=n,
+               nit=nit,
+               nburn=nburn,
+               nthin=nthin,
+               algo=algo,
+               method=as.integer(method),
+               seed=seed)
+  
+  names(fit[[1]]) <- names(LD_values)
+  names(fit) <- c("bm","dm","coef","vbs","vgs","ves","pis","pim","r","b","param")   
+  fit[3] <- NULL
+  
+  res <- data.frame(rsids=rsidsLD, bm=fit$bm, dm=fit$dm,
+                    pos=stat$pos, ea=stat$a1,
+                    nea=stat$a2, eaf=stat$af,
+                    stringsAsFactors = FALSE)
+  rownames(res) <- rsidsLD
+  
+  rownames(res) <- rsids
+  fit$stat <- res
+  if (af_prov == 1) {
+      fit$stat$vm <- 2*(1-fit$stat$eaf)*fit$stat$eaf*fit$stat$bm^2
+  }
+  fit$method <- methods[method]
+  fit$mask <- mask
+  
+  zve <- coda::geweke.diag(fit$ves[nburn:length(fit$ves)])$z
+  zvg <- coda::geweke.diag(fit$vgs[nburn:length(fit$vgs)])$z
+  zvb <- coda::geweke.diag(fit$vbs[nburn:length(fit$vbs)])$z
+  zpi <- coda::geweke.diag(fit$pis[nburn:length(fit$pis)])$z
+  
+  ve <- mean(fit$ves[nburn:length(fit$ves)])
+  vg <- mean(fit$vgs[nburn:length(fit$vgs)])
+  vb <- mean(fit$vbs[nburn:length(fit$vbs)])
+  pi <- 1-fit$pim[1]
+  fit$conv <- data.frame(zve=zve,zvg=zvg, zvb=zvb, zpi=zpi)  
+  fit$post <- data.frame(ve=ve,vg=vg, vb=vb,pi=pi)  
+  fit$ve <- mean(ve)
+  fit$vg <- sum(vg)
+  
+  return(fit)
+  
+}
+#' Extract weights from gbayes_rss function
+#' @return A numeric vector of the posterior mean of the coefficients.
+#' @export
+bayes_alphabet_rss_weights <- function(stat, LD, method, ...) {
+    model <- gbayes_rss(stat = stat, LD = LD, method = method, ...)
+    return(model$bm)
+}
+#' Use Gaussian distribution as prior. Posterior means will be BLUP, equivalent to Ridge Regression.
+#' @export
+bayes_n_rss_weights <- function(stat, LD, ...) {
+  return(bayes_alphabet_rss_weights(stat, LD, method = "bayesN", ...))
+}
+#' Use laplace/double exponential distribution as prior. This is equivalent to Bayesian LASSO.
+#' @export
+bayes_l_rss_weights <- function(stat, LD, ...) {
+  return(bayes_alphabet_rss_weights(stat, LD, method = "bayesL", ...))
+}
+#' Use t-distribution as prior.
+#' @export
+bayes_a_rss_weights <- function(stat, LD, ...) {
+  return(bayes_alphabet_rss_weights(stat, LD, method = "bayesA", ...))
+}
+#' Use a rounded spike prior (low-variance Gaussian).
+#' @export
+bayes_c_rss_weights <- function(stat, LD, ...) {
+  return(bayes_alphabet_rss_weights(stat, LD, method = "bayesC", ...))
+}
+#' Use a hierarchical Bayesian mixture model with four Gaussian components. Variances are scaled
+#' by 0, 0.0001 , 0.001 , and 0.01 .
+#' @export
+bayes_r_rss_weights <- function(stat, LD, ...) {
+  return(bayes_alphabet_rss_weights(stat, LD, method = "bayesR", ...))
 }
