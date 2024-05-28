@@ -7,6 +7,7 @@
 load_rss_data(
   sumstat_path,
   column_file_path,
+  gene = NULL,
   n_sample = 0,
   n_case = 0,
   n_control = 0
