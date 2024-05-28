@@ -42,7 +42,6 @@ A list of elements containing fine-mapping and TWAS related data:
 Causal inference for TWAS with Summary Statistics with Multigroup Data
 }
 \examples{
-# Example usage:
 results <- determine_imputability(weight_db_files = "path/to/weights.rds", conditions=c("Mic", "Oli", "Exc"),
                                   max_var_selection = 10, min_rsq_threshold = 0.01, p_val_cutoff = 0.05)
 }
