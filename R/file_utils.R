@@ -235,9 +235,9 @@ load_phenotype_data <- function(phenotype_path, region, extract_region_name = NU
 #' @importFrom magrittr %>%
 #' @noRd
 extract_phenotype_coordinates <- function(phenotype_list) {
-  return(map(phenotype_list, ~ t(.x[1:3, ]) %>%
+  return(map(phenotype_list, ~ t(.x[1:4, ]) %>%
     as_tibble() %>%
-    mutate(start = as.numeric(start), end = as.numeric(end))))
+    mutate(start = as.numeric(start), end = as.numeric(end), ID = ID)))
 }
 
 #' @importFrom magrittr %>%
@@ -496,17 +496,18 @@ load_regional_regression_data <- function(...) {
 
 # return matrix of R conditions, with column names being the names of the conditions (phenotypes) and row names being sample names. Even for one condition it has to be a matrix with just one column.
 #' @noRd
-pheno_list_to_mat <- function(data_list) {
+pheno_list_to_mat <- function(data_list, region_names) {
   all_row_names <- unique(unlist(lapply(data_list$residual_Y, rownames)))
   # Step 2: Align matrices and fill with NA where necessary
   aligned_mats <- lapply(data_list$residual_Y, function(mat) {
-    expanded_mat <- matrix(NA, nrow = length(all_row_names), ncol = 1, dimnames = list(all_row_names, NULL))
+    ###change the ncol of each matrix
+    expanded_mat <- matrix(NA, nrow = length(all_row_names), ncol = ncol(mat), dimnames = list(all_row_names, NULL))
     common_rows <- intersect(rownames(mat), all_row_names)
     expanded_mat[common_rows, ] <- mat[common_rows, ]
     return(expanded_mat)
   })
   Y_resid_matrix <- do.call(cbind, aligned_mats)
-  colnames(Y_resid_matrix) <- names(data_list$residual_Y)
+  colnames(Y_resid_matrix) <- region_names
   data_list$residual_Y <- Y_resid_matrix
   return(data_list)
 }

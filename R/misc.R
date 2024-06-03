@@ -84,6 +84,26 @@ is_zero_variance <- function(x) {
     return(F)
   }
 }
+             
+combine_region_names <- function(region_name_list){
+    if (is.list(region_name_list)) {
+    # Use lapply to extract IDs where the 'ID' column exists
+    region_name_list <- lapply(region_name_list, function(region_name_df) {
+        if ("ID" %in% names(region_name_df)) {
+            return(region_name_df$ID)
+        } else {
+            # Return NULL or an empty vector if no 'ID' column exists
+            message("there is no ID column in the data frame")
+            return(NULL)
+        }
+    })
+    # Combine all non-null entries into one vector
+      combined_region_names <- unlist(region_name_list, use.names = FALSE)
+      return(combined_region_names)
+    }   else {
+      message("The variable 'region_name_list' is not a list")
+    }
+  }
 
 compute_LD <- function(X) {
   if (is.null(X)) {
