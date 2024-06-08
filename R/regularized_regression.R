@@ -77,9 +77,9 @@
 #' # In sample prediction correlations
 #' cor(X %*% out1$mu1, y) # 0.9984064
 #' @export
-mr_ash_rss <- function(bhat, shat, z = numeric(0), R, var_y, n,
+mr_ash_rss <- function(bhat, shat, R, var_y, n,
                        sigma2_e, s0, w0, mu1_init = numeric(0),
-                       tol = 1e-8, max_iter = 1e5,
+                       tol = 1e-8, max_iter = 1e5,  z = numeric(0),
                        update_w0 = TRUE, update_sigma = TRUE,
                        compute_ELBO = TRUE, standardize = FALSE, ncpu = 1L) {
   # Check if ncpu is greater than 0 and is an integer
@@ -88,7 +88,7 @@ mr_ash_rss <- function(bhat, shat, z = numeric(0), R, var_y, n,
   }
 
   if (is.null(var_y)) var_y <- Inf
-
+  if (identical(z, numeric(0))) z <- bhat / shat # rcpp_mr_ass_rss throws error at line 269 of mr_ash.h
   result <- rcpp_mr_ash_rss(
     bhat = bhat, shat = shat, z = z, R = R,
     var_y = var_y, n = n, sigma2_e = sigma2_e,
@@ -105,7 +105,7 @@ mr_ash_rss <- function(bhat, shat, z = numeric(0), R, var_y, n,
 #' Extract weights from mr_ash_rss function
 #' @return A numeric vector of the posterior mean of the coefficients.
 #' @export
-mr_ash_rss_weights <- function(stat, LD, var_y, z = numeric(0), sigma2_e, s0, w0, ...) {
+mr_ash_rss_weights <- function(stat, LD, var_y, sigma2_e, s0, w0, z = numeric(0), ...) {
   
     model <- mr_ash_rss(
         bhat = stat$b, shat = stat$seb, z = z, R = LD,
@@ -351,6 +351,10 @@ susie_weights <- function(X = NULL, y = NULL, susie_fit = NULL, ...) {
   if (is.null(susie_fit)) {
     # get susie_fit object
     susie_fit <- susie_wrapper(X, y, ...)
+  }
+  if (length(susie_fit$pip)!=ncol(X)) {
+    stop(paste0("Dimension mismatch on number of variant in susie_fit ", length(susie_fit$pip), 
+                      " and TWAS weights ", ncol(X),". "))
   }
   if ("alpha" %in% names(susie_fit) && "mu" %in% names(susie_fit) && "X_column_scale_factors" %in% names(susie_fit)) {
     # This is designed to cope with output from pecotmr::susie_post_processor()
