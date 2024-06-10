@@ -151,7 +151,6 @@ get_regional_ld_meta <- function(ld_reference_meta_file, region, complete_covera
 }
 
 #' @importFrom dplyr mutate
-#' @importFrom dplyr distinct
 #' @importFrom utils read.table
 #' @importFrom stats setNames
 # Process an LD matrix from a file path
@@ -201,17 +200,6 @@ process_LD_matrix <- function(LD_file_path, bim_file_path) {
     LD_matrix[upper.tri(LD_matrix)] <- t(LD_matrix)[upper.tri(LD_matrix)]
   }
 
-  ### remove the variants that is zero (indicated not lifted) or not in the most frequent chrom in the mode, this rely on the fact that majority of the chromosome is lifted correctly.
-  ### Remove all the variants whose pos are duplicated, for they are ambigouse
-  mode_chrom <- LD_variants %>%
-    filter(chrom != 0) %>%
-    pull(chrom) %>%
-    table() %>%
-    which.max() %>%
-    names()
-  LD_variants <- LD_variants %>%
-    filter(chrom == mode_chrom) %>%
-    distinct(pos, .keep_all = T)
   LD_variants_ordered <- LD_variants[match(order_variants_by_position(LD_variants$variants), LD_variants$variants), ]
   LD_matrix <- LD_matrix[match(LD_variants_ordered$variants, rownames(LD_matrix)), match(LD_variants_ordered$variants, rownames(LD_matrix))]
   list(LD_matrix = LD_matrix, LD_variants = LD_variants_ordered)

@@ -733,7 +733,7 @@ load_rss_data <- function(sumstat_path, column_file_path, subset = TRUE, n_sampl
       colnames(sumstats)[colnames(sumstats) == name] <- column_data$standard[index]
     }
   }
-  # Additional processing if TRAIT is in the column names and pattern is not empty
+  # Additional processing if trait_id is in the column names and pattern is not empty, this is to accomodate the case where the same gene has different probe .etc
   if ("trait_id" %in% colnames(sumstats) && pattern != "") {
     sumstats <- sumstats %>%
       group_by(ID, CHROM, POS, A1, A2, AF) %>%

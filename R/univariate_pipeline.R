@@ -170,11 +170,11 @@ rss_analysis_pipeline <- function(sumstat_path, column_file_path, LD_data, n_sam
                                     coverage = c(0.95, 0.7, 0.5), signal_cutoff = 0.025
                                   ),
                                   impute = TRUE, impute_opts = list(rcond = 0.01, R2_threshold = 0.6, minimum_ld = 5, lamb = 0.01),
-                                  pip_cutoff_to_skip = 0, remove_indels = FALSE, region_info = "", region = "",col_filter = "" ) {
+                                  pip_cutoff_to_skip = 0, remove_indels = FALSE, region_info = "", region = "", col_filter = "") {
   res <- list()
   rss_input <- load_rss_data(
     sumstat_path = sumstat_path, column_file_path = column_file_path,
-    n_sample = n_sample, n_case = n_case, n_control = n_control, region_info = region_info, region = region ,column_index = col_filter
+    n_sample = n_sample, n_case = n_case, n_control = n_control, region_info = region_info, region = region, column_index = col_filter
   )
 
   sumstats <- rss_input$sumstats
