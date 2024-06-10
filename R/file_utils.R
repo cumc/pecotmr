@@ -707,7 +707,7 @@ load_twas_weights <- function(weight_db_files, conditions = NULL,
 #' @importFrom magrittr %>%
 #' @importFrom data.table fread
 #' @export
-load_rss_data <- function(sumstat_path, column_file_path, subset = TRUE, n_sample = 0, n_case = 0, n_control = 0, pattern = "", region = "") {
+load_rss_data <- function(sumstat_path, column_file_path, subset = TRUE, n_sample = 0, n_case = 0, n_control = 0,region_info = "", region = "" ,column_index = "") {
   # Read and preprocess column mapping
   column_data <- read.table(column_file_path, header = FALSE, sep = ":", stringsAsFactors = FALSE) %>%
     rename(standard = V1, original = V2)
@@ -715,9 +715,13 @@ load_rss_data <- function(sumstat_path, column_file_path, subset = TRUE, n_sampl
   # Initialize sumstats variable
   sumstats <- NULL
   var_y <- NULL
-  if (region != "" && pattern != "") {
-    sumstats <- tabix_region(sumstat_path, region = region, pattern = pattern)
-  } else {
+  if (region_info != "", region != "" ,column_index != "") {
+    cmd <- paste0(  "zcat ", sumstat_path, " | head -1 && tabix ", sumstat_path, " ", region, " | awk  '$", column_index, " ~ /", region_info, "/'")
+	sumstats <- fread(cmd)
+  } else if(  region_info != "", region == "" ,column_index != ""  ){
+	cmd <- paste0( "zcat ", sumstat_path," | awk 'BEGIN{p=0} /^##/{if (p==0) next} !/^##/{if (p==0) {print; p=1} else if ($", column_index, " ~ /", region_info, "/) print}'")		  
+	sumstats <- fread(cmd)
+  }else{
     # Use original method for regular data
     sumstats <- fread(sumstat_path)
   }
