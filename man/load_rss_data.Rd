@@ -11,8 +11,9 @@ load_rss_data(
   n_sample = 0,
   n_case = 0,
   n_control = 0,
-  pattern = "",
-  region = ""
+  region_info = "",
+  region = "",
+  column_index = ""
 )
 }
 \arguments{
