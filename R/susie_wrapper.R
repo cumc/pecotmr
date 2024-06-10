@@ -62,7 +62,7 @@ adjust_susie_weights <- function(twas_weights_results, condition, keep_variants,
   # allele flip twas weights matrix variants name
   if (allele_qc) {
     weights_matrix <- get_nested_element(twas_weights_results, c("weights", condition))
-    weights_matrix_qced <- allele_qc(twas_weights_variants, gwas_LD_list$combined_LD_variants, weights_matrix, 1:ncol(weights_matrix), target_gwas=FALSE)
+    weights_matrix_qced <- allele_qc(twas_weights_variants, gwas_LD_list$combined_LD_variants, weights_matrix, 1:ncol(weights_matrix), target_gwas = FALSE)
     intersected_indices <- which(weights_matrix_qced$qc_summary$keep == TRUE)
   } else {
     keep_variants_transformed <- ifelse(!startsWith(keep_variants, "chr"), paste0("chr", keep_variants), keep_variants)

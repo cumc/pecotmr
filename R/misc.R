@@ -293,11 +293,13 @@ find_valid_file_paths <- function(reference_file_path, target_file_paths) sapply
 #'
 #' @examples
 #' z <- c(1, 2, 3, 4, 5)
-#' LD <- matrix(c(1.0, 0.8, 0.2, 0.1, 0.3,
-#'                0.8, 1.0, 0.4, 0.2, 0.5,
-#'                0.2, 0.4, 1.0, 0.6, 0.1,
-#'                0.1, 0.2, 0.6, 1.0, 0.3,
-#'                0.3, 0.5, 0.1, 0.3, 1.0), nrow = 5, ncol = 5)
+#' LD <- matrix(c(
+#'   1.0, 0.8, 0.2, 0.1, 0.3,
+#'   0.8, 1.0, 0.4, 0.2, 0.5,
+#'   0.2, 0.4, 1.0, 0.6, 0.1,
+#'   0.1, 0.2, 0.6, 1.0, 0.3,
+#'   0.3, 0.5, 0.1, 0.3, 1.0
+#' ), nrow = 5, ncol = 5)
 #' rThreshold <- 0.5
 #'
 #' result <- find_duplicate_variants(z, LD, rThreshold)
@@ -311,28 +313,28 @@ find_duplicate_variants <- function(z, LD, rThreshold) {
   sign <- rep(1, p)
   count <- 1
   minValue <- 1
-  
-  for (i in 1:(p-1)) {
+
+  for (i in 1:(p - 1)) {
     if (dupBearer[i] != -1) next
-    
-    idx <- (i+1):p
+
+    idx <- (i + 1):p
     corVec <- abs(LD[i, idx])
     dupIdx <- which(dupBearer[idx] == -1 & corVec > rThreshold)
-    
+
     if (length(dupIdx) > 0) {
       j <- idx[dupIdx]
       sign[j] <- ifelse(LD[i, j] < 0, -1, sign[j])
       corABS[j] <- corVec[dupIdx]
       dupBearer[j] <- count
     }
-    
+
     minValue <- min(minValue, min(corVec))
     count <- count + 1
   }
-  
+
   # Filter z based on dupBearer
   filteredZ <- z[dupBearer == -1]
-  filteredLD <- LD[dupBearer == -1, dupBearer == -1, drop=F]
-  
+  filteredLD <- LD[dupBearer == -1, dupBearer == -1, drop = F]
+
   return(list(filteredZ = filteredZ, filteredLD = filteredLD, dupBearer = dupBearer, corABS = corABS, sign = sign, minValue = minValue))
 }

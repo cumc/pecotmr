@@ -71,7 +71,7 @@ dentist <- function(sum_stat, LD_mat, nSample,
     dentist_result <- dentist_single_window(
       sum_stat$z, LD_mat, nSample,
       pValueThreshold, propSVD, gcControl,
-      nIter, gPvalueThreshold, duprThreshold, 
+      nIter, gPvalueThreshold, duprThreshold,
       ncpus, seed, correct_chen_et_al_bug
     )
   } else {

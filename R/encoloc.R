@@ -73,7 +73,7 @@ xqtl_enrichment_wrapper <- function(xqtl_files, gwas_files,
 }
 
 #' Function to filter and order colocalization results
-#' @noRd 
+#' @noRd
 filter_and_order_coloc_results <- function(coloc_results_fil) {
   # Ensure the input has more than one column
   if (ncol(coloc_results_fil) <= 1) {
@@ -93,13 +93,13 @@ filter_and_order_coloc_results <- function(coloc_results_fil) {
 }
 
 #' Function to calculate cumulative sum
-#' @noRd 
+#' @noRd
 calculate_cumsum <- function(coloc_results) {
   cumsum(coloc_results[, 2])
 }
 
 #' Function to load and extract LD matrix
-#' @noRd 
+#' @noRd
 load_and_extract_ld_matrix <- function(ld_meta_file_path, analysis_region, variants) {
   # This is a placeholder for loading LD matrix, adjust as per your actual function
   ld_ref <- load_LD_matrix(LD_meta_file_path = ld_meta_file_path, region = analysis_region)
@@ -108,7 +108,7 @@ load_and_extract_ld_matrix <- function(ld_meta_file_path, analysis_region, varia
 }
 
 #' Function to calculate purity
-#' @noRd 
+#' @noRd
 calculate_purity <- function(variants, ext_ld, squared) {
   # This is a placeholder for calculating purity, adjust as per your actual function
   purity <- matrix(susieR:::get_purity(variants, Xcorr = ext_ld, squared), 1, 3)
@@ -121,7 +121,7 @@ calculate_purity <- function(variants, ext_ld, squared) {
 #' 2. PPH4 exceeds threshold, default as 0.8.
 #' 3. We aggregate variants and cumulatively sum their PPH4 values to form a credible set until the threshold, default as 0.95.
 #' 4. The cs's purity is computed with the `get_purity` function from the `gaow/susieR` package, and the same purity criteria are employed to filter the credibility set.
-#' @noRd 
+#' @noRd
 process_coloc_results <- function(coloc_result, LD_meta_file_path, analysis_region, PPH4_thres = 0.8, coloc_pip_thres = 0.95, squared = FALSE, min_abs_corr = 0.5, null_index = 0, coloc_index = "PP.H4.abf", median_abs_corr = NULL) {
   # Extract PIP values from coloc_result summary
   coloc_summary <- as.data.frame(coloc_result$summary)
@@ -281,7 +281,7 @@ coloc_wrapper <- function(xqtl_file, gwas_files,
 #' @param LD_meta_file_path Path to the metadata of LD reference.
 #' @param analysis_region Path to the analysis region of coloc result.
 #' @return A list containing the coloc results and post processed coloc sets.
-#' @export 
+#' @export
 coloc_post_processor <- function(coloc_res, LD_meta_file_path = NULL, analysis_region = NULL, ...) {
   if (!is.null(LD_meta_file_path)) {
     if (is.null(analysis_region)) {

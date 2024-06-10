@@ -71,7 +71,7 @@ read_pgen <- function(pgen, variantidx = NULL, meanimpute = F) {
 #' @importFrom tibble tibble
 #' @importFrom magrittr %>%
 #' @importFrom stringr str_detect
-tabix_region <- function(file, region, tabix_header = "auto",pattern = "") {
+tabix_region <- function(file, region, tabix_header = "auto", pattern = "") {
   # Execute tabix command and capture the output
   cmd_output <- tryCatch(
     {
@@ -79,12 +79,13 @@ tabix_region <- function(file, region, tabix_header = "auto",pattern = "") {
     },
     error = function(e) NULL
   )
-    # Grep specific pattern from the file
-    if(pattern != ""){
-    cmd_output = cmd_output%>%mutate(text = apply(., 1, function(row) paste(row, collapse = "_"))) %>%
+  # Grep specific pattern from the file
+  if (pattern != "") {
+    cmd_output <- cmd_output %>%
+      mutate(text = apply(., 1, function(row) paste(row, collapse = "_"))) %>%
       filter(str_detect(text, pattern)) %>%
-      select(-text)          
-    }
+      select(-text)
+  }
   # Check if the output is empty and return an empty tibble if so
   if (is.null(cmd_output) || nrow(cmd_output) == 0) {
     return(tibble())
@@ -706,79 +707,75 @@ load_twas_weights <- function(weight_db_files, conditions = NULL,
 #' @importFrom magrittr %>%
 #' @importFrom data.table fread
 #' @export
-load_rss_data = function(sumstat_path, column_file_path, subset = TRUE, n_sample = 0, n_case = 0, n_control = 0,pattern = "",region = "") {
-	# Read and preprocess column mapping
-	column_data <- read.table(column_file_path, header = FALSE, sep = ":", stringsAsFactors = FALSE) %>%
-		rename(standard = V1, original = V2)
+load_rss_data <- function(sumstat_path, column_file_path, subset = TRUE, n_sample = 0, n_case = 0, n_control = 0, pattern = "", region = "") {
+  # Read and preprocess column mapping
+  column_data <- read.table(column_file_path, header = FALSE, sep = ":", stringsAsFactors = FALSE) %>%
+    rename(standard = V1, original = V2)
 
-	# Initialize sumstats variable
-	sumstats <- NULL
-	var_y <- NULL
-	if (region != "" &&  pattern != "" ) {
-		sumstats <-	tabix_region(sumstat_path,  region = region, pattern = pattern)
-	} else {
-		# Use original method for regular data
-		sumstats <- fread(sumstat_path)
-	}
+  # Initialize sumstats variable
+  sumstats <- NULL
+  var_y <- NULL
+  if (region != "" && pattern != "") {
+    sumstats <- tabix_region(sumstat_path, region = region, pattern = pattern)
+  } else {
+    # Use original method for regular data
+    sumstats <- fread(sumstat_path)
+  }
 
-	# Standardize column names based on mapping
-	for (name in colnames(sumstats)) {
-		if (name %in% column_data$original) {
-			index <- which(column_data$original == name)
-			colnames(sumstats)[colnames(sumstats) == name] <- column_data$standard[index]
-		}
-	}
-# Additional processing if TRAIT is in the column names and pattern is not empty
-	if ("trait_id" %in% colnames(sumstats) && pattern != "") {
-		sumstats <- sumstats %>%
-			group_by(ID, CHROM, POS, A1, A2, AF) %>%
-			summarise(
-				z = Z[which.max(abs(Z))],
-				beta = beta[which.max(abs(Z))],
-				se = se[which.max(abs(Z))],
-				TRAIT = TRAIT[which.max(abs(Z))],
-				.groups = 'drop'  # Important to avoid regrouping issues post summarisation
-			)
-	}
+  # Standardize column names based on mapping
+  for (name in colnames(sumstats)) {
+    if (name %in% column_data$original) {
+      index <- which(column_data$original == name)
+      colnames(sumstats)[colnames(sumstats) == name] <- column_data$standard[index]
+    }
+  }
+  # Additional processing if TRAIT is in the column names and pattern is not empty
+  if ("trait_id" %in% colnames(sumstats) && pattern != "") {
+    sumstats <- sumstats %>%
+      group_by(ID, CHROM, POS, A1, A2, AF) %>%
+      summarise(
+        z = Z[which.max(abs(Z))],
+        beta = beta[which.max(abs(Z))],
+        se = se[which.max(abs(Z))],
+        TRAIT = TRAIT[which.max(abs(Z))],
+        .groups = "drop" # Important to avoid regrouping issues post summarisation
+      )
+  }
 
-	if (!"z" %in% colnames(sumstats) && all(c("beta", "se") %in% 
-		colnames(sumstats))) {
-		sumstats$z <- sumstats$beta/sumstats$se
-	}
-	if (!"beta" %in% colnames(sumstats) && "z" %in% colnames(sumstats)) {
-		sumstats$beta <- sumstats$z
-		sumstats$se <- 1
-	}
-	for (col in c("n_sample", "n_case", "n_control")) {
-		if (col %in% colnames(sumstats)) {
-			sumstats[[col]][is.na(sumstats[[col]])] <- median(sumstats[[col]], 
-				na.rm = TRUE)
-		}
-	}
-	if (n_sample != 0 && (n_case + n_control) != 0) {
-		stop("Please provide sample size, or case number with control number, but not both")
-	}
-	else if (n_sample != 0) {
-		n <- n_sample
-	}
-	else if ((n_case + n_control) != 0) {
-		n <- n_case + n_control
-		phi <- n_case/n
-		var_y <- 1/(phi * (1 - phi))
-	}
-	else {
-		if ("n_sample" %in% colnames(sumstats)) {
-			n <- median(sumstats$n_sample)
-		}
-		else if (all(c("n_case", "n_control") %in% colnames(sumstats))) {
-			n <- median(sumstats$n_case + sumstats$n_control)
-			phi <- median(sumstats$n_case/n)
-			var_y <- 1/(phi * (1 - phi))
-		}
-		else {
-			warning("Sample size and variance of Y could not be determined from the summary statistics.")
-			n <- NULL
-		}
-	}
-	return(list(sumstats = sumstats, n = n, var_y = var_y))
-}    
+  if (!"z" %in% colnames(sumstats) && all(c("beta", "se") %in%
+    colnames(sumstats))) {
+    sumstats$z <- sumstats$beta / sumstats$se
+  }
+  if (!"beta" %in% colnames(sumstats) && "z" %in% colnames(sumstats)) {
+    sumstats$beta <- sumstats$z
+    sumstats$se <- 1
+  }
+  for (col in c("n_sample", "n_case", "n_control")) {
+    if (col %in% colnames(sumstats)) {
+      sumstats[[col]][is.na(sumstats[[col]])] <- median(sumstats[[col]],
+        na.rm = TRUE
+      )
+    }
+  }
+  if (n_sample != 0 && (n_case + n_control) != 0) {
+    stop("Please provide sample size, or case number with control number, but not both")
+  } else if (n_sample != 0) {
+    n <- n_sample
+  } else if ((n_case + n_control) != 0) {
+    n <- n_case + n_control
+    phi <- n_case / n
+    var_y <- 1 / (phi * (1 - phi))
+  } else {
+    if ("n_sample" %in% colnames(sumstats)) {
+      n <- median(sumstats$n_sample)
+    } else if (all(c("n_case", "n_control") %in% colnames(sumstats))) {
+      n <- median(sumstats$n_case + sumstats$n_control)
+      phi <- median(sumstats$n_case / n)
+      var_y <- 1 / (phi * (1 - phi))
+    } else {
+      warning("Sample size and variance of Y could not be determined from the summary statistics.")
+      n <- NULL
+    }
+  }
+  return(list(sumstats = sumstats, n = n, var_y = var_y))
+}

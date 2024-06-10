@@ -25,10 +25,10 @@
 allele_qc <- function(target_variants, ref_variants, target_data, col_to_flip = NULL,
                       match_min_prop = 0.2, remove_dups = TRUE,
                       remove_indels = FALSE, remove_strand_ambiguous = TRUE,
-                      flip_strand = FALSE, remove_unmatched = TRUE, target_gwas=TRUE) {
+                      flip_strand = FALSE, remove_unmatched = TRUE, target_gwas = TRUE) {
   target_variants <- variant_id_to_df(target_variants)
   ref_variants <- variant_id_to_df(ref_variants)
-  if(isTRUE(target_gwas)) target_data <- variant_id_to_df(target_data)
+  if (isTRUE(target_gwas)) target_data <- variant_id_to_df(target_data)
 
   matched <- merge(target_variants, ref_variants, by = c("chrom", "pos"), all = FALSE, suffixes = c(".target", ".ref")) %>%
     as.data.frame() %>%
