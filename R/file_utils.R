@@ -715,10 +715,10 @@ load_rss_data <- function(sumstat_path, column_file_path, subset = TRUE, n_sampl
   # Initialize sumstats variable
   sumstats <- NULL
   var_y <- NULL
-  if (region_info != "", region != "" ,column_index != "") {
+  if (region_info != "" & region != "" & column_index != "") {
     cmd <- paste0(  "zcat ", sumstat_path, " | head -1 && tabix ", sumstat_path, " ", region, " | awk  '$", column_index, " ~ /", region_info, "/'")
 	sumstats <- fread(cmd)
-  } else if(  region_info != "", region == "" ,column_index != ""  ){
+  } else if(  region_info != ""& region == "" &column_index != ""  ){
 	cmd <- paste0( "zcat ", sumstat_path," | awk 'BEGIN{p=0} /^##/{if (p==0) next} !/^##/{if (p==0) {print; p=1} else if ($", column_index, " ~ /", region_info, "/) print}'")		  
 	sumstats <- fread(cmd)
   }else{
