@@ -71,25 +71,29 @@ read_pgen <- function(pgen, variantidx = NULL, meanimpute = F) {
 #' @importFrom tibble tibble
 #' @importFrom magrittr %>%
 #' @importFrom stringr str_detect
-tabix_region <- function(file, region, tabix_header = "auto", pattern = "") {
-  # Execute tabix command and capture the output
+
+tabix_region <- function(file, region, tabix_header = "auto", target = "", target_column_index = "") {
   cmd_output <- tryCatch(
     {
       fread(cmd = paste0("tabix -h ", file, " ", region), sep = "auto", header = tabix_header)
     },
     error = function(e) NULL
   )
-  # Grep specific pattern from the file
-  if (pattern != "") {
+
+  if (!is.null(cmd_output) && target != "" && target_column_index != "") {
+    cmd_output <- cmd_output %>%
+      filter(str_detect(.[[target_column_index]], target))
+  } else if (!is.null(cmd_output) && target != "") {
     cmd_output <- cmd_output %>%
       mutate(text = apply(., 1, function(row) paste(row, collapse = "_"))) %>%
-      filter(str_detect(text, pattern)) %>%
+      filter(str_detect(text, target)) %>%
       select(-text)
   }
-  # Check if the output is empty and return an empty tibble if so
+
   if (is.null(cmd_output) || nrow(cmd_output) == 0) {
     return(tibble())
   }
+
   cmd_output %>%
     as_tibble() %>%
     mutate(
@@ -97,6 +101,7 @@ tabix_region <- function(file, region, tabix_header = "auto", pattern = "") {
       !!names(.)[2] := as.numeric(.[[2]])
     )
 }
+
 
 NoSNPsError <- function(message) {
   structure(list(message = message), class = c("NoSNPsError", "error", "condition"))
@@ -609,7 +614,7 @@ load_twas_weights <- function(weight_db_files, conditions = NULL,
       result <- list(
         variant_names = get_nested_element(combined_all_data, c(condition, variable_name_obj)),
         susie_result = get_nested_element(combined_all_data, c(condition, susie_obj)),
-        region_info = get_nested_element(combined_all_data, c(condition, "region_info"))
+        target = get_nested_element(combined_all_data, c(condition, "target"))
       )
       return(result)
     })
@@ -700,6 +705,9 @@ load_twas_weights <- function(weight_db_files, conditions = NULL,
 #' @param n_case User-specified number of cases.
 #' @param n_control User-specified number of controls.
 #'
+#' @param region The region where tabix use to subset the input dataset.
+#' @param target User-specified gene/phenotype name used to further subset the phenotype data.
+#' @param target_column_index Filter this specific column for the target.
 #' @return A list of rss_input, including the column-name-formatted summary statistics,
 #' sample size (n), and var_y.
 #'
@@ -707,7 +715,7 @@ load_twas_weights <- function(weight_db_files, conditions = NULL,
 #' @importFrom magrittr %>%
 #' @importFrom data.table fread
 #' @export
-load_rss_data <- function(sumstat_path, column_file_path, subset = TRUE, n_sample = 0, n_case = 0, n_control = 0,region_info = "", region = "" ,column_index = "") {
+load_rss_data <- function(sumstat_path, column_file_path, subset = TRUE, n_sample = 0, n_case = 0, n_control = 0, target = "", region = "", target_column_index = "") {
   # Read and preprocess column mapping
   column_data <- read.table(column_file_path, header = FALSE, sep = ":", stringsAsFactors = FALSE) %>%
     rename(standard = V1, original = V2)
@@ -715,16 +723,8 @@ load_rss_data <- function(sumstat_path, column_file_path, subset = TRUE, n_sampl
   # Initialize sumstats variable
   sumstats <- NULL
   var_y <- NULL
-  if (region_info != "" & region != "" & column_index != "") {
-    cmd <- paste0(  "zcat ", sumstat_path, " | head -1 && tabix ", sumstat_path, " ", region, " | awk  '$", column_index, " ~ /", region_info, "/'")
-	sumstats <- fread(cmd)
-  } else if(  region_info != ""& region == "" &column_index != ""  ){
-	cmd <- paste0( "zcat ", sumstat_path," | awk 'BEGIN{p=0} /^##/{if (p==0) next} !/^##/{if (p==0) {print; p=1} else if ($", column_index, " ~ /", region_info, "/) print}'")		  
-	sumstats <- fread(cmd)
-  }else{
-    # Use original method for regular data
-    sumstats <- fread(sumstat_path)
-  }
+
+  sumstats <- load_tsv_region(sumstat_path = sumstat_path, region = region, target = target, target_column_index = target_column_index)
 
   # Standardize column names based on mapping
   for (name in colnames(sumstats)) {
@@ -782,4 +782,50 @@ load_rss_data <- function(sumstat_path, column_file_path, subset = TRUE, n_sampl
     }
   }
   return(list(sumstats = sumstats, n = n, var_y = var_y))
+}
+
+#' Load customized tsv data
+#'
+#' This function load the input data. If the input sumstat data is bed.gz or vcf.gz, it will use the tabix_region function.
+#' Otherwise, it will try to subset the region using tabix if the region was provided. If tabix gives an error, it will zcat the sumstat and fiter for the target directly.
+#'
+#'
+#' @param sumstat_path File path to the summary statistics.
+#' @param region The region where tabix use to subset the input dataset.
+#' @param target User-specified gene/phenotype name used to further subset the phenotype data.
+#' @param target_column_index Filter this specific column for the target.
+#'
+#' @return A dataframe of the subsetted summary statistics,
+#'
+#' @importFrom data.table fread
+#' @export
+
+load_tsv_region <- function(sumstat_path, region = "", target = "", target_column_index = "") {
+  sumstats <- NULL
+
+  if (grepl("\\.bed\\.gz$", sumstat_path) || grepl("\\.vcf\\.gz$", sumstat_path)) {
+    sumstats <- tabix_region(sumstat_path, region = region, target = target, target_column_index = target_column_index)
+  }
+
+  if (is.null(sumstats) || nrow(sumstats) == 0) {
+    if (target != "" && region != "" && target_column_index != "") {
+      cmd <- paste0("zcat ", sumstat_path, " | head -1 && tabix ", sumstat_path, " ", region, " | awk '$", target_column_index, " ~ /", target, "/'")
+      sumstats <- tryCatch(
+        {
+          fread(cmd)
+        },
+        error = function(e) {
+          cmd <- paste0("zcat ", sumstat_path, " | awk 'BEGIN{p=0} /^##/{if (p==0) next} !/^##/{if (p==0) {print; p=1} else if ($", target_column_index, " ~ /", target, "/) print}'")
+          fread(cmd)
+        }
+      )
+    } else if (target != "" && region == "" && target_column_index != "") {
+      cmd <- paste0("zcat ", sumstat_path, " | awk 'BEGIN{p=0} /^##/{if (p==0) next} !/^##/{if (p==0) {print; p=1} else if ($", target_column_index, " ~ /", target, "/) print}'")
+      sumstats <- fread(cmd)
+    } else {
+      sumstats <- fread(sumstat_path)
+    }
+  }
+
+  return(sumstats)
 }
