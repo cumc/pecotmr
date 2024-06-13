@@ -211,6 +211,7 @@ process_LD_matrix <- function(LD_file_path, bim_file_path) {
     # If the matrix is lower diagonal, transpose the lower triangle to the upper triangle
     LD_matrix[upper.tri(LD_matrix)] <- t(LD_matrix)[upper.tri(LD_matrix)]
   }
+
   LD_variants_ordered <- LD_variants[match(order_variants_by_position(LD_variants$variants), LD_variants$variants), ]
   LD_matrix <- LD_matrix[match(LD_variants_ordered$variants, rownames(LD_matrix)), match(LD_variants_ordered$variants, rownames(LD_matrix))]
   list(LD_matrix = LD_matrix, LD_variants = LD_variants_ordered)

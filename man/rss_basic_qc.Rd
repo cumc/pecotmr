@@ -4,7 +4,7 @@
 \alias{rss_basic_qc}
 \title{Preprocess input data for RSS analysis}
 \usage{
-rss_basic_qc(sumstats, LD_data, skip_region = NULL)
+rss_basic_qc(sumstats, LD_data, skip_region = NULL, remove_indels = FALSE)
 }
 \arguments{
 \item{sumstats}{A data frame containing summary statistics with columns "chrom", "pos", "A1", and "A2".}

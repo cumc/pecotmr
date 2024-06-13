@@ -164,20 +164,20 @@ twas_weights_pipeline <- function(X, y, maf, susie_fit, ld_reference_meta_file =
 #'
 #' @importFrom magrittr %>%
 #' @export
-rss_analysis_pipeline <- function(
-    sumstat_path, column_file_path, LD_data, n_sample = 0, n_case = 0, n_control = 0, skip_region = NULL,
-    qc_method = c("rss_qc", "dentist", "slalom"),
-    finemapping_method = c("susie_rss", "single_effect", "bayesian_conditional_regression"),
-    finemapping_opts = list(
-      init_L = 5, max_L = 20, l_step = 5,
-      coverage = c(0.95, 0.7, 0.5), signal_cutoff = 0.025
-    ),
-    impute = TRUE, impute_opts = list(rcond = 0.01, R2_threshold = 0.6, minimum_ld = 5, lamb = 0.01),
-    pip_cutoff_to_skip = 0) {
+rss_analysis_pipeline <- function(sumstat_path, column_file_path, LD_data, n_sample = 0, n_case = 0, n_control = 0, skip_region = NULL,
+                                  qc_method = c("rss_qc", "dentist", "slalom"),
+                                  finemapping_method = c("susie_rss", "single_effect", "bayesian_conditional_regression"),
+                                  finemapping_opts = list(
+                                    init_L = 5, max_L = 20, l_step = 5,
+                                    coverage = c(0.95, 0.7, 0.5), signal_cutoff = 0.025
+                                  ),
+                                  impute = TRUE, impute_opts = list(rcond = 0.01, R2_threshold = 0.6, minimum_ld = 5, lamb = 0.01),
+                                  pip_cutoff_to_skip = 0, remove_indels = FALSE, target = "", region = "", target_column_index = "") {
+
   res <- list()
   rss_input <- load_rss_data(
     sumstat_path = sumstat_path, column_file_path = column_file_path,
-    n_sample = n_sample, n_case = n_case, n_control = n_control
+    n_sample = n_sample, n_case = n_case, n_control = n_control, target = target, region = region, target_column_index = target_column_index
   )
 
   sumstats <- rss_input$sumstats
@@ -185,7 +185,7 @@ rss_analysis_pipeline <- function(
   var_y <- rss_input$var_y
 
   # Preprocess the input data
-  preprocess_results <- rss_basic_qc(sumstats, LD_data, skip_region = skip_region)
+  preprocess_results <- rss_basic_qc(sumstats, LD_data, skip_region = skip_region, remove_indels = remove_indels)
   sumstats <- preprocess_results$sumstats
   LD_mat <- preprocess_results$LD_mat
 
@@ -228,6 +228,7 @@ rss_analysis_pipeline <- function(
     if (!is.null(qc_method)) {
       res$outlier_number <- qc_results$outlier_number
     }
+
   }
   if (impute & !is.null(qc_method)) {
     method_name <- paste0(toupper(qc_method), "_RAISS_imputed")
