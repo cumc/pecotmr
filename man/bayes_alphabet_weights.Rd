@@ -4,7 +4,15 @@
 \alias{bayes_alphabet_weights}
 \title{Extract Coefficients From Bayesian Linear Regression}
 \usage{
-bayes_alphabet_weights(X, y, method, Z = NULL)
+bayes_alphabet_weights(
+  X,
+  y,
+  method,
+  Z = NULL,
+  nit = 5000,
+  nburn = 1000,
+  nthin = 5
+)
 }
 \arguments{
 \item{X}{A numeric matrix of genotypes.}

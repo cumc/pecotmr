@@ -1,3 +1,15 @@
+#' @export
+wald_test_pval <- function(beta, se, n) {
+  # Calculate the t statistic
+  t_value <- beta / se
+  # Degrees of freedom
+  df <- n - 2
+  # Calculate two-tailed p-value
+  p_value <- 2 * pt(-abs(t_value), df = df, lower.tail = TRUE)
+
+  return(p_value)
+}
+
 pval_acat <- function(pvals) {
   if (length(pvals) == 1) {
     return(pvals[1])

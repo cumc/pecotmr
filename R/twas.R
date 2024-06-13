@@ -54,7 +54,7 @@ twas_z <- function(weights, z, R = NULL, X = NULL) {
 #' @importFrom stats cor pnorm
 #'
 #' @export
-twas_joint_z <- function(R = NULL, X = NULL, weights, z) {
+twas_joint_z <- function(weights, z, R = NULL, X = NULL) {
   # Check that weights and z-scores have the same number of rows
   if (nrow(weights) != length(z)) {
     stop("Number of rows in weights must match the length of z-scores.")
@@ -464,30 +464,39 @@ twas_weights <- function(X, Y, weight_methods, num_threads = 1, seed = NULL) {
     # Hardcoded vector of multivariate methods
     multivariate_weight_methods <- c("mrmash_weights", "mvsusie_weights")
     args <- weight_methods[[method_name]]
+    
     # Remove columns with zero standard error
     valid_columns <- apply(X, 2, function(col) sd(col) != 0)
-    X_filtered <- X[, valid_columns]
-
+    X_filtered <- as.matrix(X[, valid_columns])
+                           
+    if (method_name=="susie_weights"){
+        if(length(args$susie_fit$pip)!=ncol(X_filtered)){
+          stop(paste0("Dimension mismatch on number of variant in susie_fit ", length(args$susie_fit$pip), 
+                      " and TWAS weights ", ncol(X_filtered),". "))
+        }
+    }
     if (method_name %in% multivariate_weight_methods) {
       # Apply multivariate method
       weights_matrix <- do.call(method_name, c(list(X = X_filtered, Y = Y), args))
-      # Adjust the weights matrix to include zeros for invalid columns
-      full_weights_matrix <- matrix(0, nrow = ncol(X), ncol = ncol(Y))
-      rownames(full_weights_matrix) <- rownames(weights_matrix)
-      colnames(full_weights_matrix) <- colnames(weights_matrix)
-      full_weights_matrix[valid_columns, ] <- weights_matrix[valid_columns, ]
-      return(full_weights_matrix)
     } else {
       # Apply univariate method to each column of Y
       # Initialize it with zeros to avoid NA
       if (!is.null(seed)) set.seed(seed)
       weights_matrix <- matrix(0, nrow = ncol(X_filtered), ncol = ncol(Y))
+
       for (k in 1:ncol(Y)) {
         weights_vector <- do.call(method_name, c(list(X = X_filtered, y = Y[, k]), args))
         weights_matrix[, k] <- weights_vector
       }
-      return(weights_matrix)
     }
+
+    # Adjust the weights matrix to include zeros for invalid columns
+    full_weights_matrix <- matrix(0, nrow = ncol(X), ncol = ncol(Y))
+    rownames(full_weights_matrix) <- colnames(X)
+    colnames(full_weights_matrix) <- colnames(Y)
+    full_weights_matrix[valid_columns, ] <- weights_matrix
+    
+    return(full_weights_matrix)
   }
 
   if (num_cores >= 2) {

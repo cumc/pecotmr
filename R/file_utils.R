@@ -73,6 +73,7 @@ read_pgen <- function(pgen, variantidx = NULL, meanimpute = F) {
 #' @importFrom stringr str_detect
 
 tabix_region <- function(file, region, tabix_header = "auto", target = "", target_column_index = "") {
+
   cmd_output <- tryCatch(
     {
       fread(cmd = paste0("tabix -h ", file, " ", region), sep = "auto", header = tabix_header)

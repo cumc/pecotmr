@@ -79,7 +79,7 @@ multivariate_analysis_pipeline <- function(
     for (r in 1:ncol(Y)) {
       if (pip_cutoff_to_skip[r] > 0) {
         non_missing_indices <- which(!is.na(Y[, r]))
-        X_non_missing <- X[non_missing_indices, ]
+        X_non_missing <- X[match(names(Y[,r])[non_missing_indices],rownames(X)),]
         Y_non_missing <- Y[non_missing_indices, r]
 
         top_model_pip <- susie(X_non_missing, Y_non_missing, L = 1)$pip
@@ -110,6 +110,8 @@ multivariate_analysis_pipeline <- function(
     if (!is.null(data_driven_prior_matrices)) {
       data_driven_prior_matrices <- list(matrices = data_driven_prior_matrices$U, weights = data_driven_prior_matrices$w)
       data_driven_prior_matrices <- create_mixture_prior(mixture_prior = data_driven_prior_matrices, weights_tol = prior_weights_min, include_indices = condition_names)
+    } else {
+      data_driven_prior_matrices <- create_mixture_prior(R = length(condition_names), include_indices = condition_names)
     }
 
     if (!is.null(data_driven_prior_matrices_cv)) {
@@ -133,19 +135,20 @@ multivariate_analysis_pipeline <- function(
     ))
   }
   # filter X and Y missing
-  filter_X_Y_missing <- function(X, Y) {
-    Y_rows_with_missing <- apply(Y, 1, function(row) all(is.na(row)))
-    if (any(Y_rows_with_missing)) {
-      Y_filtered <- Y[-which(Y_rows_with_missing), , drop = FALSE]
-      X_rows_to_remove <- match(names(which(Y_rows_with_missing)), rownames(X))
-      X_filtered <- X[-X_rows_to_remove, , drop = FALSE]
-      X_columns_with_missing <- apply(X_filtered, 2, function(column) all(is.na(column)))
-      if (any(X_columns_with_missing)) {
-        columns_to_remove <- which(X_columns_with_missing)
-        X_filtered <- X_filtered[, -columns_to_remove, drop = FALSE]
-      }
-    }
-    return(list(X_filtered = X_filtered, Y_filtered = Y_filtered))
+  filter_X_Y_missing <-  function(X, Y) {
+     Y_rows_with_missing <- apply(Y, 1, function(row) all(is.na(row)))
+     if (any(Y_rows_with_missing)) {                             
+        Y_filtered <- Y[-which(Y_rows_with_missing),,drop = FALSE]
+     } else {
+        Y_filtered <- Y
+     }
+     X_filtered <- X[match(rownames(Y_filtered), rownames(X)),]
+     X_columns_with_missing <- apply(X_filtered, 2, function(column) all(is.na(column)))
+     if (any(X_columns_with_missing)) {
+         columns_to_remove <- which(X_columns_with_missing)
+         X_filtered <- X_filtered[,-columns_to_remove, drop = FALSE]
+     }                                
+  return(list(X_filtered = X_filtered, Y_filtered = Y_filtered))
   }
   # Skip conditions based on PIP values
   Y <- skip_conditions(X, Y, pip_cutoff_to_skip)
@@ -199,7 +202,6 @@ multivariate_analysis_pipeline <- function(
     maf = maf, secondary_coverage = sec_coverage, signal_cutoff = signal_cutoff, mode = "mvsusie"
   )
   res$mnm_result$mrmash_result <- mrmash_fitted
-
   # Run TWAS pipeline
   if (twas_weights) {
     res <- twas_multivariate_weights_pipeline(X, Y, maf, res,
