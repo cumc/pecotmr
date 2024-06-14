@@ -25,174 +25,154 @@
 allele_qc <- function(target_variants, ref_variants, target_data, col_to_flip = NULL,
                       match_min_prop = 0.2, remove_dups = TRUE,
                       remove_indels = FALSE, remove_strand_ambiguous = TRUE,
-                      flip_strand = FALSE, remove_unmatched = TRUE, target_gwas=TRUE) {
-  target_variants <- variant_id_to_df(target_variants)
-  ref_variants <- variant_id_to_df(ref_variants)
-  if(isTRUE(target_gwas)) target_data <- variant_id_to_df(target_data)
+                      flip_strand = FALSE, remove_unmatched = TRUE, remove_same_vars = FALSE, target_gwas = TRUE) {
+    
+    strand_flip <- function(ref) {
+        # Define a mapping for complementary bases
+        base_mapping <- c("A" = "T", "T" = "A", "G" = "C", "C" = "G")
 
-  matched <- merge(target_variants, ref_variants, by = c("chrom", "pos"), all = FALSE, suffixes = c(".target", ".ref")) %>%
-    as.data.frame() %>%
-    mutate(variants_id_qced = paste(chrom, pos, A2.ref, A1.ref, sep = ":"))
+        # Function to complement a single base
+        complement_base <- function(base) {
+            complement <- base_mapping[base]
+            return(complement)
+        }
 
-  matched_indices <- target_variants %>%
-    mutate(index = row_number()) %>%
-    inner_join(matched, by = c("chrom" = "chrom", "pos" = "pos", "A1" = "A1.target", "A2" = "A2.target")) %>%
-    filter(duplicated(.) | !duplicated(.)) # this will keep all rows, duplicates and non-duplicates alike
-  variants_id_qced <- matched_indices %>% pull(variants_id_qced)
-  target_data_qced <- target_data[matched_indices$index, , drop = FALSE] %>%
-    as.data.frame() %>%
-    mutate(variant_id = variants_id_qced)
+        # Function to reverse and complement a DNA sequence
+        reverse_complement <- function(sequence) {
+            reversed <- rev(strsplit(sequence, NULL)[[1]])
+            complemented <- sapply(reversed, complement_base, USE.NAMES = FALSE)
+            return(paste(complemented, collapse = ""))
+        }
 
-  a1 <- toupper(matched$A1.target)
-  a2 <- toupper(matched$A2.target)
-  ref1 <- toupper(matched$A1.ref)
-  ref2 <- toupper(matched$A2.ref)
+        complemented_sequence <- sapply(ref, reverse_complement, USE.NAMES = FALSE)
 
-  strand_flip <- function(ref) {
-    # Define a mapping for complementary bases
-    base_mapping <- c("A" = "T", "T" = "A", "G" = "C", "C" = "G")
-
-    # Function to complement a single base
-    complement_base <- function(base) {
-      complement <- base_mapping[base]
-      return(complement)
+        return(complemented_sequence)
     }
 
-    # Function to reverse and complement a DNA sequence
-    reverse_complement <- function(sequence) {
-      reversed <- rev(strsplit(sequence, NULL)[[1]])
-      complemented <- sapply(reversed, complement_base, USE.NAMES = FALSE)
-      return(paste(complemented, collapse = ""))
+    # check if the pattern is ATCG/DI
+    check_ATCG <- function(vec) {
+        pattern <- "^[ATCGDI]+$"
+
+        # Function to check if a single element matches the pattern
+        check_element <- function(element) {
+            grepl(pattern, element)
+        }
+
+        result <- sapply(vec, check_element, USE.NAMES = FALSE)
+        return(result)
+    }
+    
+    # transform all inputs to dataframe
+    target_variants <- variant_id_to_df(target_variants)
+    ref_variants <- variant_id_to_df(ref_variants)
+    if (isTRUE(target_gwas)) target_data <- variant_id_to_df(target_data)
+    
+    # remove the variant_id column in target data to avoid conflict
+    if ("variant_id" %in% colnames(target_data)) {
+        target_data <- target_data[, !(colnames(target_data) %in% "variant_id")]
     }
 
-    complemented_sequence <- sapply(ref, reverse_complement, USE.NAMES = FALSE)
-
-    return(complemented_sequence)
-  }
-
-  flip1 <- strand_flip(ref1)
-  flip2 <- strand_flip(ref2)
-  remove_strand_ambiguous <- TRUE
-  snp <- list()
-
-  if (remove_strand_ambiguous) {
-    strand_unambiguous <- !((a1 == "A" & a2 == "T") | (a1 == "T" & a2 == "A") |
-      (a1 == "C" & a2 == "G") | (a1 == "G" & a2 == "C"))
-  } else {
-    strand_unambiguous <- rep(TRUE, length(a1))
-  }
-
-  snp[["keep"]] <- strand_unambiguous
-
-  # Remove non-ATCG coding
-  check_ATCG <- function(vec) {
-    pattern <- "^[ATCGDI]+$"
-
-    # Function to check if a single element matches the pattern
-    check_element <- function(element) {
-      grepl(pattern, element)
-    }
-
-    result <- sapply(vec, check_element, USE.NAMES = FALSE)
-    return(result)
-  }
-
-  non_ATCG <- !(check_ATCG(a1) & check_ATCG(a2))
-
-
-  snp[["keep"]][non_ATCG] <- FALSE
-  snp[["sign_flip"]] <- ((a1 == ref2 & a2 == ref1) | (a1 == flip2 & a2 == flip1)) & (a1 != ref1 & a2 != ref2)
-  snp[["strand_flip"]] <- ((a1 == flip1 & a2 == flip2) | (a1 == flip2 & a2 == flip1)) & (a1 != ref1 & a2 != ref2)
-  snp[["INDEL"]] <- (a2 == "I" | a2 == "D" | nchar(a2) > 1 | nchar(a1) > 1)
-  exact_match <- (a1 == ref1 & a2 == ref2)
-  ID_match <- ((a2 == "D" | a2 == "I") & (nchar(ref1) > 1 | nchar(ref2) > 1))
-
-  snp[["keep"]][!(exact_match | snp[["sign_flip"]] | snp[["strand_flip"]] | ID_match)] <- FALSE
-
-  if (!any(snp[["strand_flip"]][which(strand_unambiguous)])) {
-    # we conclude that strand flip does not exists in the data at all
-    # so we can bring back those previous marked to drop because of strand ambiguous
-    snp[["keep"]][which(!strand_unambiguous)] <- TRUE
-    snp[["keep"]][!(exact_match | snp[["sign_flip"]] | ID_match)] <- FALSE
-  }
-
-  if (remove_indels) {
-    snp[["keep"]][snp[["INDEL"]]] <- FALSE
-  }
-
-  qc_summary <- matched %>%
-    mutate(
-      keep = snp[["keep"]],
-      sign_flip = snp[["sign_flip"]],
-      strand_flip = snp[["strand_flip"]],
-      indel = snp[["INDEL"]]
-    )
-
-  # Apply allele flip if required
-  if (!is.null(col_to_flip)) {
-    if (!is.null(target_data_qced[, col_to_flip])) {
-      target_data_qced[qc_summary$sign_flip, col_to_flip] <- -1 * target_data_qced[qc_summary$sign_flip, col_to_flip]
-    } else {
-      stop("Column '", col_to_flip, "' not found in target_data.")
-    }
-  }
-
-  # Keep SNPs based on the 'keep' flag
-  target_data_qced_matched <- target_data_qced[qc_summary$keep, , drop = FALSE]
-
-  # Output the variants after strand flip if specified
-  if (flip_strand) {
-    strand_flipped_indices <- which(qc_summary$strand_flip)
-    target_data_qced_matched[strand_flipped_indices, "A1"] <- strand_flip(target_data_qced_matched[strand_flipped_indices, "A1"])
-    target_data_qced_matched[strand_flipped_indices, "A2"] <- strand_flip(target_data_qced_matched[strand_flipped_indices, "A2"])
-  }
-
-  # Remove duplicates if specified
-  if (remove_dups) {
-    dups <- vec_duplicate_detect(qc_summary[, c("chrom", "pos", "A1.target", "A2.target")])
-    if (any(dups)) {
-      target_data_qced_matched <- target_data_qced_matched[!dups, , drop = FALSE]
-      message("Some duplicates were removed.")
-    }
-  }
-
-  # Check if the minimum proportion of variants is matched
-  min_match <- match_min_prop * min(nrow(target_variants), nrow(ref_variants))
-  if (nrow(target_data_qced_matched) < min_match) {
-    stop("Not enough variants have been matched.")
-  }
-
-  # Keep unmatched variants if specified
-  if (!remove_unmatched) {
-    unmatched_indices <- setdiff(seq_len(nrow(target_variants)), matched_indices$index)
-    if (length(unmatched_indices) > 0) {
-      target_data_qced_unmatched <- target_data[unmatched_indices, , drop = FALSE] %>%
+    match_result <- merge(target_data, ref_variants, by = c("chrom", "pos"), all = FALSE, suffixes = c(".target", ".ref")) %>%
+        # match target & ref by chrom and position
         as.data.frame() %>%
-        mutate(variant_id = paste(target_variants$chrom[unmatched_indices],
-          target_variants$pos[unmatched_indices],
-          target_variants$A2[unmatched_indices],
-          target_variants$A1[unmatched_indices],
-          sep = ":"
-        ))
-      target_data_qced <- rbind(target_data_qced_matched, target_data_qced_unmatched)
-    } else {
-      target_data_qced <- target_data_qced_matched
+        mutate(variants_id_original = paste(chrom, pos, A2.target, A1.target, sep = ":")) %>%
+        mutate(variants_id_qced = paste(chrom, pos, A2.ref, A1.ref, sep = ":")) %>%
+        # filter out totally same rows.
+        filter(duplicated(.) | !duplicated(.)) %>%
+        # upper case target/reference A1 A2
+        mutate(across(c(A1.target, A2.target, A1.ref, A2.ref), toupper)) %>%
+        mutate(flip1.ref = strand_flip(A1.ref), flip2.ref = strand_flip(A2.ref)) %>%
+        # these pairings are ambiguous: because we cannot tell it's an sign flip / strand flip
+        mutate(strand_unambiguous = if_else((A1.target == "A" & A2.target == "T") | (A1.target == "T" & A2.target == "A") |
+                                            (A1.target == "C" & A2.target == "G") | (A1.target == "G" & A2.target == "C"), FALSE, TRUE)) %>%
+        # filter out non-ATCG coded alleles
+        mutate(non_ATCG = !(check_ATCG(A1.target) & check_ATCG(A2.target))) %>%
+        # exact match should be kept all the time
+        mutate(exact_match = A1.target == A1.ref & A2.target == A2.ref) %>%
+        mutate(sign_flip = ((A1.target == A2.ref & A2.target == A1.ref) | (A1.target == flip2.ref & A2.target == flip1.ref)) & (A1.target != A1.ref & A2.target != A2.ref)) %>%
+        mutate(strand_flip = ((A1.target == flip1.ref & A2.target == flip2.ref) | (A1.target == flip2.ref & A2.target == flip1.ref)) & (A1.target != A1.ref & A2.target != A2.ref)) %>%
+        mutate(INDEL = (A2.target == "I" | A2.target == "D" | nchar(A2.target) > 1 | nchar(A1.target) > 1)) %>%
+        mutate(ID_match = ((A2.target == "D" | A2.target == "I") & (nchar(A1.ref) > 1 | nchar(A2.ref) > 1)))
+    
+    # if not remove, then this should'nt be a condition to filter out any variants
+    if (!remove_strand_ambiguous) {
+        match_result <- match_result %>% mutate(strand_unambiguous = TRUE)
     }
-  } else {
-    target_data_qced <- target_data_qced_matched
-  }
+    # if all strand flip is un-ambigous, then we know ambigous cases are indeed a strand flip
+    # not a sign flip, then we infer there is no ambigous in the whole dataset, and keep those ambigous ones
+    if (nrow(match_result %>% filter(strand_flip == TRUE) %>% filter(strand_unambiguous == TRUE)) == 0) {
+        match_result <- match_result %>% mutate(strand_unambiguous = TRUE)
+    }
+    
+    # To keep variants: if it's a strand flip, we will keep those unambigous (because if ambigous, cannot know it's trand / sign flip, so discard all)
+    # or exact match or indel match (ID_match)
+    # If not a strand flip, then we will keep those that are exact match / those are sign flip / INDEL matched
+    match_result <- match_result %>% mutate(keep = if_else(strand_flip, true = (strand_unambiguous | exact_match | ID_match), false = 
+                                                           (exact_match | sign_flip | ID_match)))
 
-  # Change A1 and A2 so that it can fit the reference, and rearrange the columns so that the four are at the very front
-  target_data_qced <- target_data_qced %>%
-    separate(variant_id, into = c("chrom", "pos", "A2", "A1"), sep = ":", remove = FALSE) %>%
-    select(chrom, pos, A1, A2, everything()) %>%
-    mutate(chrom = as.integer(chrom), pos = as.integer(pos))
+    if (remove_indels) {
+        match_result <- match_result %>% mutate(keep = if_else(INDEL == FALSE, FALSE, TRUE))
+    }
+    
+    # flip the signs of the column col_to_flip if there is a sign flip
+    if (!is.null(col_to_flip)) {
+        if (!is.null(match_result[, col_to_flip])) {
+            match_result[match_result$sign_flip, col_to_flip] <- -1 * match_result[match_result$sign_flip, col_to_flip]
+        } else {
+            stop("Column '", col_to_flip, "' not found in target_data.")
+        }
+    }
+    # flip the strands if there is a strand flip
+    if (flip_strand) {
+        strand_flipped_indices <- which(match_result$strand_flip)
+        match_result[strand_flipped_indices, "A1.target"] <- strand_flip(match_result[strand_flipped_indices, "A1.target"])
+        match_result[strand_flipped_indices, "A2.target"] <- strand_flip(match_result[strand_flipped_indices, "A2.target"])
+    }
+    
+    # FIXME: I think this parameter is confusing. I inheritated directly from our function, whose default setting is TRUE.
+    # It is removing all multi-allelic alleles which is unnecessary. I suggest remove this parameter directly. 
+    # What we are trying to avoid is the SAME allele having diferent z score. I defined one parameter remove_same_vars later, but I can re-use this
+    # remove_dup name
+    if (remove_dups) {
+        dups <- vec_duplicate_detect(match_result[, c("chrom", "pos", "variants_id_qced")])
+        if (any(dups)) {
+            match_result <- match_result[!dups, , drop = FALSE]
+            message("Some duplicates were removed.")
+        }
+    }
 
-  if (remove_dups & any(duplicated(target_data_qced$variant_id))) {
-    stop("In the input, there are duplicated varaints with different z scores. Please check the data and determine which to keep.")
-  }
+    # Remove all unnecessary columns used to determine qc status
+    # Finally keep those variants with FLAG keep = TRUE
+    result <- match_result[match_result$keep, , drop = FALSE]
+    
+    
+    result <- result %>% select(-(flip1.ref:keep)) %>% select(-variants_id_original, -A1.target, -A2.target) %>%
+        rename(A1 = A1.ref, A2 = A2.ref, variant_id = variants_id_qced)
+    
+    # default FALSE, but if want to remove same variants having different z score, then set as TRUE
+    if (remove_same_vars) {
+        same_vars <- vec_duplicate_detect(result[, c("chrom", "pos", "variant_id")])
+        if (any(same_vars)) {
+            result <- result[!same_vars, , drop = FALSE]
+            message("Same variants with different z scores are removed.")
+        }
+    }
 
-  return(list(target_data_qced = target_data_qced, qc_summary = qc_summary))
+    if (!remove_unmatched) {
+        match_variant <- match_result %>% pull(variants_id_original)
+        target_data <- target_data %>% mutate(variant_id = paste(chrom, pos, A2, A1, sep = ":"))
+        if (length(setdiff(target_data %>% pull(variant_id), match_variant)) > 0) {
+            unmatch_data <- target_data %>% filter(!variant_id %in% match_variant)
+            result <- rbind(match_result, unmatch_data)
+        }
+    }
+
+    # throw an error if there are any variant_id that are duplicated (meaning that same variant having different other infos for example z score)
+    if (!remove_same_vars & any(duplicated(result$variant_id))) {
+        stop("In the input, there are duplicated variants with different z scores. Please check the data and determine which to keep.")
+    }
+
+    return(list(target_data_qced = result, qc_summary = match_result))
 }
 
 #' Align Variant Names
