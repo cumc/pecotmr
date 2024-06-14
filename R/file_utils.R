@@ -590,7 +590,8 @@ load_twas_weights <- function(weight_db_files, conditions = NULL,
     }
     # Set default for 'conditions' if they are not specified
     if (is.null(conditions)) {
-      conditions <- names(combined_all_data)
+      conditions <- names(all_data[[1]][[1]])
+      names(combined_all_data) <- conditions
     }
     ## Check if the specified condition and variable_name_obj are available in all files
     if (!all(conditions %in% names(combined_all_data))) {

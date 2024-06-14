@@ -9,7 +9,19 @@
 
 #' Determine Imputability and Variant Selection
 #'
-#' Assesses the imputability of genes across different contexts and selects a subset of SNPs with high Posterior Inclusion Probabilities (PIPs) from SuSiE fine-mapping results. It retrieves variant weights and identifies the best-performing methods based on cross-validation metrics. This function is essential for preparing data for complex trait weighted analysis.
+#' This function load TWAS weights and assesses the imputability of genes across different contexts, 
+#' and select top variants for imputable gene-context pair, and output the extracted variant weights 
+#' from best performing method model. Imputability of a gene-context pair are determined by having 
+#' least one of the twas methods' model being imputable based on cross livadtion metrics. The imputable 
+#' model is if the model surpasses the r-square and p-value threashold from cross validation metrics. 
+#' If non of the contexts of a gene has at least one method being imputable, then this gene will be 
+#' considered as unimputable, and do not return any weight results. For imputable gene-context pair, 
+#' we select a subset of variants with high Posterior Inclusion Probabilities (PIPs) from SuSiE 
+#' fine-mapping results for the imputable gene-context pair. After selecting variants, we extracts 
+#' variant weights from the best performing model among imputable models with highest r-square or 
+#' smallest p-value from cross validation metrics. This function is essential for preparing data 
+#' for complex trait weighted analysis with sparse weight.
+#' 
 #' @param weight_db_files File paths to `.rds` files containing SuSiE-TWAS weights.
 #' @param variable_name_obj Name of the element in SuSiE-TWAS output that lists variant names aligned with TWAS weights.
 #' @param max_var_selection Maximum number of SNPs to be selected from each gene-context pair.
@@ -17,17 +29,19 @@
 #' @param p_val_cutoff Maximum allowable p-value for a gene to be considered imputable in a given context.
 #' @return A list of elements containing fine-mapping and TWAS related data:
 #' \itemize{
+#'   \item{refined_twas_weights}{Context imputability, model selection, and selected variants, and extracted 
+#' weights for the selected variants across all contexts for a imputable gene. }
 #'   \item{susie_results}{SuSiE fine-mapping results, including variant selection from the SuSiE-TWAS pipeline.}
-#'   \item{model_selection}{Identification of the best-performing TWAS method for each context, based on cross-validation.}
 #'   \item{weights}{TWAS weights from the SuSiE-TWAS pipeline, to be harmonized for further analysis.}
-#'   \item{region_info}{Region information corresponding to each gene, critical for interpreting SuSiE-TWAS weight inputs.}
+#'   \item{gene}{Gene name of the twas db weight.}
+#'   \item{cv_performance}{Cross validation performance metrics for all contexts.}
 #' }
 #' @export
 #' @examples
-#' results <- determine_imputability(weight_db_file = "path/to/weights.rds", conditions=c("Mic", "Oli", "Exc"),
+#' results <- generate_twas_db(weight_db_file = "path/to/weights.rds", conditions=c("Mic", "Oli", "Exc"),
 #'                                   max_var_selection = 10, min_rsq_threshold = 0.01, p_val_cutoff = 0.05)
 # select variants for ctwas weights input
-twas_top_signals <- function(weight_db_file, contexts = NULL, ld_region,
+generate_twas_db <- function(weight_db_file, contexts = NULL, 
                                  variable_name_obj = c("preset_variants_result", "variant_names"),
                                  susie_obj = c("preset_variants_result", "susie_result_trimmed"),
                                  twas_weights_table = "twas_weights", max_var_selection,
@@ -81,25 +95,17 @@ twas_top_signals <- function(weight_db_file, contexts = NULL, ld_region,
   }
   
   # Based on selected best model and imputable contexts, select variants based on susie output
-  ctwas_select <- function(twas_data_combined, contexts, imputable_status, max_var_selection, variable_name_obj, susie_obj) {
+  twas_select <- function(twas_data_combined, contexts, imputable_status, max_var_selection, variable_name_obj, susie_obj) {
     # loop through context
     names(imputable_status) <- contexts
     var_selection_list <- lapply(contexts, function(context) {
       if (imputable_status[context] == "non_imputable") {
         variant_selected <- rep(NA, max_var_selection)
-          #variant_names = get_nested_element(twas_data_combined, c("susie_results", context,"variant_names")),
-          #variant_selected = rep(NA, max_var_selection)
-          # susie_result_trimmed = list(
-          #   sets = list(cs = c(NULL)),
-          #   pip = rep(NA, max_var_selection)
-          # )
-        #)
         return(variant_selected)
       } 
       
       # if the context is imputable 
       variant_names = get_nested_element(twas_data_combined, c("susie_results", context,"variant_names"))
-
       # susie_result_trimmed is from "preset_variants_result"-"susie_result_trimmed" from load_twas_weights()
       susie_result_trimmed = get_nested_element(twas_data_combined, c("susie_results", context, "susie_result"))
 
@@ -161,7 +167,7 @@ twas_top_signals <- function(weight_db_file, contexts = NULL, ld_region,
   
   
   ## load twas weights
-  twas_data_combined <- load_twas_weights(weight_db_file, conditions=NULL, variable_name_obj=variable_name_obj,
+  twas_data_combined <- load_twas_weights(weight_db_file, conditions=contexts, variable_name_obj=variable_name_obj,
                                                         twas_weights_table = twas_weights_table)
   
   weights <- twas_data_combined$weights
@@ -177,30 +183,38 @@ twas_top_signals <- function(weight_db_file, contexts = NULL, ld_region,
   for (contx in contexts){
     if (isTRUE(model_selection[[contx]][["imputable"]])) imputable_contexts <- c(imputable_contexts, contx)
   }
-  # if (length(imputable_contexts)==0){
-  #   model_selection$region_imputable <- FALSE
-  #   print(paste0("No model meets the p_value threshold and R-squared minimum in all contexts. All contexts for gene ", gene, " at region ", ld_region, " is not imputable. Weight input: ", weight_db_file, ". "))
-  #   # return all results regardless of imputation status. 
-  #   # return(list(susie_results = NULL, model_selection = model_selection, weights = NULL, region_info = twas_data_combined$susie_results[[1]]$region_info))
-  # } else{
-  #   model_selection$region_imputable <- TRUE
-  #   # run top signal selection for all imputable contexts first to keep list structure the same, regardless of imputable status.
-  # }
   
   # select variants 
   names(contexts) <- rep("non_imputable", length(contexts))
   names(contexts)[which(contexts %in% imputable_contexts)] <- "imputable"
-  ctwas_select_result <- ctwas_select(twas_data_combined, contexts, names(contexts), max_var_selection, variable_name_obj, susie_obj)
+  twas_select_result <- twas_select(twas_data_combined, contexts, names(contexts), max_var_selection, variable_name_obj, susie_obj)
   
-  #susie_result_name update
-  for (context in contexts){
-    names(twas_data_combined$susie_results[[context]])[which(names(twas_data_combined$susie_results[[context]]) %in% "susie_result")] <- "susie_result_trimmed"
+  # output refined_twas_weights for imputable genes across all contexts 
+  refined_twas_weights <- list()
+  if (length(imputable_contexts)>0){
+    for (context in contexts){
+      #susie_result_name update
+      names(twas_data_combined$susie_results[[context]])[which(names(twas_data_combined$susie_results[[context]]) %in% "susie_result")] <- "susie_result_trimmed"
+
+      refined_twas_weights[[context]] <- list(selected_model=model_selection[[context]][["selected_model"]])
+      refined_twas_weights[[context]][["is_imputable"]] <- model_selection[[context]][["imputable"]]
+
+      if (isTRUE(refined_twas_weights[[context]][["is_imputable"]])){
+          all_weight_variants <- rownames(weights[[context]])
+          refined_twas_weights[[context]][["selected_top_variants"]] <- twas_select_result[[context]]
+          refined_twas_weights[[context]][["selected_model_weights"]] <- weights[[context]][match(twas_select_result[[context]],                                
+                            all_weight_variants), paste0(refined_twas_weights[[context]][["selected_model"]], "_weights")]
+      }
+    }
+    # return results
+    return(list(
+      refined_twas_weights=refined_twas_weights, 
+      weights = weights, gene=gene, cv_performance=twas_data_combined$twas_cv_performance, 
+      susie_results = twas_data_combined$susie_results))
+  } else {
+      print(paste0("Weight input ", weight_db_file, " is non-imputable for all contexts. "))
+      return(NULL)
   }
-  # return results
-  return(list(
-    variant_selection = ctwas_select_result, model_selection = model_selection,
-    weights = weights, gene=gene, susie_results = twas_data_combined$susie_results
-  ))
 }
 
 
@@ -388,36 +402,4 @@ format_ctwas_ld <- function(ld_paths, outdir) {
     region_info <- rbind(region_info, ld_info)
   }
   return(region_info)
-}
-
-
-#' Scan Directory for LD Files and Generate Region Information Table
-#'
-#' Scans a specified directory for formatted LD (Linkage Disequilibrium) matrix files and corresponding bim files, generating a table with detailed region information. This function is designed to handle files named in a structured format, such as `LD_chr2_12345_17755.cor.xz.RDS` for RDS files and `LD_chr2_12345_17755.cor.xz.Rvar` for variance files.
-#' @param ld_dir Path to the directory containing the LD matrix RDS files.
-#' @return A data frame containing region information for all formatted LD matrices located in the specified directory. This includes details such as chromosome number, start and end positions, and file types.
-#' @export
-#' @examples
-#' region_info <- scan_ld_files("path/to/ld_directory")                          
-get_dir_region_info <- function(ld_dir) {
-  ld_file_names <- list.files(path = ld_dir, pattern = "*.RDS", all.files = FALSE, full.names = FALSE)
-
-  # Initialize vectors to store the positions, a2, and a1 elements
-  chrom <- start <- stop <- vector("numeric", length(ld_file_names))
-  # Extract the elements
-  for (i in seq_along(ld_file_names)) {
-    parts <- strsplit(ld_file_names[i], "_")[[1]]
-    chrom[i] <- parts[2]
-    start[i] <- parts[3]
-    stop[i] <- gsub("\\..*", "", parts[4])
-  }
-  chrom <- as.integer(readr::parse_number(chrom))
-  start <- as.integer(start)
-  stop <- as.integer(stop)
-  return(data.frame(
-    chrom = chrom, start = start, stop = stop,
-    region_tag = paste0("chr", chrom, ":", start, "-", stop),
-    LD_matrix = paste0(ld_dir, "/", ld_file_names),
-    SNP_info = paste0(ld_dir, "/", sub(".[^.]+$", "", ld_file_names), ".Rvar")
-  ))
 }
