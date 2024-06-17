@@ -67,13 +67,13 @@ read_pgen <- function(pgen, variantidx = NULL, meanimpute = F) {
 }
 
 #' @importFrom data.table fread
-#' @importFrom dplyr as_tibble mutate
+#' @importFrom dplyr as_tibble mutate filter
 #' @importFrom tibble tibble
 #' @importFrom magrittr %>%
-#' @export
+#' @importFrom stringr str_detect
 
-tabix_region <- function(file, region, tabix_header = "auto") {
-  # Execute tabix command and capture the output
+tabix_region <- function(file, region, tabix_header = "auto", target = "", target_column_index = "") {
+
   cmd_output <- tryCatch(
     {
       fread(cmd = paste0("tabix -h ", file, " ", region), sep = "auto", header = tabix_header)
@@ -81,10 +81,20 @@ tabix_region <- function(file, region, tabix_header = "auto") {
     error = function(e) NULL
   )
 
-  # Check if the output is empty and return an empty tibble if so
+  if (!is.null(cmd_output) && target != "" && target_column_index != "") {
+    cmd_output <- cmd_output %>%
+      filter(str_detect(.[[target_column_index]], target))
+  } else if (!is.null(cmd_output) && target != "") {
+    cmd_output <- cmd_output %>%
+      mutate(text = apply(., 1, function(row) paste(row, collapse = "_"))) %>%
+      filter(str_detect(text, target)) %>%
+      select(-text)
+  }
+
   if (is.null(cmd_output) || nrow(cmd_output) == 0) {
     return(tibble())
   }
+
   cmd_output %>%
     as_tibble() %>%
     mutate(
@@ -92,6 +102,7 @@ tabix_region <- function(file, region, tabix_header = "auto") {
       !!names(.)[2] := as.numeric(.[[2]])
     )
 }
+
 
 NoSNPsError <- function(message) {
   structure(list(message = message), class = c("NoSNPsError", "error", "condition"))
@@ -590,8 +601,7 @@ load_twas_weights <- function(weight_db_files, conditions = NULL,
     }
     # Set default for 'conditions' if they are not specified
     if (is.null(conditions)) {
-      conditions <- names(all_data[[1]][[1]])
-      names(combined_all_data) <- conditions
+      conditions <- names(combined_all_data)
     }
     ## Check if the specified condition and variable_name_obj are available in all files
     if (!all(conditions %in% names(combined_all_data))) {
@@ -605,11 +615,8 @@ load_twas_weights <- function(weight_db_files, conditions = NULL,
       result <- list(
         variant_names = get_nested_element(combined_all_data, c(condition, variable_name_obj)),
         susie_result = get_nested_element(combined_all_data, c(condition, susie_obj)),
-        region_info = get_nested_element(combined_all_data, c(condition, "region_info"))
+        target = get_nested_element(combined_all_data, c(condition, "target"))
       )
-      if ("top_loci" %in% names(get_nested_element(combined_all_data, c(condition, "preset_variants_result")))){
-         result$top_loci <- combined_all_data[[condition]]$preset_variants_result$top_loci
-      }
       return(result)
     })
     names(combined_susie_result) <- conditions
@@ -618,19 +625,14 @@ load_twas_weights <- function(weight_db_files, conditions = NULL,
   # Internal function to align and merge weight matrices
   align_and_merge <- function(weights_list, variable_objs) {
     # Get the complete list of variant names across all files
-    # all_variants <- unique(unlist(variable_objs))
+    all_variants <- unique(unlist(variable_objs))
     consolidated_list <- list()
     # Fill the matrix with weights, aligning by variant names
     for (i in seq_along(weights_list)) {
-      all_variants <- unique(unlist(variable_objs[[i]])) # match condiiton specific variant names
       # Initialize the temp matrix with zeros
       existing_colnames <- character(0)
       temp_matrix <- matrix(0, nrow = length(all_variants), ncol = ncol(weights_list[[i]]))
       rownames(temp_matrix) <- all_variants
-      if (!length(all_variants)==nrow(weights_list[[i]])){
-        stop(paste0("Variant number mismatch in twas weights: ", nrow(weights_list[[i]]), " and variant number in susie result: ", length(all_variants),
-                    " for context ", names(weights_list)[i], ". "))
-      }
       idx <- match(variable_objs[[i]], all_variants)
       temp_matrix[idx, ] <- weights_list[[i]]
       # Ensure no duplicate column names
@@ -651,6 +653,10 @@ load_twas_weights <- function(weight_db_files, conditions = NULL,
 
   # Internal function to consolidate weights for given condition
   consolidate_weights_list <- function(combined_all_data, conditions, variable_name_obj, twas_weights_table) {
+    # Set default for 'conditions' if they are not specified
+    if (is.null(conditions)) {
+      conditions <- names(combined_all_data)
+    }
     combined_weights_by_condition <- lapply(conditions, function(condition) {
       temp_list <- get_nested_element(combined_all_data, c(condition, twas_weights_table))
       temp_list <- temp_list[!names(temp_list) %in% "variant_names"]
@@ -679,15 +685,9 @@ load_twas_weights <- function(weight_db_files, conditions = NULL,
   try(
     {
       combined_all_data <- load_and_validate_data(weight_db_files, conditions, variable_name_obj)
-      # update conditions upfront 
-      if (is.null(conditions)) conditions <- names(combined_all_data)
       combined_susie_result <- extract_variants_and_susie_results(combined_all_data, conditions)
       weights <- consolidate_weights_list(combined_all_data, conditions, variable_name_obj, twas_weights_table)
-      performance_tables <- lapply(conditions, function(condition) {
-        get_nested_element(combined_all_data, c(condition, "twas_cv_result", "performance"))
-      })
-      names(performance_tables) <- conditions
-      return(list(susie_results = combined_susie_result, weights = weights, twas_cv_performance=performance_tables))
+      return(list(susie_results = combined_susie_result, weights = weights))
     },
     silent = TRUE
   )
@@ -706,18 +706,28 @@ load_twas_weights <- function(weight_db_files, conditions = NULL,
 #' @param n_case User-specified number of cases.
 #' @param n_control User-specified number of controls.
 #'
+#' @param region The region where tabix use to subset the input dataset.
+#' @param target User-specified gene/phenotype name used to further subset the phenotype data.
+#' @param target_column_index Filter this specific column for the target.
 #' @return A list of rss_input, including the column-name-formatted summary statistics,
 #' sample size (n), and var_y.
 #'
+#' @importFrom dplyr mutate group_by summarise
+#' @importFrom magrittr %>%
 #' @importFrom data.table fread
 #' @export
-load_rss_data <- function(sumstat_path, column_file_path, n_sample = 0, n_case = 0, n_control = 0) {
-  var_y <- NULL
-  sumstats <- fread(sumstat_path)
-  column_data <- read.table(column_file_path, header = FALSE, sep = ":", stringsAsFactors = FALSE)
-  colnames(column_data) <- c("standard", "original")
+load_rss_data <- function(sumstat_path, column_file_path, subset = TRUE, n_sample = 0, n_case = 0, n_control = 0, target = "", region = "", target_column_index = "") {
+  # Read and preprocess column mapping
+  column_data <- read.table(column_file_path, header = FALSE, sep = ":", stringsAsFactors = FALSE) %>%
+    rename(standard = V1, original = V2)
 
-  # Map column names using the column file
+  # Initialize sumstats variable
+  sumstats <- NULL
+  var_y <- NULL
+
+  sumstats <- load_tsv_region(sumstat_path = sumstat_path, region = region, target = target, target_column_index = target_column_index)
+
+  # Standardize column names based on mapping
   for (name in colnames(sumstats)) {
     if (name %in% column_data$original) {
       index <- which(column_data$original == name)
@@ -725,25 +735,21 @@ load_rss_data <- function(sumstat_path, column_file_path, n_sample = 0, n_case =
     }
   }
 
-  # Calculate z-score if missing
-  if (!"z" %in% colnames(sumstats) && all(c("beta", "se") %in% colnames(sumstats))) {
+  if (!"z" %in% colnames(sumstats) && all(c("beta", "se") %in%
+    colnames(sumstats))) {
     sumstats$z <- sumstats$beta / sumstats$se
   }
-
-  # Set beta and se if missing
   if (!"beta" %in% colnames(sumstats) && "z" %in% colnames(sumstats)) {
     sumstats$beta <- sumstats$z
     sumstats$se <- 1
   }
-
-  # Backfill missing values with median for n_sample, n_case, and n_control
   for (col in c("n_sample", "n_case", "n_control")) {
     if (col %in% colnames(sumstats)) {
-      sumstats[[col]][is.na(sumstats[[col]])] <- median(sumstats[[col]], na.rm = TRUE)
+      sumstats[[col]][is.na(sumstats[[col]])] <- median(sumstats[[col]],
+        na.rm = TRUE
+      )
     }
   }
-
-  # Validate and calculate sample size and variance of Y
   if (n_sample != 0 && (n_case + n_control) != 0) {
     stop("Please provide sample size, or case number with control number, but not both")
   } else if (n_sample != 0) {
@@ -764,6 +770,67 @@ load_rss_data <- function(sumstat_path, column_file_path, n_sample = 0, n_case =
       n <- NULL
     }
   }
-
   return(list(sumstats = sumstats, n = n, var_y = var_y))
+}
+
+#' Load customized tsv data
+#'
+#' This function load the input data. If the input sumstat data is .gz and tabixed, then can use the region parameter to subset the data
+#' and filter by target column                            
+#' Otherwise, it will only filter by target column since tabix command won't function (this apply to .tsv, .txt files)
+#'
+#'
+#' @param sumstat_path File path to the summary statistics.
+#' @param region The region where tabix use to subset the input dataset. Format: chr:start-end (eg: 9:10000-50000)
+#' @param target User-specified gene/phenotype name used to further subset the phenotype data.
+#' @param target_column_index Filter this specific column for the target.
+#'
+#' @return A dataframe of the subsetted summary statistics,
+#'
+#' @importFrom data.table fread
+#' @export
+
+load_tsv_region <- function(sumstat_path, region = "", target = "", target_column_index = "") {
+  sumstats <- NULL
+  cmd <- NULL
+  if (grepl(".gz$", sumstat_path)) {
+    if (is.null(sumstats) || nrow(sumstats) == 0) {
+      if (target != "" && region != "" && target_column_index != "") {
+        # region specified, target specified
+        cmd <- paste0("zcat ", sumstat_path, " | head -1 && tabix ", sumstat_path, " ", region, " | awk '$", target_column_index, " ~ /", target, "/'")
+      } else if (target != "" && region == "" && target_column_index != "") {
+          # region not specified, target specified
+        cmd <- paste0("zcat ", sumstat_path, " | awk '$", target_column_index, " ~ /", target, "/'")
+      } else if (region != "" && (target_column_index == "" || target == "")) {
+          # region specified, target not specified
+        cmd <- paste0("zcat ", sumstat_path, " | head -1 && tabix ", sumstat_path, " ", region)
+      } else {
+          # both not specified. Instead of reading a command, read the file path instead
+        cmd <- sumstat_path
+      }
+      sumstats <- tryCatch(
+        {
+          fread(cmd)
+        },
+        error = function(e) {
+          # the gz file cannot be processed by tabix / target column missing
+          stop("Data read error. Please make sure this gz file is tabixed and the target column exists.")
+        }
+      )
+    }
+  } else {
+    # Non-gz files, cannot be tabixed. Load the whole dataset and only apply target filter
+    warning("Not a tabixed gz file, loading the whole data.")
+    if (target != "" && target_column_index != "") {
+    # target specified
+      sumstats <- fread(sumstat_path)
+      keep_index <- which(str_detect(sumstats[[target_column_index]], target))
+      sumstats <- sumstats[keep_index,]
+    } else {
+    # target not specified, the whole dataset
+      sumstats <- fread(sumstat_path)
+    }
+  }
+  
+  return(sumstats)
 }
