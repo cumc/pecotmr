@@ -8,7 +8,10 @@ adjust_susie_weights(
   twas_weights_results,
   condition,
   keep_variants,
-  allele_qc = TRUE
+  allele_qc = TRUE,
+  variable_name_obj = c("susie_results", condition, "variant_names"),
+  susie_obj = c("susie_results", condition, "susie_result_trimmed"),
+  twas_weights_table = c("weights", condition)
 )
 }
 \arguments{

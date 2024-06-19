@@ -2,20 +2,23 @@
 % Please edit documentation in R/ctwas_wrapper.R
 \name{format_ctwas_weights}
 \alias{format_ctwas_weights}
-\title{Function to extract selected weights from a gene across all contexts for cTWAS multigroup analysis}
+\title{Function to generate weights_list from harmonized refined_twas_weights_data for cTWAS multigroup analysis
+- need to qc for allele-flip for weights against LD 
+- need to update susie_weights with susie_parameters 
+- need to get variance to scale weights}
 \usage{
-format_ctwas_weights(twas_rs, study, type)
+format_ctwas_weights(refined_twas_weights_data, xqtl_meta, ld_meta_file)
 }
 \arguments{
-\item{twas_rs}{twas_sparse pipeline selection results.}
-
-\item{study}{Study name of the GWAS data that was incorporated for TWAS analysis.}
-
-\item{type}{xQTL data type such as expression or protein}
+\item{refined_twas_weights_data}{output from twas pipeline as refined_twas_weights_data that is QC/harmonizaed with LD. 
+If the selected_model is susie, the input of weights are updated}
 }
 \value{
 A list of list for weight information for each gene-context pair.
 }
 \description{
-Function to extract selected weights from a gene across all contexts for cTWAS multigroup analysis
+Function to generate weights_list from harmonized refined_twas_weights_data for cTWAS multigroup analysis
+- need to qc for allele-flip for weights against LD 
+- need to update susie_weights with susie_parameters 
+- need to get variance to scale weights
 }
