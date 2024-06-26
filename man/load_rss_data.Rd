@@ -7,9 +7,13 @@
 load_rss_data(
   sumstat_path,
   column_file_path,
+  subset = TRUE,
   n_sample = 0,
   n_case = 0,
-  n_control = 0
+  n_control = 0,
+  target = "",
+  region = "",
+  target_column_index = ""
 )
 }
 \arguments{
@@ -22,6 +26,12 @@ load_rss_data(
 \item{n_case}{User-specified number of cases.}
 
 \item{n_control}{User-specified number of controls.}
+
+\item{target}{User-specified gene/phenotype name used to further subset the phenotype data.}
+
+\item{region}{The region where tabix use to subset the input dataset.}
+
+\item{target_column_index}{Filter this specific column for the target.}
 }
 \value{
 A list of rss_input, including the column-name-formatted summary statistics,
