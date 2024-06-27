@@ -28,7 +28,7 @@ void MCMC_state::sample_sigma2() {
 	for (size_t i=1; i<M; i++) {
 		double a = suff_stats[i] / 2.0 + a0k;
 		double b = 1.0 / (sumsq[i] / 2.0 + b0k);
-		dist = std::gamma_distribution<double>(a, 1.0/b);
+		dist = std::gamma_distribution<double>(a, b);
 		cluster_var[i] = 1.0 / dist(r);
 		if (std::isinf(cluster_var[i])) {
 			cluster_var[i] = 1e5;
@@ -53,10 +53,13 @@ void MCMC_state::calc_b(size_t j, const mcmc_data &dat, const ldmat_data &ldmat_
 	b_j = beta_j % diag;
 
 	// eta^2 * (diag(B) * beta) - eta^2 * B * beta
-	b_j = eta*eta * (b_j - ldmat_dat.B[j] * beta_j);
+	b_j = eta*eta * (b_j - arma::symmatu(ldmat_dat.B[j]) * beta_j);
 
 	// eta^2 * (diag(B) * beta) - eta^2 * B * beta + eta * A^T * beta_mrg
 	b_j += eta * ldmat_dat.calc_b_tmp[j];
+
+	// June 2024 - add to ensure that beta is updating
+	b.subvec(start_i, end_i - 1) = b_j;
 }
 
 void MCMC_state::sample_assignment(size_t j, const mcmc_data &dat, const ldmat_data &ldmat_dat) {
@@ -269,19 +272,18 @@ void MCMC_state::sample_beta(size_t j, const mcmc_data &dat, ldmat_data &ldmat_d
 	arma::vec A_vec(causal_list.size());
 	arma::vec A_vec2(causal_list.size());
 
-	double C = square(eta)*N;
-
 	arma::mat B(causal_list.size(), causal_list.size());
-
+    
+	// June 2024 - Update N and remove C for ease of reading
 	for (size_t i=0; i<causal_list.size(); i++) {
-		A_vec(i) = N*eta*ldmat_dat.calc_b_tmp[j](causal_list[i]-start_i);
+		A_vec(i) = eta*ldmat_dat.calc_b_tmp[j](causal_list[i]-start_i);
 
 		for (size_t k=0; k<causal_list.size(); k++) {
 			if (i != k) {
-				B(i, k) = C * ldmat_dat.B[j](causal_list[i]-start_i, causal_list[k]-start_i);
+				B(i, k) = square(eta) * ldmat_dat.B[j](causal_list[i]-start_i, causal_list[k]-start_i);
 			}
 			else {
-				B(i, k) = C * ldmat_dat.B[j](causal_list[i]-start_i, causal_list[i]-start_i) + 1.0/cluster_var[cls_assgn[causal_list[i]]];
+				B(i, k) = square(eta) * ldmat_dat.B[j](causal_list[i]-start_i, causal_list[i]-start_i) + 1.0/cluster_var[cls_assgn[causal_list[i]]];
 			}
 		}
 	}
@@ -308,11 +310,12 @@ void MCMC_state::sample_beta(size_t j, const mcmc_data &dat, ldmat_data &ldmat_d
 
 	// compute eta related terms
 	for (size_t i=0; i<causal_list.size(); i++) {
-		B(i, i) = C*ldmat_dat.B[j](causal_list[i]-start_i, causal_list[i]-start_i);
+		B(i, i) = square(eta) * ldmat_dat.B[j](causal_list[i]-start_i, causal_list[i]-start_i);
 	}
 
 	ldmat_dat.num[j] = arma::dot(A_vec2, beta_c);
-	arma::vec tmp = B * beta_c;
+	// June 2024 - ensure the symmetry of B per original code
+	arma::vec tmp = arma::symmatu(B) * beta_c;
 	ldmat_dat.denom[j] = arma::dot(beta_c, tmp);
 	ldmat_dat.denom[j] /= square(eta);
 	ldmat_dat.num[j] /= eta;
@@ -320,6 +323,9 @@ void MCMC_state::sample_beta(size_t j, const mcmc_data &dat, ldmat_data &ldmat_d
 	for (size_t i=0; i<causal_list.size(); i++) {
 		beta_j(causal_list[i]-start_i) = beta_c(i);
 	}
+ 
+	// June 2024 - add to ensure that beta is updating
+	beta.subvec(start_i, end_i - 1) = beta_j;
 }
 
 void MCMC_state::compute_h2(const mcmc_data &dat) {
