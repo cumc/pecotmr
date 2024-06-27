@@ -66,6 +66,15 @@ dentist <- function(sum_stat, LD_mat, nSample,
     !any(tolower(c("z", "zscore")) %in% tolower(colnames(sum_stat)))) {
     stop("Input sum_stat is missing either 'pos'/'position' or 'z'/'zscore' column.")
   }
+  # rename to common column name
+  if (!tolower("pos") %in% tolower(colnames(sum_stat))) {
+    colnames(sum_stat)[which(tolower(colnames(sum_stat)) %in% tolower(c("position")))] <- "pos"
+  }
+
+  if (!tolower("z") %in% tolower(colnames(sum_stat))) {
+    colnames(sum_stat)[which(tolower(colnames(sum_stat)) %in% tolower(c("zscore")))] <- "z"
+  }
+  
   sum_stat <- sum_stat %>% arrange(pos)
   if (window_size <= 0 | ((window_size >= max(sum_stat$pos) - min(sum_stat$pos) | is.na(window_size)) & (correct_chen_et_al_bug == TRUE))) {
     dentist_result <- dentist_single_window(
