@@ -669,7 +669,7 @@ gbayes_rss <- function(stat=NULL, LD=NULL, rsids=NULL, nit=100, nburn=0, nthin=4
   
   
   # prep LD for gbayes
-  LD_values <- lapply(1:nrow(LD), function(i) as.numeric(LD_matrix[i,]))
+  LD_values <- lapply(1:nrow(LD), function(i) as.numeric(LD[i,]))
   names(LD_values) <- rsidsLD
   
   LD_indices <- list(indices = vector("list", length = nrow(LD)))
