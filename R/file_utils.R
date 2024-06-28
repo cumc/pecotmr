@@ -235,9 +235,9 @@ load_phenotype_data <- function(phenotype_path, region, extract_region_name = NU
 #' @importFrom magrittr %>%
 #' @noRd
 extract_phenotype_coordinates <- function(phenotype_list) {
-  return(map(phenotype_list, ~ t(.x[1:4, ]) %>%
+  return(map(phenotype_list, ~ t(.x[1:3, ]) %>%
     as_tibble() %>%
-    mutate(start = as.numeric(start), end = as.numeric(end), ID = ID)))
+    mutate(start = as.numeric(start), end = as.numeric(end))))
 }
 
 #' @importFrom magrittr %>%
