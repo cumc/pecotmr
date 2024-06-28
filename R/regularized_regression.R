@@ -352,6 +352,10 @@ susie_weights <- function(X = NULL, y = NULL, susie_fit = NULL, ...) {
     # get susie_fit object
     susie_fit <- susie_wrapper(X, y, ...)
   }
+  if (length(susie_fit$pip)!=ncol(X)) {
+    stop(paste0("Dimension mismatch on number of variant in susie_fit ", length(susie_fit$pip), 
+                      " and TWAS weights ", ncol(X),". "))
+  }
   if ("alpha" %in% names(susie_fit) && "mu" %in% names(susie_fit) && "X_column_scale_factors" %in% names(susie_fit)) {
     # This is designed to cope with output from pecotmr::susie_post_processor()
     # We set intercept to 0 and later trim it off anyways
@@ -665,7 +669,7 @@ gbayes_rss <- function(stat=NULL, LD=NULL, rsids=NULL, nit=100, nburn=0, nthin=4
   
   
   # prep LD for gbayes
-  LD_values <- lapply(1:nrow(LD), function(i) as.numeric(LD_matrix[i,]))
+  LD_values <- lapply(1:nrow(LD), function(i) as.numeric(LD[i,]))
   names(LD_values) <- rsidsLD
   
   LD_indices <- list(indices = vector("list", length = nrow(LD)))
