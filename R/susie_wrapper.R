@@ -56,20 +56,20 @@ lbf_to_alpha <- function(lbf) t(apply(as.matrix(lbf), 1, lbf_to_alpha_vector))
 #' @param allele_qc Optional
 #' @return A list of adjusted xQTL coefficients and remained variants ids
 #' @export
-adjust_susie_weights <- function(twas_weights_results, condition, keep_variants, allele_qc = TRUE,
-                                 variable_name_obj = c("susie_results", condition, "variant_names"), 
-                                 susie_obj = c("susie_results", condition, "susie_result_trimmed"),
-                                 twas_weights_table = c("weights", condition)) {
+adjust_susie_weights <- function(twas_weights_results, keep_variants, allele_qc = TRUE,
+                                 variable_name_obj = c("susie_results", context, "variant_names"), 
+                                 susie_obj = c("susie_results", context, "susie_result_trimmed"),
+                                 twas_weights_table = c("weights", context), combined_LD_variants) {
   # Intersect the rownames of weights with keep_variants
   twas_weights_variants <- get_nested_element(twas_weights_results, variable_name_obj)
   # allele flip twas weights matrix variants name
   if (allele_qc) {
     weights_matrix <- get_nested_element(twas_weights_results, twas_weights_table)
-    # Check if weights_matrix is a vector and convert it to a matrix if necessary
-    if (is.vector(weights_matrix)) {
-      weights_matrix <- matrix(weights_matrix, ncol = 1, dimnames = list(names(weights_matrix), "susie_weights"))
+    if (!all(c("chrom", "pos", "A2", "A1") %in% colnames(weights_matrix))){
+      weights_matrix <- cbind(variant_id_to_df(rownames(weights_matrix)), weights_matrix)
     }
-    weights_matrix_qced <- allele_qc(twas_weights_variants, gwas_LD_list$combined_LD_variants, weights_matrix, 1:ncol(weights_matrix), target_gwas = FALSE)
+    weights_matrix_qced <- allele_qc(twas_weights_variants, combined_LD_variants, weights_matrix, 
+                                     colnames(weights_matrix)[!colnames(weights_matrix) %in% c("chrom", "pos", "A2", "A1")],target_gwas = FALSE)
     intersected_indices <- which(weights_matrix_qced$qc_summary$keep == TRUE)
   } else {
     keep_variants_transformed <- ifelse(!startsWith(keep_variants, "chr"), paste0("chr", keep_variants), keep_variants)
@@ -84,8 +84,8 @@ adjust_susie_weights <- function(twas_weights_results, condition, keep_variants,
   mu <- get_nested_element(twas_weights_results, c(susie_obj, "mu"))
   x_column_scal_factors <- get_nested_element(twas_weights_results, c(susie_obj, "X_column_scale_factors"))
 
-  lbf_matrix_subset <- lbf_matrix[, intersected_indices]
-  mu_subset <- mu[, intersected_indices]
+  lbf_matrix_subset <- lbf_matrix[, intersected_indices, drop=FALSE]
+  mu_subset <- mu[, intersected_indices, drop=FALSE]
   x_column_scal_factors_subset <- x_column_scal_factors[intersected_indices]
 
   # Convert lbf_matrix to alpha and calculate adjusted xQTL coefficients
@@ -94,6 +94,7 @@ adjust_susie_weights <- function(twas_weights_results, condition, keep_variants,
 
   return(list(adjusted_susie_weights = adjusted_xqtl_coef, remained_variants_ids = names(adjusted_xqtl_coef)))
 }
+
 
 #' @importFrom susieR susie
 #' @export
