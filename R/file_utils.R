@@ -500,13 +500,16 @@ pheno_list_to_mat <- function(data_list) {
   all_row_names <- unique(unlist(lapply(data_list$residual_Y, rownames)))
   # Step 2: Align matrices and fill with NA where necessary
   aligned_mats <- lapply(data_list$residual_Y, function(mat) {
-    expanded_mat <- matrix(NA, nrow = length(all_row_names), ncol = 1, dimnames = list(all_row_names, NULL))
+    ###change the ncol of each matrix
+    expanded_mat <- matrix(NA, nrow = length(all_row_names), ncol = ncol(mat), dimnames = list(all_row_names, colnames(mat)))
     common_rows <- intersect(rownames(mat), all_row_names)
     expanded_mat[common_rows, ] <- mat[common_rows, ]
     return(expanded_mat)
   })
   Y_resid_matrix <- do.call(cbind, aligned_mats)
-  colnames(Y_resid_matrix) <- names(data_list$residual_Y)
+  if(!is.null(names(data_list$residual_Y))){
+      colnames(Y_resid_matrix) <- names(data_list$residual_Y)
+   } 
   data_list$residual_Y <- Y_resid_matrix
   return(data_list)
 }
