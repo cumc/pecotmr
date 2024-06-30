@@ -551,7 +551,7 @@ harmonize_twas <- function(twas_weights_data, ld_meta_file_path, gwas_meta_file,
           
           # intersect post-qc gwas and post-qc weight variants 
           gwas_LD_variants <- intersect(gwas_data_sumstats$variant_id, LD_list$combined_LD_variants)
-          weights_matrix_subset <- weights_matrix_subset[match(gwas_LD_variants, rownames(weights_matrix_subset)), , drop=FALSE]
+          weights_matrix_subset <- weights_matrix_subset[which(rownames(weights_matrix_subset) %in% gwas_LD_variants), , drop=FALSE]
           results[[gene]][["variant_names"]][[context]] <- rownames(weights_matrix_subset)
           
           # Step6: scale weights by variance 
