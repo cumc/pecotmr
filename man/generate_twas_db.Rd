@@ -22,11 +22,11 @@ generate_twas_db(
   weight_db_file,
   contexts = NULL,
   variable_name_obj = c("preset_variants_result", "variant_names"),
-  susie_obj = c("preset_variants_result", "susie_result_trimmed"),
   twas_weights_table = "twas_weights",
   max_var_selection,
   min_rsq_threshold = 0.01,
-  p_val_cutoff = 0.05
+  p_val_cutoff = 0.05,
+  data_type = NULL
 )
 }
 \arguments{

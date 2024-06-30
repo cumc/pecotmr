@@ -6,19 +6,22 @@
 \usage{
 adjust_susie_weights(
   twas_weights_results,
-  condition,
   keep_variants,
-  allele_qc = TRUE
+  allele_qc = TRUE,
+  variable_name_obj = c("susie_results", context, "variant_names"),
+  susie_obj = c("susie_results", context, "susie_result_trimmed"),
+  twas_weights_table = c("weights", context),
+  combined_LD_variants
 )
 }
 \arguments{
-\item{condition}{specific condition.}
-
 \item{keep_variants}{Vector of variant names to keep.}
 
 \item{allele_qc}{Optional}
 
 \item{weight_db_file}{A RDS file containing TWAS weights.}
+
+\item{condition}{specific condition.}
 }
 \value{
 A list of adjusted xQTL coefficients and remained variants ids
