@@ -25,7 +25,8 @@ generate_twas_db(
   twas_weights_table = "twas_weights",
   max_var_selection,
   min_rsq_threshold = 0.01,
-  p_val_cutoff = 0.05
+  p_val_cutoff = 0.05,
+  data_type = NULL
 )
 }
 \arguments{
