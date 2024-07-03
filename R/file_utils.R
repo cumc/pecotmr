@@ -97,23 +97,6 @@ NoSNPsError <- function(message) {
   structure(list(message = message), class = c("NoSNPsError", "error", "condition"))
 }
 
-# nocov start
-load_genotype_data <- function(genotype, keep_indel = TRUE) {
-  # Read genotype data using plink
-  geno <- plink2R::read_plink(genotype)
-  # Process row names
-  rownames(geno$bed) <- sapply(strsplit(rownames(geno$bed), ":"), `[`, 2)
-  # Remove indels if specified
-  if (!keep_indel) {
-    is_indel <- with(geno$bim, grepl("[^ATCG]", V5) | grepl("[^ATCG]", V6) | nchar(V5) > 1 | nchar(V6) > 1)
-    geno_bed <- geno$bed[, !is_indel]
-  } else {
-    geno_bed <- geno$bed
-  }
-  return(geno_bed)
-}
-# nocov end
-
 #' Load genotype data for a specific region using data.table for efficiency
 #'
 #' By default, plink usage dosage of the *major* allele, since "effect allele" A1 is
