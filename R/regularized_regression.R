@@ -416,6 +416,7 @@ init_prior_sd <- function(X, y, n = 30) {
 
 #' @importFrom glmnet cv.glmnet
 #' @importFrom stats coef
+#' @export
 glmnet_weights <- function(X, y, alpha) {
   eff.wgt <- matrix(0, ncol = 1, nrow = ncol(X))
   sds <- apply(X, 2, sd)
