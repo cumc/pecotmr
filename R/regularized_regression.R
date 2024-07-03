@@ -352,9 +352,11 @@ susie_weights <- function(X = NULL, y = NULL, susie_fit = NULL, ...) {
     # get susie_fit object
     susie_fit <- susie_wrapper(X, y, ...)
   }
-  if (length(susie_fit$pip)!=ncol(X)) {
-    stop(paste0("Dimension mismatch on number of variant in susie_fit ", length(susie_fit$pip), 
-                      " and TWAS weights ", ncol(X),". "))
+  if (!is.null(X)) {
+      if (length(susie_fit$pip)!=ncol(X)) {
+        stop(paste0("Dimension mismatch on number of variant in susie_fit ", length(susie_fit$pip), 
+                          " and TWAS weights ", ncol(X),". "))
+      }
   }
   if ("alpha" %in% names(susie_fit) && "mu" %in% names(susie_fit) && "X_column_scale_factors" %in% names(susie_fit)) {
     # This is designed to cope with output from pecotmr::susie_post_processor()
