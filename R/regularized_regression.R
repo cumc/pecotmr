@@ -487,8 +487,8 @@ bayes_alphabet_weights <- function(X, y, method, Z = NULL, nit = 5000, nburn = 1
     method = method,
     nit = nit,
     nburn = nburn,
-    nthin= nthin
   )
+    #nthin= nthin
 
   return(model$bm)
 }
