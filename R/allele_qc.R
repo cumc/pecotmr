@@ -18,7 +18,7 @@
 #' @param remove_unmatched Whether to remove unmatched variants. Default is `TRUE`.
 #' @return A single data frame with matched variants.
 #' @importFrom magrittr %>%
-#' @importFrom dplyr mutate inner_join filter pull select everything row_number
+#' @importFrom dplyr mutate inner_join filter pull select everything row_number if_else
 #' @importFrom vctrs vec_duplicate_detect
 #' @importFrom tidyr separate
 #' @export
@@ -69,7 +69,7 @@ allele_qc <- function(target_variants, ref_variants, target_data, col_to_flip = 
     
     # remove the variant_id column in target data to avoid conflict
     if ("variant_id" %in% colnames(target_data)) {
-        target_data <- target_data[, !(colnames(target_data) %in% "variant_id")]
+        target_data <- select(target_data, -variant_id)
     }
 
     match_result <- merge(target_data, ref_variants, by = c("chrom", "pos"), all = FALSE, suffixes = c(".target", ".ref")) %>%
@@ -160,6 +160,8 @@ allele_qc <- function(target_variants, ref_variants, target_data, col_to_flip = 
 
     if (!remove_unmatched) {
         match_variant <- match_result %>% pull(variants_id_original)
+        match_result <- select(match_result, -(flip1.ref:keep)) %>% select(-variants_id_original, -A1.target, -A2.target) %>%
+            rename(A1 = A1.ref, A2 = A2.ref, variant_id = variants_id_qced)
         target_data <- target_data %>% mutate(variant_id = paste(chrom, pos, A2, A1, sep = ":"))
         if (length(setdiff(target_data %>% pull(variant_id), match_variant)) > 0) {
             unmatch_data <- target_data %>% filter(!variant_id %in% match_variant)

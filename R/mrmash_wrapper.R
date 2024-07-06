@@ -77,7 +77,7 @@
 #'
 #' @importFrom mr.mash.alpha compute_canonical_covs mr.mash expand_covs compute_univariate_sumstats
 #' @importFrom doFuture registerDoFuture
-#' @importFrom future plan multisession
+#' @importFrom future plan multicore
 #' @importFrom glmnet cv.glmnet
 #' @export
 mrmash_wrapper <- function(X,
@@ -196,7 +196,7 @@ compute_coefficients_glasso <- function(X, Y, standardize, nthreads, Xnew = NULL
   # Fit group-lasso
   if (nthreads > 1) {
     registerDoFuture()
-    plan(multisession, workers = nthreads)
+    plan(multicore, workers = nthreads)
     paral <- TRUE
   } else {
     paral <- FALSE
@@ -233,7 +233,7 @@ compute_coefficients_univ_glmnet <- function(X, Y, alpha, standardize, nthreads,
   linreg <- function(i, X, Y, alpha, standardize, nthreads, Xnew) {
     if (nthreads > 1) {
       registerDoFuture()
-      plan(multisession, workers = nthreads)
+      plan(multicore, workers = nthreads)
       paral <- TRUE
     } else {
       paral <- FALSE
