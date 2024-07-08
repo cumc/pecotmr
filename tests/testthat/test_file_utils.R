@@ -164,15 +164,6 @@ dummy_covar_data <- function(number_of_samples = 10, number_of_covars = 10, row_
 }
 
 
-#test_that("Test load_genotype_data",{
-  #res <- load_genotype_data("test_data/protocol_example.genotype")
-  #sample_ids <- read_delim(
-    #"test_data/protocol_example.genotype.fam", delim = "\t", col_names = F
-  #) %>% pull(X1)
-  #expect_equal(nrow(res), length(sample_ids))
-  #expect_equal(rownames(res), sample_ids)
-#})
-
 test_that("Test load_genotype_region",{
   res <- load_genotype_region(
     "test_data/protocol_example.genotype")
@@ -234,16 +225,6 @@ test_that("Test load_genotype_region with region and no indels",{
     nrow(bim_file[!indels, ]),
     ncol(res))
   expect_equal(colnames(res), bim_file[!indels, ]$X2)
-})
-
-test_that("Test load_genotype_region equals load_genotype_data",{
-  res <- load_genotype_data("test_data/protocol_example.genotype")
-  res_alt <- load_genotype_region(
-    "test_data/protocol_example.genotype")
-  expect_equal(dim(res), dim(res_alt))
-  expect_equal(rownames(res), rownames(res_alt))
-  expect_equal(colnames(res), colnames(res_alt))
-  expect_equal(res_alt, res)
 })
 
 test_that("Test load_covariate_data",{

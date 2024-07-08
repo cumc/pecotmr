@@ -288,7 +288,7 @@ test_that("Check mvsusie_weights mvsusie_fit, X, Y, missing", {
 test_that("Check mvsusie_weights mvsusie_fit missing", {
   data <- generate_mr_ash_inputs(multiple_y=TRUE, k=4)
   res <- mvsusie_weights(X=data$X, Y=data$y)
-  expect_true(length(res) == ncol(data$X))
+  expect_true(nrow(res) == ncol(data$X))
 })
 
 bayes_input <- function(seed=1, n=100000, p=1000) {

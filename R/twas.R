@@ -176,7 +176,7 @@ twas_analysis <- function(weights_matrix, gwas_sumstats_db, LD_matrix, extract_v
 #'     }
 #'   \item `time_elapsed`: The time taken to complete the cross-validation process.
 #' }
-#' @importFrom future plan multisession availableCores
+#' @importFrom future plan multicore availableCores
 #' @importFrom furrr future_map furrr_options
 #' @importFrom purrr map
 #' @export
@@ -354,7 +354,7 @@ twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_
     }
 
     if (num_cores >= 2) {
-      plan(multisession, workers = num_cores)
+      plan(multicore, workers = num_cores)
       fold_results <- future_map(1:fold, compute_method_predictions, .options = furrr_options(seed = seed))
     } else {
       fold_results <- map(1:fold, compute_method_predictions)
@@ -440,9 +440,10 @@ twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_
 #' @return A list where each element is named after a method and contains the weight matrix produced by that method.
 #'
 #' @export
-#' @importFrom future plan multisession availableCores
+#' @importFrom future plan multicore availableCores
 #' @importFrom furrr future_map furrr_options
-#' @importFrom purrr map
+#' @importFrom purrr map exec
+#' @importFrom rlang !!!
 twas_weights <- function(X, Y, weight_methods, num_threads = 1, seed = NULL) {
   if (!is.matrix(X) || (!is.matrix(Y) && !is.vector(Y))) {
     stop("X must be a matrix and Y must be a matrix or a vector.")
@@ -460,7 +461,7 @@ twas_weights <- function(X, Y, weight_methods, num_threads = 1, seed = NULL) {
   num_cores <- ifelse(num_threads == -1, availableCores(), num_threads)
   num_cores <- min(num_cores, availableCores())
 
-  compute_method_weights <- function(method_name) {
+  compute_method_weights <- function(method_name, weight_methods) {
     # Hardcoded vector of multivariate methods
     multivariate_weight_methods <- c("mrmash_weights", "mvsusie_weights")
     args <- weight_methods[[method_name]]
@@ -471,7 +472,7 @@ twas_weights <- function(X, Y, weight_methods, num_threads = 1, seed = NULL) {
 
     if (method_name %in% multivariate_weight_methods) {
       # Apply multivariate method
-      weights_matrix <- do.call(method_name, c(list(X = X_filtered, Y = Y), args))
+      weights_matrix <- exec(method_name, X = X_filtered, Y = Y, !!!args)
     } else {
       # Apply univariate method to each column of Y
       # Initialize it with zeros to avoid NA
@@ -479,7 +480,7 @@ twas_weights <- function(X, Y, weight_methods, num_threads = 1, seed = NULL) {
       weights_matrix <- matrix(0, nrow = ncol(X_filtered), ncol = ncol(Y))
 
       for (k in 1:ncol(Y)) {
-        weights_vector <- do.call(method_name, c(list(X = X_filtered, y = Y[, k]), args))
+        weights_vector <- exec(method_name, X = X_filtered, y = Y[, k], !!!args)
         weights_matrix[, k] <- weights_vector
       }
     }
@@ -495,10 +496,10 @@ twas_weights <- function(X, Y, weight_methods, num_threads = 1, seed = NULL) {
 
   if (num_cores >= 2) {
     # Set up parallel backend to use multiple cores
-    plan(multisession, workers = num_cores)
-    weights_list <- names(weight_methods) %>% future_map(compute_method_weights, .options = furrr_options(seed = seed))
+    plan(multicore, workers = num_cores)
+    weights_list <- names(weight_methods) %>% future_map(compute_method_weights, weight_methods, .options = furrr_options(seed = seed))
   } else {
-    weights_list <- names(weight_methods) %>% map(compute_method_weights)
+    weights_list <- names(weight_methods) %>% map(compute_method_weights, weight_methods)
   }
   names(weights_list) <- names(weight_methods)
 

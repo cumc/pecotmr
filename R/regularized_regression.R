@@ -352,9 +352,11 @@ susie_weights <- function(X = NULL, y = NULL, susie_fit = NULL, ...) {
     # get susie_fit object
     susie_fit <- susie_wrapper(X, y, ...)
   }
-  if (length(susie_fit$pip)!=ncol(X)) {
-    stop(paste0("Dimension mismatch on number of variant in susie_fit ", length(susie_fit$pip), 
-                      " and TWAS weights ", ncol(X),". "))
+  if (!is.null(X)) {
+      if (length(susie_fit$pip)!=ncol(X)) {
+        stop(paste0("Dimension mismatch on number of variant in susie_fit ", length(susie_fit$pip), 
+                          " and TWAS weights ", ncol(X),". "))
+      }
   }
   if ("alpha" %in% names(susie_fit) && "mu" %in% names(susie_fit) && "X_column_scale_factors" %in% names(susie_fit)) {
     # This is designed to cope with output from pecotmr::susie_post_processor()
@@ -414,6 +416,7 @@ init_prior_sd <- function(X, y, n = 30) {
 
 #' @importFrom glmnet cv.glmnet
 #' @importFrom stats coef
+#' @export
 glmnet_weights <- function(X, y, alpha) {
   eff.wgt <- matrix(0, ncol = 1, nrow = ncol(X))
   sds <- apply(X, 2, sd)
@@ -487,8 +490,8 @@ bayes_alphabet_weights <- function(X, y, method, Z = NULL, nit = 5000, nburn = 1
     method = method,
     nit = nit,
     nburn = nburn,
-    nthin= nthin
   )
+    #nthin= nthin
 
   return(model$bm)
 }
@@ -669,7 +672,7 @@ gbayes_rss <- function(stat=NULL, LD=NULL, rsids=NULL, nit=100, nburn=0, nthin=4
   
   
   # prep LD for gbayes
-  LD_values <- lapply(1:nrow(LD), function(i) as.numeric(LD_matrix[i,]))
+  LD_values <- lapply(1:nrow(LD), function(i) as.numeric(LD[i,]))
   names(LD_values) <- rsidsLD
   
   LD_indices <- list(indices = vector("list", length = nrow(LD)))

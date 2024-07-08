@@ -108,23 +108,6 @@ NoSNPsError <- function(message) {
   structure(list(message = message), class = c("NoSNPsError", "error", "condition"))
 }
 
-# nocov start
-load_genotype_data <- function(genotype, keep_indel = TRUE) {
-  # Read genotype data using plink
-  geno <- plink2R::read_plink(genotype)
-  # Process row names
-  rownames(geno$bed) <- sapply(strsplit(rownames(geno$bed), ":"), `[`, 2)
-  # Remove indels if specified
-  if (!keep_indel) {
-    is_indel <- with(geno$bim, grepl("[^ATCG]", V5) | grepl("[^ATCG]", V6) | nchar(V5) > 1 | nchar(V6) > 1)
-    geno_bed <- geno$bed[, !is_indel]
-  } else {
-    geno_bed <- geno$bed
-  }
-  return(geno_bed)
-}
-# nocov end
-
 #' Load genotype data for a specific region using data.table for efficiency
 #'
 #' By default, plink usage dosage of the *major* allele, since "effect allele" A1 is
@@ -511,13 +494,16 @@ pheno_list_to_mat <- function(data_list) {
   all_row_names <- unique(unlist(lapply(data_list$residual_Y, rownames)))
   # Step 2: Align matrices and fill with NA where necessary
   aligned_mats <- lapply(data_list$residual_Y, function(mat) {
-    expanded_mat <- matrix(NA, nrow = length(all_row_names), ncol = 1, dimnames = list(all_row_names, NULL))
+    ###change the ncol of each matrix
+    expanded_mat <- matrix(NA, nrow = length(all_row_names), ncol = ncol(mat), dimnames = list(all_row_names, colnames(mat)))
     common_rows <- intersect(rownames(mat), all_row_names)
     expanded_mat[common_rows, ] <- mat[common_rows, ]
     return(expanded_mat)
   })
   Y_resid_matrix <- do.call(cbind, aligned_mats)
-  colnames(Y_resid_matrix) <- names(data_list$residual_Y)
+  if(!is.null(names(data_list$residual_Y))){
+      colnames(Y_resid_matrix) <- names(data_list$residual_Y)
+   } 
   data_list$residual_Y <- Y_resid_matrix
   return(data_list)
 }
