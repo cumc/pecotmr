@@ -4,7 +4,7 @@
 \alias{align_variant_names}
 \title{Align Variant Names}
 \usage{
-align_variant_names(source, reference)
+align_variant_names(source, reference, remove_indels = FALSE)
 }
 \arguments{
 \item{source}{A character vector of variant names in the format "chr:pos:A2:A1" or "chr:pos_A2_A1".}
