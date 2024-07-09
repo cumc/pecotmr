@@ -48,7 +48,6 @@ lbf_to_alpha <- function(lbf) {
   return(alpha_matrix)
 }
 
-# FIXME: this function does not work properly. Need to fix it in multiple aspects
 #' Adjust SuSiE Weights
 #'
 #' This function adjusts the SuSiE weights based on a set of intersected variants.

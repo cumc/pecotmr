@@ -592,17 +592,17 @@ get_ctwas_weights <- function(post_qc_twas_data, LD_meta_file_path) {
          colnames(post_qc_twas_data[[gene]][["weights_qced"]][[context]]) <- "weight"
          context_variants <- post_qc_twas_data[[gene]][["variant_names"]][[context]]
          context_range <- sapply(context_variants, function(variant) as.integer(strsplit(variant, "\\:")[[1]][2]))
-         weights_list[[paste0(gene,"|" , data_type, "_", sub("_[^_]+$", "", context))]]<- list(
+         weights_list[[paste0(gene,"|" , data_type, "_",context)]] <- list(
              chrom=chrom, 
              p0 = min(context_range),
              p1 = max(context_range),
              wgt = post_qc_twas_data[[gene]][["weights_qced"]][[context]],
              R_wgt = post_qc_twas_data[[gene]]$LD[context_variants, context_variants, drop=FALSE],#ld_list$combined_LD_matrix[context_variants, context_variants], 
              gene_name = gene,
-             weight_name=sub("_[^_]+$", "", paste0(data_type, "_", context)),
+             weight_name=paste0(data_type, "_", context),
              type = data_type,
-             context = sub("_[^_]+$", "", context),
-             n_wgt = length(context_variants)         
+             context = context,
+             n_wgt = length(context_variants)
          )
      }
   }
