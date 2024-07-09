@@ -202,7 +202,7 @@ allele_qc <- function(target_variants, ref_variants, target_data, col_to_flip = 
 #' align_variant_names(source, reference)
 #'
 #' @export
-align_variant_names <- function(source, reference) {
+align_variant_names <- function(source, reference,remove_indels = FALSE) {
   # Check if source and reference follow the expected pattern
   source_pattern <- grepl("^(chr)?[0-9]+:[0-9]+:[ATCG*]+:[ATCG*]+$|^(chr)?[0-9]+:[0-9]+_[ATCG*]+_[ATCG*]+$", source)
   reference_pattern <- grepl("^(chr)?[0-9]+:[0-9]+:[ATCG*]+:[ATCG*]+$|^(chr)?[0-9]+:[0-9]+_[ATCG*]+_[ATCG*]+$", reference)
@@ -231,7 +231,7 @@ align_variant_names <- function(source, reference) {
     match_min_prop = 0,
     remove_dups = TRUE,
     flip_strand = TRUE,
-    remove_indels = FALSE,
+    remove_indels = remove_indels ,
     remove_strand_ambiguous = FALSE,
     remove_unmatched = FALSE
   )

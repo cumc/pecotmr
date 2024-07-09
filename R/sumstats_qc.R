@@ -18,7 +18,7 @@
 #' @importFrom tidyr separate
 #' @importFrom magrittr %>%
 #' @export
-rss_basic_qc <- function(sumstats, LD_data, skip_region = NULL) {
+rss_basic_qc <- function(sumstats, LD_data, skip_region = NULL, remove_indels = FALSE) {
   # Check if required columns are present in sumstats
   required_cols <- c("chrom", "pos", "A1", "A2")
   missing_cols <- setdiff(required_cols, colnames(sumstats))
@@ -31,7 +31,7 @@ rss_basic_qc <- function(sumstats, LD_data, skip_region = NULL) {
 
   allele_flip <- allele_qc(target_variants, ref_variants, sumstats,
     col_to_flip = c("beta", "z"),
-    match_min_prop = 0.2, remove_dups = TRUE, remove_indels = FALSE,
+    match_min_prop = 0.2, remove_dups = TRUE, remove_indels = remove_indels,
     remove_strand_ambiguous = TRUE
   )
 
