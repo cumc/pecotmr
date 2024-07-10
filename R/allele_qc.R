@@ -20,7 +20,7 @@
 #' @importFrom magrittr %>%
 #' @importFrom dplyr mutate inner_join filter pull select everything row_number if_else
 #' @importFrom vctrs vec_duplicate_detect
-#' @importFrom dplyr dplyr::if_else
+#' @importFrom dplyr if_else
 #' @importFrom tidyr separate
 #' @export
 allele_qc <- function(target_variants, ref_variants, target_data, col_to_flip = NULL,
