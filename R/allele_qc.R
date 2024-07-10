@@ -84,7 +84,7 @@ allele_qc <- function(target_variants, ref_variants, target_data, col_to_flip = 
         mutate(across(c(A1.target, A2.target, A1.ref, A2.ref), toupper)) %>%
         mutate(flip1.ref = strand_flip(A1.ref), flip2.ref = strand_flip(A2.ref)) %>%
         # these pairings are ambiguous: because we cannot tell it's an sign flip / strand flip
-        mutate(strand_unambiguous = dplyr::if_else((A1.target == "A" & A2.target == "T") | (A1.target == "T" & A2.target == "A") |
+        mutate(strand_unambiguous = if_else((A1.target == "A" & A2.target == "T") | (A1.target == "T" & A2.target == "A") |
                                             (A1.target == "C" & A2.target == "G") | (A1.target == "G" & A2.target == "C"), FALSE, TRUE)) %>%
         # filter out non-ATCG coded alleles
         mutate(non_ATCG = !(check_ATCG(A1.target) & check_ATCG(A2.target))) %>%
@@ -108,11 +108,11 @@ allele_qc <- function(target_variants, ref_variants, target_data, col_to_flip = 
     # To keep variants: if it's a strand flip, we will keep those unambigous (because if ambigous, cannot know it's trand / sign flip, so discard all)
     # or exact match or indel match (ID_match)
     # If not a strand flip, then we will keep those that are exact match / those are sign flip / INDEL matched
-    match_result <- match_result %>% mutate(keep = dplyr::if_else(strand_flip, true = (strand_unambiguous | exact_match | ID_match), false = 
+    match_result <- match_result %>% mutate(keep = if_else(strand_flip, true = (strand_unambiguous | exact_match | ID_match), false = 
                                                            (exact_match | sign_flip | ID_match)))
 
     if (remove_indels) {
-        match_result <- match_result %>% mutate(keep = dplyr::if_else(INDEL == FALSE, FALSE, TRUE))
+        match_result <- match_result %>% mutate(keep = if_else(INDEL == FALSE, FALSE, TRUE))
     }
     
     # flip the signs of the column col_to_flip if there is a sign flip
