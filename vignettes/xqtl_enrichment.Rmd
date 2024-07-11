@@ -1,6 +1,6 @@
 
 ---
-title: "Enrichment analysis workflow"
+title: "Enrichment analysis of molecular QTL in genetic variants associated with complex traits"
 author: "Ru Feng"
 date: "`r Sys.Date()`"
 output: rmarkdown::html_vignette
@@ -10,8 +10,7 @@ vignette: >
   %\VignetteEncoding{UTF-8}
 ---
 
-This vignette demonstrates the enrichment analysis part of `pecotmr` package, which largelly follows from fastenloc https://github.com/xqwen/fastenloc but uses `susieR` fitted objects as input to estimate prior for use with `coloc` package (coloc v5, aka SuSiE-coloc).
-The main differences are:
+This vignette demonstrates the enrichment analysis part of the `pecotmr` package, which largely follows from `fastENLOC` (https://github.com/xqwen/fastenloc) but uses `susieR` fitted objects as input to estimate priors for use with the `coloc` package (coloc v5, aka SuSiE-coloc). The main differences are:
 1) now enrichment is based on all QTL variants whether or not they are inside signal clusters;
 2) Causal QTL are sampled from SuSiE single effects, not signal clusters;
 3) Allow a variant to be QTL for not only multiple conditions (eg cell types) but also multiple regions (eg genes).
@@ -33,7 +32,7 @@ gwas <- readRDS(gwas_path)
 qtl <- readRDS(qtl_path)
 ```
 
-## check data structure
+## Input data requirements
 
 ### Check GWAS data 
 In the GWAS toy data, the file is stored as a list, with the fine mapping results already stored under the first layer.
