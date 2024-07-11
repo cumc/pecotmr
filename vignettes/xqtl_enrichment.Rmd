@@ -34,7 +34,7 @@ qtl <- readRDS(qtl_path)
 
 ## Input data requirements
 
-### Check GWAS data 
+### GWAS data requirements
 In the GWAS toy data, the file is stored as a list, with the fine mapping results already stored under the first layer.
 ```{r}
 names(gwas[[1]])
@@ -44,7 +44,7 @@ Posterior inclusion probabilities of GWAS data:
 susie_plot(gwas[[1]], y = "PIP")
 ```
 
-### Check QTL data 
+### QTL data requirements
 In the QTL toy data, the file is stored as a list and is more complicated. The first layer is named as the molecular trait object ID (gene), followed by different contexts as the second layer (e.g. Mic). The variant names and fine mapping results can be found under these contexts (`variant_names` and `susie_result_trimmed`). 
 ```{r}
 names(qtl)
