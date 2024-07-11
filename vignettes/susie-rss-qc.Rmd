@@ -1,6 +1,10 @@
 ---
 title: "SuSiE RSS with QC"
-output: html_document
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{SuSiE RSS with QC}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
 date: "2023-12-17"
 ---
 
@@ -22,7 +26,7 @@ library(pecotmr)
 
 For given region of interest, we load the LD matrix and corresponding summary statistics data, where the summary statistics data should be a data frame with the columns "chrom" and "pos":
 
-```{r}
+```{r AD_GWAS sumstats}
 library(data.table)
 library(dplyr)
 #### Load LD_meta_file
@@ -33,12 +37,19 @@ path = c(paste0("/home/aw3600/MR_KMT_analysis/test/chr8_25007602_26225312.cor.xz
 region  = data.frame(chrom = 8,start = 26220000,end = 26225400)
 #### Load GWAS summary statistics
 AD_GWAS_path = "/mnt/vast/hpc/csg/xqtl_workflow_testing/ADGWAS/data_intergration/ADGWAS2022/ADGWAS_Bellenguez_2022.8/ADGWAS2022.chr8.sumstat.tsv"
-sumstats = fread(AD_GWAS_path)%>%rename("pos"="position")%>%rename("chrom"="chromosome")%>%mutate(z=beta/se)%>%rename("A1"="ref","A2"="alt")
+sumstats = fread(AD_GWAS_path) %>%
+    rename("pos"="position") %>%
+    rename("chrom"="chromosome") %>%
+    mutate(z=beta/se) %>%
+    rename("A1"="ref","A2"="alt")
 ```
 Then extract the LD matrix based on the `LD_meta_file`, `region` and `sumstats`,
-```{r}
-LD_data = load_LD_matrix(LD_meta_file, region, sumstats)
-LD_data[[1]]$LD[1:5,1:5]
+```{r load LD matrix}
+LD_meta_file_path = tempfile(fileext = ".csv")
+write.csv(LD_meta_file, LD_meta_file_path, row.names=FALSE)
+
+LD_data = load_LD_matrix(LD_meta_file_path, region, sumstats)
+LD_data$combined_LD_matrix[1:5,1:5]
 ```
 
 The output LD_data is a list contains the `LD` and `variants_df`, where the `variants_df` is a data frame with the columns "chr","variants","GD(genetic distance)"," pos","A1" and "A2" in a format of bim file. The row and column names of LD are identical to the elements of the `variants` in the data frame `variants_df`. The `variants_df` will be the input of `allele_qc` as the reference panel data.
@@ -47,8 +58,8 @@ The output LD_data is a list contains the `LD` and `variants_df`, where the `var
 
 Match summary statistics data and `variants_df` by ("chr", "A1", "A2" and "pos"), accounting for possible strand flips and major/minor allele flips (opposite effects and zscores). We need to ensure that the format of summary statistics data with the columns "chr", "pos", "A1" and "A2". Because some end positions of one LD block are input positions of another LD block, we will keep these variants after allele flip by setting the parameters `remove_dups` as "FALSE".
 
-```{r}
-allele_fip = allele_qc(sumstats, LD_data[[1]]$variants_df, match.min.prop=0.2, remove_dups=FALSE, flip=TRUE, remove=TRUE)
+```{r allele_qc}
+allele_flip = allele_qc(sumstats$variant, LD_data$combined_LD_variants, sumstats, match_min_prop=0.2, remove_dups=FALSE, flip_strand=TRUE)
 head(allele_flip)
 ```
 
@@ -56,13 +67,11 @@ The output `allele_flip` will be the summary statistics after allele flip.
 
 Because we match sumstats and `LD_data[[1]]$variants_df` by chrom and position after ``allele_qc` step, we need to use the variants of output to extract the `LD.data[[1]]$LD`.
 
-```{r}
-library(dplyr)
-allele_flip = allele_flip %>% mutate(variant_allele_flip = paste(chrom,pos,A1.sumstats,A2.sumstats,sep=":"))
-LD_extract = LD_data[[1]]$LD[allele_flip$variant_allele_flip,allele_flip$variant_allele_flip]
+```{r qc LD}
+LD_extract = LD_data$combined_LD_matrix[allele_flip$target_data_qced$variant_id,allele_flip$target_data_qced$variant_id]
 ```
 ## run SuSiE RSS:
-```{r}
+```{r susie rss}
 library(susieR)
-res = susie_rss(allele_flip$z, LD_extract)
+res = susie_rss(allele_flip$target_data_qced$z, LD_extract)
 ```

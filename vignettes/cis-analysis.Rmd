@@ -1,11 +1,10 @@
-
 ---
 title: "cis-QTL analysis and GWAS integration workflow"
 author: "Anqi Wang and Gao Wang"
 date: "`r Sys.Date()`"
 output: rmarkdown::html_vignette
 vignette: >
-  %\VignetteIndexEntry{intro-to-pecotmr}
+  %\VignetteIndexEntry{cis-QTL analysis and GWAS integration workflow}
   %\VignetteEngine{knitr::rmarkdown}
   %\VignetteEncoding{UTF-8}
 ---
@@ -20,7 +19,7 @@ Load the `pecotmr` package.
 
 ```{r load-pkgs}
 library(pecotmr)
-
+```
 
 ## Load data
 

@@ -96,16 +96,15 @@ analysis.
 
 
 ```{r}
-methods <- list(mrmash_weights = list())
-weight <- twas_weights_cv(X=X,Y=Y,fold=5, mrmash_weights_prior_matrices=prior_matrices_cv, 
-                            weight_methods=methods)
+methods <- list(mrmash_weights = list(data_driven_prior_matrices=prior_matrices))
+weight <- twas_weights_cv(X=X,Y=Y,fold=5, weight_methods=methods)
 ```
 
 In the case of providing `sample_partitions`. 
 
 ```{r}
-methods <- list(mrmash_weights = list())
-weight_cv <- twas_weights_cv(X=X,Y=Y, mrmash_weights_prior_matrices=prior_matrices_cv, 
+methods <- list(mrmash_weights = list(data_driven_prior_matrices=prior_matrices))
+weight_cv <- twas_weights_cv(X=X,Y=Y, 
                           sample_partition=sample_partition, weight_methods=methods)
 
 str(weight_cv)
@@ -137,11 +136,7 @@ We will then compute weights for these selected genes for TWAS analysis.
 Here we compute weight for imputable genes without cross-validation. 
 
 ```{r}
-weight_methods <- list(
-    mrmash_weights = list(
-    prior_data_driven_matrices=prior_matrices
-    )
-  )
+weight_methods <- list(mrmash_weights = list(data_driven_prior_matrices=prior_matrices))
     
 weight <- twas_weights(X=X,Y=Y,weight_methods=weight_methods)
  
