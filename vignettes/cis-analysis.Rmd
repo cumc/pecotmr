@@ -225,14 +225,3 @@ twas_z(weights, gwas$Z, R=R)
 ```{r}
 plot(weights)
 ```
-
-Enrichment analysis 
-
-```{r}
-gwas_path <- "gwas_toy.rds"
-qtl_path <- "QTL_toy.rds"
-
-xqtl_enrichment_wrapper(gwas_files = gwas_path, xqtl_files = qtl_path,
-                        xqtl_finemapping_obj = c("Mic", "susie_result_trimmed"), xqtl_varname_obj = c("Mic", "variant_names"))
-     
-```
