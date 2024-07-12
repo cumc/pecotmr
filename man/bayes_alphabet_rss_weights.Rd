@@ -4,7 +4,7 @@
 \alias{bayes_alphabet_rss_weights}
 \title{Extract weights from gbayes_rss function}
 \usage{
-bayes_alphabet_rss_weights(stat, LD, method, ...)
+bayes_alphabet_rss_weights(sumstats, LD, method, ...)
 }
 \value{
 A numeric vector of the posterior mean of the coefficients.

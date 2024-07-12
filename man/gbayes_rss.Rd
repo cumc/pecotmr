@@ -5,9 +5,9 @@
 \title{Bayesian linear regression using summary statistics}
 \usage{
 gbayes_rss(
-  stat = NULL,
+  sumstats = NULL,
   LD = NULL,
-  rsids = NULL,
+  variant_ids = NULL,
   nit = 100,
   nburn = 0,
   nthin = 4,
@@ -39,13 +39,13 @@ gbayes_rss(
 )
 }
 \arguments{
-\item{stat}{dataframe with marker summary statistics. Required: beta coefficient (b), standard error 
-of the beta coefficient (seb), GWAS sample size (n). Optional: rsids, alleles (a1 and a2), 
-major allele frequency (af).}
+\item{sumstats}{dataframe with marker summary statistics. Required: beta coefficient (beta), standard
+error of the beta coefficient (se), GWAS sample size (n). Optional: variant_id or rsid, alleles (A1
+and A2), minor allele frequency (maf).}
 
 \item{LD}{is a the LD matrix corresponding to the same markers as in the stat dataframe}
 
-\item{rsids}{is an optional character vector of rsids, provided outside of the stat dataframe}
+\item{variant_ids}{is an optional character vector of variant ids or rsids, provided outside of the rss dataframe}
 
 \item{nit}{is the number of iterations}
 

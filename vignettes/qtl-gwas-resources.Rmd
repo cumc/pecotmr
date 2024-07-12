@@ -4,7 +4,7 @@ author: "Gao Wang"
 date: "`r Sys.Date()`"
 output: rmarkdown::html_vignette
 vignette: >
-  %\VignetteIndexEntry{intro-to-pecotmr}
+  %\VignetteIndexEntry{Publicly available QTL and GWAS summary statistics resources}
   %\VignetteEngine{knitr::rmarkdown}
   %\VignetteEncoding{UTF-8}
 ---
