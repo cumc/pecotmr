@@ -4,7 +4,7 @@
 \alias{bayes_n_rss_weights}
 \title{Use Gaussian distribution as prior. Posterior means will be BLUP, equivalent to Ridge Regression.}
 \usage{
-bayes_n_rss_weights(stat, LD, ...)
+bayes_n_rss_weights(sumstats, LD, ...)
 }
 \description{
 Use Gaussian distribution as prior. Posterior means will be BLUP, equivalent to Ridge Regression.

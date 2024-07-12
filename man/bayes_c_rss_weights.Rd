@@ -4,7 +4,7 @@
 \alias{bayes_c_rss_weights}
 \title{Use a rounded spike prior (low-variance Gaussian).}
 \usage{
-bayes_c_rss_weights(stat, LD, ...)
+bayes_c_rss_weights(sumstats, LD, ...)
 }
 \description{
 Use a rounded spike prior (low-variance Gaussian).

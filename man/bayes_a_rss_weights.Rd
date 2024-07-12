@@ -4,7 +4,7 @@
 \alias{bayes_a_rss_weights}
 \title{Use t-distribution as prior.}
 \usage{
-bayes_a_rss_weights(stat, LD, ...)
+bayes_a_rss_weights(sumstats, LD, ...)
 }
 \description{
 Use t-distribution as prior.

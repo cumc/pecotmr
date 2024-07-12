@@ -5,7 +5,7 @@
 \title{Use a hierarchical Bayesian mixture model with four Gaussian components. Variances are scaled
 by 0, 0.0001 , 0.001 , and 0.01 .}
 \usage{
-bayes_r_rss_weights(stat, LD, ...)
+bayes_r_rss_weights(sumstats, LD, ...)
 }
 \description{
 Use a hierarchical Bayesian mixture model with four Gaussian components. Variances are scaled

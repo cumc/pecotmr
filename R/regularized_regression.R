@@ -547,11 +547,11 @@ bayes_r_weights <- function(X, y, Z = NULL) {
 #' Bayes R: Hierarchical Bayesian mixture model with 4 Gaussian components, with 
 #' variances scaled by 0, 0.0001 , 0.001 , and 0.01 . 
 #'
-#' @param stat dataframe with marker summary statistics. Required: beta coefficient (b), standard error 
-#'        of the beta coefficient (seb), GWAS sample size (n). Optional: rsids, alleles (a1 and a2), 
-#'        major allele frequency (af).
+#' @param sumstats dataframe with marker summary statistics. Required: beta coefficient (beta), standard   
+#'        error of the beta coefficient (se), GWAS sample size (n). Optional: variant_id or rsid, alleles (A1
+#'        and A2), minor allele frequency (maf).
 #' @param LD is a the LD matrix corresponding to the same markers as in the stat dataframe
-#' @param rsids is an optional character vector of rsids, provided outside of the stat dataframe
+#' @param variant_ids is an optional character vector of variant ids or rsids, provided outside of the rss dataframe
 #' @param nit is the number of iterations
 #' @param nburn is the number of burnin iterations
 #' @param nthin is the thinning parameter
@@ -604,7 +604,7 @@ bayes_r_weights <- function(X, y, Z = NULL) {
 #' @import qgg Rcpp                                     
 #'
 #' @export
-gbayes_rss <- function(stat=NULL, LD=NULL, rsids=NULL, nit=100, nburn=0, nthin=4, method="bayesR",
+gbayes_rss <- function(sumstats=NULL, LD=NULL, variant_ids=NULL, nit=100, nburn=0, nthin=4, method="bayesR",
                        vg=NULL, vb=NULL, ve=NULL, ssg_prior=NULL, ssb_prior=NULL, sse_prior=NULL, 
                        lambda=NULL, h2=NULL, pi=0.001, updateB=TRUE, updateG=TRUE, updateE=TRUE, 
                        updatePi=TRUE, adjustE=TRUE, nug=4, nub=4, nue=4, mask=NULL, ve_prior=NULL,
@@ -627,44 +627,46 @@ gbayes_rss <- function(stat=NULL, LD=NULL, rsids=NULL, nit=100, nburn=0, nthin=4
   
   # Check that LD matrix is provided and of same length as stats
   if(is.null(LD)) stop("Must provide LD matrix")
-  if (nrow(stat) != nrow(LD)) stop("LD matrix must correspond to summary statistics")
+  if (nrow(sumstats) != nrow(LD)) stop("LD matrix must correspond to summary statistics")
   
   # Parameters from stat df
-  if(is.data.frame(stat)) {
+  if(is.data.frame(sumstats)) {
     
-    if (!is.null(rsids)){
-      rsidsLD <- rsids
-    } else if (!is.null(stat$rsids)){
-      rsidsLD <- stat$rsids
+    if (!is.null(variant_ids)){
+      variant_ids <- variant_ids
+    } else if (!is.null(sumstats$rsids)){
+      variant_ids <- sumstats$rsids
+    } else if (!is.null(sumstats$variant_id)){
+      variant_ids <- sumstats$variant_id
     } else {
-      rsidsLD <- paste0("snp", 1:nrow(stat))
-      stat$rsids <- rsidsLD
+      variant_ids <- paste0("snp", 1:nrow(sumstats))
+      sumstats$variant_id <- variant_ids
     }
     
-    m <- length(rsidsLD)
-    b <- wy <- ww <- matrix(0,nrow=length(rsidsLD),ncol=1)
-    mask <- matrix(FALSE,nrow=length(rsidsLD),ncol=1) 
-    rownames(b) <- rownames(wy) <- rownames(ww) <- rownames(mask) <- rsidsLD   
+    m <- length(variant_ids)
+    b <- wy <- ww <- matrix(0, nrow=nrow(sumstats), ncol=1)
+    mask <- matrix(FALSE, nrow=nrow(sumstats), ncol=1) 
+    rownames(b) <- rownames(wy) <- rownames(ww) <- rownames(mask) <- variant_ids   
     
-    if(is.null(stat$ww)) stat$ww <- 1/(stat$seb^2 + stat$b^2/stat$n)
-    if(is.null(stat$wy)) stat$wy <- stat$b*stat$ww
-    if(!is.null(stat$n)) n <- as.integer(median(stat$n))
-    ww[rownames(stat),1] <-  stat$ww
-    wy[rownames(stat),1] <- stat$wy
-    mask[rownames(stat),1] <- FALSE
+    if(is.null(sumstats$ww)) sumstats$ww <- 1/(sumstats$se^2 + sumstats$beta^2/sumstats$n)
+    if(is.null(sumstats$wy)) sumstats$wy <- sumstats$beta*sumstats$ww
+    if(!is.null(sumstats$n)) n <- as.integer(median(sumstats$n))
+    ww[,1] <- sumstats$ww
+    wy[,1] <- sumstats$wy
+    mask[,1] <- FALSE
     
     if(any(is.na(wy))) stop("Missing values in wy")
     if(any(is.na(ww))) stop("Missing values in ww")
     
-    b2 <- stat$b^2
-    seb2 <- stat$seb^2
-    yy <- (b2 + (n-2)*seb2)*stat$ww
+    b2 <- sumstats$beta^2
+    seb2 <- sumstats$se^2
+    yy <- (b2 + (n-2)*seb2)*sumstats$ww
     yy <- median(yy)
       
-    if (is.null(stat$a1)) stat$a1 <- rep("Unknown", length = nrow(stat))
-    if (is.null(stat$a2)) stat$a2 <- rep("Unknown", length = nrow(stat))
-    if (is.null(stat$af)) {
-        stat$af <- rep("Unknown", length = nrow(stat))
+    if (is.null(sumstats$A1)) sumstats$A1 <- rep("Unknown", length = nrow(sumstats))
+    if (is.null(sumstats$A2)) sumstats$A2 <- rep("Unknown", length = nrow(sumstats))
+    if (is.null(sumstats$maf)) {
+        sumstats$maf <- rep("Unknown", length = nrow(sumstats))
         af_prov = 0
     } else {af_prov = 1}
     
@@ -673,7 +675,7 @@ gbayes_rss <- function(stat=NULL, LD=NULL, rsids=NULL, nit=100, nburn=0, nthin=4
   
   # prep LD for gbayes
   LD_values <- lapply(1:nrow(LD), function(i) as.numeric(LD[i,]))
-  names(LD_values) <- rsidsLD
+  names(LD_values) <- variant_ids
   
   LD_indices <- list(indices = vector("list", length = nrow(LD)))
   for (i in 1:nrow(LD)) {
@@ -740,16 +742,15 @@ gbayes_rss <- function(stat=NULL, LD=NULL, rsids=NULL, nit=100, nburn=0, nthin=4
   names(fit) <- c("bm","dm","coef","vbs","vgs","ves","pis","pim","r","b","param")   
   fit[3] <- NULL
   
-  res <- data.frame(rsids=rsidsLD, bm=fit$bm, dm=fit$dm,
-                    pos=stat$pos, ea=stat$a1,
-                    nea=stat$a2, eaf=stat$af,
+  res <- data.frame(variant_id=variant_ids, bm=fit$bm, dm=fit$dm,
+                    pos=sumstats$pos, A1=sumstats$A1,
+                    A2=sumstats$A2, maf=sumstats$maf,
                     stringsAsFactors = FALSE)
-  rownames(res) <- rsidsLD
-  
-  rownames(res) <- rsids
-  fit$stat <- res
+  rownames(res) <- variant_ids
+                      
+  fit$sumstats <- res
   if (af_prov == 1) {
-      fit$stat$vm <- 2*(1-fit$stat$eaf)*fit$stat$eaf*fit$stat$bm^2
+      fit$sumstats$vm <- 2*(1-fit$sumstats$maf)*fit$sumstats$maf*fit$sumstats$bm^2
   }
   fit$method <- methods[method]
   fit$mask <- mask
@@ -774,33 +775,33 @@ gbayes_rss <- function(stat=NULL, LD=NULL, rsids=NULL, nit=100, nburn=0, nthin=4
 #' Extract weights from gbayes_rss function
 #' @return A numeric vector of the posterior mean of the coefficients.
 #' @export
-bayes_alphabet_rss_weights <- function(stat, LD, method, ...) {
-    model <- gbayes_rss(stat = stat, LD = LD, method = method, ...)
+bayes_alphabet_rss_weights <- function(sumstats, LD, method, ...) {
+    model <- gbayes_rss(sumstats = sumstats, LD = LD, method = method, ...)
     return(model$bm)
 }
 #' Use Gaussian distribution as prior. Posterior means will be BLUP, equivalent to Ridge Regression.
 #' @export
-bayes_n_rss_weights <- function(stat, LD, ...) {
-  return(bayes_alphabet_rss_weights(stat, LD, method = "bayesN", ...))
+bayes_n_rss_weights <- function(sumstats, LD, ...) {
+  return(bayes_alphabet_rss_weights(sumstats, LD, method = "bayesN", ...))
 }
 #' Use laplace/double exponential distribution as prior. This is equivalent to Bayesian LASSO.
 #' @export
-bayes_l_rss_weights <- function(stat, LD, ...) {
-  return(bayes_alphabet_rss_weights(stat, LD, method = "bayesL", ...))
+bayes_l_rss_weights <- function(sumstats, LD, ...) {
+  return(bayes_alphabet_rss_weights(sumstats, LD, method = "bayesL", ...))
 }
 #' Use t-distribution as prior.
 #' @export
-bayes_a_rss_weights <- function(stat, LD, ...) {
-  return(bayes_alphabet_rss_weights(stat, LD, method = "bayesA", ...))
+bayes_a_rss_weights <- function(sumstats, LD, ...) {
+  return(bayes_alphabet_rss_weights(sumstats, LD, method = "bayesA", ...))
 }
 #' Use a rounded spike prior (low-variance Gaussian).
 #' @export
-bayes_c_rss_weights <- function(stat, LD, ...) {
-  return(bayes_alphabet_rss_weights(stat, LD, method = "bayesC", ...))
+bayes_c_rss_weights <- function(sumstats, LD, ...) {
+  return(bayes_alphabet_rss_weights(sumstats, LD, method = "bayesC", ...))
 }
 #' Use a hierarchical Bayesian mixture model with four Gaussian components. Variances are scaled
 #' by 0, 0.0001 , 0.001 , and 0.01 .
 #' @export
-bayes_r_rss_weights <- function(stat, LD, ...) {
-  return(bayes_alphabet_rss_weights(stat, LD, method = "bayesR", ...))
+bayes_r_rss_weights <- function(sumstats, LD, ...) {
+  return(bayes_alphabet_rss_weights(sumstats, LD, method = "bayesR", ...))
 }
