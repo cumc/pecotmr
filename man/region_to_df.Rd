@@ -6,6 +6,9 @@
 \usage{
 region_to_df(ld_region_id, colnames = c("chrom", "start", "end"))
 }
+\arguments{
+\item{ld_region_id}{A string of region in the format of chrom_start_end.}
+}
 \description{
 Utility function to convert LD region_ids to `region of interest` dataframe
 }

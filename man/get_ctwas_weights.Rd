@@ -7,8 +7,7 @@
 get_ctwas_weights(post_qc_twas_data, LD_meta_file_path)
 }
 \arguments{
-\item{refined_twas_weights_data}{output from twas pipeline as refined_twas_weights_data that is QC/harmonizaed with LD. 
-If the selected_model is susie, the input of weights are updated}
+\item{post_qc_twas_data}{output from harmonize_twas function for twas results}
 }
 \value{
 A list of list for weight information for each gene-context pair.
