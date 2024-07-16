@@ -11,7 +11,8 @@ adjust_susie_weights(
   variable_name_obj = c("susie_results", context, "variant_names"),
   susie_obj = c("susie_results", context, "susie_result_trimmed"),
   twas_weights_table = c("weights", context),
-  combined_LD_variants
+  combined_LD_variants,
+  match_min_prop = 0.2
 )
 }
 \arguments{

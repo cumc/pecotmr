@@ -277,10 +277,37 @@ find_data <- function(x, depth_obj, show_path = FALSE, rm_null=TRUE, rm_dup = FA
 }
                                      
 #' Utility function to convert LD region_ids to `region of interest` dataframe
+#' @param ld_region_id A string of region in the format of chrom_start_end.
+#' @importFrom data.table fread
+#' @export                                 
 region_to_df <- function(ld_region_id, colnames=c("chrom", "start", "end")){
   region_of_interest <- as.data.frame(do.call(rbind, lapply(strsplit(ld_region_id, "[_:-]"), function(x) as.integer(sub("chr", "", x)))))
   colnames(region_of_interest) <- colnames
   return(region_of_interest)
+}
+#' Utility function to load LD in ctwas analyses 
+#' @param ld_matrix_file_path A string of file path to the LD matrix. 
+#' @export
+ctwas_ld_loader <- function(ld_matrix_file_path){
+  ld_loaded <-  process_LD_matrix(ld_matrix_file_path, paste0(ld_matrix_file_path, ".bim"))
+  ld_loaded <- ld_loaded$LD_matrix
+  return(ld_loaded)
+}
+
+#' Utility function to format meta data dataframe for cTWAS analyses
+#' @importFrom data.table fread
+#' @export    
+get_ctwas_meta_data <- function(ld_meta_data_file, regions_table){
+  LD_info <- fread(ld_meta_data_file, header=TRUE, data.table=FALSE)
+  colnames(LD_info)[1] <- "chrom"
+  LD_info$region_id <- gsub("chr", "", paste(LD_info$chrom, LD_info$start, LD_info$end, sep="_"))
+  LD_info$LD_matrix <- paste0(dirname(ld_meta_data_file), "/",gsub( ",.*$", "", LD_info$path))
+  LD_info <- LD_info[, c("region_id", "LD_matrix")]
+  region_info <- read.table(regions_table, sep="\t", header=TRUE) # to get exact LD bim file without over-including neighboring LD's info. 
+  colnames(region_info)[1] <- "chrom"
+  region_info$chrom <- as.integer(gsub("chr","",region_info$chrom))  
+  region_info$region_id <- paste(region_info$chrom, region_info$start, region_info$stop, sep="_")
+  return(list(LD_info=LD_info, region_info=region_info))
 }
 
                                      
@@ -411,6 +438,17 @@ harmonize_twas <- function(twas_weights_data, ld_meta_file_path, gwas_meta_file,
                                     min <- min(wgt_range)
                                     max <- max(wgt_range)
                                     data.frame(context = context, start = min, end = max)}))
+      if (nrow(region_info_df) == 1) {
+        # Handle case with only one context
+        single_context_group <- list(
+          context_group_1 = list(
+            contexts = region_info_df$context,
+            query_region = paste0(chrom, ":", region_info_df$start, "-", region_info_df$end),
+            all_variants = unique(twas_weights_data[[gene]][["variant_names"]][[region_info_df$context]])
+          )
+        )
+        return(single_context_group)
+      }
       # Calculate distance matrix and perform hierarchical clustering
       clusters <- cutree(hclust(dist(region_info_df[, c("start", "end")])), h = tolerance)
       # Group contexts and determine query regions
@@ -500,7 +538,8 @@ harmonize_twas <- function(twas_weights_data, ld_meta_file_path, gwas_meta_file,
       gwas_sumstats <- as.data.frame(tabix_region(gwas_file, query_region)) #extension for yml file for column name mapping
       if (colnames(gwas_sumstats)[1]=="#chrom") colnames(gwas_sumstats)[1] <- "chrom" #colname update for tabix
       gwas_sumstats$chrom <- as.integer(gwas_sumstats$chrom)
-      gwas_allele_flip <- allele_qc(gwas_sumstats[, c("chrom", "pos", "A1","A2")], LD_list$combined_LD_variants, gwas_sumstats, c("beta", "z"))
+      gwas_allele_flip <- allele_qc(gwas_sumstats[, c("chrom", "pos", "A1","A2")], LD_list$combined_LD_variants, gwas_sumstats, c("beta", "z"),
+                                   match_min_prop = 0.001)
       gwas_data_sumstats <- gwas_allele_flip$target_data_qced
 
       ############### context in the context group
@@ -513,7 +552,7 @@ harmonize_twas <- function(twas_weights_data, ld_meta_file_path, gwas_meta_file,
                                             keep_variants = gwas_data_sumstats$variant_id, allele_qc = TRUE, 
                                             variable_name_obj = c("variant_names", context), 
                                             susie_obj = c("susie_obj", context),
-                                            twas_weights_table = c("weights", context), LD_list$combined_LD_variants)
+                                            twas_weights_table = c("weights", context), LD_list$combined_LD_variants, match_min_prop = 0.001)
           weights_matrix_subset <- cbind(susie_weights = adjusted_susie_weights$adjusted_susie_weights,
                          weights_matrix[adjusted_susie_weights$remained_variants_ids, !colnames(weights_matrix) %in% "susie_weights"])
         } else {
@@ -526,7 +565,7 @@ harmonize_twas <- function(twas_weights_data, ld_meta_file_path, gwas_meta_file,
         }
         weights_matrix_qced <- allele_qc(rownames(weights_matrix_subset), LD_list$combined_LD_variants, weights_matrix_subset, 
                                         colnames(weights_matrix_subset)[!colnames(weights_matrix_subset) %in% c("chrom", "pos", "A2", "A1")],
-                                        target_gwas = FALSE)
+                                        match_min_prop = 0.001, target_gwas = FALSE)
         weights_matrix_subset <- as.matrix(weights_matrix_qced$target_data_qced[,!colnames(weights_matrix_qced$target_data_qced) %in% c("chrom", 
                                          "pos", "A2", "A1", "variant_id"), drop=FALSE])
         rownames(weights_matrix_subset) <- get_nested_element(weights_matrix_qced, c("target_data_qced", "variant_id"))
@@ -563,45 +602,43 @@ harmonize_twas <- function(twas_weights_data, ld_meta_file_path, gwas_meta_file,
 }
 
 
-
-
 #' Function to generate weights_list from harmonized twas_weights_data for cTWAS multigroup analysis
 #'                                     
-#' @param refined_twas_weights_data output from twas pipeline as refined_twas_weights_data that is QC/harmonizaed with LD. 
-#' If the selected_model is susie, the input of weights are updated  
+#' @param post_qc_twas_data output from harmonize_twas function for twas results 
 #' @return A list of list for weight information for each gene-context pair.  
 #' @export
 get_ctwas_weights <- function(post_qc_twas_data, LD_meta_file_path) {
+  # Function to standardize context names - remove gene name at the end of context name
+  clean_context_names <- function(context, gene){
+    context_parts <- str_split(context, "_")[[1]]
+    # Remove gene name if it matches the last part of the context
+    if (tail(context_parts, n=1) == gene) context_parts <- head(context_parts, -1)
+    cleaned_context <- paste(context_parts, collapse = "_")
+    return(cleaned_context)
+  }
   chrom <- unique(find_data(post_qc_twas_data, c(2, "chrom")))
   if (length(chrom)!=1) stop("Data provided contains more than one chromosome. ")
-  genes <- names(post_qc_twas_data)
-  
-  # Load LD for all genes
-  # ld_meta <- fread(LD_meta_file_path, header = TRUE, sep = "\t", data.table = FALSE)
-  # all_variants <- unique(unlist(find_data(post_qc_twas_data, c(2, "variant_names"))))
-  # all_pos <- as.numeric(sapply(all_variants, function(variant) as.numeric(strsplit(variant, "\\:")[[1]][2])))
-  # region_of_interest <- data.frame(chrom=chrom, start=min(all_pos), end = max(all_pos))
-  # ld_list <- load_LD_matrix(LD_meta_file_path, region_of_interest, variant_id_to_df(all_variants))
-                    
+  genes <- names(post_qc_twas_data)                
   # Compile weights_list
   weights_list <- list()                
   for (gene in genes){
      contexts <- names(post_qc_twas_data[[gene]][["weights_qced"]])
      for (context in contexts){
+         standardized_context <- clean_context_names(context, gene) 
          data_type <- post_qc_twas_data[[gene]][["data_type"]][[context]]
          colnames(post_qc_twas_data[[gene]][["weights_qced"]][[context]]) <- "weight"
          context_variants <- post_qc_twas_data[[gene]][["variant_names"]][[context]]
          context_range <- sapply(context_variants, function(variant) as.integer(strsplit(variant, "\\:")[[1]][2]))
-         weights_list[[paste0(gene,"|" , data_type, "_",context)]] <- list(
+         weights_list[[paste0(gene,"|" , data_type, "_", standardized_context)]] <- list(
              chrom=chrom, 
              p0 = min(context_range),
              p1 = max(context_range),
              wgt = post_qc_twas_data[[gene]][["weights_qced"]][[context]],
              R_wgt = post_qc_twas_data[[gene]]$LD[context_variants, context_variants, drop=FALSE],#ld_list$combined_LD_matrix[context_variants, context_variants], 
              gene_name = gene,
-             weight_name=paste0(data_type, "_", context),
+             weight_name=paste0(data_type, "_", standardized_context),
              type = data_type,
-             context = context,
+             context = standardized_context,
              n_wgt = length(context_variants)
          )
      }
