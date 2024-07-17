@@ -473,6 +473,7 @@ twas_weights <- function(X, Y, weight_methods, num_threads = 1, seed = NULL) {
     if (method_name %in% multivariate_weight_methods) {
       # Apply multivariate method
       weights_matrix <- exec(method_name, X = X_filtered, Y = Y, !!!args)
+      if(nrow(weights_matrix)!= length(valid_columns)) weights_matrix <- weights_matrix[names(valid_columns),,drop=FALSE]
     } else {
       # Apply univariate method to each column of Y
       # Initialize it with zeros to avoid NA
@@ -481,6 +482,7 @@ twas_weights <- function(X, Y, weight_methods, num_threads = 1, seed = NULL) {
 
       for (k in 1:ncol(Y)) {
         weights_vector <- exec(method_name, X = X_filtered, y = Y[, k], !!!args)
+        if (is.matrix(weights_vector)) weights_vector <- weights_vector[, k]
         weights_matrix[, k] <- weights_vector
       }
     }

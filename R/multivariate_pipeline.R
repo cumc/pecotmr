@@ -238,7 +238,7 @@ twas_multivariate_weights_pipeline <- function(
 
   copy_twas_results <- function(res, twas_weight, twas_predictions) {
     for (i in names(res)) {
-      if (i == "mnm_result") next
+      if (i == "mnm_result" | i == "mvsusie_fitted") next
       res[[i]]$twas_weights <- lapply(twas_weight, function(wgts) {
         wgts[, i]
       })
@@ -251,7 +251,7 @@ twas_multivariate_weights_pipeline <- function(
 
   copy_twas_cv_results <- function(res, twas_cv_result) {
     for (i in names(res)) {
-      if (i == "mnm_result") next
+      if (i == "mnm_result" | i == "mvsusie_fitted") next
       res[[i]]$twas_cv_result$sample_partition <- twas_cv_result$sample_partition
       res[[i]]$twas_cv_result$prediction <- lapply(
         twas_cv_result$prediction,
