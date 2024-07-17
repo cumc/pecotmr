@@ -1,30 +1,41 @@
 #' @export
 filter_invalid_summary_stat <- function(dat_list, bhat = NULL, sbhat = NULL, z = TRUE, sig_p_cutoff = 1E-6, filter_by_missing_rate = 0.2) {
-  replace_values <- function(df, replace_with) {
-    df <- df %>%
-      mutate(across(everything(), as.numeric)) %>%
-      mutate(across(everything(), ~ replace(., is.nan(.) | is.infinite(.) | is.na(.), replace_with)))
-  }
+  replace_values <- function(df, replace_with){
+        df <- df %>%
+               mutate(across(everything(), as.numeric)) %>%
+               mutate(across(everything(), ~ replace(., is.nan(.) | is.infinite(.) | is.na(.), replace_with)))
+   }
+
   if (all(c(bhat, sbhat) %in% names(dat_list))) {
     # If the element is a list with 'bhat' and 'sbhat'
-    dat_list[[bhat]] <- as.matrix(replace_values(dat_list[[bhat]], 0))
-    dat_list[[sbhat]] <- as.matrix(replace_values(dat_list[[sbhat]], 1000))
-    if (("null.b" %in% names(dat_list)) || ("random.b" %in% names(dat_list))) {
-      if (!is.null(filter_by_missing_rate)) {
-        proportion_nonzero <- apply(dat_list[[bhat]], 1, function(row) {
-          mean(row != 0)
-        })
-        dat_list[[bhat]] <- dat_list[[bhat]][proportion_nonzero >= filter_by_missing_rate, ]
-        dat_list[[sbhat]] <- dat_list[[sbhat]][proportion_nonzero >= filter_by_missing_rate, ]
-      }
+    if (!is.null(dat_list[[bhat]]) && !is.null(dat_list[[sbhat]])) {
+       dat_list[[bhat]] <- as.matrix(replace_values(dat_list[[bhat]], 0))
+       dat_list[[sbhat]] <- as.matrix(replace_values(dat_list[[sbhat]], 1000))
+       if (("null.b" %in% names(dat_list)) || ("random.b" %in% names(dat_list))) {
+          if (!is.null(filter_by_missing_rate)) {
+             proportion_nonzero <- apply(dat_list[[bhat]], 1, function(row) {
+             mean(row != 0)
+          })
+          dat_list[[bhat]] <- dat_list[[bhat]][proportion_nonzero >= filter_by_missing_rate, ]
+          dat_list[[sbhat]] <- dat_list[[sbhat]][proportion_nonzero >= filter_by_missing_rate, ]
+       }
+     }
     }
   }
   if (z) {
     if (any(grepl("\\.b$", bhat)) | any(grepl("\\.s$", sbhat))) {
       condition <- sub("\\.b$", "", bhat)
-      dat_list[[paste0(condition, ".z")]] <- as.matrix(dat_list[[bhat]] / dat_list[[sbhat]])
+      if (!is.null(dat_list[[bhat]]) && !is.null(dat_list[[sbhat]])) {
+         dat_list[[paste0(condition, ".z")]] <- as.matrix(dat_list[[bhat]] / dat_list[[sbhat]])
+      } else {
+         dat_list[paste0(condition, ".z")] <- list(NULL)
+      }
     } else {
-      dat_list[["z"]] <- as.matrix(dat_list[[bhat]] / dat_list[[sbhat]])
+      if (!is.null(dat_list[[bhat]]) && !is.null(dat_list[[sbhat]])) {
+         dat_list[["z"]] <- as.matrix(dat_list[[bhat]] / dat_list[[sbhat]])
+      } else {
+         dat_list["z"] <- list(NULL)
+      }
     }
     if ("strong.z" %in% names(dat_list)) {
       if (!is.null(sig_p_cutoff)) {
