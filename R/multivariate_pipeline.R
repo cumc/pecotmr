@@ -190,7 +190,7 @@ multivariate_analysis_pipeline <- function(
   message("Fitting mvSuSiE model on input data ...")
   mvsusie_fitted <- mvsusie(X,
     Y = Y, L = max_L, prior_variance = data_driven_prior_matrices,
-    residual_variance = resid_Y, precompute_covariances = TRUE, compute_objective = TRUE,
+    residual_variance = resid_Y, precompute_covariances = FALSE, compute_objective = TRUE,
     estimate_residual_variance = FALSE, estimate_prior_variance = TRUE, estimate_prior_method = "EM",
     max_iter = mvsusie_max_iter, n_thread = 1, approximate = FALSE, verbosity = verbose, coverage = pri_coverage
   )
@@ -214,6 +214,7 @@ multivariate_analysis_pipeline <- function(
       min_cv_maf = min_cv_maf, cv_threads = cv_threads, verbose = verbose
     )
   }
+  res$mvsusie_prior <- data_driven_prior_matrices$prior_variance                                   
   return(res)
 }
 
@@ -281,7 +282,7 @@ twas_multivariate_weights_pipeline <- function(
     message("Fitting mvSuSiE model on preset variants ...")
     res$mnm_result$preset_variants_result <- mvsusie(
       X = X, Y = Y, L = max_L, prior_variance = data_driven_prior_matrices,
-      residual_variance = resid_Y, precompute_covariances = T, compute_objective = T,
+      residual_variance = resid_Y, precompute_covariances = FALSE, compute_objective = T,
       estimate_residual_variance = F, estimate_prior_variance = T, estimate_prior_method = "EM",
       max_iter = mvsusie_max_iter, n_thread = 1, approximate = F, verbosity = verbose, coverage = coverage
     )
