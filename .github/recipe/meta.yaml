@@ -23,43 +23,8 @@ requirements:
     - cross-r-base {{ r_base }}  # [build_platform != target_platform]
   host:
     - bioconductor-qvalue
-    - r-bedtoolsr
-    - r-base=4.3
-    - r-coloc=5.2.3
-    - r-data.table
-    - r-dofuture
-    - r-dplyr
-    - r-gbj
-    - r-ggplot2
-    - r-ggnewscale
-    - r-ggrepel
-    - r-ggvenn
-    - r-glmnet
-    - r-harmonicmeanp
-    - r-magrittr
-    - r-matrix
-    - r-matrixstats
-    - r-mr.ash.alpha
-    - r-mr.mash.alpha
-    - r-mvsusier
-    - r-udr
-    - r-fsusier
-    - r-pgenlibr
-    - bioconductor-snpstats
-    - r-furrr
-    - r-purrr
-    - r-rcpp
-    - r-readr
-    - r-rfast
-    - r-rlab
-    - r-stringr
-    - r-susier
-    - r-tidyr
-    - r-vctrs
-    - r-qgg
-    - r-r.utils
-  run:
-    - bioconductor-qvalue
+    - bioconductor-s4vectors
+    - bioconductor-iranges
     - r-bedtoolsr
     - r-base>=4.3
     - r-coloc>=5.2.3
@@ -85,6 +50,47 @@ requirements:
     - bioconductor-snpstats
     - r-furrr
     - r-purrr
+    - r-r6
+    - r-rcpp
+    - r-readr
+    - r-rfast
+    - r-rlab
+    - r-stringr
+    - r-susier
+    - r-tidyr
+    - r-vctrs
+    - r-qgg
+    - r-r.utils
+  run:
+    - bioconductor-qvalue
+    - bioconductor-s4vectors
+    - bioconductor-iranges
+    - r-bedtoolsr
+    - r-base>=4.3
+    - r-coloc>=5.2.3
+    - r-data.table
+    - r-dofuture
+    - r-dplyr
+    - r-gbj
+    - r-ggplot2
+    - r-ggnewscale
+    - r-ggrepel
+    - r-ggvenn
+    - r-glmnet
+    - r-harmonicmeanp
+    - r-magrittr
+    - r-matrix
+    - r-matrixstats
+    - r-mr.ash.alpha
+    - r-mr.mash.alpha
+    - r-mvsusier
+    - r-udr
+    - r-fsusier
+    - r-pgenlibr
+    - bioconductor-snpstats
+    - r-furrr
+    - r-purrr
+    - r-r6
     - r-rcpp
     - r-readr
     - r-rfast
