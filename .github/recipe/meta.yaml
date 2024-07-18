@@ -26,8 +26,8 @@ requirements:
     - bioconductor-s4vectors
     - bioconductor-iranges
     - r-bedtoolsr
-    - r-base>=4.3
-    - r-coloc>=5.2.3
+    - r-base=4.3
+    - r-coloc
     - r-data.table
     - r-dofuture
     - r-dplyr
@@ -67,7 +67,7 @@ requirements:
     - bioconductor-iranges
     - r-bedtoolsr
     - r-base>=4.3
-    - r-coloc>=5.2.3
+    - r-coloc
     - r-data.table
     - r-dofuture
     - r-dplyr
