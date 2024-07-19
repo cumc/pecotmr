@@ -548,6 +548,18 @@ load_regional_functional_data <- function(...) {
   return(dat)
 }
 
+    
+    
+# Function to remove gene name at the end of context name
+#' @export
+clean_context_names <- function(context, gene){
+  context_parts <- str_split(context, "_")[[1]]
+  # Remove gene name if it matches the last part of the context
+  if (tail(context_parts, n=1) == gene) context_parts <- head(context_parts, -1)
+  cleaned_context <- paste(context_parts, collapse = "_")
+  return(cleaned_context)
+}
+
 #' Load, Validate, and Consolidate TWAS Weights from Multiple RDS Files
 #'
 #' This function loads TWAS weight data from multiple RDS files, checks for the presence
@@ -574,17 +586,66 @@ load_twas_weights <- function(weight_db_files, conditions = NULL,
                               variable_name_obj = c("preset_variants_result", "variant_names"),
                               susie_obj = c("preset_variants_result", "susie_result_trimmed"),
                               twas_weights_table = "twas_weights") {
+
   ## Internal function to load and validate data from RDS files
-  load_and_validate_data <- function(weight_db_files, conditions, variable_name_obj) {
-    all_data <- lapply(weight_db_files, readRDS)
-    unique_regions <- unique(unlist(lapply(all_data, function(data) names(data))))
-    # Check if region from all RDS files are the same
+  load_and_validate_data <- function(weight_db_files, conditions, variable_name_obj){
+    all_data <- do.call(c, lapply(unname(weight_db_files), function(rds_file) {
+      db <- readRDS(rds_file)
+      if ("mnm_result" %in% names(db)) {
+        db <- list(mnm_rs=db)
+      } else {
+        gene <- names(db)
+        # Check if region from all RDS files are the same
+        if (length(gene) != 1) {
+          stop("More than one region provided in the RDS file. ")
+        } else {
+          names(db[[gene]]) <- sapply(names(db[[gene]]), function(context) clean_context_names(context, gene))
+        }                                            
+      }
+      return(db)    
+    }))
+    #Check if region from all RDS files are the same
+    unique_regions <- unique(names(all_data)[!names(all_data) %in% 'mnm_rs'])
     if (length(unique_regions) != 1) {
       stop("The RDS files do not refer to the same region.")
     } else {
-      # Assuming all data refer to the same region, now combine data by conditions
-      combined_all_data <- do.call("c", lapply(all_data, function(data) data[[1]]))
+      # Combine the lists with the same region name
+      combined_all_data <- lapply(split(all_data, names(all_data)),function(lst) {
+         result <- list()
+          for (item in lst) {
+            for (name in names(item)) {
+              if (name %in% names(result)) {
+                if (result[[name]] != item[[name]]) {
+                  stop("Different twas weight data provided for identical context name. ")
+                }
+              } else {
+                result[[name]] <- item[[name]]
+              }
+            }
+          }
+          return(result)
+        })
+    }                                                                   
+    # merge univariate and multivariate results for same gene-context pair                                                         
+    if ("mnm_rs" %in% names(combined_all_data)){
+      gene <- names(combined_all_data)[!names(combined_all_data)%in% 'mnm_rs']
+      overl_contexts <- names(combined_all_data[['mnm_rs']])[names(combined_all_data[['mnm_rs']]) %in% names(combined_all_data[[gene]])]
+      multi_variants <- get_nested_element(combined_all_data$mnm_rs$mnm_result, variable_name_obj)
+      for (context in overl_contexts) {
+            uni_variants <-  get_nested_element(combined_all_data[[gene]][[context]], variable_name_obj)
+            multi_weights <- setNames(rep(0, length(uni_variants)), uni_variants)
+            multi_weights <- lapply(combined_all_data[['mnm_rs']][[context]]$twas_weights, function(weight_list){
+              aligned_weights <- setNames(rep(0, length(uni_variants)), uni_variants)
+              aligned_weights[multi_variants[multi_variants %in% uni_variants]] <- unlist(weight_list)[multi_variants %in% uni_variants]
+              aligned_weights <- as.matrix(aligned_weights)
+            })
+            combined_all_data[[gene]][[context]]$twas_weights <- c(combined_all_data[[gene]][[context]]$twas_weights, multi_weights)
+            combined_all_data[[gene]][[context]]$twas_cv_result$performance <- c(combined_all_data[[gene]][[context]]$twas_cv_result$performance, 
+                                                                               combined_all_data[['mnm_rs']][[context]]$twas_cv_result$performance)
+        }
+      combined_all_data[['mnm_rs']] <- NULL
     }
+    combined_all_data <- combined_all_data[[1]]
     # Set default for 'conditions' if they are not specified
     if (is.null(conditions)) {
       conditions <- names(combined_all_data)
@@ -658,10 +719,6 @@ load_twas_weights <- function(weight_db_files, conditions = NULL,
 
   # Internal function to consolidate weights for given condition
   consolidate_weights_list <- function(combined_all_data, conditions, variable_name_obj, twas_weights_table) {
-    # Set default for 'conditions' if they are not specified
-    if (is.null(conditions)) {
-      conditions <- names(combined_all_data)
-    }
     combined_weights_by_condition <- lapply(conditions, function(condition) {
       temp_list <- get_nested_element(combined_all_data, c(condition, twas_weights_table))
       temp_list <- temp_list[!names(temp_list) %in% "variant_names"]
@@ -690,8 +747,8 @@ load_twas_weights <- function(weight_db_files, conditions = NULL,
   try(
     { 
       combined_all_data <- load_and_validate_data(weight_db_files, conditions, variable_name_obj)
-      # update conditions upfront 
-      if (is.null(conditions)) conditions <- names(combined_all_data)
+      # update condition in case of merging rds files
+      conditions <- names(combined_all_data)
       combined_susie_result <- extract_variants_and_susie_results(combined_all_data, conditions)
       conditions <- names(combined_susie_result)
       weights <- consolidate_weights_list(combined_all_data, conditions, variable_name_obj, twas_weights_table)

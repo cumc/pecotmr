@@ -608,14 +608,6 @@ harmonize_twas <- function(twas_weights_data, ld_meta_file_path, gwas_meta_file,
 #' @return A list of list for weight information for each gene-context pair.  
 #' @export
 get_ctwas_weights <- function(post_qc_twas_data, LD_meta_file_path) {
-  # Function to standardize context names - remove gene name at the end of context name
-  clean_context_names <- function(context, gene){
-    context_parts <- str_split(context, "_")[[1]]
-    # Remove gene name if it matches the last part of the context
-    if (tail(context_parts, n=1) == gene) context_parts <- head(context_parts, -1)
-    cleaned_context <- paste(context_parts, collapse = "_")
-    return(cleaned_context)
-  }
   chrom <- unique(find_data(post_qc_twas_data, c(2, "chrom")))
   if (length(chrom)!=1) stop("Data provided contains more than one chromosome. ")
   genes <- names(post_qc_twas_data)                
