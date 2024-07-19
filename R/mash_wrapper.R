@@ -575,10 +575,13 @@ mash_rand_null_sample <- function(dat, n_random, n_null, exclude_condition, seed
       warning(paste("no variants are included in the null dataset because abs_z > 2 for all variants in", dat$region))
       null <- list()
     } else {
-      null_idx <- sample(null.id, min(n_null, length(null.id)), replace = FALSE)
-      null <- list(bhat = dat$bhat[null_idx, , drop = FALSE], sbhat = dat$sbhat[null_idx, ,
-        drop = FALSE
-      ])
+        if (length(null.id)<ncol(dat$bhat)) {
+           warning(paste("not enough null data to estimate null correlation in", dat$region))
+           null <- list()
+        } else {
+           null_idx <- sample(null.id, min(n_null, length(null.id)), replace = FALSE)
+           null <- list(bhat = dat$bhat[null_idx, , drop = FALSE], sbhat = dat$sbhat[null_idx, ,drop = FALSE])
+        }
     }
     dat <- list(random = random, null = null)
     return(dat)
