@@ -255,7 +255,8 @@ twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_
         message(paste("Randomly selecting", length(selected_columns), "out of", length(variants_to_keep), "input variants for cross validation purpose."))
       }
     } else {
-      selected_columns <- sort(sample(ncol(X), max_num_variants, replace = FALSE))
+      X_temp <- filter_X(X, imiss_cutoff, min_cv_maf, Y=Y)
+      selected_columns <- sort(sample(ncol(X_temp), max_num_variants, replace = FALSE))
       message(paste("Randomly selecting", length(selected_columns), "out of", ncol(X), "variants for cross validation purpose."))
     }
     X <- X[, selected_columns]

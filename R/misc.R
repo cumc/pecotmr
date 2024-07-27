@@ -113,7 +113,7 @@ compute_LD <- function(X) {
 }
 
 #' @importFrom matrixStats colVars
-filter_X <- function(X, missing_rate_thresh, maf_thresh, var_thresh = 0) {
+filter_X <- function(X, missing_rate_thresh, maf_thresh, var_thresh = 0, Y=NULL) {
   rm_col <- which(apply(X, 2, compute_missing) > missing_rate_thresh)
   if (length(rm_col)) X <- X[, -rm_col]
   rm_col <- which(apply(X, 2, compute_maf) <= maf_thresh)
@@ -124,6 +124,31 @@ filter_X <- function(X, missing_rate_thresh, maf_thresh, var_thresh = 0) {
   if (var_thresh > 0) {
     rm_col <- which(matrixStats::colVars(X) < var_thresh)
     if (length(rm_col)) X <- X[, -rm_col]
+  }
+  # If Y is provided, remove variants that has zero variance with under the influence of NAs in Y
+  if (!is.null(Y) & is.matrix(Y)) {
+    drop_snp_indices <- c()
+    for (context_idx in 1:ncol(Y)) {
+      for (snp_idx in 1:ncol(X)) {
+        unique_values <- unique(X[, snp_idx])
+        for (value in unique_values) {
+          subjects_with_same_genotype <- which(X[, snp_idx] == value)
+          subjects_with_na_Y <- which(is.na(Y[, context_idx]))
+          if (all(subjects_with_same_genotype %in% subjects_with_na_Y)) {
+            # Temporarily remove the specific value and check variance
+            temp_X <- X[, snp_idx]
+            temp_X[subjects_with_same_genotype] <- NA
+            if (sd(temp_X, na.rm = TRUE) == 0) {
+              drop_snp_indices <- c(drop_snp_indices, snp_idx)
+            } else if (compute_maf(na.omit(temp_X)) <= maf_thresh) {
+               drop_snp_indices <- c(drop_snp_indices, snp_idx)
+            }
+          }
+        }
+      }
+    }
+    drop_snp_indices <- unique(drop_snp_indices)
+    if (length(drop_snp_indices)) X <- X[, -drop_snp_indices]
   }
   return(X)
 }
