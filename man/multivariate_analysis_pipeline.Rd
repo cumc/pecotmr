@@ -26,7 +26,9 @@ multivariate_analysis_pipeline(
   cv_seed = 999,
   prior_weights_min = 1e-04,
   twas_weights = FALSE,
-  verbose = 0
+  verbose = 0,
+  imiss_cutoff = NULL,
+  maf_cutoff = NULL
 )
 }
 \arguments{

@@ -68,7 +68,7 @@ multivariate_analysis_pipeline <- function(
     X, Y, maf, max_L = 30, ld_reference_meta_file = NULL, pip_cutoff_to_skip = 0, signal_cutoff = 0.025, coverage = c(0.95, 0.7, 0.5), data_driven_prior_matrices = NULL,
     data_driven_prior_matrices_cv = NULL, canonical_prior_matrices = TRUE, sample_partition = NULL,
     mrmash_max_iter = 5000, mvsusie_max_iter = 200, min_cv_maf = 0.05, max_cv_variants = -1, cv_folds = 5,
-    cv_threads = 1, cv_seed = 999, prior_weights_min = 1e-4, twas_weights = FALSE, verbose = 0) {
+    cv_threads = 1, cv_seed = 999, prior_weights_min = 1e-4, twas_weights = FALSE, verbose = 0, imiss_cutoff=NULL, maf_cutoff=NULL) {
   skip_conditions <- function(X, Y, pip_cutoff_to_skip) {
     if (length(pip_cutoff_to_skip) == 1 && is.numeric(pip_cutoff_to_skip)) {
       pip_cutoff_to_skip <- rep(pip_cutoff_to_skip, ncol(Y))
@@ -167,7 +167,12 @@ multivariate_analysis_pipeline <- function(
     data_driven_prior_matrices_cv, cv_folds,
     prior_weights_min = prior_weights_min
   )
-
+  if (!is.null(imiss_cutoff) & !is.null(maf_cutoff)) {
+    message("Filtering X with condition of Y subjects before fitting. ")
+    X = filter_X(X, imiss_cutoff, maf_cutoff, Y=Y)
+    maf=maf[colnames(X)]
+  }
+                                     
   data_driven_prior_matrices <- filtered_data$data_driven_prior_matrices
   data_driven_prior_matrices_cv <- filtered_data$data_driven_prior_matrices_cv
 
@@ -211,7 +216,7 @@ multivariate_analysis_pipeline <- function(
       coverage = pri_coverage, secondary_coverage = sec_coverage,
       canonical_prior_matrices = canonical_prior_matrices, data_driven_prior_matrices = data_driven_prior_matrices,
       data_driven_prior_matrices_cv = data_driven_prior_matrices_cv, cv_seed = cv_seed,
-      min_cv_maf = min_cv_maf, cv_threads = cv_threads, verbose = verbose
+      min_cv_maf = min_cv_maf, cv_threads = cv_threads, verbose = verbose, imiss_cutoff=imiss_cutoff
     )
   }
   res$mvsusie_prior <- data_driven_prior_matrices$prior_variance                                   
@@ -227,7 +232,7 @@ twas_multivariate_weights_pipeline <- function(
     data_driven_prior_matrices = NULL, data_driven_prior_matrices_cv = NULL, canonical_prior_matrices = FALSE, resid_Y,
     mvsusie_max_iter = 200, mrmash_max_iter = 5000,
     signal_cutoff = 0.05, coverage = 0.95, secondary_coverage = c(0.7, 0.5),
-    min_cv_maf = 0.05, max_cv_variants = -1, cv_seed = 999, cv_threads = 1, verbose = FALSE) {
+    min_cv_maf = 0.05, max_cv_variants = -1, cv_seed = 999, cv_threads = 1, verbose = FALSE, imiss_cutoff=NULL) {
   determine_max_L <- function(mvsusie_prefit) {
     if (!is.null(mvsusie_prefit)) {
       L <- length(which(mvsusie_prefit$V > 1E-9)) + 2
