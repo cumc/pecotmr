@@ -180,7 +180,7 @@ twas_analysis <- function(weights_matrix, gwas_sumstats_db, LD_matrix, extract_v
 #' @importFrom furrr future_map furrr_options
 #' @importFrom purrr map
 #' @export
-twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_methods = NULL, seed = NULL, max_num_variants = NULL, variants_to_keep = NULL, num_threads = 1, ...) {
+twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_methods = NULL, seed = NULL, max_num_variants = NULL, variants_to_keep = NULL, num_threads = 1, imiss_cutoff=1.0, min_cv_maf=0.05,...) {
   split_data <- function(X, Y, sample_partition, fold) {
     if (is.null(rownames(X))) {
       warning("Row names in X are missing. Using row indices.")
@@ -191,10 +191,12 @@ twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_
       rownames(Y) <- 1:nrow(Y)
     }
     test_ids <- sample_partition[which(sample_partition$Fold == fold), "Sample"]
-    Xtrain <- X[!(rownames(X) %in% test_ids), , drop = FALSE]
     Ytrain <- Y[!(rownames(Y) %in% test_ids), , drop = FALSE]
-    Xtest <- X[rownames(X) %in% test_ids, , drop = FALSE]
+    Xtrain <- X[!(rownames(X) %in% test_ids), , drop = FALSE]
+    Xtrain <- filter_X(Xtrain, imiss_cutoff, min_cv_maf, Y=Ytrain)
     Ytest <- Y[rownames(Y) %in% test_ids, , drop = FALSE]
+    Xtest <- X[rownames(X) %in% test_ids, , drop = FALSE]
+    Xtest <- filter_X(Xtest, imiss_cutoff, min_cv_maf, Y=Ytest)
     if (nrow(Xtrain) == 0 || nrow(Ytrain) == 0 || nrow(Xtest) == 0 || nrow(Ytest) == 0) {
       stop("Error: One of the datasets (train or test) has zero rows.")
     }
@@ -311,7 +313,7 @@ twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_
       Y_train <- dat_split$Ytrain
       X_test <- dat_split$Xtest
       Y_test <- dat_split$Ytest
-
+      
       # Remove columns with zero standard error
       valid_columns <- apply(X_train, 2, function(col) sd(col) != 0)
       X_train <- X_train[, valid_columns, drop = F]

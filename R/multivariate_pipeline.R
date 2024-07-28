@@ -362,7 +362,8 @@ twas_multivariate_weights_pipeline <- function(
       num_threads = cv_threads, seed = cv_seed,
       max_num_variants = max_cv_variants,
       variants_to_keep = if (length(variants_for_cv) > 0) variants_for_cv else NULL,
-      data_driven_prior_matrices_cv = data_driven_prior_matrices_cv
+      data_driven_prior_matrices_cv = data_driven_prior_matrices_cv, 
+      imiss_cutoff=imiss_cutoff, min_cv_maf=min_cv_maf
     )
     res <- copy_twas_cv_results(res, twas_cv_result)
   }
