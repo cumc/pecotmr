@@ -148,7 +148,8 @@ filter_X <- function(X, missing_rate_thresh, maf_thresh, var_thresh = 0, Y=NULL)
       }
     }
     drop_snp_indices <- unique(drop_snp_indices)
-    if (length(drop_snp_indices)) X <- X[, -drop_snp_indices]
+    if (length(drop_snp_indices)) X <- X[, -drop_snp_indices, drop=FALSE]
+    message(paste0("Dropped ", length(drop_snp_indices) , " variants with condition of Y subjects, remaining ", ncol(X), "variants. "))
   }
   return(X)
 }
