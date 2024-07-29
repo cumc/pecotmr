@@ -14,6 +14,8 @@ twas_weights_cv(
   max_num_variants = NULL,
   variants_to_keep = NULL,
   num_threads = 1,
+  imiss_cutoff = 1,
+  min_cv_maf = 0.05,
   ...
 )
 }

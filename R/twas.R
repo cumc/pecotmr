@@ -180,7 +180,7 @@ twas_analysis <- function(weights_matrix, gwas_sumstats_db, LD_matrix, extract_v
 #' @importFrom furrr future_map furrr_options
 #' @importFrom purrr map
 #' @export
-twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_methods = NULL, seed = NULL, max_num_variants = NULL, variants_to_keep = NULL, num_threads = 1, ...) {
+twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_methods = NULL, seed = NULL, max_num_variants = NULL, variants_to_keep = NULL, num_threads = 1, imiss_cutoff=1.0, min_cv_maf=0.05,...) {
   split_data <- function(X, Y, sample_partition, fold) {
     if (is.null(rownames(X))) {
       warning("Row names in X are missing. Using row indices.")
@@ -200,7 +200,7 @@ twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_
     }
     return(list(Xtrain = Xtrain, Ytrain = Ytrain, Xtest = Xtest, Ytest = Ytest))
   }
-
+  
   # Validation checks
   if (!is.null(fold) && (!is.numeric(fold) || fold <= 0)) {
     stop("Invalid value for 'fold'. It must be a positive integer.")
@@ -311,10 +311,12 @@ twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_
       Y_train <- dat_split$Ytrain
       X_test <- dat_split$Xtest
       Y_test <- dat_split$Ytest
-
+      
       # Remove columns with zero standard error
       valid_columns <- apply(X_train, 2, function(col) sd(col) != 0)
       X_train <- X_train[, valid_columns, drop = F]
+      X_train <- filter_X(X_train, imiss_cutoff, min_cv_maf, Y=Y_train)
+      valid_columns <- colnames(X_train)
 
       setNames(lapply(names(weight_methods), function(method) {
         args <- weight_methods[[method]]
@@ -332,7 +334,7 @@ twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_
           weights_matrix <- do.call(method, c(list(X = X_train, Y = Y_train), args))
           # Adjust the weights matrix to include zeros for invalid columns
           full_weights_matrix <- matrix(0, nrow = ncol(X), ncol = ncol(Y))
-          rownames(full_weights_matrix) <- rownames(weights_matrix)
+          rownames(full_weights_matrix) <- colnames(X)
           colnames(full_weights_matrix) <- colnames(weights_matrix)
           full_weights_matrix[valid_columns, ] <- weights_matrix[valid_columns, ]
           Y_pred <- X_test %*% full_weights_matrix
