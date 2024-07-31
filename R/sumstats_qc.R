@@ -31,7 +31,7 @@ rss_basic_qc <- function(sumstats, LD_data, skip_region = NULL, remove_indels = 
 
   allele_flip <- allele_qc(target_variants, ref_variants, sumstats,
     col_to_flip = c("beta", "z"),
-    match_min_prop = 0.2, remove_dups = TRUE, remove_indels = remove_indels,
+    match_min_prop = 0, remove_dups = TRUE, remove_indels = remove_indels, # set match_min_prop to 0
     remove_strand_ambiguous = TRUE
   )
 
