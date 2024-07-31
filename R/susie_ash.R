@@ -209,7 +209,7 @@
 #'
 
 
-susie_ash_v10 = function (X,y,L = min(10,ncol(X)),
+susie_ash = function (X,y,L = min(10,ncol(X)),
                       scaled_prior_variance = 0.2,
                       residual_variance = NULL,
                       prior_weights = NULL,
