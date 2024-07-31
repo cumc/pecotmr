@@ -471,7 +471,7 @@ mrash_weights <- function(X, y, init_prior_sd = TRUE, ...) {
 #' bayes_r_weights(y = y, X = X, Z = Z)
 #' @importFrom qgg gbayes
 #' @export
-bayes_alphabet_weights <- function(X, y, method, Z = NULL, nit = 5000, nburn = 1000, nthin=5) {
+bayes_alphabet_weights <- function(X, y, method, Z = NULL, nit = 5000, nburn = 1000, nthin=5, ...) {
   # check for identical row lengths of response and genotype
   if (!(length(y) == nrow(X))) {
     stop("All objects must have the same number of rows")
@@ -490,36 +490,36 @@ bayes_alphabet_weights <- function(X, y, method, Z = NULL, nit = 5000, nburn = 1
     method = method,
     nit = nit,
     nburn = nburn,
+    ...
   )
-    #nthin= nthin
 
   return(model$bm)
 }
 #' Use Gaussian distribution as prior. Posterior means will be BLUP, equivalent to Ridge Regression.
 #' @export
-bayes_n_weights <- function(X, y, Z = NULL) {
-  return(bayes_alphabet_weights(X, y, method = "bayesN", Z))
+bayes_n_weights <- function(X, y, Z = NULL, ...) {
+  return(bayes_alphabet_weights(X, y, method = "bayesN", Z, ...))
 }
 #' Use laplace/double exponential distribution as prior. This is equivalent to Bayesian LASSO.
 #' @export
-bayes_l_weights <- function(X, y, Z = NULL) {
-  return(bayes_alphabet_weights(X, y, method = "bayesL", Z))
+bayes_l_weights <- function(X, y, Z = NULL, ...) {
+  return(bayes_alphabet_weights(X, y, method = "bayesL", Z, ...))
 }
 #' Use t-distribution as prior.
 #' @export
-bayes_a_weights <- function(X, y, Z = NULL) {
-  return(bayes_alphabet_weights(X, y, method = "bayesA", Z))
+bayes_a_weights <- function(X, y, Z = NULL, ...) {
+  return(bayes_alphabet_weights(X, y, method = "bayesA", Z, ...))
 }
 #' Use a rounded spike prior (low-variance Gaussian).
 #' @export
-bayes_c_weights <- function(X, y, Z = NULL) {
-  return(bayes_alphabet_weights(X, y, method = "bayesC", Z))
+bayes_c_weights <- function(X, y, Z = NULL, ...) {
+  return(bayes_alphabet_weights(X, y, method = "bayesC", Z, ...))
 }
 #' Use a hierarchical Bayesian mixture model with four Gaussian components. Variances are scaled
 #' by 0, 0.0001 , 0.001 , and 0.01 .
 #' @export
-bayes_r_weights <- function(X, y, Z = NULL) {
-  return(bayes_alphabet_weights(X, y, method = "bayesR", Z))
+bayes_r_weights <- function(X, y, Z = NULL, ...) {
+  return(bayes_alphabet_weights(X, y, method = "bayesR", Z, ...))
 }
 
                                          

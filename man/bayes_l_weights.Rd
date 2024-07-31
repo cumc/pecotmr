@@ -4,7 +4,7 @@
 \alias{bayes_l_weights}
 \title{Use laplace/double exponential distribution as prior. This is equivalent to Bayesian LASSO.}
 \usage{
-bayes_l_weights(X, y, Z = NULL)
+bayes_l_weights(X, y, Z = NULL, ...)
 }
 \description{
 Use laplace/double exponential distribution as prior. This is equivalent to Bayesian LASSO.

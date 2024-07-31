@@ -11,7 +11,8 @@ bayes_alphabet_weights(
   Z = NULL,
   nit = 5000,
   nburn = 1000,
-  nthin = 5
+  nthin = 5,
+  ...
 )
 }
 \arguments{
