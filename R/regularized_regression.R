@@ -79,7 +79,7 @@
 #' @export
 mr_ash_rss <- function(bhat, shat, R, var_y, n,
                        sigma2_e, s0, w0, mu1_init = numeric(0),
-                       tol = 1e-8, max_iter = 1e5,  z = numeric(0),
+                       tol = 1e-8, max_iter = 1e5, z = numeric(0),
                        update_w0 = TRUE, update_sigma = TRUE,
                        compute_ELBO = TRUE, standardize = FALSE, ncpu = 1L) {
   # Check if ncpu is greater than 0 and is an integer
@@ -106,11 +106,11 @@ mr_ash_rss <- function(bhat, shat, R, var_y, n,
 #' @return A numeric vector of the posterior mean of the coefficients.
 #' @export
 mr_ash_rss_weights <- function(stat, LD, var_y, sigma2_e, s0, w0, z = numeric(0), ...) {
-  
-    model <- mr_ash_rss(
-        bhat = stat$b, shat = stat$seb, z = z, R = LD,
-        var_y = var_y, n = median(stat$n), sigma2_e = sigma2_e,
-        s0 = s0, w0 = w0, ...)
+  model <- mr_ash_rss(
+    bhat = stat$b, shat = stat$seb, z = z, R = LD,
+    var_y = var_y, n = median(stat$n), sigma2_e = sigma2_e,
+    s0 = s0, w0 = w0, ...
+  )
 
   return(model$mu1)
 }
@@ -224,10 +224,10 @@ prs_cs <- function(bhat, LD, n,
 #' Extract weights from prs_cs function
 #' @return A numeric vector of the posterior SNP coefficients.
 #' @export
-prs_cs_weights <- function(stat, LD, ...){
-    model <- prs_cs(bhat = stat$b, LD = list(blk1 = LD), n = median(stat$n), ...)
-    
-    return(model$beta_est)
+prs_cs_weights <- function(stat, LD, ...) {
+  model <- prs_cs(bhat = stat$b, LD = list(blk1 = LD), n = median(stat$n), ...)
+
+  return(model$beta_est)
 }
 
 #' SDPR (Summary-Statistics-Based Dirichelt Process Regression for Polygenic Risk Prediction)
@@ -339,10 +339,10 @@ sdpr <- function(bhat, LD, n, per_variant_sample_size = NULL, array = NULL, a = 
 #' Extract weights from sdpr function
 #' @return A numeric vector of the posterior SNP coefficients.
 #' @export
-sdpr_weights <- function(stat, LD, ...){
-    model <- sdpr(bhat = stat$b, LD = list(blk1 = LD), n = median(stat$n), ...)
-    
-    return(model$beta_est)
+sdpr_weights <- function(stat, LD, ...) {
+  model <- sdpr(bhat = stat$b, LD = list(blk1 = LD), n = median(stat$n), ...)
+
+  return(model$beta_est)
 }
 
 #' @importFrom susieR coef.susie
@@ -353,10 +353,12 @@ susie_weights <- function(X = NULL, y = NULL, susie_fit = NULL, ...) {
     susie_fit <- susie_wrapper(X, y, ...)
   }
   if (!is.null(X)) {
-      if (length(susie_fit$pip)!=ncol(X)) {
-        stop(paste0("Dimension mismatch on number of variant in susie_fit ", length(susie_fit$pip), 
-                          " and TWAS weights ", ncol(X),". "))
-      }
+    if (length(susie_fit$pip) != ncol(X)) {
+      stop(paste0(
+        "Dimension mismatch on number of variant in susie_fit ", length(susie_fit$pip),
+        " and TWAS weights ", ncol(X), ". "
+      ))
+    }
   }
   if ("alpha" %in% names(susie_fit) && "mu" %in% names(susie_fit) && "X_column_scale_factors" %in% names(susie_fit)) {
     # This is designed to cope with output from pecotmr::susie_post_processor()
@@ -471,7 +473,7 @@ mrash_weights <- function(X, y, init_prior_sd = TRUE, ...) {
 #' bayes_r_weights(y = y, X = X, Z = Z)
 #' @importFrom qgg gbayes
 #' @export
-bayes_alphabet_weights <- function(X, y, method, Z = NULL, nit = 5000, nburn = 1000, nthin=5, ...) {
+bayes_alphabet_weights <- function(X, y, method, Z = NULL, nit = 5000, nburn = 1000, nthin = 5, ...) {
   # check for identical row lengths of response and genotype
   if (!(length(y) == nrow(X))) {
     stop("All objects must have the same number of rows")
@@ -522,32 +524,32 @@ bayes_r_weights <- function(X, y, Z = NULL, ...) {
   return(bayes_alphabet_weights(X, y, method = "bayesR", Z, ...))
 }
 
-                                         
+
 #' Bayesian linear regression using summary statistics
 #'
 #' @description
 #'
 #' This function is adapted from those written by Peter Sørensen in the qgg package.
 #' The following prior distributions are provided:
-#' 
-#' Bayes N: Assigning a Gaussian prior to marker effects implies that the posterior means are the 
-#' BLUP estimates (same as Ridge Regression).
-#' 
-#' Bayes L: Assigning a double-exponential or Laplace prior is the density used in 
-#' the Bayesian LASSO
-#' 
-#' Bayes A: similar to ridge regression but t-distribution prior (rather than Gaussian) 
-#' for the marker effects ; variance comes from an inverse-chi-square distribution instead of being fixed. Estimation 
-#' via Gibbs sampling. 
-#' 
-#' Bayes C: uses a “rounded spike” (low-variance Gaussian) at origin many small 
-#' effects can contribute to polygenic component, reduces the dimensionality of 
-#' the model (makes Gibbs sampling feasible). 
-#' 
-#' Bayes R: Hierarchical Bayesian mixture model with 4 Gaussian components, with 
-#' variances scaled by 0, 0.0001 , 0.001 , and 0.01 . 
 #'
-#' @param sumstats dataframe with marker summary statistics. Required: beta coefficient (beta), standard   
+#' Bayes N: Assigning a Gaussian prior to marker effects implies that the posterior means are the
+#' BLUP estimates (same as Ridge Regression).
+#'
+#' Bayes L: Assigning a double-exponential or Laplace prior is the density used in
+#' the Bayesian LASSO
+#'
+#' Bayes A: similar to ridge regression but t-distribution prior (rather than Gaussian)
+#' for the marker effects ; variance comes from an inverse-chi-square distribution instead of being fixed. Estimation
+#' via Gibbs sampling.
+#'
+#' Bayes C: uses a “rounded spike” (low-variance Gaussian) at origin many small
+#' effects can contribute to polygenic component, reduces the dimensionality of
+#' the model (makes Gibbs sampling feasible).
+#'
+#' Bayes R: Hierarchical Bayesian mixture model with 4 Gaussian components, with
+#' variances scaled by 0, 0.0001 , 0.001 , and 0.01 .
+#'
+#' @param sumstats dataframe with marker summary statistics. Required: beta coefficient (beta), standard
 #'        error of the beta coefficient (se), GWAS sample size (n). Optional: variant_id or rsid, alleles (A1
 #'        and A2), minor allele frequency (maf).
 #' @param LD is a the LD matrix corresponding to the same markers as in the stat dataframe
@@ -562,7 +564,7 @@ bayes_r_weights <- function(X, y, Z = NULL, ...) {
 #' @param ssg_prior is a scalar or matrix of prior genetic (co)variances
 #' @param ssb_prior is a scalar or matrix of prior marker (co)variances
 #' @param sse_prior is a scalar or matrix of prior residual (co)variances
-#' @param lambda is a vector or matrix of lambda values 
+#' @param lambda is a vector or matrix of lambda values
 #' @param h2 is the trait heritability
 #' @param pi is the proportion of markers in each marker variance class
 #' @param updateB is a logical for updating marker (co)variances
@@ -573,7 +575,7 @@ bayes_r_weights <- function(X, y, Z = NULL, ...) {
 #' @param nug is a scalar or vector of prior degrees of freedom for prior genetic (co)variances
 #' @param nub is a scalar or vector of prior degrees of freedom for marker (co)variances
 #' @param nue is a scalar or vector of prior degrees of freedom for prior residual (co)variances
-#' @param mask is a vector or matrix of TRUE/FALSE specifying if marker should be ignored 
+#' @param mask is a vector or matrix of TRUE/FALSE specifying if marker should be ignored
 #' @param ve_prior is a scalar or matrix of prior residual (co)variances
 #' @param vg_prior is a scalar or matrix of prior genetic (co)variances
 #' @param algorithm is the algorithm to use. Should take on values ("mcmc", "em-mcmc")
@@ -591,7 +593,7 @@ bayes_r_weights <- function(X, y, Z = NULL, ...) {
 #' \item{pim}{posterior distribution probabilities}
 #' \item{r}{vector of residuals}
 #' \item{b}{vector of estimates from the final mcmc iteration}
-#' \item{param}{a list current parameters (same information as item listed above) 
+#' \item{param}{a list current parameters (same information as item listed above)
 #'              used for restart of the analysis}
 #' \item{stat}{matrix (mxt) of marker information and effects used for genomic risk scoring}
 #' \item{method}{the method used}
@@ -601,183 +603,188 @@ bayes_r_weights <- function(X, y, Z = NULL, ...) {
 #' \item{ve}{mean residual variance}
 #' \item{vg}{mean genomic variance}
 #'
-#' @import qgg Rcpp                                     
+#' @import qgg Rcpp
 #'
 #' @export
-gbayes_rss <- function(sumstats=NULL, LD=NULL, variant_ids=NULL, nit=100, nburn=0, nthin=4, method="bayesR",
-                       vg=NULL, vb=NULL, ve=NULL, ssg_prior=NULL, ssb_prior=NULL, sse_prior=NULL, 
-                       lambda=NULL, h2=NULL, pi=0.001, updateB=TRUE, updateG=TRUE, updateE=TRUE, 
-                       updatePi=TRUE, adjustE=TRUE, nug=4, nub=4, nue=4, mask=NULL, ve_prior=NULL,
-                       vg_prior=NULL, algorithm="mcmc", tol=0.001, nit_local=NULL, nit_global=NULL) {
-  
+gbayes_rss <- function(sumstats = NULL, LD = NULL, variant_ids = NULL, nit = 100, nburn = 0, nthin = 4, method = "bayesR",
+                       vg = NULL, vb = NULL, ve = NULL, ssg_prior = NULL, ssb_prior = NULL, sse_prior = NULL,
+                       lambda = NULL, h2 = NULL, pi = 0.001, updateB = TRUE, updateG = TRUE, updateE = TRUE,
+                       updatePi = TRUE, adjustE = TRUE, nug = 4, nub = 4, nue = 4, mask = NULL, ve_prior = NULL,
+                       vg_prior = NULL, algorithm = "mcmc", tol = 0.001, nit_local = NULL, nit_global = NULL) {
   # Check methods
-  methods <- c("bayesN","bayesA","bayesL","bayesC","bayesR")
+  methods <- c("bayesN", "bayesA", "bayesL", "bayesC", "bayesR")
   method <- match(method, methods)
-  if( !sum(method%in%c(1:5))== 1 ) stop("Method specified not valid") 
-  if(method==0) {
+  if (!sum(method %in% c(1:5)) == 1) stop("Method specified not valid")
+  if (method == 0) {
     # BLUP and we do not estimate parameters
-    updateB=FALSE;
-    updateE=FALSE;
+    updateB <- FALSE
+    updateE <- FALSE
   }
 
   # Set algorithm
-  if (algorithm == "em-mcmc"){
-      algo = 2
-  } else {algo = 1}
-  
+  if (algorithm == "em-mcmc") {
+    algo <- 2
+  } else {
+    algo <- 1
+  }
+
   # Check that LD matrix is provided and of same length as stats
-  if(is.null(LD)) stop("Must provide LD matrix")
+  if (is.null(LD)) stop("Must provide LD matrix")
   if (nrow(sumstats) != nrow(LD)) stop("LD matrix must correspond to summary statistics")
-  
+
   # Parameters from stat df
-  if(is.data.frame(sumstats)) {
-    
-    if (!is.null(variant_ids)){
+  if (is.data.frame(sumstats)) {
+    if (!is.null(variant_ids)) {
       variant_ids <- variant_ids
-    } else if (!is.null(sumstats$rsids)){
+    } else if (!is.null(sumstats$rsids)) {
       variant_ids <- sumstats$rsids
-    } else if (!is.null(sumstats$variant_id)){
+    } else if (!is.null(sumstats$variant_id)) {
       variant_ids <- sumstats$variant_id
     } else {
       variant_ids <- paste0("snp", 1:nrow(sumstats))
       sumstats$variant_id <- variant_ids
     }
-    
+
     m <- length(variant_ids)
-    b <- wy <- ww <- matrix(0, nrow=nrow(sumstats), ncol=1)
-    mask <- matrix(FALSE, nrow=nrow(sumstats), ncol=1) 
-    rownames(b) <- rownames(wy) <- rownames(ww) <- rownames(mask) <- variant_ids   
-    
-    if(is.null(sumstats$ww)) sumstats$ww <- 1/(sumstats$se^2 + sumstats$beta^2/sumstats$n)
-    if(is.null(sumstats$wy)) sumstats$wy <- sumstats$beta*sumstats$ww
-    if(!is.null(sumstats$n)) n <- as.integer(median(sumstats$n))
-    ww[,1] <- sumstats$ww
-    wy[,1] <- sumstats$wy
-    mask[,1] <- FALSE
-    
-    if(any(is.na(wy))) stop("Missing values in wy")
-    if(any(is.na(ww))) stop("Missing values in ww")
-    
+    b <- wy <- ww <- matrix(0, nrow = nrow(sumstats), ncol = 1)
+    mask <- matrix(FALSE, nrow = nrow(sumstats), ncol = 1)
+    rownames(b) <- rownames(wy) <- rownames(ww) <- rownames(mask) <- variant_ids
+
+    if (is.null(sumstats$ww)) sumstats$ww <- 1 / (sumstats$se^2 + sumstats$beta^2 / sumstats$n)
+    if (is.null(sumstats$wy)) sumstats$wy <- sumstats$beta * sumstats$ww
+    if (!is.null(sumstats$n)) n <- as.integer(median(sumstats$n))
+    ww[, 1] <- sumstats$ww
+    wy[, 1] <- sumstats$wy
+    mask[, 1] <- FALSE
+
+    if (any(is.na(wy))) stop("Missing values in wy")
+    if (any(is.na(ww))) stop("Missing values in ww")
+
     b2 <- sumstats$beta^2
     seb2 <- sumstats$se^2
-    yy <- (b2 + (n-2)*seb2)*sumstats$ww
+    yy <- (b2 + (n - 2) * seb2) * sumstats$ww
     yy <- median(yy)
-      
+
     if (is.null(sumstats$A1)) sumstats$A1 <- rep("Unknown", length = nrow(sumstats))
     if (is.null(sumstats$A2)) sumstats$A2 <- rep("Unknown", length = nrow(sumstats))
     if (is.null(sumstats$maf)) {
-        sumstats$maf <- rep("Unknown", length = nrow(sumstats))
-        af_prov = 0
-    } else {af_prov = 1}
-    
-  } else {stop("Summary statistics must be provided in dataframe")}
-  
-  
+      sumstats$maf <- rep("Unknown", length = nrow(sumstats))
+      af_prov <- 0
+    } else {
+      af_prov <- 1
+    }
+  } else {
+    stop("Summary statistics must be provided in dataframe")
+  }
+
+
   # prep LD for gbayes
-  LD_values <- lapply(1:nrow(LD), function(i) as.numeric(LD[i,]))
+  LD_values <- lapply(1:nrow(LD), function(i) as.numeric(LD[i, ]))
   names(LD_values) <- variant_ids
-  
+
   LD_indices <- list(indices = vector("list", length = nrow(LD)))
   for (i in 1:nrow(LD)) {
     LD_indices[[i]] <- 1:nrow(LD) - 1
   }
-  
-  bm <- dm <- fit <- res <- vector(length=1,mode="list")
+
+  bm <- dm <- fit <- res <- vector(length = 1, mode = "list")
   names(bm) <- names(dm) <- names(fit) <- names(res) <- 1
-  
+
   # Set parameters if not otherwise specified
-  if(is.null(m)) m <- length(LD_values)
-  vy <- yy/(n-1)
-  if(is.null(pi)) pi <- 0.001
-  if(is.null(h2)) h2 <- 0.5
-  if(is.null(ve)) ve <- vy*(1-h2)
-  if(is.null(vg)) vg <- vy*h2
-  if(method<4 && is.null(vb)) vb <- vg/m
-  if(method>=4 && is.null(vb)) vb <- vg/(m*pi)
-  if(is.null(lambda)) lambda <- rep(ve/vb,m)
-  if(method<4 && is.null(ssb_prior))  ssb_prior <-  ((nub-2.0)/nub)*(vg/m)
-  if(method>=4 && is.null(ssb_prior))  ssb_prior <-  ((nub-2.0)/nub)*(vg/(m*pi))
-  if(is.null(sse_prior)) sse_prior <- ((nue-2.0)/nue)*ve
-  if(is.null(b)) b <- rep(0,m)
-  
-  pi <- c(1-pi,pi)
-  gamma <- c(0,1.0)
-  if(method==5) pi <- c(0.95,0.02,0.02,0.01)
-  if(method==5) gamma <- c(0,0.01,0.1,1.0)
-  
+  if (is.null(m)) m <- length(LD_values)
+  vy <- yy / (n - 1)
+  if (is.null(pi)) pi <- 0.001
+  if (is.null(h2)) h2 <- 0.5
+  if (is.null(ve)) ve <- vy * (1 - h2)
+  if (is.null(vg)) vg <- vy * h2
+  if (method < 4 && is.null(vb)) vb <- vg / m
+  if (method >= 4 && is.null(vb)) vb <- vg / (m * pi)
+  if (is.null(lambda)) lambda <- rep(ve / vb, m)
+  if (method < 4 && is.null(ssb_prior)) ssb_prior <- ((nub - 2.0) / nub) * (vg / m)
+  if (method >= 4 && is.null(ssb_prior)) ssb_prior <- ((nub - 2.0) / nub) * (vg / (m * pi))
+  if (is.null(sse_prior)) sse_prior <- ((nue - 2.0) / nue) * ve
+  if (is.null(b)) b <- rep(0, m)
+
+  pi <- c(1 - pi, pi)
+  gamma <- c(0, 1.0)
+  if (method == 5) pi <- c(0.95, 0.02, 0.02, 0.01)
+  if (method == 5) gamma <- c(0, 0.01, 0.1, 1.0)
+
   seed <- sample.int(.Machine$integer.max, 1)
-  
+
   fit <- qgg:::sbayes_spa(
-               wy=wy, 
-               ww=ww, 
-               LDvalues=LD_values, 
-               LDindices=LD_indices, 
-               b = b,
-               lambda = lambda,
-               mask=mask,
-               yy = yy,
-               pi = pi, 
-               gamma = gamma, 
-               vg = vg,
-               vb = vb,
-               ve = ve, 
-               ssb_prior=ssb_prior, 
-               sse_prior=sse_prior, 
-               nub=nub,
-               nue=nue, 
-               updateB = updateB,
-               updateE = updateE,
-               updatePi = updatePi,
-               updateG = updateG, 
-               adjustE = adjustE,
-               n=n,
-               nit=nit,
-               nburn=nburn,
-               nthin=nthin,
-               algo=algo,
-               method=as.integer(method),
-               seed=seed)
-  
+    wy = wy,
+    ww = ww,
+    LDvalues = LD_values,
+    LDindices = LD_indices,
+    b = b,
+    lambda = lambda,
+    mask = mask,
+    yy = yy,
+    pi = pi,
+    gamma = gamma,
+    vg = vg,
+    vb = vb,
+    ve = ve,
+    ssb_prior = ssb_prior,
+    sse_prior = sse_prior,
+    nub = nub,
+    nue = nue,
+    updateB = updateB,
+    updateE = updateE,
+    updatePi = updatePi,
+    updateG = updateG,
+    adjustE = adjustE,
+    n = n,
+    nit = nit,
+    nburn = nburn,
+    nthin = nthin,
+    algo = algo,
+    method = as.integer(method),
+    seed = seed
+  )
+
   names(fit[[1]]) <- names(LD_values)
-  names(fit) <- c("bm","dm","coef","vbs","vgs","ves","pis","pim","r","b","param")   
+  names(fit) <- c("bm", "dm", "coef", "vbs", "vgs", "ves", "pis", "pim", "r", "b", "param")
   fit[3] <- NULL
-  
-  res <- data.frame(variant_id=variant_ids, bm=fit$bm, dm=fit$dm,
-                    pos=sumstats$pos, A1=sumstats$A1,
-                    A2=sumstats$A2, maf=sumstats$maf,
-                    stringsAsFactors = FALSE)
+
+  res <- data.frame(
+    variant_id = variant_ids, bm = fit$bm, dm = fit$dm,
+    pos = sumstats$pos, A1 = sumstats$A1,
+    A2 = sumstats$A2, maf = sumstats$maf,
+    stringsAsFactors = FALSE
+  )
   rownames(res) <- variant_ids
-                      
+
   fit$sumstats <- res
   if (af_prov == 1) {
-      fit$sumstats$vm <- 2*(1-fit$sumstats$maf)*fit$sumstats$maf*fit$sumstats$bm^2
+    fit$sumstats$vm <- 2 * (1 - fit$sumstats$maf) * fit$sumstats$maf * fit$sumstats$bm^2
   }
   fit$method <- methods[method]
   fit$mask <- mask
-  
+
   zve <- coda::geweke.diag(fit$ves[nburn:length(fit$ves)])$z
   zvg <- coda::geweke.diag(fit$vgs[nburn:length(fit$vgs)])$z
   zvb <- coda::geweke.diag(fit$vbs[nburn:length(fit$vbs)])$z
   zpi <- coda::geweke.diag(fit$pis[nburn:length(fit$pis)])$z
-  
+
   ve <- mean(fit$ves[nburn:length(fit$ves)])
   vg <- mean(fit$vgs[nburn:length(fit$vgs)])
   vb <- mean(fit$vbs[nburn:length(fit$vbs)])
-  pi <- 1-fit$pim[1]
-  fit$conv <- data.frame(zve=zve,zvg=zvg, zvb=zvb, zpi=zpi)  
-  fit$post <- data.frame(ve=ve,vg=vg, vb=vb,pi=pi)  
+  pi <- 1 - fit$pim[1]
+  fit$conv <- data.frame(zve = zve, zvg = zvg, zvb = zvb, zpi = zpi)
+  fit$post <- data.frame(ve = ve, vg = vg, vb = vb, pi = pi)
   fit$ve <- mean(ve)
   fit$vg <- sum(vg)
-  
+
   return(fit)
-  
 }
 #' Extract weights from gbayes_rss function
 #' @return A numeric vector of the posterior mean of the coefficients.
 #' @export
 bayes_alphabet_rss_weights <- function(sumstats, LD, method, ...) {
-    model <- gbayes_rss(sumstats = sumstats, LD = LD, method = method, ...)
-    return(model$bm)
+  model <- gbayes_rss(sumstats = sumstats, LD = LD, method = method, ...)
+  return(model$bm)
 }
 #' Use Gaussian distribution as prior. Posterior means will be BLUP, equivalent to Ridge Regression.
 #' @export

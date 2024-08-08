@@ -1,40 +1,40 @@
 #' @export
 filter_invalid_summary_stat <- function(dat_list, bhat = NULL, sbhat = NULL, z = TRUE, sig_p_cutoff = 1E-6, filter_by_missing_rate = 0.2) {
-  replace_values <- function(df, replace_with){
-        df <- df %>%
-               mutate(across(everything(), as.numeric)) %>%
-               mutate(across(everything(), ~ replace(., is.nan(.) | is.infinite(.) | is.na(.), replace_with)))
-   }
+  replace_values <- function(df, replace_with) {
+    df <- df %>%
+      mutate(across(everything(), as.numeric)) %>%
+      mutate(across(everything(), ~ replace(., is.nan(.) | is.infinite(.) | is.na(.), replace_with)))
+  }
 
   if (all(c(bhat, sbhat) %in% names(dat_list))) {
     # If the element is a list with 'bhat' and 'sbhat'
     if (!is.null(dat_list[[bhat]]) && !is.null(dat_list[[sbhat]])) {
-       dat_list[[bhat]] <- as.matrix(replace_values(dat_list[[bhat]], 0))
-       dat_list[[sbhat]] <- as.matrix(replace_values(dat_list[[sbhat]], 1000))
-       if (("null.b" %in% names(dat_list)) || ("random.b" %in% names(dat_list))) {
-          if (!is.null(filter_by_missing_rate)) {
-             proportion_nonzero <- apply(dat_list[[bhat]], 1, function(row) {
-             mean(row != 0)
+      dat_list[[bhat]] <- as.matrix(replace_values(dat_list[[bhat]], 0))
+      dat_list[[sbhat]] <- as.matrix(replace_values(dat_list[[sbhat]], 1000))
+      if (("null.b" %in% names(dat_list)) || ("random.b" %in% names(dat_list))) {
+        if (!is.null(filter_by_missing_rate)) {
+          proportion_nonzero <- apply(dat_list[[bhat]], 1, function(row) {
+            mean(row != 0)
           })
           dat_list[[bhat]] <- dat_list[[bhat]][proportion_nonzero >= filter_by_missing_rate, ]
           dat_list[[sbhat]] <- dat_list[[sbhat]][proportion_nonzero >= filter_by_missing_rate, ]
-       }
-     }
+        }
+      }
     }
   }
   if (z) {
     if (any(grepl("\\.b$", bhat)) | any(grepl("\\.s$", sbhat))) {
       condition <- sub("\\.b$", "", bhat)
       if (!is.null(dat_list[[bhat]]) && !is.null(dat_list[[sbhat]])) {
-         dat_list[[paste0(condition, ".z")]] <- as.matrix(dat_list[[bhat]] / dat_list[[sbhat]])
+        dat_list[[paste0(condition, ".z")]] <- as.matrix(dat_list[[bhat]] / dat_list[[sbhat]])
       } else {
-         dat_list[paste0(condition, ".z")] <- list(NULL)
+        dat_list[paste0(condition, ".z")] <- list(NULL)
       }
     } else {
       if (!is.null(dat_list[[bhat]]) && !is.null(dat_list[[sbhat]])) {
-         dat_list[["z"]] <- as.matrix(dat_list[[bhat]] / dat_list[[sbhat]])
+        dat_list[["z"]] <- as.matrix(dat_list[[bhat]] / dat_list[[sbhat]])
       } else {
-         dat_list["z"] <- list(NULL)
+        dat_list["z"] <- list(NULL)
       }
     }
     if ("strong.z" %in% names(dat_list)) {
@@ -575,13 +575,13 @@ mash_rand_null_sample <- function(dat, n_random, n_null, exclude_condition, seed
       warning(paste("no variants are included in the null dataset because abs_z > 2 for all variants in", dat$region))
       null <- list()
     } else {
-        if (length(null.id)<ncol(dat$bhat)) {
-           warning(paste("not enough null data to estimate null correlation in", dat$region))
-           null <- list()
-        } else {
-           null_idx <- sample(null.id, min(n_null, length(null.id)), replace = FALSE)
-           null <- list(bhat = dat$bhat[null_idx, , drop = FALSE], sbhat = dat$sbhat[null_idx, ,drop = FALSE])
-        }
+      if (length(null.id) < ncol(dat$bhat)) {
+        warning(paste("not enough null data to estimate null correlation in", dat$region))
+        null <- list()
+      } else {
+        null_idx <- sample(null.id, min(n_null, length(null.id)), replace = FALSE)
+        null <- list(bhat = dat$bhat[null_idx, , drop = FALSE], sbhat = dat$sbhat[null_idx, , drop = FALSE])
+      }
     }
     dat <- list(random = random, null = null)
     return(dat)

@@ -74,13 +74,13 @@ dentist <- function(sum_stat, LD_mat, nSample,
   if (!tolower("z") %in% tolower(colnames(sum_stat))) {
     colnames(sum_stat)[which(tolower(colnames(sum_stat)) %in% tolower(c("zscore")))] <- "z"
   }
-  
+
   sum_stat <- sum_stat %>% arrange(pos)
   if (window_size <= 0 | ((window_size >= max(sum_stat$pos) - min(sum_stat$pos) | is.na(window_size)) & (correct_chen_et_al_bug == TRUE))) {
     dentist_result <- dentist_single_window(
       sum_stat$z, LD_mat, nSample,
       pValueThreshold, propSVD, gcControl,
-      nIter, gPvalueThreshold, duprThreshold, 
+      nIter, gPvalueThreshold, duprThreshold,
       ncpus, seed, correct_chen_et_al_bug
     )
   } else {

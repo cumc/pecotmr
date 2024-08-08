@@ -113,7 +113,7 @@ compute_LD <- function(X) {
 }
 
 #' @importFrom matrixStats colVars
-filter_X <- function(X, missing_rate_thresh, maf_thresh, var_thresh = 0, Y=NULL) {
+filter_X <- function(X, missing_rate_thresh, maf_thresh, var_thresh = 0, Y = NULL) {
   rm_col <- which(apply(X, 2, compute_missing) > missing_rate_thresh)
   if (length(rm_col)) X <- X[, -rm_col]
   rm_col <- which(apply(X, 2, compute_maf) <= maf_thresh)
@@ -141,15 +141,15 @@ filter_X <- function(X, missing_rate_thresh, maf_thresh, var_thresh = 0, Y=NULL)
             if (sd(temp_X, na.rm = TRUE) == 0) {
               drop_snp_indices <- c(drop_snp_indices, snp_idx)
             } else if (compute_maf(na.omit(temp_X)) <= maf_thresh) {
-               drop_snp_indices <- c(drop_snp_indices, snp_idx)
+              drop_snp_indices <- c(drop_snp_indices, snp_idx)
             }
           }
         }
       }
     }
     drop_snp_indices <- unique(drop_snp_indices)
-    if (length(drop_snp_indices)) X <- X[, -drop_snp_indices, drop=FALSE]
-    message(paste0("Dropped ", length(drop_snp_indices) , " variants with condition of Y subjects, remaining ", ncol(X), "variants. "))
+    if (length(drop_snp_indices)) X <- X[, -drop_snp_indices, drop = FALSE]
+    message(paste0("Dropped ", length(drop_snp_indices), " variants with condition of Y subjects, remaining ", ncol(X), "variants. "))
   }
   return(X)
 }

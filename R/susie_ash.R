@@ -209,7 +209,7 @@
 #'
 
 
-susie_ash = function (X,y,L = min(10,ncol(X)),
+susie_ash <- function(X, y, L = min(10, ncol(X)),
                       scaled_prior_variance = 0.2,
                       residual_variance = NULL,
                       prior_weights = NULL,
@@ -232,56 +232,68 @@ susie_ash = function (X,y,L = min(10,ncol(X)),
                       tol = 1e-3,
                       verbose = FALSE,
                       track_fit = FALSE,
-                      residual_variance_lowerbound = var(drop(y))/1e4,
+                      residual_variance_lowerbound = var(drop(y)) / 1e4,
                       refine = FALSE,
                       n_purity = 100,
                       warm_start = 2) {
-
   # Process input estimate_prior_method.
-  estimate_prior_method = match.arg(estimate_prior_method)
+  estimate_prior_method <- match.arg(estimate_prior_method)
 
   # Check input X.
   if (!(is.double(X) & is.matrix(X)) &
-      !inherits(X,"CsparseMatrix") &
-      is.null(attr(X,"matrix.type")))
-    stop("Input X must be a double-precision matrix, or a sparse matrix, or ",
-         "a trend filtering matrix")
-  if (is.numeric(null_weight) && null_weight == 0)
-    null_weight = NULL
-  if (!is.null(null_weight) && is.null(attr(X,"matrix.type"))) {
-    if (!is.numeric(null_weight))
-      stop("Null weight must be numeric")
-    if (null_weight < 0 || null_weight >= 1)
-      stop("Null weight must be between 0 and 1")
-    if (missing(prior_weights))
-      prior_weights = c(rep(1/ncol(X) * (1 - null_weight),ncol(X)),null_weight)
-    else
-      prior_weights = c(prior_weights * (1-null_weight),null_weight)
-    X = cbind(X,0)
+    !inherits(X, "CsparseMatrix") &
+    is.null(attr(X, "matrix.type"))) {
+    stop(
+      "Input X must be a double-precision matrix, or a sparse matrix, or ",
+      "a trend filtering matrix"
+    )
   }
-  if (anyNA(X))
+  if (is.numeric(null_weight) && null_weight == 0) {
+    null_weight <- NULL
+  }
+  if (!is.null(null_weight) && is.null(attr(X, "matrix.type"))) {
+    if (!is.numeric(null_weight)) {
+      stop("Null weight must be numeric")
+    }
+    if (null_weight < 0 || null_weight >= 1) {
+      stop("Null weight must be between 0 and 1")
+    }
+    if (missing(prior_weights)) {
+      prior_weights <- c(rep(1 / ncol(X) * (1 - null_weight), ncol(X)), null_weight)
+    } else {
+      prior_weights <- c(prior_weights * (1 - null_weight), null_weight)
+    }
+    X <- cbind(X, 0)
+  }
+  if (anyNA(X)) {
     stop("Input X must not contain missing values")
+  }
   if (anyNA(y)) {
     if (na.rm) {
-      samples_kept = which(!is.na(y))
-      y = y[samples_kept]
-      X = X[samples_kept,]
-    } else
+      samples_kept <- which(!is.na(y))
+      y <- y[samples_kept]
+      X <- X[samples_kept, ]
+    } else {
       stop("Input y must not contain missing values")
+    }
   }
-  p = ncol(X)
-  if (p > 1000 & !requireNamespace("Rfast",quietly = TRUE))
+  p <- ncol(X)
+  if (p > 1000 & !requireNamespace("Rfast", quietly = TRUE)) {
     susieR:::warning_message("For an X with many columns, please consider installing",
-                             "the Rfast package for more efficient credible set (CS)",
-                             "calculations.", style='hint')
+      "the Rfast package for more efficient credible set (CS)",
+      "calculations.",
+      style = "hint"
+    )
+  }
 
   # Check input y.
-  n = nrow(X)
-  mean_y = mean(y)
+  n <- nrow(X)
+  mean_y <- mean(y)
 
   # Center and scale input.
-  if (intercept)
-    y = y - mean_y
+  if (intercept) {
+    y <- y - mean_y
+  }
 
   # Set three attributes for matrix X: attr(X,'scaled:center') is a
   # p-vector of column means of X if center=TRUE, a p vector of zeros
@@ -291,76 +303,91 @@ susie_ash = function (X,y,L = min(10,ncol(X)),
   # X.standardized^2,' where X.standardized is the matrix X centered
   # by attr(X,'scaled:center') and scaled by attr(X,'scaled:scale').
 
-  #NOTE: We use the `:::` operator for any functions not exported to their original package's NAMESPACE.
-  out = susieR:::compute_colstats(X,center = intercept,scale = standardize)
-  attr(X,"scaled:center") = out$cm
-  attr(X,"scaled:scale") = out$csd
-  attr(X,"d") = out$d
+  # NOTE: We use the `:::` operator for any functions not exported to their original package's NAMESPACE.
+  out <- susieR:::compute_colstats(X, center = intercept, scale = standardize)
+  attr(X, "scaled:center") <- out$cm
+  attr(X, "scaled:scale") <- out$csd
+  attr(X, "d") <- out$d
 
   # Initialize susie fit.
-  s = susieR:::init_setup(n,p,L,scaled_prior_variance,residual_variance,prior_weights,
-                          null_weight,as.numeric(var(y)),standardize)
+  s <- susieR:::init_setup(
+    n, p, L, scaled_prior_variance, residual_variance, prior_weights,
+    null_weight, as.numeric(var(y)), standardize
+  )
   if (!missing(s_init) && !is.null(s_init)) {
-    if (!inherits(s_init,"susie"))
+    if (!inherits(s_init, "susie")) {
       stop("s_init should be a susie object")
-    if (max(s_init$alpha) > 1 || min(s_init$alpha) < 0)
-      stop("s_init$alpha has invalid values outside range [0,1]; please ",
-           "check your input")
+    }
+    if (max(s_init$alpha) > 1 || min(s_init$alpha) < 0) {
+      stop(
+        "s_init$alpha has invalid values outside range [0,1]; please ",
+        "check your input"
+      )
+    }
 
     # First, remove effects with s_init$V = 0
-    s_init = susieR:::susie_prune_single_effects(s_init)
-    num_effects = nrow(s_init$alpha)
-    if(missing(L)){
-      L = num_effects
-    }else if(min(p,L) < num_effects){
-      susieR:::warning_message(paste("Specified number of effects L =",min(p,L),
-                                     "is smaller than the number of effects",num_effects,
-                                     "in input SuSiE model. The SuSiE model will have",
-                                     num_effects,"effects."))
-      L = num_effects
+    s_init <- susieR:::susie_prune_single_effects(s_init)
+    num_effects <- nrow(s_init$alpha)
+    if (missing(L)) {
+      L <- num_effects
+    } else if (min(p, L) < num_effects) {
+      susieR:::warning_message(paste(
+        "Specified number of effects L =", min(p, L),
+        "is smaller than the number of effects", num_effects,
+        "in input SuSiE model. The SuSiE model will have",
+        num_effects, "effects."
+      ))
+      L <- num_effects
     }
     # expand s_init if L > num_effects.
-    s_init = susieR:::susie_prune_single_effects(s_init, min(p, L), s$V)
-    s = susieR:::modifyList(s,s_init)
-    s = susieR:::init_finalize(s,X = X)
+    s_init <- susieR:::susie_prune_single_effects(s_init, min(p, L), s$V)
+    s <- susieR:::modifyList(s, s_init)
+    s <- susieR:::init_finalize(s, X = X)
   } else {
-    s = susieR:::init_finalize(s)
+    s <- susieR:::init_finalize(s)
   }
 
   # Initialize elbo to NA.
-  elbo = rep(as.numeric(NA),max_iter - warm_start + 1)
-  tracking = list()
+  elbo <- rep(as.numeric(NA), max_iter - warm_start + 1)
+  tracking <- list()
 
   # Initialize residuals.
-  y_residuals = y
+  y_residuals <- y
 
   for (i in 1:max_iter) {
     # Begin "warm start" phase.
-    if(i <= warm_start){
-      if (track_fit)
-        tracking[[i]] = susieR:::susie_slim(s)
-      s = susieR:::update_each_effect(X,y_residuals,s,estimate_prior_variance,estimate_prior_method,
-                                      check_null_threshold)
-      if (verbose)
-        print(paste0("objective:",susieR:::get_objective(X,y_residuals,s)))
+    if (i <= warm_start) {
+      if (track_fit) {
+        tracking[[i]] <- susieR:::susie_slim(s)
+      }
+      s <- susieR:::update_each_effect(
+        X, y_residuals, s, estimate_prior_variance, estimate_prior_method,
+        check_null_threshold
+      )
+      if (verbose) {
+        print(paste0("objective:", susieR:::get_objective(X, y_residuals, s)))
+      }
 
       # Check which credible sets have >= 0.1% heritability.
       high_heritability_ls <- which(s$V >= 0.001)
 
       # Update y_residuals if there are "high heritability" credible sets.
       if (length(high_heritability_ls) > 0) {
-        if(length(high_heritability_ls) == 1){
-          y_residuals <- y - X %*% (s$alpha[high_heritability_ls,] * s$mu[high_heritability_ls,])
-        }else{
-        y_residuals <- y - X %*% colSums(s$alpha[high_heritability_ls,] * s$mu[high_heritability_ls,])}
+        if (length(high_heritability_ls) == 1) {
+          y_residuals <- y - X %*% (s$alpha[high_heritability_ls, ] * s$mu[high_heritability_ls, ])
+        } else {
+          y_residuals <- y - X %*% colSums(s$alpha[high_heritability_ls, ] * s$mu[high_heritability_ls, ])
+        }
       }
-    } else{
+    } else {
       # Run mr.ash on residuals.
-      mrash_output <- mr.ash.alpha::mr.ash(X = X,
-                                           y = y_residuals,
-                                           sa2 = nrow(X) * (2^((0:19)/20) - 1)^2,
-                                           intercept = intercept,
-                                           standardize = standardize)
+      mrash_output <- mr.ash.alpha::mr.ash(
+        X = X,
+        y = y_residuals,
+        sa2 = nrow(X) * (2^((0:19) / 20) - 1)^2,
+        intercept = intercept,
+        standardize = standardize
+      )
 
       if (intercept) {
         theta <- mr.ash.alpha::coef.mr.ash(mrash_output)
@@ -375,9 +402,9 @@ susie_ash = function (X,y,L = min(10,ncol(X)),
       # Update residual vector
       y_residuals <- y_residuals - Xtheta
 
-      #Convergence Criterion
+      # Convergence Criterion
       if (i > warm_start + 1 && (elbo[i - warm_start] - elbo[i - warm_start - 1]) < tol) {
-        s$converged = TRUE
+        s$converged <- TRUE
         break
       }
     }
@@ -391,151 +418,169 @@ susie_ash = function (X,y,L = min(10,ncol(X)),
     # Update residual variance after mr ash
 
     if (estimate_residual_variance) {
-      s$sigma2 = pmax(residual_variance_lowerbound,
-                      susieR:::estimate_residual_variance(X,y_residuals,s))
-      if (s$sigma2 > residual_variance_upperbound)
-        s$sigma2 = residual_variance_upperbound
-      if (verbose)
-        print(paste0("objective:",susieR:::get_objective(X,y_residuals,s)))
+      s$sigma2 <- pmax(
+        residual_variance_lowerbound,
+        susieR:::estimate_residual_variance(X, y_residuals, s)
+      )
+      if (s$sigma2 > residual_variance_upperbound) {
+        s$sigma2 <- residual_variance_upperbound
+      }
+      if (verbose) {
+        print(paste0("objective:", susieR:::get_objective(X, y_residuals, s)))
+      }
     }
   }
 
   # Remove trailing NAs.
-  elbo = elbo[!is.na(elbo)]
-  s$elbo = elbo
-  s$niter = i
+  elbo <- elbo[!is.na(elbo)]
+  s$elbo <- elbo
+  s$niter <- i
 
   if (is.null(s$converged)) {
-    warning(paste("Mr.ASH algorithm did not converge in",max_iter,"iterations!"))
-    s$converged = FALSE
+    warning(paste("Mr.ASH algorithm did not converge in", max_iter, "iterations!"))
+    s$converged <- FALSE
   }
 
   if (intercept) {
     # Save infinitesimal components.
-    s$theta = mr.ash.alpha::coef.mr.ash(mrash_output)
-    s$Xtheta = cbind(1,X) %*% s$theta
+    s$theta <- mr.ash.alpha::coef.mr.ash(mrash_output)
+    s$Xtheta <- cbind(1, X) %*% s$theta
 
     # Estimate unshrunk intercept.
-    s$intercept = mean_y - sum(attr(X,"scaled:center") *
-                                 ((colSums(s$alpha * s$mu)+s$theta[-1])/attr(X,"scaled:scale")))
-    s$fitted = s$Xr + mean_y + s$Xtheta
-
+    s$intercept <- mean_y - sum(attr(X, "scaled:center") *
+      ((colSums(s$alpha * s$mu) + s$theta[-1]) / attr(X, "scaled:scale")))
+    s$fitted <- s$Xr + mean_y + s$Xtheta
   } else {
     # Save infinitesimal components.
-    s$theta = mr.ash.alpha::coef.mr.ash(mrash_output)[-1]
-    s$Xtheta = X %*% s$theta
+    s$theta <- mr.ash.alpha::coef.mr.ash(mrash_output)[-1]
+    s$Xtheta <- X %*% s$theta
 
-    s$intercept = 0
-    s$fitted = s$Xr + s$Xtheta
+    s$intercept <- 0
+    s$fitted <- s$Xr + s$Xtheta
   }
-  s$fitted = drop(s$fitted)
-  names(s$fitted) = `if`(is.null(names(y)),rownames(X),names(y))
-  if (track_fit)
-    s$trace = tracking
+  s$fitted <- drop(s$fitted)
+  names(s$fitted) <- `if`(is.null(names(y)), rownames(X), names(y))
+  if (track_fit) {
+    s$trace <- tracking
+  }
 
   # SuSiE CS and PIP.
   if (!is.null(coverage) && !is.null(min_abs_corr)) {
-    s$sets = susieR::susie_get_cs(s,coverage = coverage,X = X,
-                                  min_abs_corr = min_abs_corr,
-                                  # median_abs_corr = median_abs_corr, ## muted
-                                  n_purity = n_purity)
-    s$pip = susieR::susie_get_pip(s,prune_by_cs = FALSE,prior_tol = prior_tol)
+    s$sets <- susieR::susie_get_cs(s,
+      coverage = coverage, X = X,
+      min_abs_corr = min_abs_corr,
+      # median_abs_corr = median_abs_corr, ## muted
+      n_purity = n_purity
+    )
+    s$pip <- susieR::susie_get_pip(s, prune_by_cs = FALSE, prior_tol = prior_tol)
   }
 
   if (!is.null(colnames(X))) {
-    variable_names = colnames(X)
+    variable_names <- colnames(X)
     if (!is.null(null_weight)) {
-      variable_names[length(variable_names)] = "null"
-      names(s$pip) = variable_names[-p]
-    } else
-      names(s$pip)    = variable_names
-    colnames(s$alpha) = variable_names
-    colnames(s$mu)    = variable_names
-    colnames(s$mu2)   = variable_names
-    colnames(s$lbf_variable) = variable_names
+      variable_names[length(variable_names)] <- "null"
+      names(s$pip) <- variable_names[-p]
+    } else {
+      names(s$pip) <- variable_names
+    }
+    colnames(s$alpha) <- variable_names
+    colnames(s$mu) <- variable_names
+    colnames(s$mu2) <- variable_names
+    colnames(s$lbf_variable) <- variable_names
   }
   # report z-scores from univariate regression.
   if (compute_univariate_zscore) {
-    if (!is.matrix(X))
-      warning("Calculation of univariate regression z-scores is not ",
-              "implemented specifically for sparse or trend filtering ",
-              "matrices, so this step may be slow if the matrix is large; ",
-              "to skip this step set compute_univariate_zscore = FALSE")
-    if (!is.null(null_weight) && null_weight != 0)
-      X = X[,1:(ncol(X) - 1)]
-    s$z = susieR:::calc_z(X,y,center = intercept,scale = standardize)
+    if (!is.matrix(X)) {
+      warning(
+        "Calculation of univariate regression z-scores is not ",
+        "implemented specifically for sparse or trend filtering ",
+        "matrices, so this step may be slow if the matrix is large; ",
+        "to skip this step set compute_univariate_zscore = FALSE"
+      )
+    }
+    if (!is.null(null_weight) && null_weight != 0) {
+      X <- X[, 1:(ncol(X) - 1)]
+    }
+    s$z <- susieR:::calc_z(X, y, center = intercept, scale = standardize)
   }
 
   # For prediction.
-  s$X_column_scale_factors = attr(X,"scaled:scale")
+  s$X_column_scale_factors <- attr(X, "scaled:scale")
 
   if (refine) {
-    if (!missing(s_init) && !is.null(s_init))
+    if (!missing(s_init) && !is.null(s_init)) {
       warning("The given s_init is not used in refinement")
+    }
     if (!is.null(null_weight) && null_weight != 0) {
-
       ## if null_weight is specified, we compute the original prior_weight
-      pw_s = s$pi[-s$null_index]/(1-null_weight)
-      if (!compute_univariate_zscore)
+      pw_s <- s$pi[-s$null_index] / (1 - null_weight)
+      if (!compute_univariate_zscore) {
 
         ## if null_weight is specified, and the extra 0 column is not
         ## removed from compute_univariate_zscore, we remove it here
-        X = X[,1:(ncol(X) - 1)]
-    } else
-      pw_s = s$pi
-    conti = TRUE
-    while (conti & length(s$sets$cs)>0) {
-      m = list()
-      for(cs in 1:length(s$sets$cs)){
-        pw_cs = pw_s
-        pw_cs[s$sets$cs[[cs]]] = 0
-        if(all(pw_cs == 0)){
+        X <- X[, 1:(ncol(X) - 1)]
+      }
+    } else {
+      pw_s <- s$pi
+    }
+    conti <- TRUE
+    while (conti & length(s$sets$cs) > 0) {
+      m <- list()
+      for (cs in 1:length(s$sets$cs)) {
+        pw_cs <- pw_s
+        pw_cs[s$sets$cs[[cs]]] <- 0
+        if (all(pw_cs == 0)) {
           break
         }
-        s2 = susieR::susie(X,y,L = L,scaled_prior_variance = scaled_prior_variance,
-                           residual_variance = residual_variance,
-                           prior_weights = pw_cs, s_init = NULL,null_weight = null_weight,
-                           standardize = standardize,intercept = intercept,
-                           estimate_residual_variance = estimate_residual_variance,
-                           estimate_prior_variance = estimate_prior_variance,
-                           estimate_prior_method = estimate_prior_method,
-                           check_null_threshold = check_null_threshold,
-                           prior_tol = prior_tol,coverage = coverage,
-                           residual_variance_upperbound = residual_variance_upperbound,
-                           min_abs_corr = min_abs_corr,
-                           median_abs_corr = median_abs_corr,
-                           compute_univariate_zscore = compute_univariate_zscore,
-                           na.rm = na.rm,max_iter = max_iter,tol = tol,verbose = FALSE,
-                           track_fit = FALSE,residual_variance_lowerbound = var(drop(y))/1e4,
-                           refine = FALSE)
-        sinit2 = s2[c("alpha","mu","mu2")]
-        class(sinit2) = "susie"
-        s3 = susieR::susie(X,y,L = L,scaled_prior_variance = scaled_prior_variance,
-                           residual_variance = residual_variance,prior_weights = pw_s,
-                           s_init = sinit2,null_weight = null_weight,
-                           standardize = standardize,intercept = intercept,
-                           estimate_residual_variance = estimate_residual_variance,
-                           estimate_prior_variance = estimate_prior_variance,
-                           estimate_prior_method = estimate_prior_method,
-                           check_null_threshold = check_null_threshold,
-                           prior_tol = prior_tol,coverage = coverage,
-                           residual_variance_upperbound = residual_variance_upperbound,
-                           min_abs_corr = min_abs_corr,
-                           median_abs_corr = median_abs_corr,
-                           compute_univariate_zscore = compute_univariate_zscore,
-                           na.rm = na.rm,max_iter = max_iter,tol = tol,verbose = FALSE,
-                           track_fit = FALSE,residual_variance_lowerbound = var(drop(y))/1e4,
-                           refine = FALSE)
-        m = c(m,list(s3))
+        s2 <- susieR::susie(X, y,
+          L = L, scaled_prior_variance = scaled_prior_variance,
+          residual_variance = residual_variance,
+          prior_weights = pw_cs, s_init = NULL, null_weight = null_weight,
+          standardize = standardize, intercept = intercept,
+          estimate_residual_variance = estimate_residual_variance,
+          estimate_prior_variance = estimate_prior_variance,
+          estimate_prior_method = estimate_prior_method,
+          check_null_threshold = check_null_threshold,
+          prior_tol = prior_tol, coverage = coverage,
+          residual_variance_upperbound = residual_variance_upperbound,
+          min_abs_corr = min_abs_corr,
+          median_abs_corr = median_abs_corr,
+          compute_univariate_zscore = compute_univariate_zscore,
+          na.rm = na.rm, max_iter = max_iter, tol = tol, verbose = FALSE,
+          track_fit = FALSE, residual_variance_lowerbound = var(drop(y)) / 1e4,
+          refine = FALSE
+        )
+        sinit2 <- s2[c("alpha", "mu", "mu2")]
+        class(sinit2) <- "susie"
+        s3 <- susieR::susie(X, y,
+          L = L, scaled_prior_variance = scaled_prior_variance,
+          residual_variance = residual_variance, prior_weights = pw_s,
+          s_init = sinit2, null_weight = null_weight,
+          standardize = standardize, intercept = intercept,
+          estimate_residual_variance = estimate_residual_variance,
+          estimate_prior_variance = estimate_prior_variance,
+          estimate_prior_method = estimate_prior_method,
+          check_null_threshold = check_null_threshold,
+          prior_tol = prior_tol, coverage = coverage,
+          residual_variance_upperbound = residual_variance_upperbound,
+          min_abs_corr = min_abs_corr,
+          median_abs_corr = median_abs_corr,
+          compute_univariate_zscore = compute_univariate_zscore,
+          na.rm = na.rm, max_iter = max_iter, tol = tol, verbose = FALSE,
+          track_fit = FALSE, residual_variance_lowerbound = var(drop(y)) / 1e4,
+          refine = FALSE
+        )
+        m <- c(m, list(s3))
       }
-      if(length(m) == 0){
-        conti = FALSE
-      }else{
-        elbo = sapply(m,function(x) susieR::susie_get_objective(x))
-        if ((max(elbo) - susieR::susie_get_objective(s)) <= 0)
-          conti = FALSE
-        else
-          s = m[[which.max(elbo)]]
+      if (length(m) == 0) {
+        conti <- FALSE
+      } else {
+        elbo <- sapply(m, function(x) susieR::susie_get_objective(x))
+        if ((max(elbo) - susieR::susie_get_objective(s)) <= 0) {
+          conti <- FALSE
+        } else {
+          s <- m[[which.max(elbo)]]
+        }
       }
     }
   }

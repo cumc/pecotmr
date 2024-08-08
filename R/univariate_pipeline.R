@@ -185,7 +185,7 @@ rss_analysis_pipeline <- function(
   var_y <- rss_input$var_y
 
   # Preprocess the input data
-  preprocess_results <- rss_basic_qc(sumstats, LD_data, skip_region = skip_region,remove_indels = remove_indels)
+  preprocess_results <- rss_basic_qc(sumstats, LD_data, skip_region = skip_region, remove_indels = remove_indels)
   sumstats <- preprocess_results$sumstats
   LD_mat <- preprocess_results$LD_mat
 

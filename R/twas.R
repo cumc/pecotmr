@@ -180,7 +180,7 @@ twas_analysis <- function(weights_matrix, gwas_sumstats_db, LD_matrix, extract_v
 #' @importFrom furrr future_map furrr_options
 #' @importFrom purrr map
 #' @export
-twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_methods = NULL, seed = NULL, max_num_variants = NULL, variants_to_keep = NULL, num_threads = 1, imiss_cutoff=1.0, min_cv_maf=0.05,...) {
+twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_methods = NULL, seed = NULL, max_num_variants = NULL, variants_to_keep = NULL, num_threads = 1, imiss_cutoff = 1.0, min_cv_maf = 0.05, ...) {
   split_data <- function(X, Y, sample_partition, fold) {
     if (is.null(rownames(X))) {
       warning("Row names in X are missing. Using row indices.")
@@ -200,7 +200,7 @@ twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_
     }
     return(list(Xtrain = Xtrain, Ytrain = Ytrain, Xtest = Xtest, Ytest = Ytest))
   }
-  
+
   # Validation checks
   if (!is.null(fold) && (!is.numeric(fold) || fold <= 0)) {
     stop("Invalid value for 'fold'. It must be a positive integer.")
@@ -255,7 +255,7 @@ twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_
         message(paste("Randomly selecting", length(selected_columns), "out of", length(variants_to_keep), "input variants for cross validation purpose."))
       }
     } else {
-      X_temp <- filter_X(X, imiss_cutoff, min_cv_maf, Y=Y)
+      X_temp <- filter_X(X, imiss_cutoff, min_cv_maf, Y = Y)
       selected_columns <- sort(sample(ncol(X_temp), max_num_variants, replace = FALSE))
       message(paste("Randomly selecting", length(selected_columns), "out of", ncol(X), "variants for cross validation purpose."))
     }
@@ -311,11 +311,11 @@ twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_
       Y_train <- dat_split$Ytrain
       X_test <- dat_split$Xtest
       Y_test <- dat_split$Ytest
-      
+
       # Remove columns with zero standard error
       valid_columns <- apply(X_train, 2, function(col) sd(col) != 0)
       X_train <- X_train[, valid_columns, drop = F]
-      X_train <- filter_X(X_train, imiss_cutoff, min_cv_maf, Y=Y_train)
+      X_train <- filter_X(X_train, imiss_cutoff, min_cv_maf, Y = Y_train)
       valid_columns <- colnames(X_train)
 
       setNames(lapply(names(weight_methods), function(method) {
@@ -476,7 +476,7 @@ twas_weights <- function(X, Y, weight_methods, num_threads = 1, seed = NULL) {
     if (method_name %in% multivariate_weight_methods) {
       # Apply multivariate method
       weights_matrix <- exec(method_name, X = X_filtered, Y = Y, !!!args)
-      if(nrow(weights_matrix)!= length(valid_columns)) weights_matrix <- weights_matrix[names(valid_columns),,drop=FALSE]
+      if (nrow(weights_matrix) != length(valid_columns)) weights_matrix <- weights_matrix[names(valid_columns), , drop = FALSE]
     } else {
       # Apply univariate method to each column of Y
       # Initialize it with zeros to avoid NA

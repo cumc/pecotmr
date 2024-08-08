@@ -98,7 +98,6 @@ mrmash_wrapper <- function(X,
                            weights_tol = 1e-4,
                            verbose = FALSE, ...) {
   # Check input data
-
   if (!is.matrix(X) || !is.matrix(Y)) {
     stop("X and Y must be matrices.")
   }

@@ -68,7 +68,7 @@ multivariate_analysis_pipeline <- function(
     X, Y, maf, max_L = 30, ld_reference_meta_file = NULL, pip_cutoff_to_skip = 0, signal_cutoff = 0.025, coverage = c(0.95, 0.7, 0.5), data_driven_prior_matrices = NULL,
     data_driven_prior_matrices_cv = NULL, canonical_prior_matrices = TRUE, sample_partition = NULL,
     mrmash_max_iter = 5000, mvsusie_max_iter = 200, min_cv_maf = 0.05, max_cv_variants = -1, cv_folds = 5,
-    cv_threads = 1, cv_seed = 999, prior_weights_min = 1e-4, twas_weights = FALSE, verbose = 0, imiss_cutoff=NULL, maf_cutoff=NULL) {
+    cv_threads = 1, cv_seed = 999, prior_weights_min = 1e-4, twas_weights = FALSE, verbose = 0, imiss_cutoff = NULL, maf_cutoff = NULL) {
   skip_conditions <- function(X, Y, pip_cutoff_to_skip) {
     if (length(pip_cutoff_to_skip) == 1 && is.numeric(pip_cutoff_to_skip)) {
       pip_cutoff_to_skip <- rep(pip_cutoff_to_skip, ncol(Y))
@@ -79,7 +79,7 @@ multivariate_analysis_pipeline <- function(
     for (r in 1:ncol(Y)) {
       if (pip_cutoff_to_skip[r] > 0) {
         non_missing_indices <- which(!is.na(Y[, r]))
-        X_non_missing <- X[match(names(Y[,r])[non_missing_indices],rownames(X)),]
+        X_non_missing <- X[match(names(Y[, r])[non_missing_indices], rownames(X)), ]
         Y_non_missing <- Y[non_missing_indices, r]
 
         top_model_pip <- susie(X_non_missing, Y_non_missing, L = 1)$pip
@@ -135,20 +135,20 @@ multivariate_analysis_pipeline <- function(
     ))
   }
   # filter X and Y missing
-  filter_X_Y_missing <-  function(X, Y) {
-     Y_rows_with_missing <- apply(Y, 1, function(row) all(is.na(row)))
-     if (any(Y_rows_with_missing)) {                             
-        Y_filtered <- Y[-which(Y_rows_with_missing),,drop = FALSE]
-     } else {
-        Y_filtered <- Y
-     }
-     X_filtered <- X[match(rownames(Y_filtered), rownames(X)),]
-     X_columns_with_missing <- apply(X_filtered, 2, function(column) all(is.na(column)))
-     if (any(X_columns_with_missing)) {
-         columns_to_remove <- which(X_columns_with_missing)
-         X_filtered <- X_filtered[,-columns_to_remove, drop = FALSE]
-     }                                
-  return(list(X_filtered = X_filtered, Y_filtered = Y_filtered))
+  filter_X_Y_missing <- function(X, Y) {
+    Y_rows_with_missing <- apply(Y, 1, function(row) all(is.na(row)))
+    if (any(Y_rows_with_missing)) {
+      Y_filtered <- Y[-which(Y_rows_with_missing), , drop = FALSE]
+    } else {
+      Y_filtered <- Y
+    }
+    X_filtered <- X[match(rownames(Y_filtered), rownames(X)), ]
+    X_columns_with_missing <- apply(X_filtered, 2, function(column) all(is.na(column)))
+    if (any(X_columns_with_missing)) {
+      columns_to_remove <- which(X_columns_with_missing)
+      X_filtered <- X_filtered[, -columns_to_remove, drop = FALSE]
+    }
+    return(list(X_filtered = X_filtered, Y_filtered = Y_filtered))
   }
   # Skip conditions based on PIP values
   Y <- skip_conditions(X, Y, pip_cutoff_to_skip)
@@ -169,10 +169,10 @@ multivariate_analysis_pipeline <- function(
   )
   if (!is.null(imiss_cutoff) & !is.null(maf_cutoff)) {
     message("Filtering X with condition of Y subjects before fitting. ")
-    X = filter_X(X, imiss_cutoff, maf_cutoff, Y=Y)
-    maf=maf[colnames(X)]
+    X <- filter_X(X, imiss_cutoff, maf_cutoff, Y = Y)
+    maf <- maf[colnames(X)]
   }
-                                     
+
   data_driven_prior_matrices <- filtered_data$data_driven_prior_matrices
   data_driven_prior_matrices_cv <- filtered_data$data_driven_prior_matrices_cv
 
@@ -216,10 +216,10 @@ multivariate_analysis_pipeline <- function(
       coverage = pri_coverage, secondary_coverage = sec_coverage,
       canonical_prior_matrices = canonical_prior_matrices, data_driven_prior_matrices = data_driven_prior_matrices,
       data_driven_prior_matrices_cv = data_driven_prior_matrices_cv, cv_seed = cv_seed,
-      min_cv_maf = min_cv_maf, cv_threads = cv_threads, verbose = verbose, imiss_cutoff=imiss_cutoff
+      min_cv_maf = min_cv_maf, cv_threads = cv_threads, verbose = verbose, imiss_cutoff = imiss_cutoff
     )
   }
-  res$mvsusie_prior <- data_driven_prior_matrices$prior_variance                                   
+  res$mvsusie_prior <- data_driven_prior_matrices$prior_variance
   return(res)
 }
 
@@ -232,7 +232,7 @@ twas_multivariate_weights_pipeline <- function(
     data_driven_prior_matrices = NULL, data_driven_prior_matrices_cv = NULL, canonical_prior_matrices = FALSE, resid_Y,
     mvsusie_max_iter = 200, mrmash_max_iter = 5000,
     signal_cutoff = 0.05, coverage = 0.95, secondary_coverage = c(0.7, 0.5),
-    min_cv_maf = 0.05, max_cv_variants = -1, cv_seed = 999, cv_threads = 1, verbose = FALSE, imiss_cutoff=NULL) {
+    min_cv_maf = 0.05, max_cv_variants = -1, cv_seed = 999, cv_threads = 1, verbose = FALSE, imiss_cutoff = NULL) {
   determine_max_L <- function(mvsusie_prefit) {
     if (!is.null(mvsusie_prefit)) {
       L <- length(which(mvsusie_prefit$V > 1E-9)) + 2
@@ -362,8 +362,8 @@ twas_multivariate_weights_pipeline <- function(
       num_threads = cv_threads, seed = cv_seed,
       max_num_variants = max_cv_variants,
       variants_to_keep = if (length(variants_for_cv) > 0) variants_for_cv else NULL,
-      data_driven_prior_matrices_cv = data_driven_prior_matrices_cv, 
-      imiss_cutoff=imiss_cutoff, min_cv_maf=min_cv_maf
+      data_driven_prior_matrices_cv = data_driven_prior_matrices_cv,
+      imiss_cutoff = imiss_cutoff, min_cv_maf = min_cv_maf
     )
     res <- copy_twas_cv_results(res, twas_cv_result)
   }

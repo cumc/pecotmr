@@ -44,7 +44,7 @@ lbf_to_alpha_vector <- function(lbf, prior_weights = NULL) {
 #' @export
 lbf_to_alpha <- function(lbf) {
   alpha_matrix <- t(apply(as.matrix(lbf), 1, lbf_to_alpha_vector))
-  if (ncol(lbf) == 1) alpha_matrix <- matrix(alpha_matrix, ncol=1, dimname=list(NULL, colnames(lbf)))
+  if (ncol(lbf) == 1) alpha_matrix <- matrix(alpha_matrix, ncol = 1, dimname = list(NULL, colnames(lbf)))
   return(alpha_matrix)
 }
 
@@ -60,19 +60,21 @@ lbf_to_alpha <- function(lbf) {
 #' @return A list of adjusted xQTL coefficients and remained variants ids
 #' @export
 adjust_susie_weights <- function(twas_weights_results, keep_variants, allele_qc = TRUE,
-                                 variable_name_obj = c("susie_results", context, "variant_names"), 
+                                 variable_name_obj = c("susie_results", context, "variant_names"),
                                  susie_obj = c("susie_results", context, "susie_result_trimmed"),
-                                 twas_weights_table = c("weights", context), combined_LD_variants, match_min_prop=0.2) {
+                                 twas_weights_table = c("weights", context), combined_LD_variants, match_min_prop = 0.2) {
   # Intersect the rownames of weights with keep_variants
   twas_weights_variants <- get_nested_element(twas_weights_results, variable_name_obj)
   # allele flip twas weights matrix variants name
   if (allele_qc) {
     weights_matrix <- get_nested_element(twas_weights_results, twas_weights_table)
-    if (!all(c("chrom", "pos", "A2", "A1") %in% colnames(weights_matrix))){
+    if (!all(c("chrom", "pos", "A2", "A1") %in% colnames(weights_matrix))) {
       weights_matrix <- cbind(variant_id_to_df(twas_weights_variants), weights_matrix)
     }
-    weights_matrix_qced <- allele_qc(twas_weights_variants, combined_LD_variants, weights_matrix, colnames(weights_matrix)[!colnames(weights_matrix) %in% c("chrom", 
-                                   "pos", "A2", "A1")], match_min_prop=match_min_prop, target_gwas = FALSE)
+    weights_matrix_qced <- allele_qc(twas_weights_variants, combined_LD_variants, weights_matrix, colnames(weights_matrix)[!colnames(weights_matrix) %in% c(
+      "chrom",
+      "pos", "A2", "A1"
+    )], match_min_prop = match_min_prop, target_gwas = FALSE)
     intersected_indices <- which(weights_matrix_qced$qc_summary$keep == TRUE)
   } else {
     keep_variants_transformed <- ifelse(!startsWith(keep_variants, "chr"), paste0("chr", keep_variants), keep_variants)
@@ -87,8 +89,8 @@ adjust_susie_weights <- function(twas_weights_results, keep_variants, allele_qc 
   mu <- get_nested_element(twas_weights_results, c(susie_obj, "mu"))
   x_column_scal_factors <- get_nested_element(twas_weights_results, c(susie_obj, "X_column_scale_factors"))
 
-  lbf_matrix_subset <- lbf_matrix[, intersected_indices, drop=FALSE]
-  mu_subset <- mu[, intersected_indices, drop=FALSE]
+  lbf_matrix_subset <- lbf_matrix[, intersected_indices, drop = FALSE]
+  mu_subset <- mu[, intersected_indices, drop = FALSE]
   x_column_scal_factors_subset <- x_column_scal_factors[intersected_indices]
 
   # Convert lbf_matrix to alpha and calculate adjusted xQTL coefficients

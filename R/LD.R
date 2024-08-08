@@ -181,7 +181,7 @@ process_LD_matrix <- function(LD_file_path, bim_file_path) {
   }
 
   # Process variant names from file paths
-  LD_variants <- read.table(bim_file_name) 
+  LD_variants <- read.table(bim_file_name)
   if (ncol(LD_variants) == 9) {
     LD_variants <- LD_variants %>%
       setNames(c("chrom", "variants", "GD", "pos", "A1", "A2", "variance", "allele_freq", "n_nomiss")) %>%
@@ -196,8 +196,8 @@ process_LD_matrix <- function(LD_file_path, bim_file_path) {
       mutate(variants = ifelse(grepl("^chr[0-9]+:", variants), gsub("^chr", "", variants), variants))
   } else {
     stop("Unexpected number of columns in the input file.")
-  }                   
-                        
+  }
+
 
   # Set column and row names of the LD matrix
   colnames(LD_matrix) <- rownames(LD_matrix) <- LD_variants$variants
@@ -233,13 +233,13 @@ extract_LD_for_region <- function(LD_matrix, variants, region, extract_coordinat
       # Ensure that 'chrom' values in 'LD_variants_region_selected' are numeric, remove 'chr' if present
       mutate(chrom = ifelse(grepl("^chr", chrom), as.integer(sub("^chr", "", chrom)), as.integer(chrom))) %>%
       # Merge with 'extract_coordinate' after 'chrom' adjustment
-      merge(extract_coordinates, by = c("chrom", "pos")) 
-      # Select the desired columns, assuming 'variants' column is equivalent to the 'variants' in 'LD_variants_region_selected'
-      # Select columns dynamically based on the presence of 'variance'
-      cols_to_select <- c("chrom", "variants", "pos", "GD", "A1", "A2")  # select(chrom, variants, pos, GD, A1, A2)
-      if ("variance" %in% names(extracted_LD_variants)) {
-        cols_to_select <- c(cols_to_select, "variance")
-      }
+      merge(extract_coordinates, by = c("chrom", "pos"))
+    # Select the desired columns, assuming 'variants' column is equivalent to the 'variants' in 'LD_variants_region_selected'
+    # Select columns dynamically based on the presence of 'variance'
+    cols_to_select <- c("chrom", "variants", "pos", "GD", "A1", "A2") # select(chrom, variants, pos, GD, A1, A2)
+    if ("variance" %in% names(extracted_LD_variants)) {
+      cols_to_select <- c(cols_to_select, "variance")
+    }
     extracted_LD_variants <- select(extracted_LD_variants, all_of(cols_to_select))
   }
   # Extract LD matrix
@@ -343,8 +343,8 @@ load_LD_matrix <- function(LD_meta_file_path, region, extract_coordinates = NULL
   }))
   merged_variant_list <- do.call(rbind, extracted_LD_variants_list)
   ref_panel$variant_id <- rownames(combined_LD_matrix)
-  if("variance" %in% colnames(merged_variant_list)) ref_panel$variance <- merged_variant_list$variance[match(rownames(combined_LD_matrix), merged_variant_list$variants)]
-    
+  if ("variance" %in% colnames(merged_variant_list)) ref_panel$variance <- merged_variant_list$variance[match(rownames(combined_LD_matrix), merged_variant_list$variants)]
+
   # LD list for region
   combined_LD_list <- list(combined_LD_variants = rownames(combined_LD_matrix), combined_LD_matrix = combined_LD_matrix, ref_panel = ref_panel)
 

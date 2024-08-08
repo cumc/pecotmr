@@ -73,7 +73,6 @@ read_pgen <- function(pgen, variantidx = NULL, meanimpute = F) {
 #' @importFrom stringr str_detect
 
 tabix_region <- function(file, region, tabix_header = "auto", target = "", target_column_index = "") {
-
   cmd_output <- tryCatch(
     {
       fread(cmd = paste0("tabix -h ", file, " ", region), sep = "auto", header = tabix_header)
@@ -494,16 +493,16 @@ pheno_list_to_mat <- function(data_list) {
   all_row_names <- unique(unlist(lapply(data_list$residual_Y, rownames)))
   # Step 2: Align matrices and fill with NA where necessary
   aligned_mats <- lapply(data_list$residual_Y, function(mat) {
-    ###change the ncol of each matrix
+    ### change the ncol of each matrix
     expanded_mat <- matrix(NA, nrow = length(all_row_names), ncol = ncol(mat), dimnames = list(all_row_names, colnames(mat)))
     common_rows <- intersect(rownames(mat), all_row_names)
     expanded_mat[common_rows, ] <- mat[common_rows, ]
     return(expanded_mat)
   })
   Y_resid_matrix <- do.call(cbind, aligned_mats)
-  if(!is.null(names(data_list$residual_Y))){
-      colnames(Y_resid_matrix) <- names(data_list$residual_Y)
-   } 
+  if (!is.null(names(data_list$residual_Y))) {
+    colnames(Y_resid_matrix) <- names(data_list$residual_Y)
+  }
   data_list$residual_Y <- Y_resid_matrix
   return(data_list)
 }
@@ -548,14 +547,14 @@ load_regional_functional_data <- function(...) {
   return(dat)
 }
 
-    
-    
+
+
 # Function to remove gene name at the end of context name
 #' @export
-clean_context_names <- function(context, gene){
+clean_context_names <- function(context, gene) {
   context_parts <- str_split(context, "_")[[1]]
   # Remove gene name if it matches the last part of the context
-  if (tail(context_parts, n=1) == gene) context_parts <- head(context_parts, -1)
+  if (tail(context_parts, n = 1) == gene) context_parts <- head(context_parts, -1)
   cleaned_context <- paste(context_parts, collapse = "_")
   return(cleaned_context)
 }
@@ -586,13 +585,12 @@ load_twas_weights <- function(weight_db_files, conditions = NULL,
                               variable_name_obj = c("preset_variants_result", "variant_names"),
                               susie_obj = c("preset_variants_result", "susie_result_trimmed"),
                               twas_weights_table = "twas_weights") {
-
   ## Internal function to load and validate data from RDS files
-  load_and_validate_data <- function(weight_db_files, conditions, variable_name_obj){
+  load_and_validate_data <- function(weight_db_files, conditions, variable_name_obj) {
     all_data <- do.call(c, lapply(unname(weight_db_files), function(rds_file) {
       db <- readRDS(rds_file)
       if ("mnm_result" %in% names(db)) {
-        db <- list(mnm_rs=db)
+        db <- list(mnm_rs = db)
       } else {
         gene <- names(db)
         # Check if region from all RDS files are the same
@@ -600,50 +598,52 @@ load_twas_weights <- function(weight_db_files, conditions = NULL,
           stop("More than one region provided in the RDS file. ")
         } else {
           names(db[[gene]]) <- sapply(names(db[[gene]]), function(context) clean_context_names(context, gene))
-        }                                            
+        }
       }
-      return(db)    
+      return(db)
     }))
-    #Check if region from all RDS files are the same
-    unique_regions <- unique(names(all_data)[!names(all_data) %in% 'mnm_rs'])
+    # Check if region from all RDS files are the same
+    unique_regions <- unique(names(all_data)[!names(all_data) %in% "mnm_rs"])
     if (length(unique_regions) != 1) {
       stop("The RDS files do not refer to the same region.")
     } else {
       # Combine the lists with the same region name
-      combined_all_data <- lapply(split(all_data, names(all_data)),function(lst) {
-         result <- list()
-          for (item in lst) {
-            for (name in names(item)) {
-              if (name %in% names(result)) {
-                if (result[[name]] != item[[name]]) {
-                  stop("Different twas weight data provided for identical context name. ")
-                }
-              } else {
-                result[[name]] <- item[[name]]
+      combined_all_data <- lapply(split(all_data, names(all_data)), function(lst) {
+        result <- list()
+        for (item in lst) {
+          for (name in names(item)) {
+            if (name %in% names(result)) {
+              if (result[[name]] != item[[name]]) {
+                stop("Different twas weight data provided for identical context name. ")
               }
+            } else {
+              result[[name]] <- item[[name]]
             }
           }
-          return(result)
-        })
-    }                                                                   
-    # merge univariate and multivariate results for same gene-context pair                                                         
-    if ("mnm_rs" %in% names(combined_all_data)){
-      gene <- names(combined_all_data)[!names(combined_all_data)%in% 'mnm_rs']
-      overl_contexts <- names(combined_all_data[['mnm_rs']])[names(combined_all_data[['mnm_rs']]) %in% names(combined_all_data[[gene]])]
+        }
+        return(result)
+      })
+    }
+    # merge univariate and multivariate results for same gene-context pair
+    if ("mnm_rs" %in% names(combined_all_data)) {
+      gene <- names(combined_all_data)[!names(combined_all_data) %in% "mnm_rs"]
+      overl_contexts <- names(combined_all_data[["mnm_rs"]])[names(combined_all_data[["mnm_rs"]]) %in% names(combined_all_data[[gene]])]
       multi_variants <- get_nested_element(combined_all_data$mnm_rs$mnm_result, variable_name_obj)
       for (context in overl_contexts) {
-            uni_variants <-  get_nested_element(combined_all_data[[gene]][[context]], variable_name_obj)
-            multi_weights <- setNames(rep(0, length(uni_variants)), uni_variants)
-            multi_weights <- lapply(combined_all_data[['mnm_rs']][[context]]$twas_weights, function(weight_list){
-              aligned_weights <- setNames(rep(0, length(uni_variants)), uni_variants)
-              aligned_weights[multi_variants[multi_variants %in% uni_variants]] <- unlist(weight_list)[multi_variants %in% uni_variants]
-              aligned_weights <- as.matrix(aligned_weights)
-            })
-            combined_all_data[[gene]][[context]]$twas_weights <- c(combined_all_data[[gene]][[context]]$twas_weights, multi_weights)
-            combined_all_data[[gene]][[context]]$twas_cv_result$performance <- c(combined_all_data[[gene]][[context]]$twas_cv_result$performance, 
-                                                                               combined_all_data[['mnm_rs']][[context]]$twas_cv_result$performance)
-        }
-      combined_all_data[['mnm_rs']] <- NULL
+        uni_variants <- get_nested_element(combined_all_data[[gene]][[context]], variable_name_obj)
+        multi_weights <- setNames(rep(0, length(uni_variants)), uni_variants)
+        multi_weights <- lapply(combined_all_data[["mnm_rs"]][[context]]$twas_weights, function(weight_list) {
+          aligned_weights <- setNames(rep(0, length(uni_variants)), uni_variants)
+          aligned_weights[multi_variants[multi_variants %in% uni_variants]] <- unlist(weight_list)[multi_variants %in% uni_variants]
+          aligned_weights <- as.matrix(aligned_weights)
+        })
+        combined_all_data[[gene]][[context]]$twas_weights <- c(combined_all_data[[gene]][[context]]$twas_weights, multi_weights)
+        combined_all_data[[gene]][[context]]$twas_cv_result$performance <- c(
+          combined_all_data[[gene]][[context]]$twas_cv_result$performance,
+          combined_all_data[["mnm_rs"]][[context]]$twas_cv_result$performance
+        )
+      }
+      combined_all_data[["mnm_rs"]] <- NULL
     }
     combined_all_data <- combined_all_data[[1]]
     # Set default for 'conditions' if they are not specified
@@ -658,26 +658,30 @@ load_twas_weights <- function(weight_db_files, conditions = NULL,
   }
   # Only extract the variant_names and SuSiE results
   extract_variants_and_susie_results <- function(combined_all_data, conditions) {
-    # skip conditions do not have susie results available. 
-    conditions <- conditions[sapply(conditions, function(cond){
-        tryCatch({
+    # skip conditions do not have susie results available.
+    conditions <- conditions[sapply(conditions, function(cond) {
+      tryCatch(
+        {
           !is.null(get_nested_element(combined_all_data, c(cond, susie_obj)))
-        }, error = function(e) {
+        },
+        error = function(e) {
           FALSE
-    })})]
+        }
+      )
+    })]
     combined_susie_result <- lapply(conditions, function(condition) {
       result <- list(
         variant_names = get_nested_element(combined_all_data, c(condition, variable_name_obj)),
         susie_result = get_nested_element(combined_all_data, c(condition, susie_obj))
       )
-      if ("top_loci" %in% names(get_nested_element(combined_all_data, c(condition, "preset_variants_result")))){
-         result$top_loci <- combined_all_data[[condition]]$preset_variants_result$top_loci
+      if ("top_loci" %in% names(get_nested_element(combined_all_data, c(condition, "preset_variants_result")))) {
+        result$top_loci <- combined_all_data[[condition]]$preset_variants_result$top_loci
       }
-      if ("target" %in% names(combined_all_data[[condition]])){
-         result$target <- get_nested_element(combined_all_data, c(condition, "target"))
+      if ("target" %in% names(combined_all_data[[condition]])) {
+        result$target <- get_nested_element(combined_all_data, c(condition, "target"))
       }
-      if ("region_info" %in% names(combined_all_data[[condition]])){
-         result$region_info <- get_nested_element(combined_all_data, c(condition, "region_info"))
+      if ("region_info" %in% names(combined_all_data[[condition]])) {
+        result$region_info <- get_nested_element(combined_all_data, c(condition, "region_info"))
       }
       return(result)
     })
@@ -689,15 +693,17 @@ load_twas_weights <- function(weight_db_files, conditions = NULL,
     consolidated_list <- list()
     # Fill the matrix with weights, aligning by variant names
     for (i in seq_along(weights_list)) {
-      # get conditon specific variant names 
-      all_variants <- unique(unlist(variable_objs[[i]])) 
+      # get conditon specific variant names
+      all_variants <- unique(unlist(variable_objs[[i]]))
       # Initialize the temp matrix with zeros
       existing_colnames <- character(0)
       temp_matrix <- matrix(0, nrow = length(all_variants), ncol = ncol(weights_list[[i]]))
       rownames(temp_matrix) <- all_variants
-      if (!length(all_variants)==nrow(weights_list[[i]])){
-        stop(paste0("Variant number mismatch in twas weights: ", nrow(weights_list[[i]]), " and variant number in susie result: ", length(all_variants),
-                    " for context ", names(weights_list)[i], ". "))
+      if (!length(all_variants) == nrow(weights_list[[i]])) {
+        stop(paste0(
+          "Variant number mismatch in twas weights: ", nrow(weights_list[[i]]), " and variant number in susie result: ", length(all_variants),
+          " for context ", names(weights_list)[i], ". "
+        ))
       }
       idx <- match(variable_objs[[i]], all_variants)
       temp_matrix[idx, ] <- weights_list[[i]]
@@ -745,7 +751,7 @@ load_twas_weights <- function(weight_db_files, conditions = NULL,
 
   ## Load, validate, and consolidate data
   try(
-    { 
+    {
       combined_all_data <- load_and_validate_data(weight_db_files, conditions, variable_name_obj)
       # update condition in case of merging rds files
       conditions <- names(combined_all_data)
@@ -756,7 +762,7 @@ load_twas_weights <- function(weight_db_files, conditions = NULL,
         get_nested_element(combined_all_data, c(condition, "twas_cv_result", "performance"))
       })
       names(performance_tables) <- conditions
-      return(list(susie_results = combined_susie_result, weights = weights, twas_cv_performance=performance_tables))
+      return(list(susie_results = combined_susie_result, weights = weights, twas_cv_performance = performance_tables))
     },
     silent = TRUE
   )
@@ -845,7 +851,7 @@ load_rss_data <- function(sumstat_path, column_file_path, subset = TRUE, n_sampl
 #' Load customized tsv data
 #'
 #' This function load the input data. If the input sumstat data is .gz and tabixed, then can use the region parameter to subset the data
-#' and filter by target column                            
+#' and filter by target column
 #' Otherwise, it will only filter by target column since tabix command won't function (this apply to .tsv, .txt files)
 #'
 #'
@@ -868,13 +874,13 @@ load_tsv_region <- function(sumstat_path, region = "", target = "", target_colum
         # region specified, target specified
         cmd <- paste0("zcat ", sumstat_path, " | head -1 && tabix ", sumstat_path, " ", region, " | awk '$", target_column_index, " ~ /", target, "/'")
       } else if (target != "" && region == "" && target_column_index != "") {
-          # region not specified, target specified
+        # region not specified, target specified
         cmd <- paste0("zcat ", sumstat_path, " | awk '$", target_column_index, " ~ /", target, "/'")
       } else if (region != "" && (target_column_index == "" || target == "")) {
-          # region specified, target not specified
+        # region specified, target not specified
         cmd <- paste0("zcat ", sumstat_path, " | head -1 && tabix ", sumstat_path, " ", region)
       } else {
-          # both not specified. Instead of reading a command, read the file path instead
+        # both not specified. Instead of reading a command, read the file path instead
         cmd <- sumstat_path
       }
       sumstats <- tryCatch(
@@ -891,15 +897,15 @@ load_tsv_region <- function(sumstat_path, region = "", target = "", target_colum
     # Non-gz files, cannot be tabixed. Load the whole dataset and only apply target filter
     warning("Not a tabixed gz file, loading the whole data.")
     if (target != "" && target_column_index != "") {
-    # target specified
+      # target specified
       sumstats <- fread(sumstat_path)
       keep_index <- which(str_detect(sumstats[[target_column_index]], target))
-      sumstats <- sumstats[keep_index,]
+      sumstats <- sumstats[keep_index, ]
     } else {
-    # target not specified, the whole dataset
+      # target not specified, the whole dataset
       sumstats <- fread(sumstat_path)
     }
   }
-  
+
   return(sumstats)
 }
