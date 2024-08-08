@@ -134,6 +134,7 @@ multivariate_analysis_pipeline <- function(
       data_driven_prior_matrices = data_driven_prior_matrices, data_driven_prior_matrices_cv = data_driven_prior_matrices_cv
     ))
   }
+
   # filter X and Y missing
   filter_X_Y_missing <- function(X, Y) {
     Y_rows_with_missing <- apply(Y, 1, function(row) all(is.na(row)))
@@ -162,7 +163,7 @@ multivariate_analysis_pipeline <- function(
   if (nrow(Y) == 0 || is.null(Y)) {
     return(list())
   }
-  # Filter data based on remaining conditions
+  # filter data based on remaining conditions
   filtered_data <- initialize_multivariate_prior(colnames(Y), data_driven_prior_matrices,
     data_driven_prior_matrices_cv, cv_folds,
     prior_weights_min = prior_weights_min
