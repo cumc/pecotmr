@@ -114,7 +114,7 @@ Returns a list structure including
 \item{pim}{posterior distribution probabilities}
 \item{r}{vector of residuals}
 \item{b}{vector of estimates from the final mcmc iteration}
-\item{param}{a list current parameters (same information as item listed above) 
+\item{param}{a list current parameters (same information as item listed above)
              used for restart of the analysis}
 \item{stat}{matrix (mxt) of marker information and effects used for genomic risk scoring}
 \item{method}{the method used}
@@ -128,20 +128,20 @@ Returns a list structure including
 This function is adapted from those written by Peter Sørensen in the qgg package.
 The following prior distributions are provided:
 
-Bayes N: Assigning a Gaussian prior to marker effects implies that the posterior means are the 
+Bayes N: Assigning a Gaussian prior to marker effects implies that the posterior means are the
 BLUP estimates (same as Ridge Regression).
 
-Bayes L: Assigning a double-exponential or Laplace prior is the density used in 
+Bayes L: Assigning a double-exponential or Laplace prior is the density used in
 the Bayesian LASSO
 
-Bayes A: similar to ridge regression but t-distribution prior (rather than Gaussian) 
-for the marker effects ; variance comes from an inverse-chi-square distribution instead of being fixed. Estimation 
-via Gibbs sampling. 
+Bayes A: similar to ridge regression but t-distribution prior (rather than Gaussian)
+for the marker effects ; variance comes from an inverse-chi-square distribution instead of being fixed. Estimation
+via Gibbs sampling.
 
-Bayes C: uses a “rounded spike” (low-variance Gaussian) at origin many small 
-effects can contribute to polygenic component, reduces the dimensionality of 
-the model (makes Gibbs sampling feasible). 
+Bayes C: uses a “rounded spike” (low-variance Gaussian) at origin many small
+effects can contribute to polygenic component, reduces the dimensionality of
+the model (makes Gibbs sampling feasible).
 
-Bayes R: Hierarchical Bayesian mixture model with 4 Gaussian components, with 
+Bayes R: Hierarchical Bayesian mixture model with 4 Gaussian components, with
 variances scaled by 0, 0.0001 , 0.001 , and 0.01 .
 }

@@ -2,7 +2,7 @@
 % Please edit documentation in R/ctwas_wrapper.R
 \name{find_data}
 \alias{find_data}
-\title{Utility function to specify the path to access the target list item in a nested list, especially when some list layers 
+\title{Utility function to specify the path to access the target list item in a nested list, especially when some list layers
 in between are dynamic or uncertain.}
 \usage{
 find_data(
@@ -15,6 +15,6 @@ find_data(
 )
 }
 \description{
-Utility function to specify the path to access the target list item in a nested list, especially when some list layers 
+Utility function to specify the path to access the target list item in a nested list, especially when some list layers
 in between are dynamic or uncertain.
 }

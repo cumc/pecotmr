@@ -15,7 +15,7 @@ multivariate_analysis_pipeline(
   coverage = c(0.95, 0.7, 0.5),
   data_driven_prior_matrices = NULL,
   data_driven_prior_matrices_cv = NULL,
-  canonical_prior_matrices = TRUE,
+  canonical_prior_matrices = FALSE,
   sample_partition = NULL,
   mrmash_max_iter = 5000,
   mvsusie_max_iter = 200,
@@ -23,7 +23,6 @@ multivariate_analysis_pipeline(
   max_cv_variants = -1,
   cv_folds = 5,
   cv_threads = 1,
-  cv_seed = 999,
   prior_weights_min = 1e-04,
   twas_weights = FALSE,
   verbose = 0,
@@ -68,8 +67,6 @@ multivariate_analysis_pipeline(
 
 \item{cv_threads}{The number of threads to use for parallel computation in cross-validation. Defaults to 1.}
 
-\item{cv_seed}{The seed for random number generation in cross-validation. Defaults to 999.}
-
 \item{prior_weights_min}{The minimum weight for prior covariance matrices. Default is 1e-4.}
 
 \item{twas_weights}{If set to TRUE, computes TWAS weights. Default is FALSE.}
@@ -113,7 +110,6 @@ result <- multivariate_analysis_pipeline(
   canonical_prior_matrices = TRUE,
   sample_partition = NULL,
   cv_folds = 5,
-  cv_seed = 999,
   cv_threads = 2,
   prior_weights_min = 1e-4,
   twas_weights = TRUE

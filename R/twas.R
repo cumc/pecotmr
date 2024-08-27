@@ -155,7 +155,6 @@ twas_analysis <- function(weights_matrix, gwas_sumstats_db, LD_matrix, extract_v
 #' containing columns 'Sample' (sample names) and 'Fold' (fold number). If NULL, 'fold' must be provided.
 #' @param weight_methods A list of methods and their specific arguments, formatted as list(method1 = method1_args, method2 = method2_args).
 #' methods in the list can be either univariate (applied to each column of Y) or multivariate (applied to the entire Y matrix).
-#' @param seed An optional integer to set the random seed for reproducibility of sample splitting.
 #' @param max_num_variants An optional integer to set the randomly selected maximum number of variants to use for CV purpose, to save computing time.
 #' @param variants_to_keep An optional integer to ensure that the listed variants are kept in the CV when there is a limit on the max_num_variants to use.
 #' @param num_threads The number of threads to use for parallel processing.
@@ -180,7 +179,7 @@ twas_analysis <- function(weights_matrix, gwas_sumstats_db, LD_matrix, extract_v
 #' @importFrom furrr future_map furrr_options
 #' @importFrom purrr map
 #' @export
-twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_methods = NULL, seed = NULL, max_num_variants = NULL, variants_to_keep = NULL, num_threads = 1, imiss_cutoff = 1.0, min_cv_maf = 0.05, ...) {
+twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_methods = NULL, max_num_variants = NULL, variants_to_keep = NULL, num_threads = 1, imiss_cutoff = 1.0, ...) {
   split_data <- function(X, Y, sample_partition, fold) {
     if (is.null(rownames(X))) {
       warning("Row names in X are missing. Using row indices.")
@@ -229,6 +228,10 @@ twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_
     rownames(X) <- rownames(Y)
   }
 
+  if (!exists(".Random.seed")) {
+    message("! No seed has been set. Please set seed for reproducable result. ")
+  }
+
   # Get sample names
   if (!is.null(rownames(X))) {
     sample_names <- rownames(X)
@@ -255,16 +258,14 @@ twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_
         message(paste("Randomly selecting", length(selected_columns), "out of", length(variants_to_keep), "input variants for cross validation purpose."))
       }
     } else {
-      X_temp <- filter_X(X, imiss_cutoff, min_cv_maf, Y = Y)
-      selected_columns <- sort(sample(ncol(X_temp), max_num_variants, replace = FALSE))
+      selected_columns <- sort(sample(ncol(X), max_num_variants, replace = FALSE))
       message(paste("Randomly selecting", length(selected_columns), "out of", ncol(X), "variants for cross validation purpose."))
     }
-    X <- X[, selected_columns]
+    X <- X[, selected_columns, drop = FALSE]
   }
 
   # Create or use provided folds
   if (!is.null(fold)) {
-    if (!is.null(seed)) set.seed(seed)
 
     if (!is.null(sample_partitions)) {
       if (fold != length(unique(sample_partition$Fold))) {
@@ -315,8 +316,9 @@ twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_
       # Remove columns with zero standard error
       valid_columns <- apply(X_train, 2, function(col) sd(col) != 0)
       X_train <- X_train[, valid_columns, drop = F]
-      X_train <- filter_X(X_train, imiss_cutoff, min_cv_maf, Y = Y_train)
-      valid_columns <- colnames(X_train)
+      # X_train <- filter_X(X_train, imiss_cutoff, min_cv_maf, Y = Y_train, drop_by_Y_only = TRUE)
+      # valid_columns <- colnames(X_train)
+      # X_test <- X_test[, valid_columns, drop=FALSE]
 
       setNames(lapply(names(weight_methods), function(method) {
         args <- weight_methods[[method]]
@@ -328,7 +330,7 @@ twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_
               args$data_driven_prior_matrices <- cv_args$data_driven_prior_matrices_cv[[j]]
             }
             if (method == "mvsusie_weights") {
-              args$prior_variance <- cv_args$data_driven_prior_matrices_cv[[j]]
+              args$prior_variance <- cv_args$mvsusie_data_driven_prior_matrices_cv[[j]]
             }
           }
           weights_matrix <- do.call(method, c(list(X = X_train, Y = Y_train), args))
@@ -342,9 +344,9 @@ twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_
           return(Y_pred)
         } else {
           Y_pred <- sapply(1:ncol(Y_train), function(k) {
-            if (!is.null(seed)) set.seed(seed)
             weights <- do.call(method, c(list(X = X_train, y = Y_train[, k]), args))
             full_weights <- rep(0, ncol(X))
+            names(full_weights) <- colnames(X)
             full_weights[valid_columns] <- weights
             # Handle NAs in weights
             full_weights[is.na(full_weights)] <- 0
@@ -358,7 +360,7 @@ twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_
 
     if (num_cores >= 2) {
       plan(multicore, workers = num_cores)
-      fold_results <- future_map(1:fold, compute_method_predictions, .options = furrr_options(seed = seed))
+      fold_results <- future_map(1:fold, compute_method_predictions, .options = furrr_options(seed=TRUE, globals = c("sample_partition", "weight_methods", "args", "cv_args")))
     } else {
       fold_results <- map(1:fold, compute_method_predictions)
     }
@@ -377,12 +379,11 @@ twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_
     names(Y_pred) <- gsub("_weights", "_predicted", names(Y_pred))
 
     # Compute rsq, adj rsq, p-value, RMSE, and MAE for each method
-    # metrics_table <- matrix(NA, nrow = length(weight_methods), ncol = 5)
     metrics_table <- list()
 
     for (m in names(weight_methods)) {
-      metrics_table[[m]] <- matrix(NA, nrow = ncol(Y), ncol = 5)
-      colnames(metrics_table[[m]]) <- c("corr", "adj_rsq", "adj_rsq_pval", "RMSE", "MAE")
+      metrics_table[[m]] <- matrix(NA, nrow = ncol(Y), ncol = 6)
+      colnames(metrics_table[[m]]) <- c("corr", "rsq", "adj_rsq", "adj_rsq_pval", "RMSE", "MAE")
       rownames(metrics_table[[m]]) <- colnames(Y)
 
       for (r in 1:ncol(Y)) {
@@ -400,7 +401,7 @@ twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_
           # Calculate raw correlation and and adjusted R-squared
           metrics_table[[m]][r, "corr"] <- cor(actual_values, method_predictions)
 
-
+          metrics_table[[m]][r, "rsq"] <- summary(lm_fit)$r.squared
           metrics_table[[m]][r, "adj_rsq"] <- summary(lm_fit)$adj.r.squared
 
           # Calculate p-value
@@ -447,7 +448,7 @@ twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_
 #' @importFrom furrr future_map furrr_options
 #' @importFrom purrr map exec
 #' @importFrom rlang !!!
-twas_weights <- function(X, Y, weight_methods, num_threads = 1, seed = NULL) {
+twas_weights <- function(X, Y, weight_methods, num_threads = 1) {
   if (!is.matrix(X) || (!is.matrix(Y) && !is.vector(Y))) {
     stop("X must be a matrix and Y must be a matrix or a vector.")
   }
@@ -471,20 +472,19 @@ twas_weights <- function(X, Y, weight_methods, num_threads = 1, seed = NULL) {
 
     # Remove columns with zero standard error
     valid_columns <- apply(X, 2, function(col) sd(col) != 0)
-    X_filtered <- as.matrix(X[, valid_columns])
+    X_filtered <- as.matrix(X[, valid_columns, drop=FALSE])
 
     if (method_name %in% multivariate_weight_methods) {
       # Apply multivariate method
-      weights_matrix <- exec(method_name, X = X_filtered, Y = Y, !!!args)
-      if (nrow(weights_matrix) != length(valid_columns)) weights_matrix <- weights_matrix[names(valid_columns), , drop = FALSE]
+      weights_matrix <- do.call(method_name, c(list(X = X_filtered, Y = Y), args))
+      if(nrow(weights_matrix)!= length(valid_columns)) weights_matrix <- weights_matrix[names(valid_columns),,drop = FALSE]
     } else {
       # Apply univariate method to each column of Y
       # Initialize it with zeros to avoid NA
-      if (!is.null(seed)) set.seed(seed)
       weights_matrix <- matrix(0, nrow = ncol(X_filtered), ncol = ncol(Y))
 
       for (k in 1:ncol(Y)) {
-        weights_vector <- exec(method_name, X = X_filtered, y = Y[, k], !!!args)
+        weights_vector <- do.call(method_name, c(list(X = X_filtered, y = Y[, k]), args))
         if (is.matrix(weights_vector)) weights_vector <- weights_vector[, k]
         weights_matrix[, k] <- weights_vector
       }
@@ -502,7 +502,7 @@ twas_weights <- function(X, Y, weight_methods, num_threads = 1, seed = NULL) {
   if (num_cores >= 2) {
     # Set up parallel backend to use multiple cores
     plan(multicore, workers = num_cores)
-    weights_list <- names(weight_methods) %>% future_map(compute_method_weights, weight_methods, .options = furrr_options(seed = seed))
+    weights_list <- names(weight_methods) %>% future_map(compute_method_weights, weight_methods, .options = furrr_options(seed=TRUE))
   } else {
     weights_list <- names(weight_methods) %>% map(compute_method_weights, weight_methods)
   }

@@ -113,7 +113,7 @@ compute_LD <- function(X) {
 }
 
 #' @importFrom matrixStats colVars
-filter_X <- function(X, missing_rate_thresh, maf_thresh, var_thresh = 0, Y = NULL) {
+filter_X <- function(X, missing_rate_thresh, maf_thresh, var_thresh = 0) {
   rm_col <- which(apply(X, 2, compute_missing) > missing_rate_thresh)
   if (length(rm_col)) X <- X[, -rm_col]
   rm_col <- which(apply(X, 2, compute_maf) <= maf_thresh)
@@ -125,32 +125,30 @@ filter_X <- function(X, missing_rate_thresh, maf_thresh, var_thresh = 0, Y = NUL
     rm_col <- which(matrixStats::colVars(X) < var_thresh)
     if (length(rm_col)) X <- X[, -rm_col]
   }
-  # If Y is provided, remove variants that has zero variance with under the influence of NAs in Y
-  if (!is.null(Y) & is.matrix(Y)) {
-    drop_snp_indices <- c()
-    for (context_idx in 1:ncol(Y)) {
-      for (snp_idx in 1:ncol(X)) {
-        unique_values <- unique(X[, snp_idx])
-        for (value in unique_values) {
-          subjects_with_same_genotype <- which(X[, snp_idx] == value)
-          subjects_with_na_Y <- which(is.na(Y[, context_idx]))
-          if (all(subjects_with_same_genotype %in% subjects_with_na_Y)) {
-            # Temporarily remove the specific value and check variance
-            temp_X <- X[, snp_idx]
-            temp_X[subjects_with_same_genotype] <- NA
-            if (sd(temp_X, na.rm = TRUE) == 0) {
-              drop_snp_indices <- c(drop_snp_indices, snp_idx)
-            } else if (compute_maf(na.omit(temp_X)) <= maf_thresh) {
-              drop_snp_indices <- c(drop_snp_indices, snp_idx)
-            }
-          }
-        }
-      }
-    }
-    drop_snp_indices <- unique(drop_snp_indices)
-    if (length(drop_snp_indices)) X <- X[, -drop_snp_indices, drop = FALSE]
-    message(paste0("Dropped ", length(drop_snp_indices), " variants with condition of Y subjects, remaining ", ncol(X), "variants. "))
+  return(X)
+}
+
+# filter X and Y for TWAS analysis 
+filter_X_with_Y <- function(X, Y, missing_rate_thresh, maf_thresh, var_thresh=0, X_variance=NULL) {
+  tol_variants <- ncol(X)
+  X <- filter_X(X, missing_rate_thresh, maf_thresh, var_thresh=0)
+  # filter X variants by variance from residual_X
+  if (var_thresh > 0 && !is.null(X_variance)) {
+    X_variance <- X_variance[colnames(X)]
+    rm_col <- which(X_variance < var_thresh)
+    if (length(rm_col)) X <- X[, -rm_col, drop = FALSE]
+    message(paste0("Out of total ", tol_variants, " variants, dropped ", tol_variants-ncol(X)," variants. "))
   }
+  drop_idx <- do.call(c, lapply(colnames(Y), function(context) {
+    subjects_with_na_Y <- rownames(Y)[is.na(Y[, context])]
+    X_temp <- X
+    X_temp[subjects_with_na_Y, ] <- NA
+    rm_col <- which(apply(X_temp, 2, function(x) is_zero_variance(na.omit(x))))
+    return(unique(rm_col))
+  }))
+  drop_idx <- unique(sort(drop_idx))
+  if (length(drop_idx)) X <- X[, -drop_idx, drop = FALSE]
+  message(paste0("Dropped additional ", length(drop_idx), " variants with condition of Y subjects, remaining ", ncol(X), " variants. "))
   return(X)
 }
 
@@ -166,6 +164,15 @@ filter_Y <- function(Y, n_nonmiss) {
   }
   return(list(Y = Y, rm_rows = rm_rows))
 }
+
+filter_data_driven_priors <- function(data_driven_prior_matrices, prior_weights_min){
+  component_names <- names(data_driven_prior_matrices$U)
+  subset_indices <- which(data_driven_prior_matrices$w > prior_weights_min)
+  data_driven_prior_matrices = list(U=data_driven_prior_matrices$U[subset_indices], w=data_driven_prior_matrices$w[subset_indices])
+  message(paste0(length(data_driven_prior_matrices$U), " components of data driven matrices remained after filtering. "))
+  return(data_driven_prior_matrices)
+}
+
 
 format_variant_id <- function(names_vector) {
   gsub("_", ":", names_vector)

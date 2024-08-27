@@ -5,17 +5,17 @@
 \title{cTWAS (causal-TWAS) wrapper
 Determine Imputability and Variant Selection
 
-This function load TWAS weights and assesses the imputability of genes across different contexts, 
-and select top variants for imputable gene-context pair, and output the extracted variant weights 
-from best performing method model. Imputability of a gene-context pair are determined by having 
-least one of the twas methods' model being imputable based on cross livadtion metrics. The imputable 
-model is if the model surpasses the r-square and p-value threashold from cross validation metrics. 
-If non of the contexts of a gene has at least one method being imputable, then this gene will be 
-considered as unimputable, and do not return any weight results. For imputable gene-context pair, 
-we select a subset of variants with high Posterior Inclusion Probabilities (PIPs) from SuSiE 
-fine-mapping results for the imputable gene-context pair. After selecting variants, we extracts 
-variant weights from the best performing model among imputable models with highest r-square or 
-smallest p-value from cross validation metrics. This function is essential for preparing data 
+This function load TWAS weights and assesses the imputability of genes across different contexts,
+and select top variants for imputable gene-context pair, and output the extracted variant weights
+from best performing method model. Imputability of a gene-context pair are determined by having
+least one of the twas methods' model being imputable based on cross livadtion metrics. The imputable
+model is if the model surpasses the r-square and p-value threashold from cross validation metrics.
+If non of the contexts of a gene has at least one method being imputable, then this gene will be
+considered as unimputable, and do not return any weight results. For imputable gene-context pair,
+we select a subset of variants with high Posterior Inclusion Probabilities (PIPs) from SuSiE
+fine-mapping results for the imputable gene-context pair. After selecting variants, we extracts
+variant weights from the best performing model among imputable models with highest r-square or
+smallest p-value from cross validation metrics. This function is essential for preparing data
 for complex trait weighted analysis with sparse weight.}
 \usage{
 generate_twas_db(
@@ -43,7 +43,7 @@ generate_twas_db(
 \value{
 A list of elements containing fine-mapping and TWAS related data:
 \itemize{
-  \item{refined_twas_weights}{Context imputability, model selection, and selected variants, and extracted 
+  \item{refined_twas_weights}{Context imputability, model selection, and selected variants, and extracted
 weights for the selected variants across all contexts for a imputable gene. }
   \item{susie_results}{SuSiE fine-mapping results, including variant selection from the SuSiE-TWAS pipeline.}
   \item{weights}{TWAS weights from the SuSiE-TWAS pipeline, to be harmonized for further analysis.}
@@ -55,6 +55,8 @@ weights for the selected variants across all contexts for a imputable gene. }
 Causal inference for TWAS with Summary Statistics with Multigroup Data
 }
 \examples{
-results <- generate_twas_db(weight_db_file = "path/to/weights.rds", conditions=c("Mic", "Oli", "Exc"),
-                                  max_var_selection = 10, min_rsq_threshold = 0.01, p_val_cutoff = 0.05)
+results <- generate_twas_db(
+  weight_db_file = "path/to/weights.rds", conditions = c("Mic", "Oli", "Exc"),
+  max_var_selection = 10, min_rsq_threshold = 0.01, p_val_cutoff = 0.05
+)
 }

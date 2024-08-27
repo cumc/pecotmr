@@ -372,7 +372,7 @@ add_Y_residuals <- function(data_list, conditions, scale_residuals = FALSE) {
 #' @param conditions A vector of strings representing different conditions or groups.
 #' @param maf_cutoff Minimum minor allele frequency (MAF) cutoff. Default is 0.
 #' @param mac_cutoff Minimum minor allele count (MAC) cutoff. Default is 0.
-#' @param xvar_cutoff Maximum variant missingness cutoff. Default is 0.
+#' @param xvar_cutoff Minimum variance cutoff. Default is 0.
 #' @param imiss_cutoff Maximum individual missingness cutoff. Default is 0.
 #' @param association_window A string of chr:start-end for the association analysis window (cis or trans). If not provided, all genotype data will be loaded.
 #' @param extract_region_name A list of vectors of strings (e.g., gene ID ENSG00000269699) to subset the information when there are multiple regions available. Default is NULL.
@@ -536,7 +536,8 @@ load_regional_multivariate_data <- function(matrix_y_min_complete = NULL, # when
     X = X,
     maf = apply(X, 2, compute_maf),
     chrom = dat$chrom,
-    grange = dat$grange
+    grange = dat$grange,
+    X_variance= matrixStats::colVars(X)
   ))
 }
 

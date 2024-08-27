@@ -23,7 +23,6 @@ twas_multivariate_weights_pipeline(
   secondary_coverage = c(0.7, 0.5),
   min_cv_maf = 0.05,
   max_cv_variants = -1,
-  cv_seed = 999,
   cv_threads = 1,
   verbose = FALSE,
   imiss_cutoff = NULL
