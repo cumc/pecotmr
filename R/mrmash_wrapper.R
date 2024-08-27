@@ -276,6 +276,7 @@ compute_w0 <- function(Bhat, ncomps) {
 
 ### Filter data-driven matrices
 filter_data_driven_mats <- function(Y, data_driven_mats, data_driven_mats_w = NULL, prior_weights_min = 1e-4) {
+  conditions_to_keep <- colnames(Y)
   # Check if colnames of Y is a subset of column names of each element in data_driven_mats
   data_driven_mats <- lapply(data_driven_mats, function(mat, to_keep) {
     missing_conditions <- setdiff(conditions_to_keep, colnames(mat))
