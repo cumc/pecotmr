@@ -39,7 +39,7 @@ load_regional_association_data(
 
 \item{mac_cutoff}{Minimum minor allele count (MAC) cutoff. Default is 0.}
 
-\item{xvar_cutoff}{Maximum variant missingness cutoff. Default is 0.}
+\item{xvar_cutoff}{Minimum variance cutoff. Default is 0.}
 
 \item{imiss_cutoff}{Maximum individual missingness cutoff. Default is 0.}
 
