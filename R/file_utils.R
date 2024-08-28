@@ -538,7 +538,7 @@ load_regional_multivariate_data <- function(matrix_y_min_complete = NULL, # when
     maf = apply(X, 2, compute_maf),
     chrom = dat$chrom,
     grange = dat$grange,
-    X_variance= colVars(X)
+    X_variance = colVars(X)
   ))
 }
 

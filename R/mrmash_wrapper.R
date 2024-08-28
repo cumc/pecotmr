@@ -165,7 +165,7 @@ mrmash_wrapper <- function(X,
 
   B_init <- as.matrix(out$Bhat)
   w0 <- compute_w0(B_init, length(S0))
-  
+
   # Fit mr.mash
   fit_mrmash <- mr.mash(
     X = X, Y = Y, S0 = S0, w0 = w0, update_w0 = update_w0, tol = tol,
@@ -219,7 +219,6 @@ compute_coefficients_univ_glmnet <- function(X, Y, alpha, standardize, nthreads,
   r <- ncol(Y)
 
   linreg <- function(i, X, Y, alpha, standardize, nthreads, Xnew) {
-
     samples_kept <- which(!is.na(Y[, i]))
     Ynomiss <- Y[samples_kept, i, drop = FALSE]
     Xnomiss <- X[samples_kept, , drop = FALSE]
@@ -273,69 +272,30 @@ compute_w0 <- function(Bhat, ncomps) {
   return(w0)
 }
 
+#' Re-normalize mrmash weight w0 to have total weight sum to 1
+#' @param w0 is the weight of mr.mash prior matrices that was generated from mr.mash() function.
+rescale_cov_w0 <- function(w0) {
+  # remove null component
+  w0 <- w0[names(w0) != "null"]
 
-#' Function to filter data-driven matrices.
-#' @param data_driven_mats data_driven_mats A list of matrices representing the data-driven prior matrices. Each matrix 
-#' in the list corresponds to a specific pattern of sharing that you want to impose in the model. This parameter should 
-#' be set to the list $U from the data-driven prior matrices.
-#' @param data_driven_mats_w A vector of weights of the data_driven_mats. This parameter should be set to the vector $w 
-#' from the data-driven prior matrices.
-#' @param prior_weights_min The minimum weight for prior covariance matrices. Default is 1e-4.
-filter_data_driven_mats <- function(Y, data_driven_mats, data_driven_mats_w = NULL, prior_weights_min = 1e-4) {
-  conditions_to_keep <- colnames(Y)
-  # Check if colnames of Y is a subset of column names of each element in data_driven_mats
-  data_driven_mats <- lapply(data_driven_mats, function(mat, to_keep) {
-    missing_conditions <- setdiff(conditions_to_keep, colnames(mat))
-    if (length(missing_conditions) > 0) {
-      stop(paste("Condition(s)", paste(missing_conditions, collapse = ", "), "not found in matrix", mat_name))
-    }
-    mat[to_keep, to_keep]
-  }, conditions_to_keep)
-  
-  for (mat_name in names(data_driven_mats)) {
-    # remove null component 
-    if (all(data_driven_mats[[mat_name]] == 0)) {
-      data_driven_mats[[mat_name]] <- NULL
-      if (!is.null(data_driven_mats_w)) data_driven_mats_w <- data_driven_mats_w[!names(data_driven_mats_w) %in% mat_name]
-      next
-    }
-    if(!is.null(data_driven_mats_w)){
-      if(data_driven_mats_w[mat_name] < prior_weights_min) {
-        data_driven_mats_w <- data_driven_mats_w[!names(data_driven_mats_w) %in% mat_name]
-        data_driven_mats[[mat_name]] <- NULL
-      }
-      next
-    }
-  }
-  message(paste(length(data_driven_mats), "components of data driven matrices remained after filtering. "))
-  return(list(U=data_driven_mats, w=data_driven_mats_w))
-}
+  # split by prior group
+  groups <- sub("_[^_]+$", "", names(w0))
+  group_list <- split(w0, groups)
 
+  # get per group sum
+  group_weight <- lapply(group_list, sum)
 
-#' Re-normalize mrmash weight w0 to have total weight sum to 1 
-#' @param w0 is the weight of mr.mash prior matrices that was generated from mr.mash() function. 
-rescale_cov_w0 <- function(w0){
-    # remove null component 
-    w0 <- w0[names(w0) != "null"]
-    
-    # split by prior group 
-    groups = sub("_[^_]+$", "",  names(w0))
-    group_list <- split(w0, groups)
+  # Renormalize values within each group
+  weights_list <- unlist(group_weight)
+  weights_list <- weights_list / sum(weights_list)
 
-    # get per group sum 
-    group_weight <-  lapply(group_list, sum)
-    
-    # Renormalize values within each group
-    weights_list <- unlist(group_weight)
-    weights_list <- weights_list/sum(weights_list)
-    
-    # vector to store updated group w0
-    updated_w0 <- rep(NA, length(unique(groups)))
-    names(updated_w0) <- unique(groups)
-    
-    # replace with updated values
-    updated_w0[names(weights_list)] <- weights_list
-    return(updated_w0)
+  # vector to store updated group w0
+  updated_w0 <- rep(NA, length(unique(groups)))
+  names(updated_w0) <- unique(groups)
+
+  # replace with updated values
+  updated_w0[names(weights_list)] <- weights_list
+  return(updated_w0)
 }
 
 

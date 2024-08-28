@@ -128,22 +128,22 @@ filter_X <- function(X, missing_rate_thresh, maf_thresh, var_thresh = 0) {
   return(X)
 }
 
-#' This function performing filters on X variants based on Y subjects for TWAS analysis. This function checks 
-#' whether the absence (NA) of certain subjects would lead to monomorphic in some variants in X after removing 
-#' of these subjects data from X. 
+#' This function performing filters on X variants based on Y subjects for TWAS analysis. This function checks
+#' whether the absence (NA) of certain subjects would lead to monomorphic in some variants in X after removing
+#' of these subjects data from X.
 #' @param missing_rate_thresh Maximum individual missingness cutoff.
 #' @param maf_thresh Minimum minor allele frequency (MAF) cutoff.
 #' @param var_thresh Minimum variance cutoff for a variant. Default is 0.
 #' @param X_variance A vector of variance for X variants.
-filter_X_with_Y <- function(X, Y, missing_rate_thresh, maf_thresh, var_thresh=0, X_variance=NULL) {
+filter_X_with_Y <- function(X, Y, missing_rate_thresh, maf_thresh, var_thresh = 0, X_variance = NULL) {
   tol_variants <- ncol(X)
-  X <- filter_X(X, missing_rate_thresh, maf_thresh, var_thresh=0)
+  X <- filter_X(X, missing_rate_thresh, maf_thresh, var_thresh = 0)
   # filter X variants by variance from residual_X
   if (var_thresh > 0 && !is.null(X_variance)) {
     X_variance <- X_variance[colnames(X)]
     rm_col <- which(X_variance < var_thresh)
     if (length(rm_col)) X <- X[, -rm_col, drop = FALSE]
-    message(paste0("Out of total ", tol_variants, " variants, dropped ", tol_variants-ncol(X)," variants. "))
+    message(paste0("Out of total ", tol_variants, " variants, dropped ", tol_variants - ncol(X), " variants. "))
   }
   drop_idx <- do.call(c, lapply(colnames(Y), function(context) {
     subjects_with_na_Y <- rownames(Y)[is.na(Y[, context])]

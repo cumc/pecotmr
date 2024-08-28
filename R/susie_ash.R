@@ -515,7 +515,6 @@ susie_ash <- function(X, y, L = min(10, ncol(X)),
       ## if null_weight is specified, we compute the original prior_weight
       pw_s <- s$pi[-s$null_index] / (1 - null_weight)
       if (!compute_univariate_zscore) {
-
         ## if null_weight is specified, and the extra 0 column is not
         ## removed from compute_univariate_zscore, we remove it here
         X <- X[, 1:(ncol(X) - 1)]

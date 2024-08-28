@@ -266,7 +266,6 @@ twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_
 
   # Create or use provided folds
   if (!is.null(fold)) {
-
     if (!is.null(sample_partitions)) {
       if (fold != length(unique(sample_partition$Fold))) {
         message(paste0(
@@ -357,7 +356,7 @@ twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_
 
     if (num_cores >= 2) {
       plan(multicore, workers = num_cores)
-      fold_results <- future_map(1:fold, compute_method_predictions, .options = furrr_options(seed=TRUE, globals = c("sample_partition", "weight_methods", "args", "cv_args")))
+      fold_results <- future_map(1:fold, compute_method_predictions, .options = furrr_options(seed = TRUE, globals = c("sample_partition", "weight_methods", "args", "cv_args")))
     } else {
       fold_results <- map(1:fold, compute_method_predictions)
     }
@@ -469,12 +468,12 @@ twas_weights <- function(X, Y, weight_methods, num_threads = 1) {
 
     # Remove columns with zero standard error
     valid_columns <- apply(X, 2, function(col) sd(col) != 0)
-    X_filtered <- as.matrix(X[, valid_columns, drop=FALSE])
+    X_filtered <- as.matrix(X[, valid_columns, drop = FALSE])
 
     if (method_name %in% multivariate_weight_methods) {
       # Apply multivariate method
       weights_matrix <- do.call(method_name, c(list(X = X_filtered, Y = Y), args))
-      if(nrow(weights_matrix)!= length(valid_columns)) weights_matrix <- weights_matrix[names(valid_columns),,drop = FALSE]
+      if (nrow(weights_matrix) != length(valid_columns)) weights_matrix <- weights_matrix[names(valid_columns), , drop = FALSE]
     } else {
       # Apply univariate method to each column of Y
       # Initialize it with zeros to avoid NA
@@ -499,7 +498,7 @@ twas_weights <- function(X, Y, weight_methods, num_threads = 1) {
   if (num_cores >= 2) {
     # Set up parallel backend to use multiple cores
     plan(multicore, workers = num_cores)
-    weights_list <- names(weight_methods) %>% future_map(compute_method_weights, weight_methods, .options = furrr_options(seed=TRUE))
+    weights_list <- names(weight_methods) %>% future_map(compute_method_weights, weight_methods, .options = furrr_options(seed = TRUE))
   } else {
     weights_list <- names(weight_methods) %>% map(compute_method_weights, weight_methods)
   }
