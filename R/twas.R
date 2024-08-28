@@ -179,7 +179,7 @@ twas_analysis <- function(weights_matrix, gwas_sumstats_db, LD_matrix, extract_v
 #' @importFrom furrr future_map furrr_options
 #' @importFrom purrr map
 #' @export
-twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_methods = NULL, max_num_variants = NULL, variants_to_keep = NULL, num_threads = 1, imiss_cutoff = 1.0, ...) {
+twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_methods = NULL, max_num_variants = NULL, variants_to_keep = NULL, num_threads = 1, ...) {
   split_data <- function(X, Y, sample_partition, fold) {
     if (is.null(rownames(X))) {
       warning("Row names in X are missing. Using row indices.")
@@ -316,9 +316,6 @@ twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_
       # Remove columns with zero standard error
       valid_columns <- apply(X_train, 2, function(col) sd(col) != 0)
       X_train <- X_train[, valid_columns, drop = F]
-      # X_train <- filter_X(X_train, imiss_cutoff, min_cv_maf, Y = Y_train, drop_by_Y_only = TRUE)
-      # valid_columns <- colnames(X_train)
-      # X_test <- X_test[, valid_columns, drop=FALSE]
 
       setNames(lapply(names(weight_methods), function(method) {
         args <- weight_methods[[method]]
@@ -330,7 +327,7 @@ twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_
               args$data_driven_prior_matrices <- cv_args$data_driven_prior_matrices_cv[[j]]
             }
             if (method == "mvsusie_weights") {
-              args$prior_variance <- cv_args$mvsusie_data_driven_prior_matrices_cv[[j]]
+              args$prior_variance <- cv_args$reweighted_data_driven_prior_matrices_cv[[j]]
             }
           }
           weights_matrix <- do.call(method, c(list(X = X_train, Y = Y_train), args))

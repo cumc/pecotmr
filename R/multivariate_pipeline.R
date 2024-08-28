@@ -154,13 +154,10 @@ multivariate_analysis_pipeline <- function(
       X_filtered <- X_filtered[, -columns_to_remove, drop = FALSE]
     }
     return(list(X_filtered = X_filtered, Y_filtered = Y_filtered))
-  }                            
+  }
   # Skip conditions based on PIP values
   Y <- skip_conditions(X, Y, pip_cutoff_to_skip)
   if (is.null(Y)) {
-    return(list())
-  }
-  if (nrow(Y) == 0 || is.null(Y)) {
     return(list())
   }
                                     
@@ -237,8 +234,8 @@ multivariate_analysis_pipeline <- function(
   # Run TWAS pipeline
   if (twas_weights) {
     if (!is.null(res$mnm_result$susie_result_trimmed)) {
-      res$mvsusie_data_driven_prior_matrices <- filtered_data$data_driven_prior_matrices
-      res$mvsusie_data_driven_prior_matrices_cv <- filtered_data$data_driven_prior_matrices_cv
+      res$reweighted_data_driven_prior_matrices <- filtered_data$data_driven_prior_matrices
+      res$reweighted_data_driven_prior_matrices_cv <- filtered_data$data_driven_prior_matrices_cv
     }
     res <- twas_multivariate_weights_pipeline(X, Y, maf, res,
       resid_Y = resid_Y, cv_folds = cv_folds, sample_partition = sample_partition,
@@ -251,6 +248,7 @@ multivariate_analysis_pipeline <- function(
     )
   }
   res$mvsusie_prior <- data_driven_prior_matrices$prior_variance
+  res <- res[!names(res) %in% c("reweighted_data_driven_prior_matrices", "reweighted_data_driven_prior_matrices_cv")]
   return(res)
 }
 
@@ -330,7 +328,7 @@ twas_multivariate_weights_pipeline <- function(
     max_L <- determine_max_L(mvsusie_fitted)
     message("Fitting mvSuSiE model on preset variants ...")
     res$mnm_result$preset_variants_result <- mvsusie(
-      X = X, Y = Y, L = max_L, prior_variance = res$mvsusie_data_driven_prior_matrices,
+      X = X, Y = Y, L = max_L, prior_variance = res$reweighted_data_driven_prior_matrices,
       residual_variance = resid_Y, precompute_covariances = FALSE, compute_objective = T,
       estimate_residual_variance = F, estimate_prior_variance = T, estimate_prior_method = "EM",
       max_iter = mvsusie_max_iter, n_thread = 1, approximate = F, verbosity = verbose, coverage = coverage
@@ -345,7 +343,7 @@ twas_multivariate_weights_pipeline <- function(
     
     weight_methods <- c(weight_methods, list(mvsusie_weights = list(
       mvsusie_fit = mvsusie_fitted,
-      prior_variance = res$mvsusie_data_driven_prior_matrices,
+      prior_variance = res$reweighted_data_driven_prior_matrices,
       residual_variance = resid_Y,
       L = max_L,
       max_iter = mvsusie_max_iter,
@@ -374,7 +372,7 @@ twas_multivariate_weights_pipeline <- function(
     )
     if (!is.null(mvsusie_fitted)){
       weight_methods <- c(weight_methods, list(mvsusie_weights = list(
-        prior_variance = res$mvsusie_data_driven_prior_matrices,
+        prior_variance = res$reweighted_data_driven_prior_matrices,
         residual_variance = resid_Y,
         L = max_L,
         max_iter = mvsusie_max_iter,
@@ -400,8 +398,7 @@ twas_multivariate_weights_pipeline <- function(
       max_num_variants = max_cv_variants,
       variants_to_keep = if (length(variants_for_cv) > 0) variants_for_cv else NULL,
       data_driven_prior_matrices_cv = data_driven_prior_matrices_cv,
-      mvsusie_data_driven_prior_matrices_cv = res$mvsusie_data_driven_prior_matrices_cv,
-      imiss_cutoff = imiss_cutoff
+      reweighted_data_driven_prior_matrices_cv = res$reweighted_data_driven_prior_matrices_cv
     )
     res <- copy_twas_cv_results(res, twas_cv_result)
   }
