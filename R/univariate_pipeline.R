@@ -2,15 +2,15 @@
 #' @importFrom susieR susie
 #' @export
 univariate_analysis_pipeline <- function(X, Y, X_scalar, Y_scalar, maf, other_quantities = list(),
-                                         pip_cutoff_to_skip = 0, region_info = NULL,
-                                         finemapping = TRUE, twas_weights = TRUE,
+                                         pip_cutoff_to_skip = 0,
+                                         twas_weights = TRUE,
                                          finemapping_opts = list(
                                            init_L = 5, max_L = 20, l_step = 5,
                                            coverage = c(0.95, 0.7, 0.5), signal_cutoff = 0.025
                                          ),
                                          twas_weights_opts = list(
                                            cv_folds = 5, min_cv_maf = 0, max_cv_variants = -1, seed = 999, cv_threads = 1,
-                                           ld_reference_meta_file = NULL, region_info = NULL
+                                           ld_reference_meta_file = NULL
                                          )) {
   if (pip_cutoff_to_skip > 0) {
     top_model_pip <- susie(X, Y, L = 1)$pip
@@ -24,15 +24,11 @@ univariate_analysis_pipeline <- function(X, Y, X_scalar, Y_scalar, maf, other_qu
   pri_coverage <- finemapping_opts$coverage[1]
   sec_coverage <- if (length(finemapping_opts$coverage) > 1) finemapping_opts$coverage[-1] else NULL
   st <- proc.time()
-  if (finemapping) {
-    res <- susie_wrapper(X, Y, init_L = finemapping_opts$init_L, max_L = finemapping_opts$max_L, l_step = finemapping_opts$l_step, refine = TRUE, coverage = pri_coverage)
-    res <- susie_post_processor(res, X, Y, X_scalar, Y_scalar, maf,
+  res <- susie_wrapper(X, Y, init_L = finemapping_opts$init_L, max_L = finemapping_opts$max_L, l_step = finemapping_opts$l_step, refine = TRUE, coverage = pri_coverage)
+  res <- susie_post_processor(res, X, Y, X_scalar, Y_scalar, maf,
       secondary_coverage = sec_coverage, signal_cutoff = finemapping_opts$signal_cutoff,
       other_quantities = other_quantities
-    )
-  } else {
-    res <- list()
-  }
+  )
   if (twas_weights) {
     twas_weights_output <- twas_weights_pipeline(X, Y, maf,
       susie_fit = res$susie_result_trimmed,
@@ -43,7 +39,6 @@ univariate_analysis_pipeline <- function(X, Y, X_scalar, Y_scalar, maf, other_qu
     )
     res <- c(res, twas_weights_output)
   }
-  if (!is.null(region_info)) res$region_info <- region_info
   res$total_time_elapsed <- proc.time() - st
   return(res)
 }

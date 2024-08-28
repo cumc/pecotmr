@@ -114,10 +114,14 @@ compute_LD <- function(X) {
 
 #' @importFrom matrixStats colVars
 filter_X <- function(X, missing_rate_thresh, maf_thresh, var_thresh = 0) {
-  rm_col <- which(apply(X, 2, compute_missing) > missing_rate_thresh)
-  if (length(rm_col)) X <- X[, -rm_col]
-  rm_col <- which(apply(X, 2, compute_maf) <= maf_thresh)
-  if (length(rm_col)) X <- X[, -rm_col]
+  if (!is.null(missing_rate_thresh) && missing_rate_thresh < 1.0) {
+    rm_col <- which(apply(X, 2, compute_missing) > missing_rate_thresh)
+    if (length(rm_col)) X <- X[, -rm_col]
+  }
+  if (!is.null(maf_thresh) && maf_thresh > 0.0) {
+    rm_col <- which(apply(X, 2, compute_maf) <= maf_thresh)
+    if (length(rm_col)) X <- X[, -rm_col]
+  }
   rm_col <- which(apply(X, 2, is_zero_variance))
   if (length(rm_col)) X <- X[, -rm_col]
   X <- mean_impute(X)

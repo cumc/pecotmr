@@ -287,8 +287,13 @@ rescale_cov_w0 <- function(w0) {
 
   # Renormalize values within each group
   weights_list <- unlist(group_weight)
-  weights_list <- weights_list / sum(weights_list)
-
+  sum_weights <- sum(weights_list)
+  if (sum_weights > 0) {
+    weights_list <- weights_list / sum_weights
+  } else {
+    # Use equal weights if all non null weights are zeros
+    weights_list <- setNames(seq(1/length(weights_list), length(weights_list)), names(weights_list))
+  }
   # vector to store updated group w0
   updated_w0 <- rep(NA, length(unique(groups)))
   names(updated_w0) <- unique(groups)
