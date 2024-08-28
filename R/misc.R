@@ -122,13 +122,19 @@ filter_X <- function(X, missing_rate_thresh, maf_thresh, var_thresh = 0) {
   if (length(rm_col)) X <- X[, -rm_col]
   X <- mean_impute(X)
   if (var_thresh > 0) {
-    rm_col <- which(matrixStats::colVars(X) < var_thresh)
+    rm_col <- which(colVars(X) < var_thresh)
     if (length(rm_col)) X <- X[, -rm_col]
   }
   return(X)
 }
 
-# filter X and Y for TWAS analysis 
+#' This function performing filters on X variants based on Y subjects for TWAS analysis. This function checks 
+#' whether the absence (NA) of certain subjects would lead to monomorphic in some variants in X after removing 
+#' of these subjects data from X. 
+#' @param missing_rate_thresh Maximum individual missingness cutoff.
+#' @param maf_thresh Minimum minor allele frequency (MAF) cutoff.
+#' @param var_thresh Minimum variance cutoff for a variant. Default is 0.
+#' @param X_variance A vector of variance for X variants.
 filter_X_with_Y <- function(X, Y, missing_rate_thresh, maf_thresh, var_thresh=0, X_variance=NULL) {
   tol_variants <- ncol(X)
   X <- filter_X(X, missing_rate_thresh, maf_thresh, var_thresh=0)
@@ -163,14 +169,6 @@ filter_Y <- function(Y, n_nonmiss) {
     Y <- Y[which(!is.na(Y))]
   }
   return(list(Y = Y, rm_rows = rm_rows))
-}
-
-filter_data_driven_priors <- function(data_driven_prior_matrices, prior_weights_min){
-  component_names <- names(data_driven_prior_matrices$U)
-  subset_indices <- which(data_driven_prior_matrices$w > prior_weights_min)
-  data_driven_prior_matrices = list(U=data_driven_prior_matrices$U[subset_indices], w=data_driven_prior_matrices$w[subset_indices])
-  message(paste0(length(data_driven_prior_matrices$U), " components of data driven matrices remained after filtering. "))
-  return(data_driven_prior_matrices)
 }
 
 

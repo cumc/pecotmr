@@ -274,7 +274,13 @@ compute_w0 <- function(Bhat, ncomps) {
 }
 
 
-### Filter data-driven matrices
+#' Function to filter data-driven matrices.
+#' @param data_driven_mats data_driven_mats A list of matrices representing the data-driven prior matrices. Each matrix 
+#' in the list corresponds to a specific pattern of sharing that you want to impose in the model. This parameter should 
+#' be set to the list $U from the data-driven prior matrices.
+#' @param data_driven_mats_w A vector of weights of the data_driven_mats. This parameter should be set to the vector $w 
+#' from the data-driven prior matrices.
+#' @param prior_weights_min The minimum weight for prior covariance matrices. Default is 1e-4.
 filter_data_driven_mats <- function(Y, data_driven_mats, data_driven_mats_w = NULL, prior_weights_min = 1e-4) {
   conditions_to_keep <- colnames(Y)
   # Check if colnames of Y is a subset of column names of each element in data_driven_mats
@@ -306,7 +312,7 @@ filter_data_driven_mats <- function(Y, data_driven_mats, data_driven_mats_w = NU
 }
 
 
-### Re-normalize mrmash weight w0 for total weight sum to 1 
+#' Re-normalize mrmash weight w0 to have total weight sum to 1 
 #' @param w0 is the weight of mr.mash prior matrices that was generated from mr.mash() function. 
 rescale_cov_w0 <- function(w0){
     # remove null component 

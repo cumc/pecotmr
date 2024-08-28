@@ -507,6 +507,7 @@ pheno_list_to_mat <- function(data_list) {
   return(data_list)
 }
 
+#' @importFrom matrixStats colVars
 #' @return A list
 #' @export
 load_regional_multivariate_data <- function(matrix_y_min_complete = NULL, # when Y is saved as matrix, remove those with non-missing counts less than this cutoff
@@ -537,7 +538,7 @@ load_regional_multivariate_data <- function(matrix_y_min_complete = NULL, # when
     maf = apply(X, 2, compute_maf),
     chrom = dat$chrom,
     grange = dat$grange,
-    X_variance= matrixStats::colVars(X)
+    X_variance= colVars(X)
   ))
 }
 
