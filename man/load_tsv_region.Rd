@@ -25,6 +25,6 @@ A dataframe of the subsetted summary statistics,
 }
 \description{
 This function load the input data. If the input sumstat data is .gz and tabixed, then can use the region parameter to subset the data
-and filter by target column                            
+and filter by target column
 Otherwise, it will only filter by target column since tabix command won't function (this apply to .tsv, .txt files)
 }

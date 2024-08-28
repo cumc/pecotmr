@@ -4,7 +4,7 @@
 \alias{twas_weights}
 \title{Run multiple TWAS weight methods}
 \usage{
-twas_weights(X, Y, weight_methods, num_threads = 1, seed = NULL)
+twas_weights(X, Y, weight_methods, num_threads = 1)
 }
 \arguments{
 \item{X}{A matrix of samples by features, where each row represents a sample and each column a feature.}

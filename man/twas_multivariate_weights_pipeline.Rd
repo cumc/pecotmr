@@ -21,12 +21,11 @@ twas_multivariate_weights_pipeline(
   signal_cutoff = 0.05,
   coverage = 0.95,
   secondary_coverage = c(0.7, 0.5),
-  min_cv_maf = 0.05,
   max_cv_variants = -1,
-  cv_seed = 999,
   cv_threads = 1,
   verbose = FALSE,
-  imiss_cutoff = NULL
+  imiss_cutoff = 1,
+  twas_maf_cutoff = 0.01
 )
 }
 \description{

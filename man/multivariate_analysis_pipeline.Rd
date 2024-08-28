@@ -19,16 +19,17 @@ multivariate_analysis_pipeline(
   sample_partition = NULL,
   mrmash_max_iter = 5000,
   mvsusie_max_iter = 200,
-  min_cv_maf = 0.05,
   max_cv_variants = -1,
   cv_folds = 5,
   cv_threads = 1,
-  cv_seed = 999,
   prior_weights_min = 1e-04,
   twas_weights = FALSE,
   verbose = 0,
-  imiss_cutoff = NULL,
-  maf_cutoff = NULL
+  imiss_cutoff = 1,
+  maf_cutoff = 0.0025,
+  twas_maf_cutoff = 0.01,
+  xvar_cutoff = 0.05,
+  X_variance = NULL
 )
 }
 \arguments{
@@ -60,21 +61,19 @@ multivariate_analysis_pipeline(
 
 \item{mvsusie_max_iter}{The maximum number of iterations for mvSuSiE. Default is 200.}
 
-\item{min_cv_maf}{The minimum minor allele frequency for variants to be included in cross-validation. Default is 0.05.}
-
 \item{max_cv_variants}{The maximum number of variants to be included in cross-validation. Defaults to -1 which means no limit.}
 
 \item{cv_folds}{The number of folds to use for cross-validation. Set to 0 to skip cross-validation. Default is 5.}
 
 \item{cv_threads}{The number of threads to use for parallel computation in cross-validation. Defaults to 1.}
 
-\item{cv_seed}{The seed for random number generation in cross-validation. Defaults to 999.}
-
 \item{prior_weights_min}{The minimum weight for prior covariance matrices. Default is 1e-4.}
 
 \item{twas_weights}{If set to TRUE, computes TWAS weights. Default is FALSE.}
 
 \item{verbose}{Verbosity level. Default is 0.}
+
+\item{min_cv_maf}{The minimum minor allele frequency for variants to be included in cross-validation. Default is 0.05.}
 }
 \value{
 A list containing the multivariate analysis results.
@@ -113,7 +112,6 @@ result <- multivariate_analysis_pipeline(
   canonical_prior_matrices = TRUE,
   sample_partition = NULL,
   cv_folds = 5,
-  cv_seed = 999,
   cv_threads = 2,
   prior_weights_min = 1e-4,
   twas_weights = TRUE
