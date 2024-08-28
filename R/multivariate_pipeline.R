@@ -61,6 +61,7 @@
 #' @importFrom mvsusieR mvsusie create_mixture_prior
 #' @export
 multivariate_analysis_pipeline <- function(
+    # input data and filters
     X,
     Y,
     maf,
@@ -68,17 +69,21 @@ multivariate_analysis_pipeline <- function(
     imiss_cutoff = 1.0,
     maf_cutoff = 0.01,
     xvar_cutoff = 0.05,
-    max_L = -1,
     ld_reference_meta_file = NULL,
     pip_cutoff_to_skip = 0,
-    signal_cutoff = 0.025,
-    coverage = c(0.95, 0.7, 0.5),
+    # methods parameter configuration
+    max_L = -1,
     data_driven_prior_matrices = NULL,
     data_driven_prior_matrices_cv = NULL,
     data_driven_prior_weights_cutoff = 1e-4,
     canonical_prior_matrices = TRUE,
     mrmash_max_iter = 5000,
     mvsusie_max_iter = 200,
+    # results summary
+    signal_cutoff = 0.025,
+    coverage = c(0.95, 0.7, 0.5),
+    # TWAS and CV
+    twas_weights = TRUE,
     sample_partition = NULL,
     max_cv_variants = -1,
     cv_folds = 5,
@@ -299,10 +304,9 @@ multivariate_analysis_pipeline <- function(
       cv_folds = cv_folds, sample_partition = sample_partition,
       max_cv_variants = max_cv_variants,
       mvsusie_max_iter = mvsusie_max_iter, mrmash_max_iter = mrmash_max_iter,
-      coverage = pri_coverage, secondary_coverage = sec_coverage,
       canonical_prior_matrices = canonical_prior_matrices, data_driven_prior_matrices = data_driven_prior_matrices,
       data_driven_prior_matrices_cv = data_driven_prior_matrices_cv,
-      cv_threads = cv_threads, verbose = verbose, imiss_cutoff = imiss_cutoff, maf_cutoff = maf_cutoff
+      cv_threads = cv_threads, verbose = verbose
     )
   }
   return(res)
@@ -315,8 +319,8 @@ multivariate_analysis_pipeline <- function(
 twas_multivariate_weights_pipeline <- function(
     X, Y, mnm_fit, cv_folds = 5, sample_partition = NULL,
     data_driven_prior_matrices = NULL, data_driven_prior_matrices_cv = NULL, canonical_prior_matrices = FALSE,
-    mvsusie_max_iter = 200, mrmash_max_iter = 5000, coverage = 0.95, secondary_coverage = c(0.7, 0.5),
-    max_cv_variants = -1, cv_threads = 1, verbose = FALSE, imiss_cutoff = 1.0, maf_cutoff = 0.01) {
+    mvsusie_max_iter = 200, mrmash_max_iter = 5000,
+    max_cv_variants = -1, cv_threads = 1, verbose = FALSE) {
   copy_twas_results <- function(mnm_fit, twas_weight, twas_predictions) {
     for (i in names(mnm_fit)) {
       if (i %in% colnames(twas_weights_res[[1]])) {
@@ -375,7 +379,6 @@ twas_multivariate_weights_pipeline <- function(
   # Perform cross-validation if specified
   if (cv_folds > 1) {
     max_L <- length(which(mnm_fit$mvsusie_fitted$V > 1E-9)) + 2
-
     weight_methods <- list(
       mrmash_weights = list(
         data_driven_prior_matrices = data_driven_prior_matrices,
