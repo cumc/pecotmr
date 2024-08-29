@@ -272,9 +272,7 @@ multivariate_analysis_pipeline <- function(
   if (max_L < 0) {
     # allow for 2 extra signals maximum, based on mr.mash fit
     # but at least to 5
-    # FIXME
-    # max_L <- max(5, sum(res$mrmash_fitted$mrmash_pip) + 2)
-    max_L = 20
+    max_L <- max(5, sum(1 - res$mrmash_fitted$w1[,1]) + 2)
   }
 
   mvsusie_reweighted_mixture_prior <- initialize_mvsusie_prior(
