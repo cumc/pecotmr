@@ -12,13 +12,11 @@ univariate_analysis_pipeline(
   maf,
   other_quantities = list(),
   pip_cutoff_to_skip = 0,
-  region_info = NULL,
-  finemapping = TRUE,
   twas_weights = TRUE,
   finemapping_opts = list(init_L = 5, max_L = 20, l_step = 5, coverage = c(0.95, 0.7,
     0.5), signal_cutoff = 0.025),
   twas_weights_opts = list(cv_folds = 5, min_cv_maf = 0, max_cv_variants = -1, seed =
-    999, cv_threads = 1, ld_reference_meta_file = NULL, region_info = NULL)
+    999, cv_threads = 1, ld_reference_meta_file = NULL)
 )
 }
 \description{

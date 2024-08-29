@@ -8,28 +8,28 @@ multivariate_analysis_pipeline(
   X,
   Y,
   maf,
-  max_L = 30,
+  X_variance = NULL,
+  other_quantities = list(),
+  imiss_cutoff = 1,
+  maf_cutoff = 0.01,
+  xvar_cutoff = 0.05,
   ld_reference_meta_file = NULL,
   pip_cutoff_to_skip = 0,
-  signal_cutoff = 0.025,
-  coverage = c(0.95, 0.7, 0.5),
+  max_L = -1,
   data_driven_prior_matrices = NULL,
   data_driven_prior_matrices_cv = NULL,
+  data_driven_prior_weights_cutoff = 1e-04,
   canonical_prior_matrices = TRUE,
-  sample_partition = NULL,
   mrmash_max_iter = 5000,
   mvsusie_max_iter = 200,
+  signal_cutoff = 0.025,
+  coverage = c(0.95, 0.7, 0.5),
+  twas_weights = TRUE,
+  sample_partition = NULL,
   max_cv_variants = -1,
   cv_folds = 5,
   cv_threads = 1,
-  prior_weights_min = 1e-04,
-  twas_weights = FALSE,
-  verbose = 0,
-  imiss_cutoff = 1,
-  maf_cutoff = 0.0025,
-  twas_maf_cutoff = 0.01,
-  xvar_cutoff = 0.05,
-  X_variance = NULL
+  verbose = 0
 )
 }
 \arguments{
@@ -39,37 +39,35 @@ multivariate_analysis_pipeline(
 
 \item{maf}{A list of vectors for minor allele frequencies for each variant in X.}
 
-\item{max_L}{The maximum number of components in mvSuSiE. Default is 30.}
-
 \item{ld_reference_meta_file}{An optional path to a file containing linkage disequilibrium reference data. If provided, variants in X are filtered based on this reference.}
 
 \item{pip_cutoff_to_skip}{Cutoff value for skipping conditions based on PIP values. Default is 0.}
 
-\item{signal_cutoff}{Cutoff value for signal identification in PIP values for susie_post_processor. Default is 0.025.}
-
-\item{coverage}{A vector of coverage probabilities, with the first element being the primary coverage and the rest being secondary coverage probabilities for credible set refinement. Defaults to c(0.95, 0.7, 0.5).}
+\item{max_L}{The maximum number of components in mvSuSiE. Default is 30.}
 
 \item{data_driven_prior_matrices}{A list of data-driven covariance matrices for mr.mash weights.}
 
 \item{data_driven_prior_matrices_cv}{A list of data-driven covariance matrices for mr.mash weights in cross-validation.}
 
-\item{canonical_prior_matrices}{If set to TRUE, will compute canonical covariance matrices and add them into the prior covariance matrix list in mrmash_wrapper. Default is TRUE.}
+\item{data_driven_prior_weights_cutoff}{The minimum weight for prior covariance matrices. Default is 1e-4.}
 
-\item{sample_partition}{Sample partition for cross-validation.}
+\item{canonical_prior_matrices}{If set to TRUE, will compute canonical covariance matrices and add them into the prior covariance matrix list in mrmash_wrapper. Default is TRUE.}
 
 \item{mrmash_max_iter}{The maximum number of iterations for mr.mash. Default is 5000.}
 
 \item{mvsusie_max_iter}{The maximum number of iterations for mvSuSiE. Default is 200.}
+
+\item{signal_cutoff}{Cutoff value for signal identification in PIP values for susie_post_processor. Default is 0.025.}
+
+\item{coverage}{A vector of coverage probabilities, with the first element being the primary coverage and the rest being secondary coverage probabilities for credible set refinement. Defaults to c(0.95, 0.7, 0.5).}
+
+\item{sample_partition}{Sample partition for cross-validation.}
 
 \item{max_cv_variants}{The maximum number of variants to be included in cross-validation. Defaults to -1 which means no limit.}
 
 \item{cv_folds}{The number of folds to use for cross-validation. Set to 0 to skip cross-validation. Default is 5.}
 
 \item{cv_threads}{The number of threads to use for parallel computation in cross-validation. Defaults to 1.}
-
-\item{prior_weights_min}{The minimum weight for prior covariance matrices. Default is 1e-4.}
-
-\item{twas_weights}{If set to TRUE, computes TWAS weights. Default is FALSE.}
 
 \item{verbose}{Verbosity level. Default is 0.}
 
@@ -113,7 +111,6 @@ result <- multivariate_analysis_pipeline(
   sample_partition = NULL,
   cv_folds = 5,
   cv_threads = 2,
-  prior_weights_min = 1e-4,
-  twas_weights = TRUE
+  data_driven_prior_weights_cutoff = 1e-4
 )
 }
