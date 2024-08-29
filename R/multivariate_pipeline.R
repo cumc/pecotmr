@@ -45,6 +45,7 @@
 #'   X = multitrait_data$X,
 #'   Y = multitrait_data$Y,
 #'   maf = colMeans(multitrait_data$X),
+#'   X_variance = multitrait_data$X_variance,
 #'   max_L = 10,
 #'   ld_reference_meta_file = NULL,
 #'   max_cv_variants = -1,
@@ -272,7 +273,8 @@ multivariate_analysis_pipeline <- function(
     # allow for 2 extra signals maximum, based on mr.mash fit
     # but at least to 5
     # FIXME
-    max_L <- max(5, sum(res$mrmash_fitted$mrmash_pip) + 2)
+    # max_L <- max(5, sum(res$mrmash_fitted$mrmash_pip) + 2)
+    max_L = 20
   }
 
   mvsusie_reweighted_mixture_prior <- initialize_mvsusie_prior(
@@ -280,6 +282,8 @@ multivariate_analysis_pipeline <- function(
     data_driven_prior_matrices_cv, cv_folds, w0_updated, data_driven_prior_weights_cutoff
   )
   res$reweighted_mixture_prior <- mvsusie_reweighted_mixture_prior$data_driven_prior_matrices
+  res$reweighted_mixture_prior_cv <- mvsusie_reweighted_mixture_prior$data_driven_prior_matrices_cv
+
   # Fit mvSuSiE
   message("Fitting mvSuSiE model on input data ...")
   res$mvsusie_fitted <- mvsusie(X,
@@ -293,7 +297,7 @@ multivariate_analysis_pipeline <- function(
   pri_coverage <- coverage[1]
   sec_coverage <- if (length(coverage) > 1) coverage[-1] else NULL
   res$mvsusie_result_trimmed <- susie_post_processor(
-    mvsusie_fitted, X, NULL, 1, 1,
+    res$mvsusie_fitted, X, NULL, 1, 1,
     maf = maf, secondary_coverage = sec_coverage, signal_cutoff = signal_cutoff, mode = "mvsusie", other_quantities = other_quantities
   )
 
@@ -308,6 +312,7 @@ multivariate_analysis_pipeline <- function(
       cv_threads = cv_threads, verbose = verbose
     )
   }
+  res$total_time_elapsed <- proc.time() - st
   return(res)
 }
 
@@ -413,6 +418,5 @@ twas_multivariate_weights_pipeline <- function(
     )
     res <- copy_twas_cv_results(res, twas_cv_result)
   }
-  res$total_time_elapsed <- proc.time() - st
   return(res)
 }
