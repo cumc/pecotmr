@@ -310,7 +310,7 @@ multivariate_analysis_pipeline <- function(
 
   # Run TWAS weights and optionally CV
   if (twas_weights) {
-    res$twas_result <- twas_multivariate_weights_pipeline(X, Y, res,
+    res$twas_weights_result <- twas_multivariate_weights_pipeline(X, Y, res,
       cv_folds = cv_folds, sample_partition = sample_partition,
       max_cv_variants = max_cv_variants,
       mvsusie_max_iter = mvsusie_max_iter, mrmash_max_iter = mrmash_max_iter,

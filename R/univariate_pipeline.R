@@ -118,7 +118,7 @@ univariate_analysis_pipeline <- function(
   # TWAS weights and cross-validation
   if (twas_weights) {
     message("Computing TWAS weights and performing cross-validation ...")
-    res$twas_result <- twas_weights_pipeline(
+    res$twas_weights_result <- twas_weights_pipeline(
       X, Y, maf,
       susie_fit = res$susie_fitted,
       ld_reference_meta_file = ld_reference_meta_file,
