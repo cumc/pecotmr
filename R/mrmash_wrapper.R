@@ -292,7 +292,7 @@ rescale_cov_w0 <- function(w0) {
     weights_list <- weights_list / sum_weights
   } else {
     # Use equal weights if all non null weights are zeros
-    weights_list <- setNames(seq(1/length(weights_list), length(weights_list)), names(weights_list))
+    weights_list <- setNames(rep(1/length(weights_list), length(weights_list)), names(weights_list))
   }
   # vector to store updated group w0
   updated_w0 <- rep(NA, length(unique(groups)))
