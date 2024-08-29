@@ -278,9 +278,9 @@ multivariate_analysis_pipeline <- function(
   w0_updated <- rescale_cov_w0(res$mrmash_fitted$w0)
   if (max_L < 0) {
     # This is based on mr.mash fit
-    # which can be a huge overestimate 
+    # which can be a huge overestimate
     # so we bound it between 5 and 20
-    max_L <- min(20, max(5, sum(1 - res$mrmash_fitted$w1[,1])))
+    max_L <- min(20, max(5, sum(1 - res$mrmash_fitted$w1[, 1])))
   }
 
   mvsusie_reweighted_mixture_prior <- initialize_mvsusie_prior(
@@ -292,10 +292,12 @@ multivariate_analysis_pipeline <- function(
 
   # Fit mvSuSiE
   message("Fitting mvSuSiE model on input data ...")
-  res$mvsusie_fitted <- mvsusie(X, Y, L = max_L, prior_variance = mvsusie_reweighted_mixture_prior$data_driven_prior_matrices,
+  res$mvsusie_fitted <- mvsusie(X, Y,
+    L = max_L, prior_variance = mvsusie_reweighted_mixture_prior$data_driven_prior_matrices,
     residual_variance = resid_Y, precompute_covariances = FALSE, compute_objective = TRUE,
     estimate_residual_variance = FALSE, estimate_prior_variance = TRUE, estimate_prior_method = "EM",
-    max_iter = mvsusie_max_iter, n_thread = 1, approximate = FALSE, verbosity = verbose, coverage = coverage[1])
+    max_iter = mvsusie_max_iter, n_thread = 1, approximate = FALSE, verbosity = verbose, coverage = coverage[1]
+  )
 
   # Process mvSuSiE results
   sec_coverage <- if (length(coverage) > 1) coverage[-1] else NULL
@@ -308,7 +310,7 @@ multivariate_analysis_pipeline <- function(
 
   # Run TWAS weights and optionally CV
   if (twas_weights) {
-    res$twas_weights <- twas_multivariate_weights_pipeline(X, Y, res,
+    res$twas_result <- twas_multivariate_weights_pipeline(X, Y, res,
       cv_folds = cv_folds, sample_partition = sample_partition,
       max_cv_variants = max_cv_variants,
       mvsusie_max_iter = mvsusie_max_iter, mrmash_max_iter = mrmash_max_iter,
@@ -320,15 +322,45 @@ multivariate_analysis_pipeline <- function(
   return(res)
 }
 
-#' TWAS Weights Multivariate Pipeline
+#' TWAS Multivariate Weights Pipeline
 #'
-#' @importFrom mvsusieR mvsusie
+#' This function performs weights computation for Transcriptome-Wide Association Study (TWAS)
+#' in a multivariate setting. It incorporates steps such as fitting models using mvSuSiE and mr.mash,
+#' calculating TWAS weights and predictions, and optionally performing cross-validation for TWAS weights.
+#'
+#' @param X A matrix of genotype data where rows represent samples and columns represent genetic variants.
+#' @param Y A matrix of phenotype measurements, where rows represent samples and columns represent conditions.
+#' @param mnm_fit An object containing the fitted multivariate models (e.g., mvSuSiE and mr.mash fits).
+#' @param cv_folds The number of folds to use for cross-validation. Defaults to 5. Set to 0 to skip cross-validation.
+#' @param sample_partition An optional vector specifying the partition of samples for cross-validation. If NULL, a random partition is generated.
+#' @param data_driven_prior_matrices A list of data-driven covariance matrices for mr.mash weights. Defaults to NULL.
+#' @param data_driven_prior_matrices_cv A list of data-driven covariance matrices for mr.mash weights in cross-validation. Defaults to NULL.
+#' @param canonical_prior_matrices If TRUE, computes canonical covariance matrices for mr.mash. Defaults to FALSE.
+#' @param mvsusie_max_iter The maximum number of iterations for mvSuSiE. Defaults to 200.
+#' @param mrmash_max_iter The maximum number of iterations for mr.mash. Defaults to 5000.
+#' @param max_cv_variants The maximum number of variants to be included in cross-validation. Defaults to -1 which means no limit.
+#' @param cv_threads The number of threads to use for parallel computation in cross-validation. Defaults to 1.
+#' @param verbose If TRUE, provides more detailed output during execution. Defaults to FALSE.
+#'
+#' @return A list containing results from the TWAS pipeline, including TWAS weights, predictions, and optionally cross-validation results.
 #' @export
+#' @examples
+#' # Example usage (assuming appropriate objects for X, Y, and mnm_fit are available):
+#' twas_results <- twas_multivariate_weights_pipeline(X, Y, mnm_fit)
 twas_multivariate_weights_pipeline <- function(
-    X, Y, mnm_fit, cv_folds = 5, sample_partition = NULL,
-    data_driven_prior_matrices = NULL, data_driven_prior_matrices_cv = NULL, canonical_prior_matrices = FALSE,
-    mvsusie_max_iter = 200, mrmash_max_iter = 5000,
-    max_cv_variants = -1, cv_threads = 1, verbose = FALSE) {
+    X,
+    Y,
+    mnm_fit,
+    cv_folds = 5,
+    sample_partition = NULL,
+    data_driven_prior_matrices = NULL,
+    data_driven_prior_matrices_cv = NULL,
+    canonical_prior_matrices = FALSE,
+    mvsusie_max_iter = 200,
+    mrmash_max_iter = 5000,
+    max_cv_variants = -1,
+    cv_threads = 1,
+    verbose = FALSE) {
   copy_twas_results <- function(mnm_fit, twas_weight, twas_predictions) {
     for (i in names(mnm_fit)) {
       if (i %in% colnames(twas_weights_res[[1]])) {

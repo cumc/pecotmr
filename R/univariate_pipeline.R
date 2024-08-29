@@ -1,17 +1,93 @@
-#' Univariate analysis pipeline
+#' Univariate Analysis Pipeline
+#'
+#' This function performs univariate analysis for fine-mapping and Transcriptome-Wide Association Study (TWAS)
+#' with optional cross-validation.
+#'
+#' @param X A matrix of genotype data where rows represent samples and columns represent genetic variants.
+#' @param Y A vector of phenotype measurements.
+#' @param X_scalar A scalar or vector to rescale X to its original scale.
+#' @param Y_scalar A scalar to rescale Y to its original scale.
+#' @param maf A vector of minor allele frequencies for each variant in X.
+#' @param X_variance Optional variance of X. Default is NULL.
+#' @param other_quantities A list of other quantities to be passed to susie_post_processor. Default is an empty list.
+#' @param imiss_cutoff Individual missingness cutoff. Default is 1.0.
+#' @param maf_cutoff Minor allele frequency cutoff. Default is 0.01.
+#' @param xvar_cutoff Variance cutoff for X. Default is 0.05.
+#' @param ld_reference_meta_file An optional path to a file containing linkage disequilibrium reference data. Default is NULL.
+#' @param pip_cutoff_to_skip Cutoff value for skipping analysis based on PIP values. Default is 0.
+#' @param init_L Initial number of components for SuSiE model optimization. Default is 5.
+#' @param max_L The maximum number of components in SuSiE. Default is 20.
+#' @param l_step Step size for increasing the number of components during SuSiE optimization. Default is 5.
+#' @param signal_cutoff Cutoff value for signal identification in PIP values. Default is 0.025.
+#' @param coverage A vector of coverage probabilities for credible sets. Default is c(0.95, 0.7, 0.5).
+#' @param twas_weights Whether to compute TWAS weights. Default is TRUE.
+#' @param sample_partition Sample partition for cross-validation. Default is NULL.
+#' @param max_cv_variants The maximum number of variants to be included in cross-validation. Default is -1 (no limit).
+#' @param cv_folds The number of folds to use for cross-validation. Default is 5.
+#' @param cv_threads The number of threads to use for parallel computation in cross-validation. Default is 1.
+#' @param verbose Verbosity level. Default is 0.
+#'
+#' @return A list containing the univariate analysis results.
 #' @importFrom susieR susie
 #' @export
-univariate_analysis_pipeline <- function(X, Y, X_scalar, Y_scalar, maf, other_quantities = list(),
-                                         pip_cutoff_to_skip = 0,
-                                         twas_weights = TRUE,
-                                         finemapping_opts = list(
-                                           init_L = 5, max_L = 20, l_step = 5,
-                                           coverage = c(0.95, 0.7, 0.5), signal_cutoff = 0.025
-                                         ),
-                                         twas_weights_opts = list(
-                                           cv_folds = 5, min_cv_maf = 0, max_cv_variants = -1, seed = 999, cv_threads = 1,
-                                           ld_reference_meta_file = NULL
-                                         )) {
+univariate_analysis_pipeline <- function(
+    # input data
+    X,
+    Y,
+    X_scalar,
+    Y_scalar,
+    maf,
+    X_variance = NULL,
+    other_quantities = list(),
+    # filters
+    imiss_cutoff = 1.0,
+    maf_cutoff = 0.01,
+    xvar_cutoff = 0.05,
+    ld_reference_meta_file = NULL,
+    pip_cutoff_to_skip = 0,
+    # methods parameter configuration
+    init_L = 5,
+    max_L = 20,
+    l_step = 5,
+    # fine-mapping results summary
+    signal_cutoff = 0.025,
+    coverage = c(0.95, 0.7, 0.5),
+    # TWAS weights and CV for TWAS weights
+    twas_weights = TRUE,
+    sample_partition = NULL,
+    max_cv_variants = -1,
+    cv_folds = 5,
+    cv_threads = 1,
+    verbose = 0) {
+  # Input validation
+  if (!is.matrix(X) || !is.numeric(X)) stop("X must be a numeric matrix")
+  if (!is.vector(Y) || !is.numeric(Y)) stop("Y must be a numeric vector")
+  if (nrow(X) != length(Y)) stop("X and Y must have the same number of rows/length")
+  if (!is.numeric(maf) || length(maf) != ncol(X)) stop("maf must be a numeric vector with length equal to the number of columns in X")
+  if (any(maf < 0 | maf > 1)) stop("maf values must be between 0 and 1")
+  if (!is.numeric(X_scalar) || (length(X_scalar) != 1 && length(X_scalar) != ncol(X))) stop("X_scalar must be a numeric scalar or vector with length equal to the number of columns in X")
+  if (!is.numeric(Y_scalar) || length(Y_scalar) != 1) stop("Y_scalar must be a numeric scalar")
+  if (!is.numeric(init_L) || init_L <= 0) stop("init_L must be a positive integer")
+  if (!is.numeric(max_L) || max_L <= 0) stop("max_L must be a positive integer")
+  if (!is.numeric(l_step) || l_step <= 0) stop("l_step must be a positive integer")
+
+  # Filter variants if LD reference is provided
+  if (!is.null(ld_reference_meta_file)) {
+    variants_kept <- filter_variants_by_ld_reference(colnames(X), ld_reference_meta_file)
+    X <- X[, variants_kept$data, drop = FALSE]
+    maf <- maf[variants_kept$idx]
+    if (length(X_scalar) > 1) X_scalar <- X_scalar[variants_kept$idx]
+  }
+
+  # Filter X based on missingness, MAF, and variance
+  # FIXME:  I think we should use filter_X directly for univariate without considering Y? 
+  X_filtered <- filter_X_with_Y(X, Y, imiss_cutoff, maf_cutoff, var_thresh = xvar_cutoff, X_variance = X_variance)
+  kept_indices <- match(colnames(X_filtered), colnames(X))
+  maf <- maf[kept_indices]
+  if (length(X_scalar) > 1) X_scalar <- X_scalar[kept_indices]
+  X <- X_filtered
+
+  # Initial PIP check
   if (pip_cutoff_to_skip > 0) {
     top_model_pip <- susie(X, Y, L = 1)$pip
     if (!any(top_model_pip > pip_cutoff_to_skip)) {
@@ -21,25 +97,42 @@ univariate_analysis_pipeline <- function(X, Y, X_scalar, Y_scalar, maf, other_qu
       message(paste("Follow-up on region because signals above PIP threshold", pip_cutoff_to_skip, "were detected in initial model screening."))
     }
   }
-  pri_coverage <- finemapping_opts$coverage[1]
-  sec_coverage <- if (length(finemapping_opts$coverage) > 1) finemapping_opts$coverage[-1] else NULL
+
+  # Main analysis
   st <- proc.time()
-  res <- susie_wrapper(X, Y, init_L = finemapping_opts$init_L, max_L = finemapping_opts$max_L, l_step = finemapping_opts$l_step, refine = TRUE, coverage = pri_coverage)
-  res <- susie_post_processor(res, X, Y, X_scalar, Y_scalar, maf,
-      secondary_coverage = sec_coverage, signal_cutoff = finemapping_opts$signal_cutoff,
-      other_quantities = other_quantities
+  res <- list()
+
+  # SuSiE analysis with optimization
+  message("Fitting SuSiE model on input data with L optimization...")
+  res$susie_fitted <- susie_wrapper(X, Y, init_L = init_L, max_L = max_L, l_step = l_step, refine = TRUE, coverage = coverage[1])
+
+  # Process SuSiE results
+  res$susie_result_trimmed <- susie_post_processor(
+    res$susie_fitted, X, Y, X_scalar, Y_scalar, maf,
+    secondary_coverage = if (length(coverage) > 1) coverage[-1] else NULL,
+    signal_cutoff = signal_cutoff,
+    other_quantities = other_quantities
   )
-  if (twas_weights) {
-    twas_weights_output <- twas_weights_pipeline(X, Y, maf,
-      susie_fit = res$susie_result_trimmed,
-      ld_reference_meta_file = twas_weights_opts$ld_reference_meta_file,
-      X_scalar = X_scalar, y_scalar = Y_scalar,
-      cv_folds = twas_weights_opts$cv_folds, coverage = pri_coverage, secondary_coverage = sec_coverage, signal_cutoff = finemapping_opts$signal_cutoff,
-      min_cv_maf = twas_weights_opts$min_cv_maf, max_cv_variants = twas_weights_opts$max_cv_variants, cv_seed = twas_weights_opts$seed, cv_threads = twas_weights_opts$cv_threads
-    )
-    res <- c(res, twas_weights_output)
-  }
   res$total_time_elapsed <- proc.time() - st
+
+  # TWAS weights and cross-validation
+  if (twas_weights) {
+    message("Computing TWAS weights and performing cross-validation ...")
+    res$twas_result <- twas_weights_pipeline(
+      X, Y, maf,
+      susie_fit = res$susie_fitted,
+      ld_reference_meta_file = ld_reference_meta_file,
+      X_scalar = X_scalar, Y_scalar = Y_scalar,
+      cv_folds = cv_folds,
+      coverage = coverage[1],
+      secondary_coverage = if (length(coverage) > 1) coverage[-1] else NULL,
+      signal_cutoff = signal_cutoff,
+      max_cv_variants = max_cv_variants,
+      cv_threads = cv_threads,
+      sample_partition = sample_partition
+    )
+  }
+
   return(res)
 }
 
@@ -53,26 +146,26 @@ univariate_analysis_pipeline <- function(X, Y, X_scalar, Y_scalar, maf, other_qu
 #' @param X A matrix of genotype data where rows represent samples and columns represent genetic variants.
 #' @param y A vector of phenotype measurements for each sample.
 #' @param susie_fit An object returned by the SuSiE function, containing the SuSiE model fit.
-#' @param maf A vector of minor allele frequencies for each variant in X.
-#' @param ld_reference_meta_file An optional path to a file containing linkage disequilibrium reference data. If provided, variants in X are filtered based on this reference.
-#' @param cv_folds The number of folds to use for cross-validation. Set to 0 to skip cross-validation.
 #' @param X_scalar A scalar or vector to scale the genotype data. Defaults to 1 (no scaling).
 #' @param y_scalar A scalar to scale the phenotype data. Defaults to 1 (no scaling).
-#' @param coverage The coverage probability used in SuSiE for credible set construction. Defaults to 0.95.
-#' @param secondary_coverage A vector of secondary coverage probabilities for credible set refinement. Defaults to c(0.7, 0.5).
-#' @param signal_cutoff A threshold for determining significant signals in the SuSiE output. Defaults to 0.05.
+#' @param cv_folds The number of folds to use for cross-validation. Set to 0 to skip cross-validation. Defaults to 5.
 #' @param weight_methods List of methods to use to compute weights for TWAS; along with their parameters.
-#' @param min_cv_maf The minimum minor allele frequency for variants to be included in cross-validation. Defaults to 0.05.
 #' @param max_cv_variants The maximum number of variants to be included in cross-validation. Defaults to -1 which means no limit.
-#' @param cv_seed The seed for random number generation in cross-validation. Defaults to 999.
 #' @param cv_threads The number of threads to use for parallel computation in cross-validation. Defaults to 1.
+#' @param cv_weight_methods List of methods to use for cross-validation. If NULL, uses the same methods as weight_methods.
+#'
 #' @return A list containing results from the TWAS pipeline, including TWAS weights, predictions, and optionally cross-validation results.
 #' @export
+#'
 #' @examples
-#' # Example usage (assuming appropriate objects for X, y, susie_fit, and maf are available):
-#' twas_results <- twas_weights_pipeline(X, y, maf, susie_fit)
-twas_weights_pipeline <- function(X, y, maf, susie_fit, ld_reference_meta_file = NULL, cv_folds = 5, X_scalar = 1, y_scalar = 1,
-                                  coverage = 0.95, secondary_coverage = c(0.7, 0.5), signal_cutoff = 0.05,
+#' # Example usage (assuming appropriate objects for X, y, and susie_fit are available):
+#' twas_results <- twas_weights_pipeline(X, y, susie_fit)
+twas_weights_pipeline <- function(X,
+                                  y,
+                                  susie_fit,
+                                  X_scalar = 1,
+                                  y_scalar = 1,
+                                  cv_folds = 5,
                                   weight_methods = list(
                                     enet_weights = list(),
                                     lasso_weights = list(),
@@ -80,51 +173,51 @@ twas_weights_pipeline <- function(X, y, maf, susie_fit, ld_reference_meta_file =
                                     bayes_c_weights = list(),
                                     bayes_r_weights = list()
                                   ),
-                                  min_cv_maf = 0.05, max_cv_variants = -1, cv_seed = 999, cv_threads = 1, cv_weight_methods = NULL) {
+                                  max_cv_variants = -1,
+                                  cv_threads = 1,
+                                  cv_weight_methods = NULL) {
   res <- list()
-  if (!is.null(susie_fit)) {
-    L <- length(which(susie_fit$V > 1E-9))
-    init_L <- max(1, L - 2)
-    max_L <- L + 3
-  } else {
-    # susie_fit did not detect anything significant
-    init_L <- 2
-    max_L <- 2
-  }
-  if (!is.null(ld_reference_meta_file)) {
-    variants_kept <- filter_variants_by_ld_reference(colnames(X), ld_reference_meta_file)
-    X <- X[, variants_kept$data, drop = FALSE]
-    maf <- maf[variants_kept$idx]
-    res$preset_variants_result <- susie_wrapper(X, y, init_L = init_L, max_L = max_L, refine = TRUE, coverage = coverage)
-    res$preset_variants_result <- susie_post_processor(res$preset_variants_result, X, y, if (X_scalar == 1) 1 else X_scalar[variants_kept$idx], y_scalar, maf, secondary_coverage = secondary_coverage, signal_cutoff = signal_cutoff)
-    res$preset_variants_result$analysis_script <- NULL
-    res$preset_variants_result$sumstats <- NULL
-    susie_fit <- res$preset_variants_result$susie_result_trimmed
-  }
-  if (!is.null(susie_fit)) weight_methods$susie_weights <- list(susie_fit = susie_fit)
-  # get TWAS weights
+  st <- proc.time()
+  message("Performing TWAS weights computation for univariate analysis methods ...")
+
+  # TWAS weights and predictions
+  weight_methods$susie_weights <- list(susie_fit = susie_fit)
   res$twas_weights <- twas_weights(X, y, weight_methods = weight_methods)
-  # get TWAS predictions for possible next steps such as computing correlations between predicted expression values
   res$twas_predictions <- twas_predict(X, res$twas_weights)
+
   if (cv_folds > 1) {
     # A few cutting corners to run CV faster at the disadvantage of SuSiE and mr.ash:
-    # 1. reset SuSiE to not using refine or adaptive L (more or less the default SuSiE)
+    # 1. reset SuSiE to not using refine or adaptive L but to use L from previous analysis
     # 2. at most 100 iterations for mr.ash allowed
-    # 3. only use a subset of top signals and common variants
-    if (!is.null(susie_fit)) weight_methods$susie_weights <- list(refine = FALSE, init_L = max_L, max_L = max_L)
-    if (is.null(cv_weight_methods)) cv_weight_methods <- weight_methods
+    # 3. only use a subset of variants randomly selected to avoid bias
+    max_L <- length(which(susie_fit$V))
+    weight_methods$susie_weights <- list(refine = FALSE, init_L = max_L, max_L = max_L)
+
+    if (is.null(cv_weight_methods)) {
+      cv_weight_methods <- weight_methods
+    }
+
     variants_for_cv <- c()
-    if (!is.null(res$preset_variants_result$top_loci)) {
-      variants_for_cv <- res$preset_variants_result$top_loci[, 1]
+    if (max_cv_variants <= 0) {
+      max_cv_variants <- Inf
     }
-    common_var <- colnames(X)[which(maf > min_cv_maf)]
-    if (max_cv_variants < 0) max_cv_variants <- Inf
-    if (length(common_var) + length(variants_for_cv) > max_cv_variants) {
-      common_var <- sample(common_var, max_cv_variants - length(variants_for_cv), replace = FALSE)
+    if (ncol(X) > max_cv_variants) {
+      variants_for_cv <- sample(colnames(X), max_cv_variants, replace = FALSE)
     }
-    variants_for_cv <- unique(c(variants_for_cv, common_var))
-    res$twas_cv_result <- twas_weights_cv(X, y, fold = cv_folds, weight_methods = cv_weight_methods, seed = cv_seed, max_num_variants = max_cv_variants, num_threads = cv_threads, variants_to_keep = if (length(variants_for_cv) > 0) variants_for_cv else NULL)
+
+    message("Performing cross-validation to assess TWAS weights ...")
+    res$twas_cv_result <- twas_weights_cv(
+      X,
+      y,
+      fold = cv_folds,
+      weight_methods = cv_weight_methods,
+      max_num_variants = max_cv_variants,
+      num_threads = cv_threads,
+      variants_to_keep = if (length(variants_for_cv) > 0) variants_for_cv else NULL
+    )
   }
+  res$total_time_elapsed <- proc.time() - st
+
   return(res)
 }
 
