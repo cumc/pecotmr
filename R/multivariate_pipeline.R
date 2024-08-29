@@ -298,7 +298,7 @@ multivariate_analysis_pipeline <- function(
     res$mvsusie_fitted, X, NULL, 1, 1,
     maf = maf, secondary_coverage = sec_coverage, signal_cutoff = signal_cutoff, mode = "mvsusie", other_quantities = other_quantities
   )
-
+  res$mvsusie_result_trimmed$max_L <- max_L
   # Run TWAS weights and optionally CV
   if (twas_weights) {
     res <- twas_multivariate_weights_pipeline(X, Y, res,
