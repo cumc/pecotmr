@@ -119,14 +119,8 @@ univariate_analysis_pipeline <- function(
   if (twas_weights) {
     message("Computing TWAS weights and performing cross-validation ...")
     res$twas_weights_result <- twas_weights_pipeline(
-      X, Y, maf,
-      susie_fit = res$susie_fitted,
-      ld_reference_meta_file = ld_reference_meta_file,
-      X_scalar = X_scalar, Y_scalar = Y_scalar,
+      X, Y, res$susie_fitted,
       cv_folds = cv_folds,
-      coverage = coverage[1],
-      secondary_coverage = if (length(coverage) > 1) coverage[-1] else NULL,
-      signal_cutoff = signal_cutoff,
       max_cv_variants = max_cv_variants,
       cv_threads = cv_threads,
       sample_partition = sample_partition
@@ -146,8 +140,6 @@ univariate_analysis_pipeline <- function(
 #' @param X A matrix of genotype data where rows represent samples and columns represent genetic variants.
 #' @param y A vector of phenotype measurements for each sample.
 #' @param susie_fit An object returned by the SuSiE function, containing the SuSiE model fit.
-#' @param X_scalar A scalar or vector to scale the genotype data. Defaults to 1 (no scaling).
-#' @param y_scalar A scalar to scale the phenotype data. Defaults to 1 (no scaling).
 #' @param cv_folds The number of folds to use for cross-validation. Set to 0 to skip cross-validation. Defaults to 5.
 #' @param weight_methods List of methods to use to compute weights for TWAS; along with their parameters.
 #' @param max_cv_variants The maximum number of variants to be included in cross-validation. Defaults to -1 which means no limit.
@@ -163,9 +155,8 @@ univariate_analysis_pipeline <- function(
 twas_weights_pipeline <- function(X,
                                   y,
                                   susie_fit,
-                                  X_scalar = 1,
-                                  y_scalar = 1,
                                   cv_folds = 5,
+                                  sample_partition = NULL,
                                   weight_methods = list(
                                     enet_weights = list(),
                                     lasso_weights = list(),
