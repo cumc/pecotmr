@@ -212,6 +212,13 @@ multivariate_analysis_pipeline <- function(
     return(list(X_filtered = X_filtered, Y_filtered = Y_filtered))
   }
 
+  # Input validation
+  if (!is.matrix(X) || !is.numeric(X)) stop("X must be a numeric matrix")
+  if (!is.vector(Y) || !is.numeric(Y)) stop("Y must be a numeric vector")
+  if (nrow(X) != length(Y)) stop("X and Y must have the same number of rows/length")
+  if (!is.numeric(maf) || length(maf) != ncol(X)) stop("maf must be a numeric vector with length equal to the number of columns in X")
+  if (any(maf < 0 | maf > 1)) stop("maf values must be between 0 and 1")
+
   # main analysis codes
   Y <- skip_conditions(X, Y, pip_cutoff_to_skip)
   if (is.null(Y)) {
@@ -270,9 +277,10 @@ multivariate_analysis_pipeline <- function(
   resid_Y <- res$mrmash_fitted$V
   w0_updated <- rescale_cov_w0(res$mrmash_fitted$w0)
   if (max_L < 0) {
-    # allow for 2 extra signals maximum, based on mr.mash fit
-    # but at least to 5 and most 20
-    max_L <- min(20, max(5, sum(1 - res$mrmash_fitted$w1[,1]) + 2))
+    # This is based on mr.mash fit
+    # which can be a huge overestimate 
+    # so we bound it between 5 and 20
+    max_L <- min(20, max(5, sum(1 - res$mrmash_fitted$w1[,1])))
   }
 
   mvsusie_reweighted_mixture_prior <- initialize_mvsusie_prior(
@@ -284,15 +292,12 @@ multivariate_analysis_pipeline <- function(
 
   # Fit mvSuSiE
   message("Fitting mvSuSiE model on input data ...")
-  res$mvsusie_fitted <- mvsusie(X,
-    Y = Y, L = max_L, prior_variance = mvsusie_reweighted_mixture_prior$data_driven_prior_matrices,
+  res$mvsusie_fitted <- mvsusie(X, Y, L = max_L, prior_variance = mvsusie_reweighted_mixture_prior$data_driven_prior_matrices,
     residual_variance = resid_Y, precompute_covariances = FALSE, compute_objective = TRUE,
     estimate_residual_variance = FALSE, estimate_prior_variance = TRUE, estimate_prior_method = "EM",
-    max_iter = mvsusie_max_iter, n_thread = 1, approximate = FALSE, verbosity = verbose, coverage = pri_coverage
-  )
+    max_iter = mvsusie_max_iter, n_thread = 1, approximate = FALSE, verbosity = verbose, coverage = coverage[1])
 
   # Process mvSuSiE results
-  pri_coverage <- coverage[1]
   sec_coverage <- if (length(coverage) > 1) coverage[-1] else NULL
   res$mvsusie_result_trimmed <- susie_post_processor(
     res$mvsusie_fitted, X, NULL, 1, 1,
