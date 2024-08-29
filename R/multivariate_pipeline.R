@@ -304,9 +304,11 @@ multivariate_analysis_pipeline <- function(
     maf = maf, secondary_coverage = sec_coverage, signal_cutoff = signal_cutoff, mode = "mvsusie", other_quantities = other_quantities
   )
   res$mvsusie_result_trimmed$max_L <- max_L
+  res$total_time_elapsed <- proc.time() - st
+
   # Run TWAS weights and optionally CV
   if (twas_weights) {
-    res <- twas_multivariate_weights_pipeline(X, Y, res,
+    res$twas_weights <- twas_multivariate_weights_pipeline(X, Y, res,
       cv_folds = cv_folds, sample_partition = sample_partition,
       max_cv_variants = max_cv_variants,
       mvsusie_max_iter = mvsusie_max_iter, mrmash_max_iter = mrmash_max_iter,
@@ -315,7 +317,6 @@ multivariate_analysis_pipeline <- function(
       cv_threads = cv_threads, verbose = verbose
     )
   }
-  res$total_time_elapsed <- proc.time() - st
   return(res)
 }
 
@@ -373,7 +374,7 @@ twas_multivariate_weights_pipeline <- function(
       mvsusie_fit = mnm_fit$mvsusie_fitted
     )
   )
-
+  st <- proc.time()
   message("Extracting TWAS weights for multivariate analysis methods ...")
   # get TWAS weights
   twas_weights_res <- twas_weights(X = X, Y = Y, weight_methods = weight_methods)
@@ -421,5 +422,6 @@ twas_multivariate_weights_pipeline <- function(
     )
     res <- copy_twas_cv_results(res, twas_cv_result)
   }
+  res$total_time_elapsed <- proc.time() - st
   return(res)
 }
