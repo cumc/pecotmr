@@ -7,25 +7,17 @@
 twas_multivariate_weights_pipeline(
   X,
   Y,
-  maf,
-  res,
-  ld_reference_meta_file = NULL,
+  mnm_fit,
   cv_folds = 5,
   sample_partition = NULL,
   data_driven_prior_matrices = NULL,
   data_driven_prior_matrices_cv = NULL,
   canonical_prior_matrices = FALSE,
-  resid_Y,
   mvsusie_max_iter = 200,
   mrmash_max_iter = 5000,
-  signal_cutoff = 0.05,
-  coverage = 0.95,
-  secondary_coverage = c(0.7, 0.5),
   max_cv_variants = -1,
   cv_threads = 1,
-  verbose = FALSE,
-  imiss_cutoff = 1,
-  twas_maf_cutoff = 0.01
+  verbose = FALSE
 )
 }
 \description{

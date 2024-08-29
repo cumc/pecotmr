@@ -2,8 +2,8 @@
 % Please edit documentation in R/misc.R
 \name{filter_X_with_Y}
 \alias{filter_X_with_Y}
-\title{This function performing filters on X variants based on Y subjects for TWAS analysis. This function checks 
-whether the absence (NA) of certain subjects would lead to monomorphic in some variants in X after removing 
+\title{This function performing filters on X variants based on Y subjects for TWAS analysis. This function checks
+whether the absence (NA) of certain subjects would lead to monomorphic in some variants in X after removing
 of these subjects data from X.}
 \usage{
 filter_X_with_Y(
@@ -25,7 +25,7 @@ filter_X_with_Y(
 \item{X_variance}{A vector of variance for X variants.}
 }
 \description{
-This function performing filters on X variants based on Y subjects for TWAS analysis. This function checks 
-whether the absence (NA) of certain subjects would lead to monomorphic in some variants in X after removing 
+This function performing filters on X variants based on Y subjects for TWAS analysis. This function checks
+whether the absence (NA) of certain subjects would lead to monomorphic in some variants in X after removing
 of these subjects data from X.
 }
