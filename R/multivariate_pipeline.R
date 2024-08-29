@@ -271,8 +271,8 @@ multivariate_analysis_pipeline <- function(
   w0_updated <- rescale_cov_w0(res$mrmash_fitted$w0)
   if (max_L < 0) {
     # allow for 2 extra signals maximum, based on mr.mash fit
-    # but at least to 5
-    max_L <- max(5, sum(1 - res$mrmash_fitted$w1[,1]) + 2)
+    # but at least to 5 and most 20
+    max_L <- min(20, max(5, sum(1 - res$mrmash_fitted$w1[,1]) + 2))
   }
 
   mvsusie_reweighted_mixture_prior <- initialize_mvsusie_prior(
