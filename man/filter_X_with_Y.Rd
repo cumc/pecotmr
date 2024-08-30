@@ -12,6 +12,7 @@ filter_X_with_Y(
   missing_rate_thresh,
   maf_thresh,
   var_thresh = 0,
+  maf = NULL,
   X_variance = NULL
 )
 }

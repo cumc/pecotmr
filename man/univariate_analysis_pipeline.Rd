@@ -2,23 +2,85 @@
 % Please edit documentation in R/univariate_pipeline.R
 \name{univariate_analysis_pipeline}
 \alias{univariate_analysis_pipeline}
-\title{Univariate analysis pipeline}
+\title{Univariate Analysis Pipeline}
 \usage{
 univariate_analysis_pipeline(
   X,
   Y,
-  X_scalar,
-  Y_scalar,
   maf,
+  X_scalar = 1,
+  Y_scalar = 1,
+  X_variance = NULL,
   other_quantities = list(),
+  imiss_cutoff = 1,
+  maf_cutoff = NULL,
+  xvar_cutoff = NULL,
+  ld_reference_meta_file = NULL,
   pip_cutoff_to_skip = 0,
+  init_L = 5,
+  max_L = 20,
+  l_step = 5,
+  signal_cutoff = 0.025,
+  coverage = c(0.95, 0.7, 0.5),
   twas_weights = TRUE,
-  finemapping_opts = list(init_L = 5, max_L = 20, l_step = 5, coverage = c(0.95, 0.7,
-    0.5), signal_cutoff = 0.025),
-  twas_weights_opts = list(cv_folds = 5, min_cv_maf = 0, max_cv_variants = -1, seed =
-    999, cv_threads = 1, ld_reference_meta_file = NULL)
+  sample_partition = NULL,
+  max_cv_variants = -1,
+  cv_folds = 5,
+  cv_threads = 1,
+  verbose = 0
 )
 }
+\arguments{
+\item{X}{A matrix of genotype data where rows represent samples and columns represent genetic variants.}
+
+\item{Y}{A vector of phenotype measurements.}
+
+\item{maf}{A vector of minor allele frequencies for each variant in X.}
+
+\item{X_scalar}{A scalar or vector to rescale X to its original scale.}
+
+\item{Y_scalar}{A scalar to rescale Y to its original scale.}
+
+\item{X_variance}{Optional variance of X. Default is NULL.}
+
+\item{other_quantities}{A list of other quantities to be passed to susie_post_processor. Default is an empty list.}
+
+\item{imiss_cutoff}{Individual missingness cutoff. Default is 1.0.}
+
+\item{maf_cutoff}{Minor allele frequency cutoff. Default is 0.01.}
+
+\item{xvar_cutoff}{Variance cutoff for X. Default is 0.05.}
+
+\item{ld_reference_meta_file}{An optional path to a file containing linkage disequilibrium reference data. Default is NULL.}
+
+\item{pip_cutoff_to_skip}{Cutoff value for skipping analysis based on PIP values. Default is 0.}
+
+\item{init_L}{Initial number of components for SuSiE model optimization. Default is 5.}
+
+\item{max_L}{The maximum number of components in SuSiE. Default is 20.}
+
+\item{l_step}{Step size for increasing the number of components during SuSiE optimization. Default is 5.}
+
+\item{signal_cutoff}{Cutoff value for signal identification in PIP values. Default is 0.025.}
+
+\item{coverage}{A vector of coverage probabilities for credible sets. Default is c(0.95, 0.7, 0.5).}
+
+\item{twas_weights}{Whether to compute TWAS weights. Default is TRUE.}
+
+\item{sample_partition}{Sample partition for cross-validation. Default is NULL.}
+
+\item{max_cv_variants}{The maximum number of variants to be included in cross-validation. Default is -1 (no limit).}
+
+\item{cv_folds}{The number of folds to use for cross-validation. Default is 5.}
+
+\item{cv_threads}{The number of threads to use for parallel computation in cross-validation. Default is 1.}
+
+\item{verbose}{Verbosity level. Default is 0.}
+}
+\value{
+A list containing the univariate analysis results.
+}
 \description{
-Univariate analysis pipeline
+This function performs univariate analysis for fine-mapping and Transcriptome-Wide Association Study (TWAS)
+with optional cross-validation.
 }

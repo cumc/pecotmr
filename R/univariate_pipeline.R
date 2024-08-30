@@ -93,7 +93,7 @@ univariate_analysis_pipeline <- function(
   # Filter X based on missingness, MAF, and variance
   if (!is.null(imiss_cutoff) || !is.null(maf_cutoff)) {
     # FIXME: I think we should use filter_X directly for univariate without considering Y? 
-    X_filtered <- filter_X(X, imiss_cutoff, maf_cutoff, var_thresh = xvar_cutoff, X_variance = X_variance)
+    X_filtered <- filter_X(X, imiss_cutoff, maf_cutoff, var_thresh = xvar_cutoff, maf = maf, X_variance = X_variance)
     kept_indices <- match(colnames(X_filtered), colnames(X))
     maf <- maf[kept_indices]
     if (length(X_scalar) > 1) X_scalar <- X_scalar[kept_indices]
