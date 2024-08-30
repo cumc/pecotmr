@@ -379,7 +379,7 @@ twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_
 
     for (m in names(weight_methods)) {
       metrics_table[[m]] <- matrix(NA, nrow = ncol(Y), ncol = 6)
-      colnames(metrics_table[[m]]) <- c("corr", "rsq", "adj_rsq", "adj_rsq_pval", "RMSE", "MAE")
+      colnames(metrics_table[[m]]) <- c("corr", "rsq", "adj_rsq", "pval", "RMSE", "MAE")
       rownames(metrics_table[[m]]) <- colnames(Y)
 
       for (r in 1:ncol(Y)) {
@@ -401,7 +401,7 @@ twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_
           metrics_table[[m]][r, "adj_rsq"] <- summary(lm_fit)$adj.r.squared
 
           # Calculate p-value
-          metrics_table[[m]][r, "adj_rsq_pval"] <- summary(lm_fit)$coefficients[2, 4]
+          metrics_table[[m]][r, "pval"] <- summary(lm_fit)$coefficients[2, 4]
 
           # Calculate RMSE
           residuals <- actual_values - method_predictions

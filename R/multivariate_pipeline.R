@@ -214,8 +214,8 @@ multivariate_analysis_pipeline <- function(
 
   # Input validation
   if (!is.matrix(X) || !is.numeric(X)) stop("X must be a numeric matrix")
-  if (!is.vector(Y) || !is.numeric(Y)) stop("Y must be a numeric vector")
-  if (nrow(X) != length(Y)) stop("X and Y must have the same number of rows/length")
+  if (!is.matrix(Y) || !is.numeric(Y)) stop("Y must be a numeric matrix")
+  if (nrow(X) != nrow(Y)) stop("X and Y must have the same number of rows")
   if (!is.numeric(maf) || length(maf) != ncol(X)) stop("maf must be a numeric vector with length equal to the number of columns in X")
   if (any(maf < 0 | maf > 1)) stop("maf values must be between 0 and 1")
 
@@ -266,7 +266,7 @@ multivariate_analysis_pipeline <- function(
     names(data_driven_prior_matrices_cv) <- paste0("fold_", 1:cv_folds)
   }
   st <- proc.time()
-  res <- setNames(vector("list", ncol(Y)), colnames(Y))
+  res <- list()
   message("Fitting mr.mash model on input data ...")
   res$mrmash_fitted <- mrmash_wrapper(
     X = X, Y = Y, data_driven_prior_matrices = data_driven_prior_matrices,
@@ -414,6 +414,7 @@ twas_multivariate_weights_pipeline <- function(
   twas_predictions <- twas_predict(X, twas_weights_res)
 
   # copy TWAS results by condition
+  res <- setNames(vector("list", ncol(Y)), colnames(Y))
   res <- copy_twas_results(res, twas_weights_res, twas_predictions)
 
   # Perform cross-validation if specified
