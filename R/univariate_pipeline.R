@@ -71,22 +71,6 @@ univariate_analysis_pipeline <- function(
   if (!is.numeric(max_L) || max_L <= 0) stop("max_L must be a positive integer")
   if (!is.numeric(l_step) || l_step <= 0) stop("l_step must be a positive integer")
 
-  # Filter variants if LD reference is provided
-  if (!is.null(ld_reference_meta_file)) {
-    variants_kept <- filter_variants_by_ld_reference(colnames(X), ld_reference_meta_file)
-    X <- X[, variants_kept$data, drop = FALSE]
-    maf <- maf[variants_kept$idx]
-    if (length(X_scalar) > 1) X_scalar <- X_scalar[variants_kept$idx]
-  }
-
-  # Filter X based on missingness, MAF, and variance
-    # FIXME: I think we should use filter_X directly for univariate without considering Y? 
-    X_filtered <- filter_X(X, imiss_cutoff, maf_cutoff, var_thresh = xvar_cutoff, X_variance = X_variance)
-  kept_indices <- match(colnames(X_filtered), colnames(X))
-  maf <- maf[kept_indices]
-  if (length(X_scalar) > 1) X_scalar <- X_scalar[kept_indices]
-  X <- X_filtered
-
   # Initial PIP check
   if (pip_cutoff_to_skip > 0) {
     top_model_pip <- susie(X, Y, L = 1)$pip
@@ -98,13 +82,32 @@ univariate_analysis_pipeline <- function(
     }
   }
 
+  # Filter variants if LD reference is provided
+  if (!is.null(ld_reference_meta_file)) {
+    variants_kept <- filter_variants_by_ld_reference(colnames(X), ld_reference_meta_file)
+    X <- X[, variants_kept$data, drop = FALSE]
+    maf <- maf[variants_kept$idx]
+    if (length(X_scalar) > 1) X_scalar <- X_scalar[variants_kept$idx]
+  }
+
+  # Filter X based on missingness, MAF, and variance
+  if (!is.null(imiss_cutoff) || !is.null(maf_cutoff)) {
+    # FIXME: I think we should use filter_X directly for univariate without considering Y? 
+    X_filtered <- filter_X(X, imiss_cutoff, maf_cutoff, var_thresh = xvar_cutoff, X_variance = X_variance)
+    kept_indices <- match(colnames(X_filtered), colnames(X))
+    maf <- maf[kept_indices]
+    if (length(X_scalar) > 1) X_scalar <- X_scalar[kept_indices]
+    X <- X_filtered
+  }
+
   # Main analysis
   st <- proc.time()
   res <- list()
 
   # SuSiE analysis with optimization
   message("Fitting SuSiE model on input data with L optimization...")
-  res$susie_fitted <- susie_wrapper(X, Y, init_L = init_L, max_L = max_L, l_step = l_step, refine = TRUE, coverage = coverage[1])
+  res$susie_fitted <- susie_wrapper(X, Y, init_L = init_L, max_L = max_L, l_step = l_step, 
+                                    refine = TRUE, coverage = coverage[1])
 
   # Process SuSiE results
   res$susie_result_trimmed <- susie_post_processor(
