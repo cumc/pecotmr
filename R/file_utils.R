@@ -428,7 +428,7 @@ load_regional_association_data <- function(genotype, # PLINK file
     maf_cutoff, mac_cutoff, xvar_cutoff,
     phenotype_header = phenotype_header, keep_samples = keep_samples
   )
-  maf_list <- lapply(data_list$X, function(x) apply(x, 2, compute_maf))
+  maf_list <- setNames(lapply(data_list$X, function(x) apply(x, 2, compute_maf)), colnames(data_list$X))
   ## Get residue Y for each of condition and its mean and sd
   data_list <- add_Y_residuals(data_list, conditions, scale_residuals)
   ## Get residue X for each of condition and its mean and sd

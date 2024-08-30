@@ -242,7 +242,7 @@ multivariate_analysis_pipeline <- function(
 
   # filter X based on Y subjects
   if (!is.null(imiss_cutoff) || !is.null(maf_cutoff)) {
-    X <- filter_X_with_Y(X, Y, imiss_cutoff, maf_cutoff, var_thresh = xvar_cutoff, X_variance = X_variance)
+    X <- filter_X_with_Y(X, Y, imiss_cutoff, maf_cutoff, var_thresh = xvar_cutoff, maf_list=maf, X_variance = X_variance)
     maf <- maf[colnames(X)]
   }
 
