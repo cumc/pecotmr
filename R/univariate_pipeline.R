@@ -34,15 +34,15 @@ univariate_analysis_pipeline <- function(
     # input data
     X,
     Y,
-    X_scalar,
-    Y_scalar,
     maf,
+    X_scalar = 1,
+    Y_scalar = 1,
     X_variance = NULL,
     other_quantities = list(),
     # filters
     imiss_cutoff = 1.0,
-    maf_cutoff = 0.01,
-    xvar_cutoff = 0.05,
+    maf_cutoff = NULL,
+    xvar_cutoff = NULL,
     ld_reference_meta_file = NULL,
     pip_cutoff_to_skip = 0,
     # methods parameter configuration
@@ -80,8 +80,8 @@ univariate_analysis_pipeline <- function(
   }
 
   # Filter X based on missingness, MAF, and variance
-  # FIXME: I think we should use filter_X directly for univariate without considering Y? 
-  X_filtered <- filter_X(X, imiss_cutoff, maf_cutoff, var_thresh = xvar_cutoff, X_variance = X_variance)
+    # FIXME: I think we should use filter_X directly for univariate without considering Y? 
+    X_filtered <- filter_X(X, imiss_cutoff, maf_cutoff, var_thresh = xvar_cutoff, X_variance = X_variance)
   kept_indices <- match(colnames(X_filtered), colnames(X))
   maf <- maf[kept_indices]
   if (length(X_scalar) > 1) X_scalar <- X_scalar[kept_indices]
