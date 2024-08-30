@@ -2,7 +2,7 @@
 % Please edit documentation in R/multivariate_pipeline.R
 \name{twas_multivariate_weights_pipeline}
 \alias{twas_multivariate_weights_pipeline}
-\title{TWAS Weights Multivariate Pipeline}
+\title{TWAS Multivariate Weights Pipeline}
 \usage{
 twas_multivariate_weights_pipeline(
   X,
@@ -20,6 +20,42 @@ twas_multivariate_weights_pipeline(
   verbose = FALSE
 )
 }
+\arguments{
+\item{X}{A matrix of genotype data where rows represent samples and columns represent genetic variants.}
+
+\item{Y}{A matrix of phenotype measurements, where rows represent samples and columns represent conditions.}
+
+\item{mnm_fit}{An object containing the fitted multivariate models (e.g., mvSuSiE and mr.mash fits).}
+
+\item{cv_folds}{The number of folds to use for cross-validation. Defaults to 5. Set to 0 to skip cross-validation.}
+
+\item{sample_partition}{An optional vector specifying the partition of samples for cross-validation. If NULL, a random partition is generated.}
+
+\item{data_driven_prior_matrices}{A list of data-driven covariance matrices for mr.mash weights. Defaults to NULL.}
+
+\item{data_driven_prior_matrices_cv}{A list of data-driven covariance matrices for mr.mash weights in cross-validation. Defaults to NULL.}
+
+\item{canonical_prior_matrices}{If TRUE, computes canonical covariance matrices for mr.mash. Defaults to FALSE.}
+
+\item{mvsusie_max_iter}{The maximum number of iterations for mvSuSiE. Defaults to 200.}
+
+\item{mrmash_max_iter}{The maximum number of iterations for mr.mash. Defaults to 5000.}
+
+\item{max_cv_variants}{The maximum number of variants to be included in cross-validation. Defaults to -1 which means no limit.}
+
+\item{cv_threads}{The number of threads to use for parallel computation in cross-validation. Defaults to 1.}
+
+\item{verbose}{If TRUE, provides more detailed output during execution. Defaults to FALSE.}
+}
+\value{
+A list containing results from the TWAS pipeline, including TWAS weights, predictions, and optionally cross-validation results.
+}
 \description{
-TWAS Weights Multivariate Pipeline
+This function performs weights computation for Transcriptome-Wide Association Study (TWAS)
+in a multivariate setting. It incorporates steps such as fitting models using mvSuSiE and mr.mash,
+calculating TWAS weights and predictions, and optionally performing cross-validation for TWAS weights.
+}
+\examples{
+# Example usage (assuming appropriate objects for X, Y, and mnm_fit are available):
+twas_results <- twas_multivariate_weights_pipeline(X, Y, mnm_fit)
 }

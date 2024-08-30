@@ -113,14 +113,14 @@ compute_LD <- function(X) {
 }
 
 #' @importFrom matrixStats colVars
-filter_X <- function(X, missing_rate_thresh, maf_thresh, var_thresh = 0, maf_list=NULL, X_variance = NULL) {
+filter_X <- function(X, missing_rate_thresh, maf_thresh, var_thresh = 0, maf = NULL, X_variance = NULL) {
   tol_variants <- ncol(X)
   if (!is.null(missing_rate_thresh) && missing_rate_thresh < 1.0) {
     rm_col <- which(apply(X, 2, compute_missing) > missing_rate_thresh)
     if (length(rm_col)) X <- X[, -rm_col]
   }
   if (!is.null(maf_thresh) && maf_thresh > 0.0) {
-    rm_col <- if (!is.null(maf_list)) which(maf_list <= maf_thresh) else which(apply(X, 2, compute_maf) <= maf_thresh)
+    rm_col <- if (!is.null(maf)) which(maf <= maf_thresh) else which(apply(X, 2, compute_maf) <= maf_thresh)
     if (length(rm_col)) X <- X[, -rm_col]
   }
   rm_col <- which(apply(X, 2, is_zero_variance))
@@ -141,9 +141,9 @@ filter_X <- function(X, missing_rate_thresh, maf_thresh, var_thresh = 0, maf_lis
 #' @param maf_thresh Minimum minor allele frequency (MAF) cutoff.
 #' @param var_thresh Minimum variance cutoff for a variant. Default is 0.
 #' @param X_variance A vector of variance for X variants.
-filter_X_with_Y <- function(X, Y, missing_rate_thresh, maf_thresh, var_thresh = 0, maf_list=NULL, X_variance = NULL) {
+filter_X_with_Y <- function(X, Y, missing_rate_thresh, maf_thresh, var_thresh = 0, maf = NULL, X_variance = NULL) {
   tol_variants <- ncol(X)
-  X <- filter_X(X, missing_rate_thresh, maf_thresh, var_thresh=var_thresh, maf_list=maf_list, X_variance=X_variance)
+  X <- filter_X(X, missing_rate_thresh, maf_thresh, var_thresh=var_thresh, maf=maf, X_variance=X_variance)
   drop_idx <- do.call(c, lapply(colnames(Y), function(context) {
     subjects_with_na_Y <- rownames(Y)[is.na(Y[, context])]
     X_temp <- X

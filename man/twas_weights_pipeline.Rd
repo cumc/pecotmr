@@ -7,21 +7,13 @@
 twas_weights_pipeline(
   X,
   y,
-  maf,
   susie_fit,
-  ld_reference_meta_file = NULL,
   cv_folds = 5,
-  X_scalar = 1,
-  y_scalar = 1,
-  coverage = 0.95,
-  secondary_coverage = c(0.7, 0.5),
-  signal_cutoff = 0.05,
+  sample_partition = NULL,
   weight_methods = list(enet_weights = list(), lasso_weights = list(), mrash_weights =
     list(init_prior_sd = TRUE, max.iter = 100), bayes_c_weights = list(), bayes_r_weights
     = list()),
-  min_cv_maf = 0.05,
   max_cv_variants = -1,
-  cv_seed = 999,
   cv_threads = 1,
   cv_weight_methods = NULL
 )
@@ -31,33 +23,17 @@ twas_weights_pipeline(
 
 \item{y}{A vector of phenotype measurements for each sample.}
 
-\item{maf}{A vector of minor allele frequencies for each variant in X.}
-
 \item{susie_fit}{An object returned by the SuSiE function, containing the SuSiE model fit.}
 
-\item{ld_reference_meta_file}{An optional path to a file containing linkage disequilibrium reference data. If provided, variants in X are filtered based on this reference.}
-
-\item{cv_folds}{The number of folds to use for cross-validation. Set to 0 to skip cross-validation.}
-
-\item{X_scalar}{A scalar or vector to scale the genotype data. Defaults to 1 (no scaling).}
-
-\item{y_scalar}{A scalar to scale the phenotype data. Defaults to 1 (no scaling).}
-
-\item{coverage}{The coverage probability used in SuSiE for credible set construction. Defaults to 0.95.}
-
-\item{secondary_coverage}{A vector of secondary coverage probabilities for credible set refinement. Defaults to c(0.7, 0.5).}
-
-\item{signal_cutoff}{A threshold for determining significant signals in the SuSiE output. Defaults to 0.05.}
+\item{cv_folds}{The number of folds to use for cross-validation. Set to 0 to skip cross-validation. Defaults to 5.}
 
 \item{weight_methods}{List of methods to use to compute weights for TWAS; along with their parameters.}
 
-\item{min_cv_maf}{The minimum minor allele frequency for variants to be included in cross-validation. Defaults to 0.05.}
-
 \item{max_cv_variants}{The maximum number of variants to be included in cross-validation. Defaults to -1 which means no limit.}
 
-\item{cv_seed}{The seed for random number generation in cross-validation. Defaults to 999.}
-
 \item{cv_threads}{The number of threads to use for parallel computation in cross-validation. Defaults to 1.}
+
+\item{cv_weight_methods}{List of methods to use for cross-validation. If NULL, uses the same methods as weight_methods.}
 }
 \value{
 A list containing results from the TWAS pipeline, including TWAS weights, predictions, and optionally cross-validation results.
@@ -69,6 +45,6 @@ fitting models using SuSiE and other methods, and calculating TWAS weights and p
 Optionally, it can perform cross-validation for TWAS weights.
 }
 \examples{
-# Example usage (assuming appropriate objects for X, y, susie_fit, and maf are available):
-twas_results <- twas_weights_pipeline(X, y, maf, susie_fit)
+# Example usage (assuming appropriate objects for X, y, and susie_fit are available):
+twas_results <- twas_weights_pipeline(X, y, susie_fit)
 }
