@@ -384,11 +384,12 @@ susie_post_processor <- function(susie_output, data_x, data_y, X_scalar, y_scala
       res$sumstats <- data_y
     }
   }
+  max_L <- nrow(susie_output$alpha)
   if (!is.null(susie_output$V)) {
     # for fSuSiE there is no V for now
     eff_idx <- which(susie_output$V > prior_eff_tol)
   } else {
-    eff_idx <- 1:nrow(susie_output$alpha)
+    eff_idx <- 1:max_L
   }
   if (length(eff_idx) > 0) {
     # Prepare for top loci table
@@ -441,7 +442,8 @@ susie_post_processor <- function(susie_output, data_x, data_y, X_scalar, y_scala
       alpha = susie_output$alpha[eff_idx, , drop = FALSE],
       lbf_variable = susie_output$lbf_variable[eff_idx, , drop = FALSE],
       V = if (!is.null(susie_output$V)) susie_output$V[eff_idx] else NULL,
-      niter = susie_output$niter
+      niter = susie_output$niter,
+      max_L = max_L
     )
     if (mode == "susie") {
       res$susie_result_trimmed$X_column_scale_factors <- susie_output$X_column_scale_factors

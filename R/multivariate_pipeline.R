@@ -301,11 +301,11 @@ multivariate_analysis_pipeline <- function(
 
   # Process mvSuSiE results
   sec_coverage <- if (length(coverage) > 1) coverage[-1] else NULL
-  res$mvsusie_result_trimmed <- susie_post_processor(
+  mvsusie_result_trimmed <- susie_post_processor(
     res$mvsusie_fitted, X, NULL, 1, 1,
     maf = maf, secondary_coverage = sec_coverage, signal_cutoff = signal_cutoff, mode = "mvsusie", other_quantities = other_quantities
   )
-  res$mvsusie_result_trimmed$max_L <- max_L
+  res <- c(res, mvsusie_result_trimmed)
   res$total_time_elapsed <- proc.time() - st
 
   # Run TWAS weights and optionally CV

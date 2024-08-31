@@ -111,17 +111,17 @@ univariate_analysis_pipeline <- function(
   )
 
   # Process SuSiE results
-  res$susie_result_trimmed <- susie_post_processor(
+  susie_result_trimmed <- susie_post_processor(
     res$susie_fitted, X, Y, X_scalar, Y_scalar, maf,
     secondary_coverage = if (length(coverage) > 1) coverage[-1] else NULL,
     signal_cutoff = signal_cutoff,
     other_quantities = other_quantities
   )
+  res <- c(res, susie_result_trimmed)
   res$total_time_elapsed <- proc.time() - st
 
   # TWAS weights and cross-validation
   if (twas_weights) {
-    message("Computing TWAS weights and performing cross-validation ...")
     res$twas_weights_result <- twas_weights_pipeline(
       X, Y, res$susie_fitted,
       cv_folds = cv_folds,
@@ -185,7 +185,7 @@ twas_weights_pipeline <- function(X,
     # 1. reset SuSiE to not using refine or adaptive L but to use L from previous analysis
     # 2. at most 100 iterations for mr.ash allowed
     # 3. only use a subset of variants randomly selected to avoid bias
-    max_L <- length(which(susie_fit$V))
+    max_L <- length(susie_fit$V)
     weight_methods$susie_weights <- list(refine = FALSE, init_L = max_L, max_L = max_L)
 
     if (is.null(cv_weight_methods)) {
