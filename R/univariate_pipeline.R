@@ -42,7 +42,7 @@ univariate_analysis_pipeline <- function(
     # filters
     imiss_cutoff = 1.0,
     maf_cutoff = NULL,
-    xvar_cutoff = NULL,
+    xvar_cutoff = 0,
     ld_reference_meta_file = NULL,
     pip_cutoff_to_skip = 0,
     # methods parameter configuration
@@ -92,7 +92,6 @@ univariate_analysis_pipeline <- function(
 
   # Filter X based on missingness, MAF, and variance
   if (!is.null(imiss_cutoff) || !is.null(maf_cutoff)) {
-    # FIXME: I think we should use filter_X directly for univariate without considering Y? 
     X_filtered <- filter_X(X, imiss_cutoff, maf_cutoff, var_thresh = xvar_cutoff, maf = maf, X_variance = X_variance)
     kept_indices <- match(colnames(X_filtered), colnames(X))
     maf <- maf[kept_indices]
@@ -106,8 +105,10 @@ univariate_analysis_pipeline <- function(
 
   # SuSiE analysis with optimization
   message("Fitting SuSiE model on input data with L optimization...")
-  res$susie_fitted <- susie_wrapper(X, Y, init_L = init_L, max_L = max_L, l_step = l_step, 
-                                    refine = TRUE, coverage = coverage[1])
+  res$susie_fitted <- susie_wrapper(X, Y,
+    init_L = init_L, max_L = max_L, l_step = l_step,
+    refine = TRUE, coverage = coverage[1]
+  )
 
   # Process SuSiE results
   res$susie_result_trimmed <- susie_post_processor(

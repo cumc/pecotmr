@@ -127,7 +127,7 @@ filter_X <- function(X, missing_rate_thresh, maf_thresh, var_thresh = 0, maf = N
   if (length(rm_col)) X <- X[, -rm_col]
   X <- mean_impute(X)
   if (var_thresh > 0) {
-    rm_col <- if (!is.null(X_variance)) which(X_variance < var_thresh) else  which(colVars(X) < var_thresh)
+    rm_col <- if (!is.null(X_variance)) which(X_variance < var_thresh) else which(colVars(X) < var_thresh)
     if (length(rm_col)) X <- X[, -rm_col]
   }
   message(paste0("Out of total ", tol_variants, " variants, dropped ", tol_variants - ncol(X), " variants. "))
@@ -143,7 +143,7 @@ filter_X <- function(X, missing_rate_thresh, maf_thresh, var_thresh = 0, maf = N
 #' @param X_variance A vector of variance for X variants.
 filter_X_with_Y <- function(X, Y, missing_rate_thresh, maf_thresh, var_thresh = 0, maf = NULL, X_variance = NULL) {
   tol_variants <- ncol(X)
-  X <- filter_X(X, missing_rate_thresh, maf_thresh, var_thresh=var_thresh, maf=maf, X_variance=X_variance)
+  X <- filter_X(X, missing_rate_thresh, maf_thresh, var_thresh = var_thresh, maf = maf, X_variance = X_variance)
   drop_idx <- do.call(c, lapply(colnames(Y), function(context) {
     subjects_with_na_Y <- rownames(Y)[is.na(Y[, context])]
     X_temp <- X
