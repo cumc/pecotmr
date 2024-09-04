@@ -14,7 +14,7 @@ univariate_analysis_pipeline(
   other_quantities = list(),
   imiss_cutoff = 1,
   maf_cutoff = NULL,
-  xvar_cutoff = NULL,
+  xvar_cutoff = 0,
   ld_reference_meta_file = NULL,
   pip_cutoff_to_skip = 0,
   init_L = 5,

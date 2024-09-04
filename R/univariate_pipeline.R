@@ -61,7 +61,7 @@ univariate_analysis_pipeline <- function(
     verbose = 0) {
   # Input validation
   if (!is.matrix(X) || !is.numeric(X)) stop("X must be a numeric matrix")
-  if (!is.vector(Y) || !is.numeric(Y)) stop("Y must be a numeric vector")
+  if (!is.vector(Y) && !(is.matrix(Y) && ncol(Y) == 1)|| !is.numeric(Y)) stop("Y must be a numeric vector or a single column matrix")
   if (nrow(X) != length(Y)) stop("X and Y must have the same number of rows/length")
   if (!is.numeric(maf) || length(maf) != ncol(X)) stop("maf must be a numeric vector with length equal to the number of columns in X")
   if (any(maf < 0 | maf > 1)) stop("maf values must be between 0 and 1")
