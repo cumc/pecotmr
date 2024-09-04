@@ -164,8 +164,9 @@ twas_weights_pipeline <- function(X,
                                   weight_methods = list(
                                     enet_weights = list(),
                                     lasso_weights = list(),
+                                    bayes_r_weights = list(),
                                     mrash_weights = list(init_prior_sd = TRUE, max.iter = 100),
-                                    bayes_r_weights = list()
+                                    susie_weights = list(refine = FALSE, init_L = 5, max_L = 20)
                                   ),
                                   max_cv_variants = -1,
                                   cv_threads = 1,

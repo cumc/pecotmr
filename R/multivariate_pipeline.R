@@ -71,7 +71,7 @@ multivariate_analysis_pipeline <- function(
     # filters
     imiss_cutoff = 1.0,
     maf_cutoff = 0.01,
-    xvar_cutoff = 0.05,
+    xvar_cutoff = 0.01,
     ld_reference_meta_file = NULL,
     pip_cutoff_to_skip = 0,
     # methods parameter configuration
@@ -361,40 +361,42 @@ twas_multivariate_weights_pipeline <- function(
     max_cv_variants = -1,
     cv_threads = 1,
     verbose = FALSE) {
-  copy_twas_results <- function(mnm_fit, twas_weight, twas_predictions) {
-    for (i in names(mnm_fit)) {
+  copy_twas_results <- function(context_names, variant_names, twas_weight, twas_predictions) {
+    res <- setNames(vector("list", length(context_names)), context_names)
+    for (i in names(res)) {
       if (i %in% colnames(twas_weights_res[[1]])) {
-        mnm_fit[[i]]$twas_weights <- lapply(twas_weight, function(wgts) {
+        res[[i]]$twas_weights <- lapply(twas_weight, function(wgts) {
           wgts[, i]
         })
-        mnm_fit[[i]]$twas_predictions <- lapply(twas_predictions, function(pred) {
+        res[[i]]$twas_predictions <- lapply(twas_predictions, function(pred) {
           pred[, i]
         })
+        res[[i]]$variant_names <- variant_names
       }
     }
-    return(mnm_fit)
+    return(res)
   }
 
-  copy_twas_cv_results <- function(mnm_fit, twas_cv_result) {
-    for (i in names(mnm_fit)) {
+  copy_twas_cv_results <- function(twas_result, twas_cv_result) {
+    for (i in names(twas_result)) {
       if (i %in% colnames(twas_cv_result$prediction[[1]])) {
-        mnm_fit[[i]]$twas_cv_result$sample_partition <- twas_cv_result$sample_partition
-        mnm_fit[[i]]$twas_cv_result$prediction <- lapply(
+        twas_result[[i]]$twas_cv_result$sample_partition <- twas_cv_result$sample_partition
+        twas_result[[i]]$twas_cv_result$prediction <- lapply(
           twas_cv_result$prediction,
           function(predicted) {
             as.matrix(predicted[, i], ncol = 1)
           }
         )
-        mnm_fit[[i]]$twas_cv_result$performance <- lapply(
+        twas_result[[i]]$twas_cv_result$performance <- lapply(
           twas_cv_result$performance,
           function(perform) {
             t(as.matrix(perform[i, ], ncol = 1))
           }
         )
-        mnm_fit[[i]]$twas_cv_result$time_elapsed <- twas_cv_result$time_elapsed
+        twas_result[[i]]$twas_cv_result$time_elapsed <- twas_cv_result$time_elapsed
       }
     }
-    return(mnm_fit)
+    return(twas_result)
   }
 
   # TWAS weights and predictions
@@ -414,8 +416,7 @@ twas_multivariate_weights_pipeline <- function(
   twas_predictions <- twas_predict(X, twas_weights_res)
 
   # copy TWAS results by condition
-  res <- setNames(vector("list", ncol(Y)), colnames(Y))
-  res <- copy_twas_results(res, twas_weights_res, twas_predictions)
+  res <- copy_twas_results(colnames(Y), mnm_fit$variant_names, twas_weights_res, twas_predictions)
 
   # Perform cross-validation if specified
   if (cv_folds > 1) {
@@ -455,6 +456,9 @@ twas_multivariate_weights_pipeline <- function(
     )
     res <- copy_twas_cv_results(res, twas_cv_result)
   }
-  res$total_time_elapsed <- proc.time() - st
+  total_time_elapsed <- proc.time() - st
+  for (i in 1:length(res)) {
+    res[[i]]$total_time_elapsed <- total_time_elapsed
+  }
   return(res)
 }

@@ -367,7 +367,7 @@ susie_post_processor <- function(susie_output, data_x, data_y, X_scalar, y_scala
   if (analysis_script != "") res$analysis_script <- analysis_script
   if (!is.null(other_quantities)) res$other_quantities <- other_quantities
   if (mode == "mvsusie") {
-    res$condition_names <- susie_output$condition_names
+    res$context_names <- susie_output$condition_names
   }
   if (!is.null(data_y)) {
     # Mode-specific processing
