@@ -11,8 +11,7 @@ twas_weights_pipeline(
   cv_folds = 5,
   sample_partition = NULL,
   weight_methods = list(enet_weights = list(), lasso_weights = list(), mrash_weights =
-    list(init_prior_sd = TRUE, max.iter = 100), bayes_c_weights = list(), bayes_r_weights
-    = list()),
+    list(init_prior_sd = TRUE, max.iter = 100), bayes_r_weights = list()),
   max_cv_variants = -1,
   cv_threads = 1,
   cv_weight_methods = NULL
