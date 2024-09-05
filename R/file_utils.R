@@ -456,6 +456,7 @@ load_regional_association_data <- function(genotype, # PLINK file
   ))
 }
 
+#' @importFrom matrixStats colVars
 #' @return A list
 #' @export
 load_regional_univariate_data <- function(...) {
@@ -468,7 +469,8 @@ load_regional_univariate_data <- function(...) {
     dropped_sample = dat$dropped_sample,
     maf = dat$maf,
     chrom = dat$chrom,
-    grange = dat$grange
+    grange = dat$grange,
+    X_variance = lapply(dat$residual_X, function(x) colVars(x))
   ))
 }
 
