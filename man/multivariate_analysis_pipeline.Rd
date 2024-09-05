@@ -12,7 +12,7 @@ multivariate_analysis_pipeline(
   other_quantities = list(),
   imiss_cutoff = 1,
   maf_cutoff = 0.01,
-  xvar_cutoff = 0.05,
+  xvar_cutoff = 0.01,
   ld_reference_meta_file = NULL,
   pip_cutoff_to_skip = 0,
   max_L = -1,
