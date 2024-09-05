@@ -49,7 +49,7 @@
 #'   max_L = 10,
 #'   ld_reference_meta_file = NULL,
 #'   max_cv_variants = -1,
-#'   pip_cutoff_to_skip = 0.025,
+#'   pip_cutoff_to_skip = 0,
 #'   signal_cutoff = 0.025,
 #'   data_driven_prior_matrices = data_driven_prior_matrices,
 #'   data_driven_prior_matrices_cv = data_driven_prior_matrices_cv,
@@ -101,11 +101,14 @@ multivariate_analysis_pipeline <- function(
     }
     cols_to_keep <- logical(ncol(Y))
     for (r in 1:ncol(Y)) {
-      if (pip_cutoff_to_skip[r] > 0) {
+      if (pip_cutoff_to_skipi[r] != 0) {
         non_missing_indices <- which(!is.na(Y[, r]))
         X_non_missing <- X[match(names(Y[, r])[non_missing_indices], rownames(X)), ]
         Y_non_missing <- Y[non_missing_indices, r]
-
+        if (pip_cutoff_to_skip[r] < 0) {
+          # automatically determine the cutoff to use
+          pip_cutoff_to_skip[r] <- 3 * 1 / ncol(X_non_missing)
+        }
         top_model_pip <- susie(X_non_missing, Y_non_missing, L = 1)$pip
 
         if (any(top_model_pip > pip_cutoff_to_skip[r])) {

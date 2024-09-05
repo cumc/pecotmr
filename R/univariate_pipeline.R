@@ -61,7 +61,7 @@ univariate_analysis_pipeline <- function(
     verbose = 0) {
   # Input validation
   if (!is.matrix(X) || !is.numeric(X)) stop("X must be a numeric matrix")
-  if (!is.vector(Y) && !(is.matrix(Y) && ncol(Y) == 1)|| !is.numeric(Y)) stop("Y must be a numeric vector or a single column matrix")
+  if (!is.vector(Y) && !(is.matrix(Y) && ncol(Y) == 1) || !is.numeric(Y)) stop("Y must be a numeric vector or a single column matrix")
   if (nrow(X) != length(Y)) stop("X and Y must have the same number of rows/length")
   if (!is.numeric(maf) || length(maf) != ncol(X)) stop("maf must be a numeric vector with length equal to the number of columns in X")
   if (any(maf < 0 | maf > 1)) stop("maf values must be between 0 and 1")
@@ -72,7 +72,11 @@ univariate_analysis_pipeline <- function(
   if (!is.numeric(l_step) || l_step <= 0) stop("l_step must be a positive integer")
 
   # Initial PIP check
-  if (pip_cutoff_to_skip > 0) {
+  if (pip_cutoff_to_skip != 0) {
+    if (pip_cutoff_to_skip < 0) {
+      # automatically determine the cutoff to use
+      pip_cutoff_to_skip <- 3 * 1 / ncol(X)
+    }
     top_model_pip <- susie(X, Y, L = 1)$pip
     if (!any(top_model_pip > pip_cutoff_to_skip)) {
       message(paste("Skipping follow-up analysis: No signals above PIP threshold", pip_cutoff_to_skip, "in initial model screening."))
@@ -273,7 +277,11 @@ rss_analysis_pipeline <- function(
   sumstats <- preprocess_results$sumstats
   LD_mat <- preprocess_results$LD_mat
 
-  if (pip_cutoff_to_skip > 0) {
+  if (pip_cutoff_to_skip != 0) {
+    if (pip_cutoff_to_skip < 0) {
+      # automatically determine the cutoff to use
+      pip_cutoff_to_skip <- 3 * 1 / ncol(X)
+    }
     top_model_pip <- susie_rss_wrapper(z = sumstats$z, R = LD_mat, L = 1, n = n, var_y = var_y)$pip
     if (!any(top_model_pip > pip_cutoff_to_skip)) {
       message(paste("Skipping follow-up analysis: No signals above PIP threshold", pip_cutoff_to_skip, "in initial model screening."))
