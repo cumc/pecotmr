@@ -3,7 +3,7 @@ FROM condaforge/mambaforge
 SHELL ["/bin/bash", "-c"]
 RUN apt-get update
 RUN apt-get install -y libgl1-mesa-glx
-RUN mamba install boa conda-verify
+RUN mamba install boa
 RUN conda config --append channels bioconda
 RUN conda config --append channels nodefaults
 COPY .github/custom_channels /tmp/custom_channels
