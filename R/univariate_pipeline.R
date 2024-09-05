@@ -158,7 +158,7 @@ univariate_analysis_pipeline <- function(
 #' twas_results <- twas_weights_pipeline(X, y, susie_fit)
 twas_weights_pipeline <- function(X,
                                   y,
-                                  susie_fit,
+                                  susie_fit = NULL,
                                   cv_folds = 5,
                                   sample_partition = NULL,
                                   weight_methods = list(
@@ -176,7 +176,7 @@ twas_weights_pipeline <- function(X,
   message("Performing TWAS weights computation for univariate analysis methods ...")
 
   # TWAS weights and predictions
-  weight_methods$susie_weights <- list(susie_fit = susie_fit)
+  if (!is.null(susie_fit)) weight_methods$susie_weights <- list(susie_fit = susie_fit)
   res$twas_weights <- twas_weights(X, y, weight_methods = weight_methods)
   res$twas_predictions <- twas_predict(X, res$twas_weights)
 
