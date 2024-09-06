@@ -104,7 +104,7 @@ result <- multivariate_analysis_pipeline(
   max_L = 10,
   ld_reference_meta_file = NULL,
   max_cv_variants = -1,
-  pip_cutoff_to_skip = 0.025,
+  pip_cutoff_to_skip = 0,
   signal_cutoff = 0.025,
   data_driven_prior_matrices = data_driven_prior_matrices,
   data_driven_prior_matrices_cv = data_driven_prior_matrices_cv,

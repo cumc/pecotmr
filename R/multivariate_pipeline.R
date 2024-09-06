@@ -101,7 +101,7 @@ multivariate_analysis_pipeline <- function(
     }
     cols_to_keep <- logical(ncol(Y))
     for (r in 1:ncol(Y)) {
-      if (pip_cutoff_to_skipi[r] != 0) {
+      if (pip_cutoff_to_skip[r] != 0) {
         non_missing_indices <- which(!is.na(Y[, r]))
         X_non_missing <- X[match(names(Y[, r])[non_missing_indices], rownames(X)), ]
         Y_non_missing <- Y[non_missing_indices, r]
@@ -278,7 +278,7 @@ multivariate_analysis_pipeline <- function(
 
   # For input into mvSuSiE
   resid_Y <- res$mrmash_fitted$V
-  w0_updated <- rescale_cov_w0(res$mrmash_fitted$w0)
+  w0_updated <- rescale_cov_w0(res$mrmash_fitted$w0)[names(data_driven_prior_matrices$w)]
   if (max_L < 0) {
     # This is based on mr.mash fit
     # which can be a huge overestimate
