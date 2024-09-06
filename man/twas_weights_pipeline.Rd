@@ -7,7 +7,7 @@
 twas_weights_pipeline(
   X,
   y,
-  susie_fit,
+  susie_fit = NULL,
   cv_folds = 5,
   sample_partition = NULL,
   weight_methods = list(enet_weights = list(), lasso_weights = list(), bayes_r_weights =
