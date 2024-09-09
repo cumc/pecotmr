@@ -170,7 +170,7 @@ generate_twas_db <- function(weight_db_file, contexts = NULL, variable_name_obj 
     contexts <- names(weights)
   }
   # get gene name for the weight file
-  gene <- unique(twas_data_combined$susie_results[[1]]$region_info$region_name)
+  gene <- twas_data_combined$susie_results[[1]]$region_info$region_name[1]
   ## we first select best model, determine imputable contexts, then select variants based on susie obj output
   model_selection <- pick_best_model(twas_data_combined, contexts, min_rsq_threshold, p_val_cutoff)
 

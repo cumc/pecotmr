@@ -317,7 +317,7 @@ twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_
       X_train <- X_train[, valid_columns, drop = F]
       X_train <- filter_X_with_Y(X_train, Y_train, missing_rate_thresh=1, maf_thresh=NULL)
       valid_columns <- colnames(X_train)
-      X_test <- X_test[, valid_columns, drop=FALSE]
+      #X_test <- X_test[, valid_columns, drop=FALSE]
       
       setNames(lapply(names(weight_methods), function(method) {
         args <- weight_methods[[method]]

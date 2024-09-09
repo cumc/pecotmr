@@ -594,37 +594,35 @@ load_twas_weights <- function(weight_db_files, conditions = NULL,
   load_and_validate_data <- function(weight_db_files, conditions, variable_name_obj) {
     all_data <- do.call(c, lapply(unname(weight_db_files), function(rds_file) {
       db <- if(length(na.omit(rds_file))>1) add_finemap_result(rds_file[1], rds_file[2])  else readRDS(rds_file[1])
+      gene <- names(db)
       if (any(unique(names(find_data(db, c(3, "twas_weights")))) %in% c('mrmash_weights','mvsusie_weights'))) {
-        names(db[[1]]) <- clean_context_names(names(db[[1]]), gene=unique((find_data(dbt, c(4, "region_name")))))
+        names(db[[1]]) <- clean_context_names(names(db[[1]]), gene=gene)
         db <- list(mnm_rs=db[[1]])
       } else {
-        gene <- names(db)
         # Check if region from all RDS files are the same
         if (length(gene) != 1) {
           stop("More than one region provided in the RDS file. ")
         } else {
-          names(db[[gene]]) <- sapply(names(db[[gene]]), function(context) clean_context_names(context, gene=unique((find_data(dbt, c(4, "region_name"))))))
+          names(db[[gene]]) <- clean_context_names(names(db[[gene]]), gene=gene)
         }
       }
       return(db)
     }))
     # Check if region from all RDS files are the same
-    unique_regions <- unique(names(all_data)[!names(all_data) %in% 'mnm_rs'])
-    if (length(unique_regions) != 1) {
-      stop("The RDS files do not refer to the same region.")
-    } else {
-      # Combine the lists with the same region name
-      combined_all_data <- lapply(split(all_data, names(all_data)), function(lst) {
-        if(length(lst) >1){
-          lst <- do.call(c, unname(lst))
-        }
-         if (isTRUE(names(lst) == "mnm_rs"))lst <- lst[[1]]
-         return(lst)
-      })
-    }
+    gene <- unique(names(all_data)[!names(all_data) %in% 'mnm_rs'])
+    # Combine the lists with the same region name
+    combined_all_data <- lapply(split(all_data, names(all_data)), function(lst) {
+      if(length(lst) >1){
+        lst <- do.call(c, unname(lst))
+      }
+        if (isTRUE(names(lst) == "mnm_rs"))lst <- lst[[1]]
+        if ( gene %in% names(lst[[1]]) ) lst[[1]] <- do.call(c, lapply(unname(lst[[1]]), function(x)x))
+        return(lst)
+    })
+    
     # merge univariate and multivariate results for same gene-context pair
     if ("mnm_rs" %in% names(combined_all_data)) {
-      gene <- names(combined_all_data)[!names(combined_all_data) %in% "mnm_rs"]
+      #gene <- names(combined_all_data)[!names(combined_all_data) %in% "mnm_rs"]
       overl_contexts <- names(combined_all_data[["mnm_rs"]])[names(combined_all_data[["mnm_rs"]]) %in% names(combined_all_data[[gene]])]
       multi_variants <- unique(find_data(combined_all_data$mnm_rs, c(2, variable_name_obj)))
       for (context in overl_contexts) {
@@ -643,7 +641,9 @@ load_twas_weights <- function(weight_db_files, conditions = NULL,
       }
       combined_all_data[["mnm_rs"]] <- NULL
     }
-    combined_all_data <- combined_all_data[[1]]
+    if ( gene %in% names(combined_all_data)) combined_all_data <- do.call(c, unname(combined_all_data))
+    if ( gene %in% names(combined_all_data)) combined_all_data <- combined_all_data[[1]]
+    
     # Set default for 'conditions' if they are not specified
     if (is.null(conditions)) {
       conditions <- names(combined_all_data)
