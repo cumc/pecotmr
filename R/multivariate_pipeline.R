@@ -257,17 +257,6 @@ multivariate_analysis_pipeline <- function(
     )
   }
 
-  if (!is.null(data_driven_prior_matrices_cv)) {
-    for (fold in 1:length(data_driven_prior_matrices_cv)) {
-      data_driven_prior_matrices_cv[[fold]] <- filter_data_driven_mats(
-        Y, data_driven_prior_matrices_cv[[fold]]$U,
-        data_driven_prior_matrices_cv[[fold]]$w, data_driven_prior_weights_cutoff
-      )
-    }
-  } else if (is.null(data_driven_prior_matrices_cv) && !is.null(data_driven_prior_matrices)) {
-    data_driven_prior_matrices_cv <- lapply(1:cv_folds, function(fold) data_driven_prior_matrices)
-    names(data_driven_prior_matrices_cv) <- paste0("fold_", 1:cv_folds)
-  }
   st <- proc.time()
   res <- list()
   message("Fitting mr.mash model on input data ...")
@@ -278,7 +267,26 @@ multivariate_analysis_pipeline <- function(
 
   # For input into mvSuSiE
   resid_Y <- res$mrmash_fitted$V
-  w0_updated <- rescale_cov_w0(res$mrmash_fitted$w0)[names(data_driven_prior_matrices$w)]
+  w0_updated <- rescale_cov_w0(res$mrmash_fitted$w0)
+  w0_updated <- w0_updated[names(w0_updated) %in% names(data_driven_prior_matrices$U)]
+  data_driven_prior_matrices$U <- data_driven_prior_matrices$U[names(w0_updated)]
+  data_driven_prior_matrices$w <- data_driven_prior_matrices$w[names(w0_updated)]
+
+  if (!is.null(data_driven_prior_matrices_cv)) {
+    for (fold in 1:length(data_driven_prior_matrices_cv)) {
+      data_driven_prior_matrices_cv[[fold]] <- filter_data_driven_mats(
+        Y, data_driven_prior_matrices_cv[[fold]]$U,
+        data_driven_prior_matrices_cv[[fold]]$w, data_driven_prior_weights_cutoff
+      )
+      data_driven_prior_matrices_cv[[fold]]$w <- data_driven_prior_matrices_cv[[fold]]$w[names(data_driven_prior_matrices_cv[[fold]]$w) %in% names(w0_updated)]
+      data_driven_prior_matrices_cv[[fold]]$w <- w0_updated[names(data_driven_prior_matrices_cv[[fold]]$w)]
+      data_driven_prior_matrices_cv[[fold]]$U <- data_driven_prior_matrices_cv[[fold]]$U[names(data_driven_prior_matrices_cv[[fold]]$U) %in% names(w0_updated)]
+    }
+  } else if (is.null(data_driven_prior_matrices_cv) && !is.null(data_driven_prior_matrices)) {
+    data_driven_prior_matrices_cv <- lapply(1:cv_folds, function(fold) data_driven_prior_matrices)
+    names(data_driven_prior_matrices_cv) <- paste0("fold_", 1:cv_folds)
+  }
+
   if (max_L < 0) {
     # This is based on mr.mash fit
     # which can be a huge overestimate
