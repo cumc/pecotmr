@@ -556,11 +556,12 @@ load_regional_functional_data <- function(...) {
 # Function to remove gene name at the end of context name
 #' @export
 clean_context_names <- function(context, gene) {
-  context_parts <- str_split(context, "_")[[1]]
   # Remove gene name if it matches the last part of the context
-  if (tail(context_parts, n = 1) == gene) context_parts <- head(context_parts, -1)
-  cleaned_context <- paste(context_parts, collapse = "_")
-  return(cleaned_context)
+  gene <- gene[order(-nchar(unique(gene)))]
+  for (gene_id in gene){
+    context <- gsub(paste0("_", gene_id), "", context)
+  }
+  return(context)
 }
 
 #' Load, Validate, and Consolidate TWAS Weights from Multiple RDS Files
@@ -592,47 +593,40 @@ load_twas_weights <- function(weight_db_files, conditions = NULL,
   ## Internal function to load and validate data from RDS files
   load_and_validate_data <- function(weight_db_files, conditions, variable_name_obj) {
     all_data <- do.call(c, lapply(unname(weight_db_files), function(rds_file) {
-      db <- readRDS(rds_file)
-      if ("mnm_result" %in% names(db)) {
-        db <- list(mnm_rs = db)
+      db <- if(length(na.omit(rds_file))>1) add_finemap_result(rds_file[1], rds_file[2])  else readRDS(rds_file[1])
+      if (any(unique(names(find_data(db, c(3, "twas_weights")))) %in% c('mrmash_weights','mvsusie_weights'))) {
+        names(db[[1]]) <- clean_context_names(names(db[[1]]), gene=unique((find_data(dbt, c(4, "region_name")))))
+        db <- list(mnm_rs=db[[1]])
       } else {
         gene <- names(db)
         # Check if region from all RDS files are the same
         if (length(gene) != 1) {
           stop("More than one region provided in the RDS file. ")
         } else {
-          names(db[[gene]]) <- sapply(names(db[[gene]]), function(context) clean_context_names(context, gene))
+          names(db[[gene]]) <- sapply(names(db[[gene]]), function(context) clean_context_names(context, gene=unique((find_data(dbt, c(4, "region_name"))))))
         }
       }
       return(db)
     }))
     # Check if region from all RDS files are the same
-    unique_regions <- unique(names(all_data)[!names(all_data) %in% "mnm_rs"])
+    unique_regions <- unique(names(all_data)[!names(all_data) %in% 'mnm_rs'])
     if (length(unique_regions) != 1) {
       stop("The RDS files do not refer to the same region.")
     } else {
       # Combine the lists with the same region name
       combined_all_data <- lapply(split(all_data, names(all_data)), function(lst) {
-        result <- list()
-        for (item in lst) {
-          for (name in names(item)) {
-            if (name %in% names(result)) {
-              if (result[[name]] != item[[name]]) {
-                stop("Different twas weight data provided for identical context name. ")
-              }
-            } else {
-              result[[name]] <- item[[name]]
-            }
-          }
+        if(length(lst) >1){
+          lst <- do.call(c, unname(lst))
         }
-        return(result)
+         if (isTRUE(names(lst) == "mnm_rs"))lst <- lst[[1]]
+         return(lst)
       })
     }
     # merge univariate and multivariate results for same gene-context pair
     if ("mnm_rs" %in% names(combined_all_data)) {
       gene <- names(combined_all_data)[!names(combined_all_data) %in% "mnm_rs"]
       overl_contexts <- names(combined_all_data[["mnm_rs"]])[names(combined_all_data[["mnm_rs"]]) %in% names(combined_all_data[[gene]])]
-      multi_variants <- get_nested_element(combined_all_data$mnm_rs$mnm_result, variable_name_obj)
+      multi_variants <- unique(find_data(combined_all_data$mnm_rs, c(2, variable_name_obj)))
       for (context in overl_contexts) {
         uni_variants <- get_nested_element(combined_all_data[[gene]][[context]], variable_name_obj)
         multi_weights <- setNames(rep(0, length(uni_variants)), uni_variants)
@@ -749,9 +743,22 @@ load_twas_weights <- function(weight_db_files, conditions = NULL,
       })
       weights <- align_and_merge(combined_weights_by_condition, variable_objs)
     }
+    weight_variants <- lapply(weights, function(x) rownames(x))
+    common_variants <- Reduce(intersect, weight_variants)
+    weights <- lapply(weights, function(x) x[common_variants,, drop=FALSE])
     names(weights) <- conditions
     return(weights)
   }
+  add_finemap_result <- function(weight_file, finemap_file){
+    db <- readRDS(weight_file)
+    finm <- readRDS(finemap_file)
+    for (gene in names(db)){
+      for (context in names(db[[gene]])){
+        db[[gene]][[context]] <- c(finm[[gene]][[context]][!names(finm[[gene]][[context]]) %in%  "variant_names"],db[[gene]][[context]])
+      }
+    }
+  return(db)
+ }
 
   ## Load, validate, and consolidate data
   try(

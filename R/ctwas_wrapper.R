@@ -45,7 +45,7 @@
 # select variants for ctwas weights input
 generate_twas_db <- function(weight_db_file, contexts = NULL, variable_name_obj = c("preset_variants_result", "variant_names"),
                              twas_weights_table = "twas_weights", max_var_selection, min_rsq_threshold = 0.01,
-                             p_val_cutoff = 0.05, data_type = NULL) {
+                             p_val_cutoff = 0.05, data_type_table = NULL) {
   # determine if the region is imputable and select the best model
   # Function to pick the best model based on adj_rsq and p-value
   pick_best_model <- function(twas_data_combined, contexts, min_rsq_threshold, p_val_cutoff) {
@@ -163,7 +163,8 @@ generate_twas_db <- function(weight_db_file, contexts = NULL, variable_name_obj 
   }
 
   ## load twas weights
-  twas_data_combined <- load_twas_weights(weight_db_file, conditions = contexts, variable_name_obj = variable_name_obj, twas_weights_table = twas_weights_table)
+  twas_data_combined <- load_twas_weights(weight_db_file, conditions = contexts, variable_name_obj = variable_name_obj, 
+                                  twas_weights_table = twas_weights_table)
   weights <- twas_data_combined$weights
   if (is.null(contexts)) {
     contexts <- names(weights)
@@ -190,7 +191,7 @@ generate_twas_db <- function(weight_db_file, contexts = NULL, variable_name_obj 
       # construct refined_twas_weights
       refined_twas_weights[[context]] <- list(selected_model = model_selection[[context]][["selected_model"]])
       refined_twas_weights[[context]][["is_imputable"]] <- model_selection[[context]][["imputable"]]
-      if (!is.null(data_type)) refined_twas_weights[[context]][["data_type"]] <- data_type
+      if (!is.null(data_type_table)) refined_twas_weights[[context]][["data_type"]] <- data_type_table$type[data_type_table$context==context]
       if (isTRUE(refined_twas_weights[[context]][["is_imputable"]])) {
         all_weight_variants <- rownames(weights[[context]])
         refined_twas_weights[[context]][["selected_top_variants"]] <- twas_select_result[[context]]
