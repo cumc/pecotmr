@@ -62,9 +62,11 @@ lbf_to_alpha <- function(lbf) {
 adjust_susie_weights <- function(twas_weights_results, keep_variants, allele_qc = TRUE,
                                  variable_name_obj = c("susie_results", context, "variant_names"),
                                  susie_obj = c("susie_results", context, "susie_result_trimmed"),
-                                 twas_weights_table = c("weights", context), combined_LD_variants, match_min_prop = 0.2) {
+                                 twas_weights_table = c("weights", context), combined_LD_variants, 
+                                 match_min_prop = 0.2, variant_name_flip=FALSE) {
   # Intersect the rownames of weights with keep_variants
   twas_weights_variants <- get_nested_element(twas_weights_results, variable_name_obj)
+  twas_weights_variants <- if(!startsWith(twas_weights_variants[1], "chr")) paste0("chr", twas_weights_variants) else twas_weights_variants
   # allele flip twas weights matrix variants name
   if (allele_qc) {
     weights_matrix <- get_nested_element(twas_weights_results, twas_weights_table)
@@ -75,7 +77,8 @@ adjust_susie_weights <- function(twas_weights_results, keep_variants, allele_qc 
       "chrom",
       "pos", "A2", "A1"
     )], match_min_prop = match_min_prop, target_gwas = FALSE)
-    intersected_indices <- which(weights_matrix_qced$qc_summary$keep == TRUE)
+    original_idx <- match(paste0("chr", weights_matrix_qced$qc_summary$variants_id_original), twas_weights_variants)
+    intersected_indices <- original_idx[weights_matrix_qced$qc_summary$keep == TRUE]
   } else {
     keep_variants_transformed <- ifelse(!startsWith(keep_variants, "chr"), paste0("chr", keep_variants), keep_variants)
     intersected_variants <- intersect(twas_weights_variants, keep_variants_transformed)
@@ -96,7 +99,7 @@ adjust_susie_weights <- function(twas_weights_results, keep_variants, allele_qc 
   # Convert lbf_matrix to alpha and calculate adjusted xQTL coefficients
   adjusted_xqtl_alpha <- lbf_to_alpha(lbf_matrix_subset)
   adjusted_xqtl_coef <- colSums(adjusted_xqtl_alpha * mu_subset) / x_column_scal_factors_subset
-
+  if (isTRUE(variant_name_flip && allele_qc)) names(adjusted_xqtl_coef) <- paste0("chr", weights_matrix_qced$target_data_qced$variant_id)
   return(list(adjusted_susie_weights = adjusted_xqtl_coef, remained_variants_ids = names(adjusted_xqtl_coef)))
 }
 

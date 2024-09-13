@@ -40,16 +40,17 @@
 #' @examples
 #' results <- generate_twas_db(
 #'   weight_db_file = "path/to/weights.rds", conditions = c("Mic", "Oli", "Exc"),
-#'   max_var_selection = 10, min_rsq_threshold = 0.01, p_val_cutoff = 0.05
+#'   min_rsq_threshold = 0.01, p_val_cutoff = 0.05
 #' )
 # select variants for ctwas weights input
 generate_twas_db <- function(weight_db_file, contexts = NULL, variable_name_obj = c("preset_variants_result", "variant_names"),
-                             twas_weights_table = "twas_weights", max_var_selection, min_rsq_threshold = 0.01,
-                             p_val_cutoff = 0.05, data_type_table = NULL) {
+                             susie_obj="susie_weights_intermediate", twas_weights_table = "twas_weights", 
+                             min_rsq_threshold = 0.01, p_val_cutoff = 0.05, 
+                             data_type_table = NULL) {
   # determine if the region is imputable and select the best model
   # Function to pick the best model based on adj_rsq and p-value
   pick_best_model <- function(twas_data_combined, contexts, min_rsq_threshold, p_val_cutoff) {
-    best_adj_rsq <- min_rsq_threshold
+    best_rsq <- min_rsq_threshold
     # Extract performance table
     performance_tables <- lapply(contexts, function(context) {
       get_nested_element(twas_data_combined, c("twas_cv_performance", context))
@@ -59,7 +60,7 @@ generate_twas_db <- function(weight_db_file, contexts = NULL, variable_name_obj 
     model_selection <- lapply(contexts, function(context) {
       selected_model <- NULL
       available_models <- do.call(c, lapply(names(performance_tables[[context]]), function(model) {
-        if (!is.na(performance_tables[[context]][[model]][, "adj_rsq"])) {
+        if (!is.na(performance_tables[[context]][[model]][, "rsq"])) {
           return(model)
         }
       }))
@@ -69,15 +70,15 @@ generate_twas_db <- function(weight_db_file, contexts = NULL, variable_name_obj 
       }
       for (model in available_models) {
         model_data <- performance_tables[[context]][[model]]
-        if (model_data[, "adj_rsq"] >= best_adj_rsq) {
-          best_adj_rsq <- model_data[, "adj_rsq"]
+        if (model_data[, "rsq"] >= best_rsq) {
+          best_rsq <- model_data[, "rsq"]
           selected_model <- model
         }
       }
       region_names <- do.call(c, lapply(contexts, function(context) {
         twas_data_combined$susie_results[[context]]$region_info$region_name
       }))
-      if (is.null(selected_model)) {
+      if (is.null(selected_model)) { 
         print(paste0(
           "No model has p-value < ", p_val_cutoff, " and r2 >= ", min_rsq_threshold, ", skipping context ", context,
           " at region ", unique(region_names), ". "
@@ -93,79 +94,12 @@ generate_twas_db <- function(weight_db_file, contexts = NULL, variable_name_obj 
     return(model_selection)
   }
 
-  # Based on selected best model and imputable contexts, select variants based on susie output
-  twas_select <- function(twas_data_combined, contexts, imputable_status, max_var_selection, variable_name_obj) {
-    # loop through context
-    names(imputable_status) <- contexts
-    var_selection_list <- lapply(contexts, function(context) {
-      if (imputable_status[context] == "non_imputable") {
-        variant_selected <- rep(NA, max_var_selection)
-        return(variant_selected)
-      }
-      # if the context is imputable
-      variant_names <- get_nested_element(twas_data_combined, c("susie_results", context, "variant_names"))
-      # susie_result_trimmed is from "preset_variants_result"-"susie_result_trimmed" from load_twas_weights()
-      susie_result_trimmed <- get_nested_element(twas_data_combined, c("susie_results", context, "susie_result"))
-      # Go through cs to select top variants from each set until we select all variants
-      select_cs_var <- function(set_cs_list, max_var_selection) {
-        selected_indices <- c()
-        while (length(selected_indices) < max_var_selection) {
-          for (cs in set_cs_list$sets$cs) {
-            if (length(selected_indices) < max_var_selection) {
-              # Filter out any indices that have already been selected
-              available_indices <- setdiff(cs, selected_indices)
-              if (length(available_indices) > 0) {
-                # Get the index with the highest PIP score
-                top_index <- available_indices[which.max(set_cs_list$pip[available_indices])]
-                selected_indices <- c(selected_indices, top_index)
-              }
-            }
-          }
-        }
-        return(selected_indices)
-      }
-      # check if the context has top_loci table
-      if ("top_loci" %in% names(twas_data_combined$susie_results[[context]])) {
-        top_loci <- twas_data_combined$susie_results[[context]][["top_loci"]]
-        if (length(top_loci[, "variant_id"]) <= max_var_selection) {
-          variant_selected <- top_loci$variant_id
-        } else {
-          # if top_loci variants more than max_var_selection, we loop through CS set to select top pip variants from each CS set
-
-          if (!is.null(susie_result_trimmed$sets$cs)) {
-            # check total variant number in the CS sets
-            totl_cs_indice <- do.call(sum, lapply(names(susie_result_trimmed$sets$cs), function(L) {
-              length(susie_result_trimmed$sets$cs[[L]])
-            }))
-            if (max_var_selection <= totl_cs_indice) {
-              selec_idx <- select_cs_var(susie_result_trimmed, max_var_selection)
-              variant_selected <- variant_names[selec_idx]
-            } else {
-              # when top loci has larger number of variants than max_var_selection, but CS sets has less number than max_var_selection
-              selec_idx <- unlist(susie_result_trimmed$sets$cs)
-              variant_selected <- variant_names[selec_idx]
-            }
-          } else {
-            top_idx <- order(susie_result_trimmed$pip, decreasing = TRUE)[1:max_var_selection]
-            variant_selected <- variant_names[top_idx]
-          }
-        }
-      } else {
-        # if the context did not come with the top_loci table, we select top pip variants from [[context]]$preset_variants_result$susie_result_trimmed$pip
-        print(paste0(context, " do not have top_loci table, select top pip variants. "))
-        top_idx <- order(susie_result_trimmed$pip, decreasing = TRUE)[1:max_var_selection]
-        variant_selected <- variant_names[top_idx]
-      }
-      return(variant_selected)
-    })
-    names(var_selection_list) <- contexts
-    return(var_selection_list)
-  }
-
   ## load twas weights
-  twas_data_combined <- load_twas_weights(weight_db_file, conditions = contexts, variable_name_obj = variable_name_obj, 
+  twas_data_combined <- load_twas_weights(weight_db_file, conditions = contexts, variable_name_obj = variable_name_obj, susie_obj=susie_obj,
                                   twas_weights_table = twas_weights_table)
+  if(!"weights" %in% names(twas_data_combined)) return(NULL)
   weights <- twas_data_combined$weights
+
   if (is.null(contexts)) {
     contexts <- names(weights)
   }
@@ -182,43 +116,30 @@ generate_twas_db <- function(weight_db_file, contexts = NULL, variable_name_obj 
   # select variants
   names(contexts) <- rep("non_imputable", length(contexts))
   names(contexts)[which(contexts %in% imputable_contexts)] <- "imputable"
-  twas_select_result <- twas_select(twas_data_combined, contexts, names(contexts), max_var_selection, variable_name_obj)
 
-  # output refined_twas_weights for imputable genes across all contexts
-  refined_twas_weights <- list()
+  # output export_twas_weights_db for imputable genes across all contexts
+  export_twas_weights_db <- list()
   if (length(imputable_contexts) > 0) {
     for (context in contexts) {
-      # construct refined_twas_weights
-      refined_twas_weights[[context]] <- list(selected_model = model_selection[[context]][["selected_model"]])
-      refined_twas_weights[[context]][["is_imputable"]] <- model_selection[[context]][["imputable"]]
-      if (!is.null(data_type_table)) refined_twas_weights[[context]][["data_type"]] <- data_type_table$type[data_type_table$context==context]
-      if (isTRUE(refined_twas_weights[[context]][["is_imputable"]])) {
-        all_weight_variants <- rownames(weights[[context]])
-        refined_twas_weights[[context]][["selected_top_variants"]] <- twas_select_result[[context]]
-        refined_twas_weights[[context]][["selected_model_weights"]] <- weights[[context]][match(
-          twas_select_result[[context]],
-          all_weight_variants
-        ), paste0(refined_twas_weights[[context]][["selected_model"]], "_weights")]
+      # construct export_twas_weights_db
+      export_twas_weights_db[[context]][["is_imputable"]] <- model_selection[[context]][["imputable"]]
+      export_twas_weights_db[[context]][["variant_names"]] <- rownames(weights[[context]])
+      export_twas_weights_db[[context]][["selected_model"]] <- model_selection[[context]][["selected_model"]]
+      if (model_selection[[context]]$imputable){
+        export_twas_weights_db[[context]][["model_weights"]] <- weights[[context]][, paste0(model_selection[[context]][["selected_model"]], "_weights"), drop=FALSE] 
+      } else {
+        export_twas_weights_db[[context]][["model_weights"]] <- NA
+      }
+      if (!is.null(data_type_table)) export_twas_weights_db[[context]][["data_type"]] <- data_type_table$type[sapply(data_type_table$context, function(x) grepl(x, context))]
+      if (isTRUE(export_twas_weights_db[[context]][["is_imputable"]])) {
         if (model_selection[[context]][["selected_model"]] == "susie") {
-          refined_twas_weights[[context]][["susie_parameters"]] <- get_nested_element(twas_data_combined, c(
-            "susie_results", context,
-            "susie_result"
-          ))[c("lbf_variable", "X_column_scale_factors", "mu")]
-          idx <- match(refined_twas_weights[[context]]$selected_top_variants, twas_data_combined$susie_results[[context]]$variant_names)
-          # intersect susie_obj variants with selected weights variants
-          refined_twas_weights[[context]][["susie_parameters"]] <- lapply(refined_twas_weights[[context]][["susie_parameters"]], function(obj) {
-            if (is.vector(obj)) {
-              return(obj[idx])
-            } else {
-              return(obj[, idx, drop = FALSE])
-            }
-          })
+          export_twas_weights_db[[context]][["susie_weights_intermediate"]] <- twas_data_combined$susie_result
         }
       }
     }
     # return results
     return(list(
-      refined_twas_weights = refined_twas_weights,
+      export_twas_weights_db = export_twas_weights_db,
       weights = weights, gene = gene, cv_performance = twas_data_combined$twas_cv_performance,
       susie_results = twas_data_combined$susie_results
     ))
@@ -227,7 +148,6 @@ generate_twas_db <- function(weight_db_file, contexts = NULL, variable_name_obj 
     return(NULL)
   }
 }
-
 
 
 #' Utility function to specify the path to access the target list item in a nested list, especially when some list layers
@@ -344,37 +264,35 @@ twas_weights_loader <- R6Class("twas_weights_loader",
       return(weights = self$data$weights)
     },
     get_susie_obj = function() {
-      return(lapply(self$data$susie_results, function(context_data) {
-        context_data$susie_result[c("lbf_variable", "X_column_scale_factors", "mu")]
-      }))
+      return(lapply(self$data$susie_results, function(context_data) context_data$susie_result))
     },
     get_variant_names = function() {
       return(lapply(self$data$susie_results, function(context_data) context_data$variant_names))
     },
     get_gene_name = function() {
-      return(unique(self$data$susie_results[[1]]$region_info$region_name))
+      return(unique(self$data$susie_results[[1]]$region_info$region_name[1]))
     },
     get_chrom_num = function() {
       return(as.integer(unique(self$data$susie_results[[1]]$region_info$grange$chrom)))
     },
     get_data_type = function() {
-      return(find_data(self$data$refined_twas_weights, c(2, "data_type"), show_path = TRUE))
+      return(find_data(self$data$export_twas_weights_db, c(2, "data_type"), show_path = TRUE))
     },
     get_data = function() {
       weights <- self$get_weights()
-      susie_obj <- self$get_susie_obj()
+      susie_weights_intermediate <- self$get_susie_obj()
       gene_name <- self$get_gene_name()
       variant_names <- self$get_variant_names()
       chrom <- self$get_chrom_num()
-      data <- list(list(chrom = chrom, variant_names = variant_names, weights = weights, susie_obj = susie_obj))
-      if ("refined_twas_weights" %in% names(self$data)) data[[1]] <- c(list(data_type = self$get_data_type()), data[[1]])
+      data <- list(list(chrom = chrom, variant_names = variant_names, weights = weights, susie_weights_intermediate = susie_weights_intermediate))
+      if ("export_twas_weights_db" %in% names(self$data)) data[[1]] <- c(list(data_type = self$get_data_type()), data[[1]])
       names(data) <- gene_name
       return(data)
     }
   )
 )
 
-#' Data Loader Function to load twas weights and variant names from output of `generate_twas_db` function.
+#' Data Loader Function to load top model's twas weights and variant from export_twas_weights_db generated from `generate_twas_db` function.
 #' @importFrom R6 R6Class
 #' @export
 refined_twas_weights_loader <- R6Class("refined_twas_weights_loader",
@@ -478,7 +396,7 @@ refined_twas_weights_loader <- R6Class("refined_twas_weights_loader",
 #' @importFrom S4Vectors queryHits subjectHits
 #' @importFrom IRanges IRanges findOverlaps start end reduce
 #' @export
-harmonize_twas <- function(twas_weights_data, ld_meta_file_path, gwas_meta_file, twas_data_loader, scale_weights = TRUE) {
+harmonize_twas <- function(twas_weights_data, ld_meta_file_path, gwas_meta_file, twas_data_loader, scale_weights = FALSE) {
   # Function to group contexts based on start and end positions
   group_contexts_by_region <- function(twas_weights_data, gene, chrom, tolerance = 5000) {
     region_info_df <- do.call(rbind, lapply(names(twas_weights_data[[gene]]$variant_names), function(context) {
@@ -609,59 +527,59 @@ harmonize_twas <- function(twas_weights_data, ld_meta_file_path, gwas_meta_file,
         gwas_allele_flip <- allele_qc(gwas_sumstats[, c("chrom", "pos", "A1", "A2")], LD_list$combined_LD_variants, gwas_sumstats, c("beta", "z"),
           match_min_prop = 0.001
         )
-        gwas_data_sumstats <- gwas_allele_flip$target_data_qced
+        gwas_data_sumstats <- gwas_allele_flip$target_data_qced # post-qc gwas data that is flipped and corrected 
 
         ############### context in the context group
         for (context in contexts) {
           weights_matrix <- twas_weights_data[[gene]][["weights"]][[context]]
           if (is.null(rownames(weights_matrix))) rownames(weights_matrix) <- twas_weights_data[[gene]][["variant_names"]][[context]]
-          # Step4: adjust susie weights for susie_weights
-          if ("susie_weights" %in% colnames(twas_weights_data[[gene]][["weights"]][[context]])) {
-            adjusted_susie_weights <- adjust_susie_weights(twas_weights_data[[gene]],
-              keep_variants = gwas_data_sumstats$variant_id, allele_qc = TRUE,
-              variable_name_obj = c("variant_names", context),
-              susie_obj = c("susie_obj", context),
-              twas_weights_table = c("weights", context), LD_list$combined_LD_variants, match_min_prop = 0.001
-            )
-            weights_matrix_subset <- cbind(
-              susie_weights = adjusted_susie_weights$adjusted_susie_weights,
-              weights_matrix[adjusted_susie_weights$remained_variants_ids, !colnames(weights_matrix) %in% "susie_weights"]
-            )
-          } else {
-            weights_matrix_subset <- weights_matrix
-          }
 
-          # Step5: harmonize weights
-          if (!all(c("chrom", "pos", "A2", "A1") %in% colnames(weights_matrix_subset))) {
-            weights_matrix_subset <- cbind(variant_id_to_df(rownames(weights_matrix_subset)), weights_matrix_subset)
-          }
-          weights_matrix_qced <- allele_qc(rownames(weights_matrix_subset), LD_list$combined_LD_variants, weights_matrix_subset,
-            colnames(weights_matrix_subset)[!colnames(weights_matrix_subset) %in% c("chrom", "pos", "A2", "A1")],
+          # Step 4: harmonize weights, flip allele 
+          weights_matrix <- cbind(variant_id_to_df(rownames(weights_matrix)), weights_matrix)
+          weights_matrix_qced <- allele_qc(rownames(weights_matrix), LD_list$combined_LD_variants, weights_matrix,
+            colnames(weights_matrix)[!colnames(weights_matrix) %in% c("chrom", "pos", "A2", "A1")],
             match_min_prop = 0.001, target_gwas = FALSE
           )
           weights_matrix_subset <- as.matrix(weights_matrix_qced$target_data_qced[, !colnames(weights_matrix_qced$target_data_qced) %in% c(
             "chrom",
             "pos", "A2", "A1", "variant_id"
           ), drop = FALSE])
-          rownames(weights_matrix_subset) <- get_nested_element(weights_matrix_qced, c("target_data_qced", "variant_id"))
+          rownames(weights_matrix_subset) <- weights_matrix_qced$target_data_qced$variant_id # udpate variant names with flipped/corrected variant name
 
           # intersect post-qc gwas and post-qc weight variants
           gwas_LD_variants <- intersect(gwas_data_sumstats$variant_id, LD_list$combined_LD_variants)
           weights_matrix_subset <- weights_matrix_subset[which(rownames(weights_matrix_subset) %in% gwas_LD_variants), , drop = FALSE]
+          rownames(weights_matrix_subset) <- format_variant_id(rownames(weights_matrix_subset), chr=TRUE)
+          postqc_weight_variants <- rownames(weights_matrix_subset)
+
+          # Step 5: adjust susie weights
+          if ("susie_weights" %in% colnames(twas_weights_data[[gene]][["weights"]][[context]])) {
+            adjusted_susie_weights <- adjust_susie_weights(twas_weights_data[[gene]],
+              keep_variants = postqc_weight_variants, allele_qc = TRUE,
+              variable_name_obj = c("variant_names", context),
+              susie_obj = c("susie_weights_intermediate", context),
+              twas_weights_table = c("weights", context), postqc_weight_variants, match_min_prop = 0.001,
+              variant_name_flip=TRUE
+            )
+            weights_matrix_subset <- cbind(
+              susie_weights = adjusted_susie_weights$adjusted_susie_weights,
+              weights_matrix_subset[adjusted_susie_weights$remained_variants_ids, !colnames(weights_matrix_subset) %in% "susie_weights"]
+            )
+          }
           results[[gene]][["variant_names"]][[context]] <- rownames(weights_matrix_subset)
 
           # Step6: scale weights by variance
           if (isTRUE(scale_weights)) {
             variance_df <- query_variance(ld_meta_file_path, chrom, query_region, all_variants) %>%
               mutate(variants = paste(chrom, pos, A2, A1, sep = ":"))
-            weight_variants <- rownames(weights_matrix_subset)
-            variance <- variance_df[match(weight_variants, variance_df$variants), "variance"]
+            variance <- variance_df[match(rownames(weights_matrix_subset), variance_df$variants), "variance"]
             results[[gene]][["weights_qced"]][[context]] <- weights_matrix_subset * sqrt(variance)
           } else {
             results[[gene]][["weights_qced"]][[context]] <- weights_matrix_subset
           }
         }
         # Combine gwas sumstat across different context for a single context group
+        gwas_data_sumstats$variant_id <- format_variant_id(gwas_data_sumstats$variant_id, chr=TRUE)
         gwas_data_sumstats <- gwas_data_sumstats[gwas_data_sumstats$variant_id %in% unique(unlist(results[[gene]][["variant_names"]])), ]
         results[[gene]][["gwas_qced"]][[study]] <- rbind(results[[gene]][["gwas_qced"]][[study]], gwas_data_sumstats)
         results[[gene]][["gwas_qced"]][[study]] <- results[[gene]][["gwas_qced"]][[study]][!duplicated(results[[gene]][["gwas_qced"]][[study]][, c("variant_id", "z")]), ]
@@ -669,8 +587,10 @@ harmonize_twas <- function(twas_weights_data, ld_meta_file_path, gwas_meta_file,
     }
     # extract LD matrix for variants intersect with gwas and twas weights at gene level
     all_gene_variants <- unique(find_data(results[[gene]][["gwas_qced"]], c(2, "variant_id")))
-    var_indx <- match(all_gene_variants, LD_list$combined_LD_variants)
+    LD_list$combined_LD_variants <- format_variant_id(LD_list$combined_LD_variants, chr=TRUE)
+    var_indx <- sort(match(all_gene_variants, LD_list$combined_LD_variants))
     results[[gene]][["LD"]] <- LD_list$combined_LD_matrix[var_indx, var_indx]
+    rownames(results[[gene]][["LD"]]) <- colnames(results[[gene]][["LD"]]) <- format_variant_id(colnames(results[[gene]][["LD"]]), chr=TRUE)
   }
   # return results
   return(results)
