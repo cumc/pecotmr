@@ -10,7 +10,7 @@ harmonize_twas(
   ld_meta_file_path,
   gwas_meta_file,
   twas_data_loader,
-  scale_weights = TRUE
+  scale_weights = FALSE
 )
 }
 \arguments{
