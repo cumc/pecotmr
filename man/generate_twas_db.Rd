@@ -21,7 +21,7 @@ for complex trait weighted analysis with sparse weight.}
 generate_twas_db(
   weight_db_file,
   contexts = NULL,
-  variable_name_obj = c("preset_variants_result", "variant_names"),
+  variable_name_obj = c("variant_names"),
   susie_obj = "susie_weights_intermediate",
   twas_weights_table = "twas_weights",
   min_rsq_threshold = 0.01,
