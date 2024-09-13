@@ -655,40 +655,6 @@ load_twas_weights <- function(weight_db_files, conditions = NULL,
     }
     return(combined_all_data)
   }
-  # Only extract the variant_names and SuSiE results
-  extract_variants_and_susie_results <- function(combined_all_data, conditions) {
-    # skip conditions do not have susie results available.
-    conditions <- conditions[sapply(conditions, function(cond) {
-      tryCatch(
-        {
-          !is.null(get_nested_element(combined_all_data, c(cond, susie_obj)))
-        },
-        error = function(e) {
-          FALSE
-        }
-      )
-    })] 
-    combined_susie_result <- lapply(conditions, function(condition) {
-      variant_names <- rownames(weights[[condition]])
-      susie_result <- get_nested_element(combined_all_data, c(condition, susie_obj))
-      for (obj in c("pip", "X_column_scale_factors"))susie_result[[obj]] <- susie_result[[obj]][variant_names]
-      for (obj in c("lbf_variable", "mu")) susie_result[[obj]] <- susie_result[[obj]][, variant_names, drop=FALSE]
-      if ("top_loci" %in% names(susie_result)) susie_result$top_loci <- susie_result$top_loci[susie_result$top_loci$variant_id %in% variant_names,,drop=FALSE]
-      if (!is.null(susie_result$sets$cs)) {
-        for (L in names(susie_result$sets$cs)) susie_result$sets$cs[[L]] <- susie_result$sets$cs[[L]][names(susie_result$sets$cs[[L]]) %in% variant_names]
-      }
-      result <- list(variant_names=variant_names, susie_result=susie_result)
-      if ("target" %in% names(combined_all_data[[condition]])) {
-        result$target <- get_nested_element(combined_all_data, c(condition, "target"))
-      }
-      if ("region_info" %in% names(combined_all_data[[condition]])) {
-        result$region_info <- get_nested_element(combined_all_data, c(condition, "region_info"))
-      }
-      return(result)
-    })
-    names(combined_susie_result) <- conditions
-    return(combined_susie_result)
-  }
   # Internal function to align and merge weight matrices
   align_and_merge <- function(weights_list, variable_objs) {
     consolidated_list <- list()
@@ -761,7 +727,7 @@ load_twas_weights <- function(weight_db_files, conditions = NULL,
       # update condition in case of merging rds files
       conditions <- names(combined_all_data)
       weights <- consolidate_weights_list(combined_all_data, conditions, variable_name_obj, twas_weights_table)
-      combined_susie_result <- extract_variants_and_susie_results(combined_all_data, conditions)
+      combined_susie_result <- lapply(combined_all_data, function(context) c(context$susie_weights_intermediate, list(region_info=context$region_info)))
       conditions <- names(combined_susie_result)
       performance_tables <- lapply(conditions, function(condition) {
         get_nested_element(combined_all_data, c(condition, "twas_cv_result", "performance"))

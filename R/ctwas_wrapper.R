@@ -43,7 +43,7 @@
 #'   min_rsq_threshold = 0.01, p_val_cutoff = 0.05
 #' )
 # select variants for ctwas weights input
-generate_twas_db <- function(weight_db_file, contexts = NULL, variable_name_obj = c("preset_variants_result", "variant_names"),
+generate_twas_db <- function(weight_db_file, contexts = NULL, variable_name_obj = c("variant_names"),
                              susie_obj="susie_weights_intermediate", twas_weights_table = "twas_weights", 
                              min_rsq_threshold = 0.01, p_val_cutoff = 0.05, 
                              data_type_table = NULL) {
@@ -97,7 +97,7 @@ generate_twas_db <- function(weight_db_file, contexts = NULL, variable_name_obj 
   ## load twas weights
   twas_data_combined <- load_twas_weights(weight_db_file, conditions = contexts, variable_name_obj = variable_name_obj, susie_obj=susie_obj,
                                   twas_weights_table = twas_weights_table)
-  if(!"weights" %in% names(twas_data_combined)) return(NULL)
+  if(!"weights" %in% names(twas_data_combined)) stop("TWAS weights not loaded. ")
   weights <- twas_data_combined$weights
 
   if (is.null(contexts)) {
@@ -125,11 +125,11 @@ generate_twas_db <- function(weight_db_file, contexts = NULL, variable_name_obj 
       export_twas_weights_db[[context]][["is_imputable"]] <- model_selection[[context]][["imputable"]]
       export_twas_weights_db[[context]][["variant_names"]] <- rownames(weights[[context]])
       export_twas_weights_db[[context]][["selected_model"]] <- model_selection[[context]][["selected_model"]]
+      export_twas_weights_db[[context]][["susie_weights_intermediate"]] <- twas_data_combined$susie_result[[context]]
       if (model_selection[[context]]$imputable){
         export_twas_weights_db[[context]][["model_weights"]] <- weights[[context]][, paste0(model_selection[[context]][["selected_model"]], "_weights"), drop=FALSE] 
-        export_twas_weights_db[[context]][["susie_weights_intermediate"]] <- twas_data_combined$susie_result[[context]]
       } else {
-        export_twas_weights_db[[context]][["model_weights"]] <- NA
+        export_twas_weights_db[[context]][["model_weights"]] <- rep(NA, length(rownames(weights[[context]])))
       }
       if (!is.null(data_type_table)) export_twas_weights_db[[context]][["data_type"]] <- data_type_table$type[sapply(data_type_table$context, function(x) grepl(x, context))]
     }
@@ -245,31 +245,31 @@ get_ctwas_meta_data <- function(ld_meta_data_file, regions_table) {
 }
 
 
-#' Data Loader Function to load twas weights and variant names from output of `load_twas_weights` function.
-#' @param twas_weights_data twas weights data generated from `load_twas_weights`
+#' Data Loader Function to load twas weights and variant names from output of `generate_twas_db` function.
+#' @param twas_weights_data twas weights data generated from `generate_twas_db`
 #' @importFrom R6 R6Class
 #' @export
-# Data Loader Function for importing twas weights from `load_twas_weights` function output.
+# Data Loader Function for importing twas weights from `generate_twas_db` function output.
 twas_weights_loader <- R6Class("twas_weights_loader",
   public = list(
     data = NULL,
     initialize = function(twas_weights_data) {
-      self$data <- twas_weights_data # This is the output from load_twas_weights()
+      self$data <- twas_weights_data # This is the output from generate_twas_db()
     },
     get_weights = function() {
       return(weights = self$data$weights)
     },
     get_susie_obj = function() {
-      return(lapply(self$data$susie_results, function(context_data) context_data$susie_result))
+      return(lapply(self$data$export_twas_weights_db, function(context_data) context_data$susie_weights_intermediate))
     },
     get_variant_names = function() {
-      return(lapply(self$data$susie_results, function(context_data) context_data$variant_names))
+      return(lapply(self$data$export_twas_weights_db, function(context_data) context_data$variant_names))
     },
     get_gene_name = function() {
-      return(unique(self$data$susie_results[[1]]$region_info$region_name[1]))
+      return(self$data$export_twas_weights_db[[1]]$susie_weights_intermediate$region_info$region_name[1])
     },
     get_chrom_num = function() {
-      return(as.integer(unique(self$data$susie_results[[1]]$region_info$grange$chrom)))
+      return(as.integer(unique(self$data$export_twas_weights_db[[1]]$susie_weights_intermediate$region_info$grange$chrom)))
     },
     get_data_type = function() {
       return(find_data(self$data$export_twas_weights_db, c(2, "data_type"), show_path = TRUE))
@@ -549,13 +549,12 @@ harmonize_twas <- function(twas_weights_data, ld_meta_file_path, gwas_meta_file,
           postqc_weight_variants <- rownames(weights_matrix_subset)
 
           # Step 5: adjust susie weights
-          if ("susie_weights" %in% colnames(twas_weights_data[[gene]][["weights"]][[context]])) {
+          if ("susie_weights" %in% colnames(twas_weights_data[[gene]][["weights"]][[context]]) & !is.null(twas_weights_data[[gene]][["susie_weights_intermediate"]][[context]])) {
             adjusted_susie_weights <- adjust_susie_weights(twas_weights_data[[gene]],
               keep_variants = postqc_weight_variants, allele_qc = TRUE,
               variable_name_obj = c("variant_names", context),
               susie_obj = c("susie_weights_intermediate", context),
-              twas_weights_table = c("weights", context), postqc_weight_variants, match_min_prop = 0.001,
-              variant_name_flip=TRUE
+              twas_weights_table = c("weights", context), postqc_weight_variants, match_min_prop = 0.001
             )
             weights_matrix_subset <- cbind(
               susie_weights = adjusted_susie_weights$adjusted_susie_weights,
