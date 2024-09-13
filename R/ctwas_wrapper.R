@@ -127,15 +127,11 @@ generate_twas_db <- function(weight_db_file, contexts = NULL, variable_name_obj 
       export_twas_weights_db[[context]][["selected_model"]] <- model_selection[[context]][["selected_model"]]
       if (model_selection[[context]]$imputable){
         export_twas_weights_db[[context]][["model_weights"]] <- weights[[context]][, paste0(model_selection[[context]][["selected_model"]], "_weights"), drop=FALSE] 
+        export_twas_weights_db[[context]][["susie_weights_intermediate"]] <- twas_data_combined$susie_result[[context]]
       } else {
         export_twas_weights_db[[context]][["model_weights"]] <- NA
       }
       if (!is.null(data_type_table)) export_twas_weights_db[[context]][["data_type"]] <- data_type_table$type[sapply(data_type_table$context, function(x) grepl(x, context))]
-      if (isTRUE(export_twas_weights_db[[context]][["is_imputable"]])) {
-        if (model_selection[[context]][["selected_model"]] == "susie") {
-          export_twas_weights_db[[context]][["susie_weights_intermediate"]] <- twas_data_combined$susie_result
-        }
-      }
     }
     # return results
     return(list(
