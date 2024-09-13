@@ -2,11 +2,11 @@
 % Please edit documentation in R/ctwas_wrapper.R
 \name{refined_twas_weights_loader}
 \alias{refined_twas_weights_loader}
-\title{Data Loader Function to load twas weights and variant names from output of `generate_twas_db` function.}
+\title{Data Loader Function to load top model's twas weights and variant from export_twas_weights_db generated from `generate_twas_db` function.}
 \description{
-Data Loader Function to load twas weights and variant names from output of `generate_twas_db` function.
+Data Loader Function to load top model's twas weights and variant from export_twas_weights_db generated from `generate_twas_db` function.
 
-Data Loader Function to load twas weights and variant names from output of `generate_twas_db` function.
+Data Loader Function to load top model's twas weights and variant from export_twas_weights_db generated from `generate_twas_db` function.
 }
 \section{Methods}{
 \subsection{Public methods}{
