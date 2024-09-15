@@ -1,146 +1,3 @@
-#' Calculate TWAS z-score and p-value
-#'
-#' This function calculates the TWAS z-score and p-value given the weights, z-scores,
-#' and optionally the correlation matrix (R) or the genotype matrix (X).
-#'
-#' @param weights A numeric vector of weights.
-#' @param z A numeric vector of z-scores.
-#' @param R An optional correlation matrix. If not provided, it will be calculated from the genotype matrix X.
-#' @param X An optional genotype matrix. If R is not provided, X must be supplied to calculate the correlation matrix.
-#'
-#' @return A list containing the following elements:
-#' \itemize{
-#'   \item z: The TWAS z-score.
-#'   \item pval: The corresponding p-value.
-#' }
-#'
-#' @importFrom Rfast cora
-#' @importFrom stats cor pchisq
-#'
-#' @export
-twas_z <- function(weights, z, R = NULL, X = NULL) {
-  # Check that weights and z-scores have the same length
-  if (length(weights) != length(z)) {
-    stop("Weights and z-scores must have the same length.")
-  }
-
-  if (is.null(R)) R <- compute_LD(X)
-
-  stat <- t(weights) %*% z
-  denom <- t(weights) %*% R %*% weights
-  zscore <- stat / sqrt(denom)
-  pval <- pchisq(zscore * zscore, 1, lower.tail = FALSE)
-
-  return(list(z = zscore, pval = pval))
-}
-
-#' Multi-condition TWAS joint test
-#'
-#' This function performs a multi-condition TWAS joint test using the GBJ method.
-#' It assumes that the input genotype matrix (X) is standardized.
-#'
-#' @param R An optional correlation matrix. If not provided, it will be calculated from the genotype matrix X.
-#' @param X An optional genotype matrix. If R is not provided, X must be supplied to calculate the correlation matrix.
-#' @param weights A matrix of weights, where each column corresponds to a different condition.
-#' @param z A vector of GWAS z-scores.
-#'
-#' @return A list containing the following elements:
-#' \itemize{
-#'   \item Z: A matrix of TWAS z-scores and p-values for each condition.
-#'   \item GBJ: The result of the GBJ test.
-#' }
-#'
-#' @importFrom GBJ GBJ
-#' @importFrom stats cor pnorm
-#'
-#' @export
-twas_joint_z <- function(weights, z, R = NULL, X = NULL) {
-  # Check that weights and z-scores have the same number of rows
-  if (nrow(weights) != length(z)) {
-    stop("Number of rows in weights must match the length of z-scores.")
-  }
-
-
-  if (is.null(R)) R <- compute_LD(X)
-
-  idx <- which(rownames(R) %in% rownames(weights))
-  D <- R[idx, idx]
-
-  cov_y <- crossprod(weights, D) %*% weights
-  y_sd <- sqrt(diag(cov_y))
-  x_sd <- rep(1, nrow(weights)) # Assuming X is standardized
-
-  # Get gamma matrix MxM (snp x snp)
-  g <- lapply(colnames(weights), function(x) {
-    gm <- diag(x_sd / y_sd[x], length(x_sd), length(x_sd))
-    return(gm)
-  })
-  names(g) <- colnames(weights)
-
-  ######### Get TWAS - Z statistics & P-value, GBJ test ########
-  z_matrix <- do.call(rbind, lapply(colnames(weights), function(x) {
-    Zi <- crossprod(weights[, x], g[[x]]) %*% as.numeric(z)
-    pval <- 2 * pnorm(abs(Zi), lower.tail = FALSE)
-    Zp <- c(Zi, pval)
-    names(Zp) <- c("Z", "pval")
-    return(Zp)
-  }))
-  rownames(z_matrix) <- colnames(weights)
-
-  # GBJ test
-  lam <- matrix(rep(NA, ncol(weights) * nrow(weights)), nrow = ncol(weights))
-  rownames(lam) <- colnames(weights)
-
-  for (p in colnames(weights)) {
-    la <- as.matrix(weights[, p] %*% g[[p]])
-    lam[p, ] <- la
-  }
-
-  sig <- tcrossprod((lam %*% D), lam)
-  gbj <- GBJ(test_stats = z_matrix[, 1], cor_mat = sig)
-
-  rs <- list("Z" = z_matrix, "GBJ" = gbj)
-  return(rs)
-}
-
-#' TWAS Analysis
-#'
-#' Performs TWAS analysis using the provided weights matrix, GWAS summary statistics database,
-#' and LD matrix. It extracts the necessary GWAS summary statistics and LD matrix based on the
-#' specified variants and computes the z-score and p-value for each gene.
-#'
-#' @param weights_matrix A matrix containing weights for all methods.
-#' @param gwas_sumstats_db A data frame containing the GWAS summary statistics.
-#' @param LD_matrix A matrix representing linkage disequilibrium between variants.
-#' @param extract_variants_objs A vector of variant identifiers to extract from the GWAS and LD matrix.
-#'
-#' @return A list with TWAS z-scores and p-values across four methods for each gene.
-#' @export
-twas_analysis <- function(weights_matrix, gwas_sumstats_db, LD_matrix, extract_variants_objs) {
-  #
-  # Extract gwas_sumstats
-  gwas_sumstats_subset <- gwas_sumstats_db[match(extract_variants_objs, gwas_sumstats_db$variant_id), ]
-  # Validate that the GWAS subset is not empty
-  if (nrow(gwas_sumstats_subset) == 0 | all(is.na(gwas_sumstats_subset))) {
-    stop("No GWAS summary statistics found for the specified variants.")
-  }
-  # Check if extract_variants_objs are in the rownames of LD_matrix
-  valid_indices <- extract_variants_objs %in% rownames(LD_matrix)
-  if (!any(valid_indices)) {
-    stop("None of the specified variants are present in the LD matrix.")
-  }
-  # Extract only the valid indices from extract_variants_objs
-  valid_variants_objs <- extract_variants_objs[valid_indices]
-  # Extract LD_matrix subset using valid indices
-  LD_matrix_subset <- LD_matrix[valid_variants_objs, valid_variants_objs]
-  # Caculate the z score and pvalue of each gene
-  twas_z_pval <- apply(
-    as.matrix(weights_matrix), 2,
-    function(x) twas_z(x, gwas_sumstats_subset$z, R = LD_matrix_subset)
-  )
-  return(twas_z_pval)
-}
-
 #' Cross-Validation for weights selection in Transcriptome-Wide Association Studies (TWAS)
 #'
 #' Performs cross-validation for TWAS, supporting both univariate and multivariate methods.
@@ -772,4 +629,147 @@ harmonize_twas <- function(twas_weights_data, ld_meta_file_path, gwas_meta_file,
   }
   # return results
   return(results)
+}
+
+#' Calculate TWAS z-score and p-value
+#'
+#' This function calculates the TWAS z-score and p-value given the weights, z-scores,
+#' and optionally the correlation matrix (R) or the genotype matrix (X).
+#'
+#' @param weights A numeric vector of weights.
+#' @param z A numeric vector of z-scores.
+#' @param R An optional correlation matrix. If not provided, it will be calculated from the genotype matrix X.
+#' @param X An optional genotype matrix. If R is not provided, X must be supplied to calculate the correlation matrix.
+#'
+#' @return A list containing the following elements:
+#' \itemize{
+#'   \item z: The TWAS z-score.
+#'   \item pval: The corresponding p-value.
+#' }
+#'
+#' @importFrom Rfast cora
+#' @importFrom stats cor pchisq
+#'
+#' @export
+twas_z <- function(weights, z, R = NULL, X = NULL) {
+  # Check that weights and z-scores have the same length
+  if (length(weights) != length(z)) {
+    stop("Weights and z-scores must have the same length.")
+  }
+
+  if (is.null(R)) R <- compute_LD(X)
+
+  stat <- t(weights) %*% z
+  denom <- t(weights) %*% R %*% weights
+  zscore <- stat / sqrt(denom)
+  pval <- pchisq(zscore * zscore, 1, lower.tail = FALSE)
+
+  return(list(z = zscore, pval = pval))
+}
+
+#' Multi-condition TWAS joint test
+#'
+#' This function performs a multi-condition TWAS joint test using the GBJ method.
+#' It assumes that the input genotype matrix (X) is standardized.
+#'
+#' @param R An optional correlation matrix. If not provided, it will be calculated from the genotype matrix X.
+#' @param X An optional genotype matrix. If R is not provided, X must be supplied to calculate the correlation matrix.
+#' @param weights A matrix of weights, where each column corresponds to a different condition.
+#' @param z A vector of GWAS z-scores.
+#'
+#' @return A list containing the following elements:
+#' \itemize{
+#'   \item Z: A matrix of TWAS z-scores and p-values for each condition.
+#'   \item GBJ: The result of the GBJ test.
+#' }
+#'
+#' @importFrom GBJ GBJ
+#' @importFrom stats cor pnorm
+#'
+#' @export
+twas_joint_z <- function(weights, z, R = NULL, X = NULL) {
+  # Check that weights and z-scores have the same number of rows
+  if (nrow(weights) != length(z)) {
+    stop("Number of rows in weights must match the length of z-scores.")
+  }
+
+
+  if (is.null(R)) R <- compute_LD(X)
+
+  idx <- which(rownames(R) %in% rownames(weights))
+  D <- R[idx, idx]
+
+  cov_y <- crossprod(weights, D) %*% weights
+  y_sd <- sqrt(diag(cov_y))
+  x_sd <- rep(1, nrow(weights)) # Assuming X is standardized
+
+  # Get gamma matrix MxM (snp x snp)
+  g <- lapply(colnames(weights), function(x) {
+    gm <- diag(x_sd / y_sd[x], length(x_sd), length(x_sd))
+    return(gm)
+  })
+  names(g) <- colnames(weights)
+
+  ######### Get TWAS - Z statistics & P-value, GBJ test ########
+  z_matrix <- do.call(rbind, lapply(colnames(weights), function(x) {
+    Zi <- crossprod(weights[, x], g[[x]]) %*% as.numeric(z)
+    pval <- 2 * pnorm(abs(Zi), lower.tail = FALSE)
+    Zp <- c(Zi, pval)
+    names(Zp) <- c("Z", "pval")
+    return(Zp)
+  }))
+  rownames(z_matrix) <- colnames(weights)
+
+  # GBJ test
+  lam <- matrix(rep(NA, ncol(weights) * nrow(weights)), nrow = ncol(weights))
+  rownames(lam) <- colnames(weights)
+
+  for (p in colnames(weights)) {
+    la <- as.matrix(weights[, p] %*% g[[p]])
+    lam[p, ] <- la
+  }
+
+  sig <- tcrossprod((lam %*% D), lam)
+  gbj <- GBJ(test_stats = z_matrix[, 1], cor_mat = sig)
+
+  rs <- list("Z" = z_matrix, "GBJ" = gbj)
+  return(rs)
+}
+
+#' TWAS Analysis
+#'
+#' Performs TWAS analysis using the provided weights matrix, GWAS summary statistics database,
+#' and LD matrix. It extracts the necessary GWAS summary statistics and LD matrix based on the
+#' specified variants and computes the z-score and p-value for each gene.
+#'
+#' @param weights_matrix A matrix containing weights for all methods.
+#' @param gwas_sumstats_db A data frame containing the GWAS summary statistics.
+#' @param LD_matrix A matrix representing linkage disequilibrium between variants.
+#' @param extract_variants_objs A vector of variant identifiers to extract from the GWAS and LD matrix.
+#'
+#' @return A list with TWAS z-scores and p-values across four methods for each gene.
+#' @export
+twas_analysis <- function(weights_matrix, gwas_sumstats_db, LD_matrix, extract_variants_objs) {
+  #
+  # Extract gwas_sumstats
+  gwas_sumstats_subset <- gwas_sumstats_db[match(extract_variants_objs, gwas_sumstats_db$variant_id), ]
+  # Validate that the GWAS subset is not empty
+  if (nrow(gwas_sumstats_subset) == 0 | all(is.na(gwas_sumstats_subset))) {
+    stop("No GWAS summary statistics found for the specified variants.")
+  }
+  # Check if extract_variants_objs are in the rownames of LD_matrix
+  valid_indices <- extract_variants_objs %in% rownames(LD_matrix)
+  if (!any(valid_indices)) {
+    stop("None of the specified variants are present in the LD matrix.")
+  }
+  # Extract only the valid indices from extract_variants_objs
+  valid_variants_objs <- extract_variants_objs[valid_indices]
+  # Extract LD_matrix subset using valid indices
+  LD_matrix_subset <- LD_matrix[valid_variants_objs, valid_variants_objs]
+  # Caculate the z score and pvalue of each gene
+  twas_z_pval <- apply(
+    as.matrix(weights_matrix), 2,
+    function(x) twas_z(x, gwas_sumstats_subset$z, R = LD_matrix_subset)
+  )
+  return(twas_z_pval)
 }
