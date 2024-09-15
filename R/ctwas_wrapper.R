@@ -43,8 +43,8 @@
 #' )
 # select variants for ctwas weights input
 generate_twas_db <- function(weight_db_file, contexts = NULL, variable_name_obj = "variant_names",
-                             susie_obj="susie_weights_intermediate", twas_weights_table = "twas_weights", 
-                             min_rsq_threshold = 0.01, p_val_cutoff = 0.05, 
+                             susie_obj = "susie_weights_intermediate", twas_weights_table = "twas_weights",
+                             min_rsq_threshold = 0.01, p_val_cutoff = 0.05,
                              data_type_table = NULL, region_name) {
   # determine if the region is imputable and select the best model
   # Function to pick the best model based on adj_rsq and p-value
@@ -74,7 +74,7 @@ generate_twas_db <- function(weight_db_file, contexts = NULL, variable_name_obj 
           selected_model <- model
         }
       }
-      if (is.null(selected_model)) { 
+      if (is.null(selected_model)) {
         message(paste0(
           "No model has p-value < ", p_val_cutoff, " and r2 >= ", min_rsq_threshold, ", skipping context ", context,
           " at region ", unique(region_name), ". "
@@ -91,14 +91,20 @@ generate_twas_db <- function(weight_db_file, contexts = NULL, variable_name_obj 
   }
 
   ## load twas weights
-  twas_data_combined <- load_twas_weights(weight_db_file, conditions = contexts, variable_name_obj = variable_name_obj, susie_obj=susie_obj,
-                                  twas_weights_table = twas_weights_table)
-  if(!"weights" %in% names(twas_data_combined)) stop("TWAS weights not loaded. ")
-  weights <- setNames(lapply(names(twas_data_combined$weights), 
-                      function(context) twas_data_combined$weights[[context]][names(twas_data_combined$susie_results[[context]]$X_column_scale_factors),,drop=FALSE]), 
-                      names(twas_data_combined$weights))
+  twas_data_combined <- load_twas_weights(weight_db_file,
+    conditions = contexts, variable_name_obj = variable_name_obj, susie_obj = susie_obj,
+    twas_weights_table = twas_weights_table
+  )
+  if (!"weights" %in% names(twas_data_combined)) stop("TWAS weights not loaded. ")
+  weights <- setNames(
+    lapply(
+      names(twas_data_combined$weights),
+      function(context) twas_data_combined$weights[[context]][names(twas_data_combined$susie_results[[context]]$X_column_scale_factors), , drop = FALSE]
+    ),
+    names(twas_data_combined$weights)
+  )
   if (is.null(contexts)) contexts <- names(weights)
-  
+
   ## we first select best model, determine imputable contexts, then select variants based on susie obj output
   model_selection <- pick_best_model(twas_data_combined, contexts, min_rsq_threshold, p_val_cutoff)
 
@@ -120,8 +126,8 @@ generate_twas_db <- function(weight_db_file, contexts = NULL, variable_name_obj 
       export_twas_weights_db[[context]][["variant_names"]] <- rownames(weights[[context]])
       export_twas_weights_db[[context]][["selected_model"]] <- model_selection[[context]][["selected_model"]]
       export_twas_weights_db[[context]][["susie_weights_intermediate"]] <- twas_data_combined$susie_result[[context]]
-      if (model_selection[[context]]$imputable){
-        export_twas_weights_db[[context]][["model_weights"]] <- weights[[context]][, paste0(model_selection[[context]][["selected_model"]], "_weights"), drop=FALSE] 
+      if (model_selection[[context]]$imputable) {
+        export_twas_weights_db[[context]][["model_weights"]] <- weights[[context]][, paste0(model_selection[[context]][["selected_model"]], "_weights"), drop = FALSE]
       } else {
         export_twas_weights_db[[context]][["model_weights"]] <- rep(NA, length(rownames(weights[[context]])))
       }
@@ -173,11 +179,11 @@ get_ctwas_meta_data <- function(ld_meta_data_file, regions_table) {
 twas_weights_loader <- R6Class("twas_weights_loader",
   public = list(
     data = NULL,
-    twas_weights_table = NULL, 
-    susie_obj = NULL,           
-    variable_name_obj = NULL,  
-    initialize = function(twas_weights_data, variable_name_obj="variant_names", susie_obj="susie_weights",
-                                     twas_weights_table = "twas_weights") {
+    twas_weights_table = NULL,
+    susie_obj = NULL,
+    variable_name_obj = NULL,
+    initialize = function(twas_weights_data, variable_name_obj = "variant_names", susie_obj = "susie_weights",
+                          twas_weights_table = "twas_weights") {
       self$data <- twas_weights_data # This is the output from generate_twas_db()
       self$twas_weights_table <- twas_weights_table # Store the twas_weights_table name
       self$susie_obj <- susie_obj # Store the susie_obj name

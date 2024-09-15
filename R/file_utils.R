@@ -558,7 +558,7 @@ load_regional_functional_data <- function(...) {
 clean_context_names <- function(context, gene) {
   # Remove gene name if it matches the last part of the context
   gene <- gene[order(-nchar(unique(gene)))]
-  for (gene_id in gene){
+  for (gene_id in gene) {
     context <- gsub(paste0("_", gene_id), "", context)
   }
   return(context)
@@ -595,35 +595,35 @@ load_twas_weights <- function(weight_db_files, conditions = NULL,
     all_data <- do.call(c, lapply(unname(weight_db_files), function(rds_file) {
       db <- readRDS(rds_file)
       gene <- names(db)
-      if (any(unique(names(find_data(db, c(3, "twas_weights")))) %in% c('mrmash_weights','mvsusie_weights'))) {
-        names(db[[1]]) <- clean_context_names(names(db[[1]]), gene=gene)
-        db <- list(mnm_rs=db[[1]])
+      if (any(unique(names(find_data(db, c(3, "twas_weights")))) %in% c("mrmash_weights", "mvsusie_weights"))) {
+        names(db[[1]]) <- clean_context_names(names(db[[1]]), gene = gene)
+        db <- list(mnm_rs = db[[1]])
       } else {
         # Check if region from all RDS files are the same
         if (length(gene) != 1) {
           stop("More than one region provided in the RDS file. ")
         } else {
-          names(db[[gene]]) <- clean_context_names(names(db[[gene]]), gene=gene)
+          names(db[[gene]]) <- clean_context_names(names(db[[gene]]), gene = gene)
         }
       }
       return(db)
     }))
-    
+
     # Combine the lists with the same region name
-    gene <- unique(names(all_data)[!names(all_data) %in% 'mnm_rs'])
-    if (length(gene)>1) stop ("More than one region of twas weights data provided. ")
+    gene <- unique(names(all_data)[!names(all_data) %in% "mnm_rs"])
+    if (length(gene) > 1) stop("More than one region of twas weights data provided. ")
     combined_all_data <- lapply(split(all_data, names(all_data)), function(lst) {
-      if(length(lst) >1){
+      if (length(lst) > 1) {
         lst <- do.call(c, unname(lst))
       }
-        if (isTRUE(names(lst) == "mnm_rs"))lst <- lst[[1]]
-        if ( gene %in% names(lst) ) lst <- do.call(c, lapply(unname(lst), function(x)x))
-        return(lst)
+      if (isTRUE(names(lst) == "mnm_rs")) lst <- lst[[1]]
+      if (gene %in% names(lst)) lst <- do.call(c, lapply(unname(lst), function(x) x))
+      return(lst)
     })
-    
+
     # merge univariate and multivariate results for same gene-context pair
     if ("mnm_rs" %in% names(combined_all_data)) {
-      #gene <- names(combined_all_data)[!names(combined_all_data) %in% "mnm_rs"]
+      # gene <- names(combined_all_data)[!names(combined_all_data) %in% "mnm_rs"]
       overl_contexts <- names(combined_all_data[["mnm_rs"]])[names(combined_all_data[["mnm_rs"]]) %in% names(combined_all_data[[gene]])]
       multi_variants <- unique(find_data(combined_all_data$mnm_rs, c(2, variable_name_obj)))
       for (context in overl_contexts) {
@@ -642,9 +642,9 @@ load_twas_weights <- function(weight_db_files, conditions = NULL,
       }
       combined_all_data[["mnm_rs"]] <- NULL
     }
-    if ( gene %in% names(combined_all_data)) combined_all_data <- do.call(c, unname(combined_all_data))
-    if ( gene %in% names(combined_all_data)) combined_all_data <- combined_all_data[[1]]
-    
+    if (gene %in% names(combined_all_data)) combined_all_data <- do.call(c, unname(combined_all_data))
+    if (gene %in% names(combined_all_data)) combined_all_data <- combined_all_data[[1]]
+
     # Set default for 'conditions' if they are not specified
     if (is.null(conditions)) {
       conditions <- names(combined_all_data)
@@ -714,7 +714,9 @@ load_twas_weights <- function(weight_db_files, conditions = NULL,
   try(
     {
       combined_all_data <- load_and_validate_data(weight_db_files, conditions, variable_name_obj)
-      if(is.null(combined_all_data)) return(NULL)
+      if (is.null(combined_all_data)) {
+        return(NULL)
+      }
       # update condition in case of merging rds files
       conditions <- names(combined_all_data)
       weights <- consolidate_weights_list(combined_all_data, conditions, variable_name_obj, twas_weights_table)

@@ -72,7 +72,7 @@ allele_qc <- function(target_variants, ref_variants, target_data, col_to_flip = 
 
   # Check if any of the specified columns are present
   if (any(columns_to_remove %in% colnames(target_data))) {
-     target_data <- select(target_data, -any_of(columns_to_remove))
+    target_data <- select(target_data, -any_of(columns_to_remove))
   }
 
   match_result <- merge(target_data, ref_variants, by = c("chrom", "pos"), all = FALSE, suffixes = c(".target", ".ref")) %>%

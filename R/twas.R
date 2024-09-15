@@ -315,10 +315,10 @@ twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_
       # Remove columns with zero standard error
       valid_columns <- apply(X_train, 2, function(col) sd(col) != 0)
       X_train <- X_train[, valid_columns, drop = F]
-      X_train <- filter_X_with_Y(X_train, Y_train, missing_rate_thresh=1, maf_thresh=NULL)
+      X_train <- filter_X_with_Y(X_train, Y_train, missing_rate_thresh = 1, maf_thresh = NULL)
       valid_columns <- colnames(X_train)
-      #X_test <- X_test[, valid_columns, drop=FALSE]
-      
+      # X_test <- X_test[, valid_columns, drop=FALSE]
+
       setNames(lapply(names(weight_methods), function(method) {
         args <- weight_methods[[method]]
 
@@ -658,8 +658,10 @@ harmonize_twas <- function(twas_weights_data, ld_meta_file_path, gwas_meta_file,
   }
 
   # Step 1: load TWAS weights data
-  loader <- twas_data_loader$new(twas_weights_data, variable_name_obj="variant_names", susie_obj="susie_weights_intermediate",
-                                    twas_weights_table = "weights")
+  loader <- twas_data_loader$new(twas_weights_data,
+    variable_name_obj = "variant_names", susie_obj = "susie_weights_intermediate",
+    twas_weights_table = "weights"
+  )
   twas_weights_data <- loader$get_data()
   genes <- names(twas_weights_data)
   chrom <- as.integer(twas_weights_data[[1]]$chrom)
@@ -682,7 +684,7 @@ harmonize_twas <- function(twas_weights_data, ld_meta_file_path, gwas_meta_file,
     LD_list$ref_panel <- LD_list$ref_panel[-dup_idx, ]
   }
 
-  # loop through genes: 
+  # loop through genes:
   for (gene in genes) {
     results[[gene]] <- twas_weights_data[[gene]][c("chrom", "data_type")]
     # group contexts based on the variant position
@@ -712,7 +714,7 @@ harmonize_twas <- function(twas_weights_data, ld_meta_file_path, gwas_meta_file,
           weights_matrix <- twas_weights_data[[gene]][["weights"]][[context]]
           if (is.null(rownames(weights_matrix))) rownames(weights_matrix) <- twas_weights_data[[gene]][["variant_names"]][[context]]
 
-          # Step 4: harmonize weights, flip allele 
+          # Step 4: harmonize weights, flip allele
           weights_matrix <- cbind(variant_id_to_df(rownames(weights_matrix)), weights_matrix)
           weights_matrix_qced <- allele_qc(rownames(weights_matrix), LD_list$combined_LD_variants, weights_matrix,
             colnames(weights_matrix)[!colnames(weights_matrix) %in% c("chrom", "pos", "A2", "A1")],
@@ -757,7 +759,7 @@ harmonize_twas <- function(twas_weights_data, ld_meta_file_path, gwas_meta_file,
         }
         # Combine gwas sumstat across different context for a single context group based on all variants included in this gene/region
         gwas_data_sumstats$variant_id <- paste0("chr", gwas_data_sumstats$variant_id)
-        gwas_data_sumstats <- gwas_data_sumstats[gwas_data_sumstats$variant_id %in% unique(unlist(results[[gene]][["variant_names"]])), ,drop=FALSE]
+        gwas_data_sumstats <- gwas_data_sumstats[gwas_data_sumstats$variant_id %in% unique(unlist(results[[gene]][["variant_names"]])), , drop = FALSE]
         results[[gene]][["gwas_qced"]][[study]] <- rbind(results[[gene]][["gwas_qced"]][[study]], gwas_data_sumstats)
         results[[gene]][["gwas_qced"]][[study]] <- results[[gene]][["gwas_qced"]][[study]][!duplicated(results[[gene]][["gwas_qced"]][[study]][, c("variant_id", "z")]), ]
       }
