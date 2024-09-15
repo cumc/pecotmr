@@ -732,6 +732,130 @@ load_twas_weights <- function(weight_db_files, conditions = NULL,
   )
 }
 
+#' Data Loader Function to load twas weights and variant names from output of `generate_twas_db` function.
+#' @param twas_weights_data twas weights data generated from `generate_twas_db`
+#' @importFrom R6 R6Class
+#' @export
+# Data Loader Function for importing twas weights from `generate_twas_db` function output.
+twas_weights_loader <- R6Class("twas_weights_loader",
+  public = list(
+    data = NULL,
+    twas_weights_table = NULL,
+    susie_obj = NULL,
+    variable_name_obj = NULL,
+    initialize = function(twas_weights_data, variable_name_obj = "variant_names", susie_obj = "susie_weights",
+                          twas_weights_table = "twas_weights") {
+      self$data <- twas_weights_data # This is the output from generate_twas_db()
+      self$twas_weights_table <- twas_weights_table # Store the twas_weights_table name
+      self$susie_obj <- susie_obj # Store the susie_obj name
+      self$variable_name_obj <- variable_name_obj # Store the variable_name_obj name
+    },
+    get_weights = function() {
+      return(weights = get_nested_element(self$data, self$twas_weights_table))
+    },
+    get_susie_obj = function() {
+      return(lapply(self$data$export_twas_weights_db, function(context_data) get_nested_element(context_data, self$susie_obj)))
+    },
+    get_variant_names = function() {
+      return(lapply(self$data$export_twas_weights_db, function(context_data) get_nested_element(context_data, self$variable_name_obj)))
+    },
+    get_gene_name = function() {
+      return(self$data$gene)
+    },
+    get_chrom_num = function() {
+      return(as.integer(readr::parse_number(strsplit(self$data$export_twas_weights_db[[1]]$variant_names[1], "[_:-]")[[1]][1])))
+    },
+    get_data_type = function() {
+      return(find_data(self$data$export_twas_weights_db, c(2, "data_type"), show_path = TRUE))
+    },
+    get_data = function() {
+      weights <- self$get_weights()
+      susie_weights_intermediate <- self$get_susie_obj()
+      gene_name <- self$get_gene_name()
+      variant_names <- self$get_variant_names()
+      chrom <- self$get_chrom_num()
+      data <- list(list(chrom = chrom, variant_names = variant_names, weights = weights, susie_weights_intermediate = susie_weights_intermediate))
+      if ("export_twas_weights_db" %in% names(self$data)) data[[1]] <- c(list(data_type = self$get_data_type()), data[[1]])
+      names(data) <- gene_name
+      return(data)
+    }
+  )
+)
+
+#' Data Loader Function to load top model's twas weights and variant from export_twas_weights_db generated from `generate_twas_db` function.
+#' @importFrom R6 R6Class
+#' @export
+refined_twas_weights_loader <- R6Class("refined_twas_weights_loader",
+  public = list(
+    data = NULL,
+    #' @param twas_weights_data Data from `generate_twas_db`
+    initialize = function(twas_weights_data) {
+      self$data <- twas_weights_data # This is the output from load_twas_weights()
+    },
+    get_weights = function(gene_data) {
+      weights <- lapply(names(gene_data), function(context) {
+        if (isTRUE(gene_data[[context]]$is_imputable)) {
+          weight <- gene_data[[context]]$selected_model_weights
+          weight <- matrix(weight, ncol = 1, dimnames = list(
+            names(gene_data[[context]]$selected_model_weights),
+            paste0(gene_data[[context]]$selected_model, "_weights")
+          ))
+          return(weight)
+        }
+      })
+      names(weights) <- names(gene_data)
+      return(weights)
+    },
+    get_susie_obj = function(gene_data) {
+      susie_list <- lapply(names(gene_data), function(context) {
+        if (isTRUE(gene_data[[context]]$selected_model == "susie")) {
+          return(gene_data[[context]]$susie_parameters)
+        }
+      })
+      names(susie_list) <- names(gene_data)
+      return(susie_list)
+    },
+    get_variant_names = function(gene_data) {
+      return(lapply(gene_data, function(context_data) {
+        context_data$selected_top_variants
+      }))
+    },
+    get_gene_name = function() {
+      return(names(self$data[[1]]))
+    },
+    get_chrom_num = function() {
+      return(as.integer(gsub("chr", "", (gsub("_.*$", "", names(self$data))))))
+    },
+    get_imputable_data = function(gene, gene_data) {
+      imputable_context <- do.call(c, lapply(
+        names(gene_data),
+        function(context) if (isTRUE(self$data[[1]][[gene]][[context]]$is_imputable)) context
+      ))
+      return(gene_data[imputable_context])
+    },
+    get_data_type = function(gene_data) {
+      return(lapply(gene_data, function(context_data) {
+        context_data$data_type
+      }))
+    },
+    get_data = function() {
+      genes <- self$get_gene_name()
+      chrom <- self$get_chrom_num()
+      data <- lapply(genes, function(gene) {
+        list(
+          chrom = chrom,
+          variant_names = self$get_imputable_data(gene, self$get_variant_names(self$data[[1]][[gene]])),
+          weights = self$get_imputable_data(gene, self$get_weights(self$data[[1]][[gene]])),
+          susie_obj = self$get_imputable_data(gene, self$get_susie_obj(self$data[[1]][[gene]])),
+          data_type = self$get_imputable_data(gene, self$get_data_type(self$data[[1]][[gene]]))
+        )
+      })
+      names(data) <- genes
+      return(data)
+    }
+  )
+)
+
 #' Load summary statistic data
 #'
 #' This function formats the input summary statistics dataframe with uniform column names
