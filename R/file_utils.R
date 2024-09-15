@@ -655,23 +655,17 @@ load_twas_weights <- function(weight_db_files, conditions = NULL,
     }
     return(combined_all_data)
   }
+
   # Internal function to align and merge weight matrices
   align_and_merge <- function(weights_list, variable_objs) {
+    all_variants <- unique(unlist(variable_objs))
     consolidated_list <- list()
     # Fill the matrix with weights, aligning by variant names
     for (i in seq_along(weights_list)) {
-      # get conditon specific variant names
-      all_variants <- unique(unlist(variable_objs[[i]]))
       # Initialize the temp matrix with zeros
       existing_colnames <- character(0)
       temp_matrix <- matrix(0, nrow = length(all_variants), ncol = ncol(weights_list[[i]]))
       rownames(temp_matrix) <- all_variants
-      if (!length(all_variants) == nrow(weights_list[[i]])) {
-        stop(paste0(
-          "Variant number mismatch in twas weights: ", nrow(weights_list[[i]]), " and variant number in susie result: ", length(all_variants),
-          " for context ", names(weights_list)[i], ". "
-        ))
-      }
       idx <- match(variable_objs[[i]], all_variants)
       temp_matrix[idx, ] <- weights_list[[i]]
       # Ensure no duplicate column names
@@ -712,9 +706,6 @@ load_twas_weights <- function(weight_db_files, conditions = NULL,
       })
       weights <- align_and_merge(combined_weights_by_condition, variable_objs)
     }
-    weight_variants <- lapply(weights, function(x) rownames(x))
-    common_variants <- Reduce(intersect, weight_variants)
-    weights <- lapply(weights, function(x) x[common_variants,, drop=FALSE])
     names(weights) <- conditions
     return(weights)
   }
@@ -727,7 +718,7 @@ load_twas_weights <- function(weight_db_files, conditions = NULL,
       # update condition in case of merging rds files
       conditions <- names(combined_all_data)
       weights <- consolidate_weights_list(combined_all_data, conditions, variable_name_obj, twas_weights_table)
-      combined_susie_result <- lapply(combined_all_data, function(context) c(context$susie_weights_intermediate, list(region_info=context$region_info)))
+      combined_susie_result <- lapply(combined_all_data, function(context) context$susie_weights_intermediate)
       conditions <- names(combined_susie_result)
       performance_tables <- lapply(conditions, function(condition) {
         get_nested_element(combined_all_data, c(condition, "twas_cv_result", "performance"))

@@ -171,10 +171,7 @@ filter_Y <- function(Y, n_nonmiss) {
 }
 
 
-format_variant_id <- function(names_vector, chr=FALSE) {
-  if (chr) {
-    names_vector <- do.call(c, lapply(names_vector, function(x) if (grepl("^chr",x)) x else paste0("chr", x)))
-  }
+format_variant_id <- function(names_vector) {
   gsub("_", ":", names_vector)
 }
 

@@ -62,8 +62,7 @@ lbf_to_alpha <- function(lbf) {
 adjust_susie_weights <- function(twas_weights_results, keep_variants, allele_qc = TRUE,
                                  variable_name_obj = c("susie_results", context, "variant_names"),
                                  susie_obj = c("susie_results", context, "susie_result_trimmed"),
-                                 twas_weights_table = c("weights", context), combined_LD_variants, 
-                                 match_min_prop = 0.2) {
+                                 twas_weights_table = c("weights", context), combined_LD_variants, match_min_prop = 0.2) {
   # Intersect the rownames of weights with keep_variants
   twas_weights_variants <- get_nested_element(twas_weights_results, variable_name_obj)
   twas_weights_variants <- if(!startsWith(twas_weights_variants[1], "chr")) paste0("chr", twas_weights_variants) else twas_weights_variants
