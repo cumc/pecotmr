@@ -2,7 +2,7 @@
 % Please edit documentation in R/ctwas_wrapper.R
 \name{ctwas_ld_loader}
 \alias{ctwas_ld_loader}
-\title{Utility function to load LD in ctwas analyses}
+\title{Utility function to load LD in ctwas analyses, to interface with cTWAS package}
 \usage{
 ctwas_ld_loader(ld_matrix_file_path)
 }
@@ -10,5 +10,5 @@ ctwas_ld_loader(ld_matrix_file_path)
 \item{ld_matrix_file_path}{A string of file path to the LD matrix.}
 }
 \description{
-Utility function to load LD in ctwas analyses
+Utility function to load LD in ctwas analyses, to interface with cTWAS package
 }

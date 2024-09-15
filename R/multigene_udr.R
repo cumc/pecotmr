@@ -9,7 +9,7 @@
 #' @param exclude_condition A character vector specifying conditions to be excluded from the analysis. Defaults to NULL.
 #'
 #' @return A list containing the results of the prior, or NULL if conditions are not met.
-#' @import dplyr
+#' @importFrom dplyr filter mutate group_by
 #' @export
 multigene_udr <- function(combined_susie_list, coverage, independent_variant_list, n_random, n_null, seed, exclude_condition = NULL) {
   # Default to an empty vector if exclude_condition is NULL
