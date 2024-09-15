@@ -33,7 +33,7 @@ twas_weights_data under each context.
 }
 \description{
 Function Conditions:
-- processes data in the format of either the output from load_twas_weights/generate_weight_db or
+- processes data in the format of either the output from load_twas_weights/generate_twas_db or
   refined_twas_weights_data from twas pipeline.
 - For the first format, we expect there is only one gene's information, that can be accessed through `region_info_obj`
   and refined_twas_weights_data contains per region multiple gene's refined weights data.
