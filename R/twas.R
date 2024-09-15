@@ -543,3 +543,231 @@ twas_weights <- function(X, Y, weight_methods, num_threads = 1) {
 twas_predict <- function(X, weights_list) {
   setNames(lapply(weights_list, function(w) X %*% w), gsub("_weights", "_predicted", names(weights_list)))
 }
+
+#' Function to perform allele flip QC and harmonization on the weights and GWAS against LD for a region.
+#' FIXME: GWAS loading function from Haochen for both tabix & column-mapping yml application
+#'
+#' Function Conditions:
+#' - processes data in the format of either the output from load_twas_weights/generate_twas_db or
+#'   refined_twas_weights_data from twas pipeline.
+#' - For the first format, we expect there is only one gene's information, that can be accessed through `region_info_obj`
+#'   and refined_twas_weights_data contains per region multiple gene's refined weights data.
+#'
+#' Main Steps:
+#' 1. allele QC for TWAS weights against the LD meta
+#' 2. allele QC for GWA summary stats against the LD meta
+#' 3. adjust susie/mvsusie weights based on the overlap variants
+#'
+#' @param twas_weights_data List of list of twas weights output from twas pipeline with following list items, with was weights
+#' and variant name object specified by "variant_name_obj" and "twas_weights_table".
+#' @param gwas_meta_file A file path for a dataframe table with column of "study_id", "chrom" (integer), "file_path",
+#' "column_mapping_file". Each file in "file_path" column is tab-delimited dataframe of GWAS summary statistics with column name
+#' "chrom" (or #chrom" if tabix-indexed), "pos", "A2", "A1".
+#' @param ld_meta_file_path A tab-delimited data frame with colname "#chrom", "start", "end", "path", where "path" column
+#' contains file paths for both LD matrix and bim file and is separated by ",". Bim file input would expect no headers, while the
+#' columns are aligned in the order of "chrom", "variants", "GD", "pos", "A1", "A2", "variance", "allele_freq", "n_nomiss".
+#' @param scale_weights TRUE/FALSE statement. If turn off, the post-qc/harmonized weights will not be scaled by SNP variance from LD.
+#' @return A list of list for harmonized weights and dataframe of gwas summary statistics that is add to the original input of
+#' twas_weights_data under each context.
+#' @importFrom data.table fread
+#' @importFrom S4Vectors queryHits subjectHits
+#' @importFrom IRanges IRanges findOverlaps start end reduce
+#' @export
+harmonize_twas <- function(twas_weights_data, ld_meta_file_path, gwas_meta_file, twas_data_loader, scale_weights = FALSE) {
+  # Function to group contexts based on start and end positions
+  group_contexts_by_region <- function(twas_weights_data, gene, chrom, tolerance = 5000) {
+    region_info_df <- do.call(rbind, lapply(names(twas_weights_data[[gene]]$variant_names), function(context) {
+      wgt_range <- as.integer(sapply(
+        twas_weights_data[[gene]][["variant_names"]][[context]],
+        function(variant_id) {
+          strsplit(variant_id, "\\:")[[1]][2]
+        }
+      ))
+      min <- min(wgt_range)
+      max <- max(wgt_range)
+      data.frame(context = context, start = min, end = max)
+    }))
+    if (nrow(region_info_df) == 1) {
+      # Handle case with only one context
+      single_context_group <- list(
+        context_group_1 = list(
+          contexts = region_info_df$context,
+          query_region = paste0(chrom, ":", region_info_df$start, "-", region_info_df$end),
+          all_variants = unique(twas_weights_data[[gene]][["variant_names"]][[region_info_df$context]])
+        )
+      )
+      return(single_context_group)
+    }
+    # Calculate distance matrix and perform hierarchical clustering
+    clusters <- cutree(hclust(dist(region_info_df[, c("start", "end")])), h = tolerance)
+    # Group contexts and determine query regions
+    region_groups <- split(region_info_df, clusters) %>%
+      lapply(function(group) {
+        list(contexts = group$context, query_region = paste0(
+          chrom, ":", min(group$start),
+          "-", max(group$end)
+        ))
+      })
+    # Create IRanges objects and merge overlapping intervals
+    intervals <- IRanges(start = unlist(lapply(region_groups, function(context_group) {
+      as.numeric(gsub(
+        "^.*:\\s*|\\s*-.*$", "",
+        context_group$query_region
+      ))
+    })), end = unlist(lapply(
+      region_groups,
+      function(context_group) as.numeric(sub("^.*?\\-", "", context_group$query_region))
+    )))
+    reduced_intervals <- reduce(intervals)
+
+    # Find which original groups are merged, and update region_groups lists
+    overlaps <- findOverlaps(intervals, reduced_intervals)
+    # Create merged groups based on overlap mapping
+    merged_groups <- lapply(seq_along(reduced_intervals), function(i) {
+      context_indices <- queryHits(overlaps)[subjectHits(overlaps) == i]
+      merged_contexts <- unlist(lapply(context_indices, function(idx) region_groups[[idx]]$contexts))
+      list(contexts = merged_contexts, query_region = paste0(chrom, ":", start(reduced_intervals[i]), "-", end(reduced_intervals[i])))
+    })
+    names(merged_groups) <- paste0("context_group_", seq_along(merged_groups))
+    # add varinat names for coordinate extraction
+    for (group in names(merged_groups)) {
+      contexts <- merged_groups[[group]]$contexts
+      merged_groups[[group]]$all_variants <- unique(do.call(c, lapply(
+        contexts,
+        function(context) {
+          twas_weights_data[[gene]][["variant_names"]][[context]]
+        }
+      )))
+    }
+    return(merged_groups)
+  }
+
+  # Function to extract LD variance for the query region
+  query_variance <- function(ld_meta_file_path, chrom, query_region, extract_coordinates) {
+    # Filter the BIM data for the specified query region
+    query_region_df <- region_to_df(query_region)
+    query_region_df <- transform(query_region_df, start = start + 1, end = end - 1)
+    # Find bim file in LD meta file that overlaps with the query region
+    bim_file_path <- get_regional_ld_meta(ld_meta_file_path, query_region_df)$intersections$bim_file_paths
+    bim_data <- do.call(rbind, lapply(bim_file_path, function(bim_file) fread(bim_file, header = FALSE, data.table = FALSE)))
+    bim_filtered <- bim_data[bim_data$V4 %in% extract_coordinates$pos, , drop = FALSE]
+    # Extract the variance column (7th column)
+    variance_df <- bim_filtered[, c(1, 4, 5:7)]
+    colnames(variance_df) <- c("chrom", "pos", "A1", "A2", "variance")
+    return(variance_df)
+  }
+
+  # Step 1: load TWAS weights data
+  loader <- twas_data_loader$new(twas_weights_data, variable_name_obj="variant_names", susie_obj="susie_weights_intermediate",
+                                    twas_weights_table = "weights")
+  twas_weights_data <- loader$get_data()
+  genes <- names(twas_weights_data)
+  chrom <- as.integer(twas_weights_data[[1]]$chrom)
+
+  gwas_meta_df <- fread(gwas_meta_file, header = TRUE, sep = "\t", data.table = FALSE)
+  gwas_files <- unique(gwas_meta_df$file_path[gwas_meta_df$chrom == chrom])
+  names(gwas_files) <- unique(gwas_meta_df$study_id[gwas_meta_df$chrom == chrom])
+  results <- list()
+
+  # Step 2: Load LD for all genes by clustered context region
+  region_variants <- variant_id_to_df(unique(unlist(find_data(twas_weights_data, c(2, "variant_names")))))
+  region_of_interest <- data.frame(chrom = chrom, start = min(region_variants$pos), end = max(region_variants$pos))
+  LD_list <- load_LD_matrix(ld_meta_file_path, region_of_interest, region_variants)
+
+  # remove duplicate variants
+  dup_idx <- which(duplicated(LD_list$combined_LD_variants))
+  if (length(dup_idx) >= 1) {
+    LD_list$combined_LD_variants <- LD_list$combined_LD_variants[-dup_idx]
+    LD_list$combined_LD_matrix <- LD_list$combined_LD_matrix[-dup_idx, -dup_idx]
+    LD_list$ref_panel <- LD_list$ref_panel[-dup_idx, ]
+  }
+
+  # loop through genes: 
+  for (gene in genes) {
+    results[[gene]] <- twas_weights_data[[gene]][c("chrom", "data_type")]
+    # group contexts based on the variant position
+    context_clusters <- group_contexts_by_region(twas_weights_data, gene, chrom, tolerance = 5000)
+
+    # loop through contexts: grouping contexts can be useful during ctwas data harmonization to stratify variants for LD loading
+    for (context_group in names(context_clusters)) {
+      contexts <- context_clusters[[context_group]]$contexts
+      query_region <- context_clusters[[context_group]]$query_region
+      region_of_interest <- region_to_df(query_region)
+      all_variants <- context_clusters[[context_group]]$all_variants # all variants for this context group
+      all_variants <- variant_id_to_df(all_variants)
+
+      # Step 3: load GWAS data for clustered context groups
+      for (study in names(gwas_files)) {
+        gwas_file <- gwas_files[study]
+        gwas_sumstats <- as.data.frame(tabix_region(gwas_file, query_region)) # extension for yml file for column name mapping
+        if (colnames(gwas_sumstats)[1] == "#chrom") colnames(gwas_sumstats)[1] <- "chrom" # colname update for tabix
+        gwas_sumstats$chrom <- as.integer(gwas_sumstats$chrom)
+        gwas_allele_flip <- allele_qc(gwas_sumstats[, c("chrom", "pos", "A1", "A2")], LD_list$combined_LD_variants, gwas_sumstats, c("beta", "z"),
+          match_min_prop = 0.001
+        )
+        gwas_data_sumstats <- gwas_allele_flip$target_data_qced # post-qc gwas data that is flipped and corrected - gwas study level
+
+        # loop through context within the context group:
+        for (context in contexts) {
+          weights_matrix <- twas_weights_data[[gene]][["weights"]][[context]]
+          if (is.null(rownames(weights_matrix))) rownames(weights_matrix) <- twas_weights_data[[gene]][["variant_names"]][[context]]
+
+          # Step 4: harmonize weights, flip allele 
+          weights_matrix <- cbind(variant_id_to_df(rownames(weights_matrix)), weights_matrix)
+          weights_matrix_qced <- allele_qc(rownames(weights_matrix), LD_list$combined_LD_variants, weights_matrix,
+            colnames(weights_matrix)[!colnames(weights_matrix) %in% c("chrom", "pos", "A2", "A1")],
+            match_min_prop = 0.001, target_gwas = FALSE
+          )
+          weights_matrix_subset <- as.matrix(weights_matrix_qced$target_data_qced[, !colnames(weights_matrix_qced$target_data_qced) %in% c(
+            "chrom",
+            "pos", "A2", "A1", "variant_id"
+          ), drop = FALSE])
+          rownames(weights_matrix_subset) <- weights_matrix_qced$target_data_qced$variant_id # weight variant names are flipped/corrected
+
+          # intersect post-qc gwas and post-qc weight variants
+          gwas_LD_variants <- intersect(gwas_data_sumstats$variant_id, LD_list$combined_LD_variants)
+          weights_matrix_subset <- weights_matrix_subset[rownames(weights_matrix_subset) %in% gwas_LD_variants, , drop = FALSE]
+          rownames(weights_matrix_subset) <- rownames(weights_matrix_subset)
+          postqc_weight_variants <- rownames(weights_matrix_subset)
+
+          # Step 5: adjust SuSiE weights based on available variants
+          if ("susie_weights" %in% colnames(twas_weights_data[[gene]][["weights"]][[context]])) {
+            adjusted_susie_weights <- adjust_susie_weights(twas_weights_data[[gene]],
+              keep_variants = postqc_weight_variants, allele_qc = TRUE,
+              variable_name_obj = c("variant_names", context),
+              susie_obj = c("susie_weights_intermediate", context),
+              twas_weights_table = c("weights", context), postqc_weight_variants, match_min_prop = 0.001
+            )
+            weights_matrix_subset <- cbind(
+              susie_weights = setNames(adjusted_susie_weights$adjusted_susie_weights, adjusted_susie_weights$remained_variants_ids),
+              weights_matrix_subset[gsub("chr", "", adjusted_susie_weights$remained_variants_ids), !colnames(weights_matrix_subset) %in% "susie_weights"]
+            )
+          }
+          results[[gene]][["variant_names"]][[context]] <- rownames(weights_matrix_subset)
+
+          # Step 6: scale weights by variance
+          if (isTRUE(scale_weights)) {
+            variance_df <- query_variance(ld_meta_file_path, chrom, query_region, all_variants) %>%
+              mutate(variants = paste(chrom, pos, A2, A1, sep = ":"))
+            variance <- variance_df[match(rownames(weights_matrix_subset), variance_df$variants), "variance"]
+            results[[gene]][["weights_qced"]][[context]] <- weights_matrix_subset * sqrt(variance)
+          } else {
+            results[[gene]][["weights_qced"]][[context]] <- weights_matrix_subset
+          }
+        }
+        # Combine gwas sumstat across different context for a single context group based on all variants included in this gene/region
+        gwas_data_sumstats$variant_id <- paste0("chr", gwas_data_sumstats$variant_id)
+        gwas_data_sumstats <- gwas_data_sumstats[gwas_data_sumstats$variant_id %in% unique(unlist(results[[gene]][["variant_names"]])), ,drop=FALSE]
+        results[[gene]][["gwas_qced"]][[study]] <- rbind(results[[gene]][["gwas_qced"]][[study]], gwas_data_sumstats)
+        results[[gene]][["gwas_qced"]][[study]] <- results[[gene]][["gwas_qced"]][[study]][!duplicated(results[[gene]][["gwas_qced"]][[study]][, c("variant_id", "z")]), ]
+      }
+    }
+    # extract LD matrix for variants intersect with gwas and twas weights at gene level
+    all_gene_variants <- unique(find_data(results[[gene]][["gwas_qced"]], c(2, "variant_id")))
+    var_indx <- match(all_gene_variants, paste0("chr", LD_list$combined_LD_variants))
+    results[[gene]][["LD"]] <- LD_list$combined_LD_matrix[var_indx, var_indx]
+    rownames(results[[gene]][["LD"]]) <- colnames(results[[gene]][["LD"]]) <- paste0("chr", colnames(results[[gene]][["LD"]]))
+  }
+  # return results
+  return(results)
+}

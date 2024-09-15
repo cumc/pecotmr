@@ -249,6 +249,82 @@ get_nested_element <- function(nested_list, name_vector) {
   return(current_element)
 }
 
+
+
+#' Utility function to specify the path to access the target list item in a nested list, especially when some list layers
+#' in between are dynamic or uncertain.
+#' @export
+find_data <- function(x, depth_obj, show_path = FALSE, rm_null = TRUE, rm_dup = FALSE, docall = c) {
+  depth <- as.integer(depth_obj[1])
+  list_name <- if (length(depth_obj) > 1) depth_obj[2:length(depth_obj)] else NULL
+  if (depth == 1 | depth == 0) {
+    if (!is.null(list_name)) {
+      if (list_name[1] %in% names(x)) {
+        return(get_nested_element(x, list_name))
+      }
+    } else {
+      return(x)
+    }
+  } else if (is.list(x)) {
+    result <- lapply(x, find_data,
+      depth_obj = c(depth - 1, list_name), show_path = show_path,
+      rm_null = rm_null, rm_dup = rm_dup
+    )
+    shared_list_names <- list()
+    if (isTRUE(rm_null)) {
+      result <- result[!sapply(result, is.null)]
+      result <- result[!sapply(result, function(x) length(x) == 0)]
+    }
+    if (isTRUE(rm_dup)) {
+      unique_result <- list()
+      unique_counter <- 1
+      for (i in seq_along(result)) {
+        duplicate_found <- FALSE
+        for (j in seq_along(unique_result)) {
+          if (identical(result[[i]], unique_result[[j]])) {
+            duplicate_found <- TRUE
+            shared_list_names[[paste0("unique_list_", j)]] <- c(shared_list_names[[paste0("unique_list_", j)]], names(result)[i])
+            break
+          }
+        }
+        if (!duplicate_found) {
+          unique_name <- paste0("unique_list_", unique_counter)
+          unique_result[[names(result)[i]]] <- result[[i]]
+          shared_list_names[[unique_name]] <- names(result)[i]
+          unique_counter <- unique_counter + 1
+        }
+      }
+      result <- unique_result
+    }
+
+    if (isTRUE(show_path)) {
+      if (length(shared_list_names) > 0 & depth == 2) result$shared_list_names <- shared_list_names
+      return(result) # Carry original list structure
+    } else {
+      flat_result <- do.call(docall, unname(result))
+      if (length(shared_list_names) > 0 & depth == 2) {
+        names(result) <- paste0("unique_list_", 1:length(result))
+        result$shared_list_names <- shared_list_names
+        return(result)
+      } else {
+        return(flat_result) # Only return values
+      }
+    }
+  } else {
+    stop("Please input correct depth number. ")
+  }
+}
+
+#' Utility function to convert LD region_ids to `region of interest` dataframe
+#' @param ld_region_id A string of region in the format of chrom_start_end.
+#' @importFrom data.table fread
+#' @export
+region_to_df <- function(ld_region_id, colnames = c("chrom", "start", "end")) {
+  region_of_interest <- as.data.frame(do.call(rbind, lapply(strsplit(ld_region_id, "[_:-]"), function(x) as.integer(sub("chr", "", x)))))
+  colnames(region_of_interest) <- colnames
+  return(region_of_interest)
+}
+
 thisFile <- function() {
   cmdArgs <- commandArgs(trailingOnly = FALSE)
   needle <- "--file="
