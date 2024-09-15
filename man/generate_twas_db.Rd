@@ -21,24 +21,25 @@ for complex trait weighted analysis with sparse weight.}
 generate_twas_db(
   weight_db_file,
   contexts = NULL,
-  variable_name_obj = c("preset_variants_result", "variant_names"),
+  variable_name_obj = c("variant_names"),
+  susie_obj = "susie_weights_intermediate",
   twas_weights_table = "twas_weights",
-  max_var_selection,
   min_rsq_threshold = 0.01,
   p_val_cutoff = 0.05,
-  data_type_table = NULL
+  data_type_table = NULL,
+  region_name
 )
 }
 \arguments{
 \item{variable_name_obj}{Name of the element in SuSiE-TWAS output that lists variant names aligned with TWAS weights.}
-
-\item{max_var_selection}{Maximum number of SNPs to be selected from each gene-context pair.}
 
 \item{min_rsq_threshold}{Minimum \(R^2\) threshold for determining imputability of a gene-context pair.}
 
 \item{p_val_cutoff}{Maximum allowable p-value for a gene to be considered imputable in a given context.}
 
 \item{weight_db_files}{File paths to `.rds` files containing SuSiE-TWAS weights.}
+
+\item{max_var_selection}{Maximum number of SNPs to be selected from each gene-context pair.}
 }
 \value{
 A list of elements containing fine-mapping and TWAS related data:
@@ -57,6 +58,6 @@ Causal inference for TWAS with Summary Statistics with Multigroup Data
 \examples{
 results <- generate_twas_db(
   weight_db_file = "path/to/weights.rds", conditions = c("Mic", "Oli", "Exc"),
-  max_var_selection = 10, min_rsq_threshold = 0.01, p_val_cutoff = 0.05
+  min_rsq_threshold = 0.01, p_val_cutoff = 0.05
 )
 }

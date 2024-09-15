@@ -2,11 +2,11 @@
 % Please edit documentation in R/ctwas_wrapper.R
 \name{twas_weights_loader}
 \alias{twas_weights_loader}
-\title{Data Loader Function to load twas weights and variant names from output of `load_twas_weights` function.}
+\title{Data Loader Function to load twas weights and variant names from output of `generate_twas_db` function.}
 \description{
-Data Loader Function to load twas weights and variant names from output of `load_twas_weights` function.
+Data Loader Function to load twas weights and variant names from output of `generate_twas_db` function.
 
-Data Loader Function to load twas weights and variant names from output of `load_twas_weights` function.
+Data Loader Function to load twas weights and variant names from output of `generate_twas_db` function.
 }
 \section{Methods}{
 \subsection{Public methods}{
@@ -27,13 +27,18 @@ Data Loader Function to load twas weights and variant names from output of `load
 \if{latex}{\out{\hypertarget{method-twas_weights_loader-new}{}}}
 \subsection{Method \code{new()}}{
 \subsection{Usage}{
-\if{html}{\out{<div class="r">}}\preformatted{twas_weights_loader$new(twas_weights_data)}\if{html}{\out{</div>}}
+\if{html}{\out{<div class="r">}}\preformatted{twas_weights_loader$new(
+  twas_weights_data,
+  variable_name_obj = "variant_names",
+  susie_obj = "susie_weights",
+  twas_weights_table = "twas_weights"
+)}\if{html}{\out{</div>}}
 }
 
 \subsection{Arguments}{
 \if{html}{\out{<div class="arguments">}}
 \describe{
-\item{\code{twas_weights_data}}{twas weights data generated from `load_twas_weights`}
+\item{\code{twas_weights_data}}{twas weights data generated from `generate_twas_db`}
 }
 \if{html}{\out{</div>}}
 }

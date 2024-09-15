@@ -215,6 +215,11 @@ twas_weights_pipeline <- function(X,
       num_threads = cv_threads,
       variants_to_keep = if (length(variants_for_cv) > 0) variants_for_cv else NULL
     )
+    res$susie_weights_intermediate <- susie_fit[c("mu", "lbf_variable", "sets", "X_column_scale_factors")]
+    if (!is.null(res$susie_weights_intermediate$sets$cs)){
+      res$susie_weights_intermediate$sets$cs <- lapply(res$susie_weights_intermediate$sets$cs,function(L) colnames(X)[L])
+      res$susie_weights_intermediate$sets <- res$susie_weights_intermediate$sets["cs"]
+    }
   }
   res$total_time_elapsed <- proc.time() - st
 

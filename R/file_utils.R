@@ -593,7 +593,7 @@ load_twas_weights <- function(weight_db_files, conditions = NULL,
   ## Internal function to load and validate data from RDS files
   load_and_validate_data <- function(weight_db_files, conditions, variable_name_obj) {
     all_data <- do.call(c, lapply(unname(weight_db_files), function(rds_file) {
-      db <- if(length(na.omit(rds_file))>1) add_finemap_result(rds_file[1], rds_file[2])  else readRDS(rds_file[1])
+      db <- readRDS(rds_file)
       gene <- names(db)
       if (any(unique(names(find_data(db, c(3, "twas_weights")))) %in% c('mrmash_weights','mvsusie_weights'))) {
         names(db[[1]]) <- clean_context_names(names(db[[1]]), gene=gene)
@@ -608,15 +608,16 @@ load_twas_weights <- function(weight_db_files, conditions = NULL,
       }
       return(db)
     }))
-    # Check if region from all RDS files are the same
-    gene <- unique(names(all_data)[!names(all_data) %in% 'mnm_rs'])
+    
     # Combine the lists with the same region name
+    gene <- unique(names(all_data)[!names(all_data) %in% 'mnm_rs'])
+    if (length(gene)>1) stop ("More than one region of twas weights data provided. ")
     combined_all_data <- lapply(split(all_data, names(all_data)), function(lst) {
       if(length(lst) >1){
         lst <- do.call(c, unname(lst))
       }
         if (isTRUE(names(lst) == "mnm_rs"))lst <- lst[[1]]
-        if ( gene %in% names(lst[[1]]) ) lst[[1]] <- do.call(c, lapply(unname(lst[[1]]), function(x)x))
+        if ( gene %in% names(lst) ) lst <- do.call(c, lapply(unname(lst), function(x)x))
         return(lst)
     })
     
@@ -654,55 +655,17 @@ load_twas_weights <- function(weight_db_files, conditions = NULL,
     }
     return(combined_all_data)
   }
-  # Only extract the variant_names and SuSiE results
-  extract_variants_and_susie_results <- function(combined_all_data, conditions) {
-    # skip conditions do not have susie results available.
-    conditions <- conditions[sapply(conditions, function(cond) {
-      tryCatch(
-        {
-          !is.null(get_nested_element(combined_all_data, c(cond, susie_obj)))
-        },
-        error = function(e) {
-          FALSE
-        }
-      )
-    })]
-    combined_susie_result <- lapply(conditions, function(condition) {
-      result <- list(
-        variant_names = get_nested_element(combined_all_data, c(condition, variable_name_obj)),
-        susie_result = get_nested_element(combined_all_data, c(condition, susie_obj))
-      )
-      if ("top_loci" %in% names(get_nested_element(combined_all_data, c(condition, "preset_variants_result")))) {
-        result$top_loci <- combined_all_data[[condition]]$preset_variants_result$top_loci
-      }
-      if ("target" %in% names(combined_all_data[[condition]])) {
-        result$target <- get_nested_element(combined_all_data, c(condition, "target"))
-      }
-      if ("region_info" %in% names(combined_all_data[[condition]])) {
-        result$region_info <- get_nested_element(combined_all_data, c(condition, "region_info"))
-      }
-      return(result)
-    })
-    names(combined_susie_result) <- conditions
-    return(combined_susie_result)
-  }
+
   # Internal function to align and merge weight matrices
   align_and_merge <- function(weights_list, variable_objs) {
+    all_variants <- unique(unlist(variable_objs))
     consolidated_list <- list()
     # Fill the matrix with weights, aligning by variant names
     for (i in seq_along(weights_list)) {
-      # get conditon specific variant names
-      all_variants <- unique(unlist(variable_objs[[i]]))
       # Initialize the temp matrix with zeros
       existing_colnames <- character(0)
       temp_matrix <- matrix(0, nrow = length(all_variants), ncol = ncol(weights_list[[i]]))
       rownames(temp_matrix) <- all_variants
-      if (!length(all_variants) == nrow(weights_list[[i]])) {
-        stop(paste0(
-          "Variant number mismatch in twas weights: ", nrow(weights_list[[i]]), " and variant number in susie result: ", length(all_variants),
-          " for context ", names(weights_list)[i], ". "
-        ))
-      }
       idx <- match(variable_objs[[i]], all_variants)
       temp_matrix[idx, ] <- weights_list[[i]]
       # Ensure no duplicate column names
@@ -743,32 +706,20 @@ load_twas_weights <- function(weight_db_files, conditions = NULL,
       })
       weights <- align_and_merge(combined_weights_by_condition, variable_objs)
     }
-    weight_variants <- lapply(weights, function(x) rownames(x))
-    common_variants <- Reduce(intersect, weight_variants)
-    weights <- lapply(weights, function(x) x[common_variants,, drop=FALSE])
     names(weights) <- conditions
     return(weights)
   }
-  add_finemap_result <- function(weight_file, finemap_file){
-    db <- readRDS(weight_file)
-    finm <- readRDS(finemap_file)
-    for (gene in names(db)){
-      for (context in names(db[[gene]])){
-        db[[gene]][[context]] <- c(finm[[gene]][[context]][!names(finm[[gene]][[context]]) %in%  "variant_names"],db[[gene]][[context]])
-      }
-    }
-  return(db)
- }
 
   ## Load, validate, and consolidate data
   try(
     {
       combined_all_data <- load_and_validate_data(weight_db_files, conditions, variable_name_obj)
+      if(is.null(combined_all_data)) return(NULL)
       # update condition in case of merging rds files
       conditions <- names(combined_all_data)
-      combined_susie_result <- extract_variants_and_susie_results(combined_all_data, conditions)
-      conditions <- names(combined_susie_result)
       weights <- consolidate_weights_list(combined_all_data, conditions, variable_name_obj, twas_weights_table)
+      combined_susie_result <- lapply(combined_all_data, function(context) context$susie_weights_intermediate)
+      conditions <- names(combined_susie_result)
       performance_tables <- lapply(conditions, function(condition) {
         get_nested_element(combined_all_data, c(condition, "twas_cv_result", "performance"))
       })
