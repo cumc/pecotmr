@@ -447,7 +447,8 @@ twas_weights_pipeline <- function(X,
     weight_methods$susie_weights <- list(susie_fit = susie_fit)
     res$susie_weights_intermediate <- susie_fit[c("mu", "lbf_variable", "X_column_scale_factors")]
     if (!is.null(susie_fit$sets$cs)) {
-      res$susie_weights_intermediate$cs_variants <- lapply(susie_fit$sets$cs, function(L) colnames(X)[L])
+      res$susie_weights_intermediate$cs_variants <- setNames(lapply(susie_fit$sets$cs, function(L) colnames(X)[L]), names(susie_fit$sets$cs))
+      res$susie_weights_intermediate$cs_purity <- susie_fit$sets$purity                                                           
     }
   }
   res$twas_weights <- twas_weights(X, y, weight_methods = weight_methods)
