@@ -658,37 +658,25 @@ load_twas_weights <- function(weight_db_files, conditions = NULL,
 
   # Internal function to align and merge weight matrices
   align_and_merge <- function(weights_list, variable_objs) {
-    all_variants <- unique(unlist(variable_objs))
-    consolidated_list <- list()
-    # Fill the matrix with weights, aligning by variant names
-    for (i in seq_along(weights_list)) {
-      # Initialize the temp matrix with zeros
-      existing_colnames <- character(0)
-      temp_matrix <- matrix(0, nrow = length(all_variants), ncol = ncol(weights_list[[i]]))
-      rownames(temp_matrix) <- all_variants
-      idx <- match(variable_objs[[i]], all_variants)
-      temp_matrix[idx, ] <- weights_list[[i]]
-      # Ensure no duplicate column names
-      new_colnames <- colnames(weights_list[[i]])
-      dups <- duplicated(c(existing_colnames, new_colnames))
-      if (any(dups)) {
-        duplicated_names <- paste(c(existing_colnames, new_colnames)[dups], collapse = ", ")
-        stop("Duplicate column names detected during merging process: ", duplicated_names, ".")
-      }
-      existing_colnames <- c(existing_colnames, new_colnames)
-
-      # consolidated_list[[i]] <- matrix(as.numeric(temp_matrix), nrow = nrow(temp_matrix), byrow = TRUE)
-      consolidated_list[[i]] <- temp_matrix
-      colnames(consolidated_list[[i]]) <- existing_colnames
+    if (length(weights_list) != length(variable_objs)) {
+      stop("The length of the weights_list and variable_objs must be the same.")
     }
-    return(consolidated_list)
+    # Loop through each weight matrix and assign variant names as rownames
+    for (i in seq_along(weights_list)) {
+      # Ensure dimensions match
+      if (nrow(weights_list[[i]]) != length(variable_objs[[i]])) {
+        stop(paste("Number of rows in weights_list[[", i, "]] does not match the length of variable_objs[[", i, "]]", sep = ""))
+      }
+      # Apply variant names to the row names of the weight matrix
+      rownames(weights_list[[i]]) <- variable_objs[[i]]
+    }
+    return(weights_list)
   }
 
   # Internal function to consolidate weights for given condition
   consolidate_weights_list <- function(combined_all_data, conditions, variable_name_obj, twas_weights_table) {
     combined_weights_by_condition <- lapply(conditions, function(condition) {
       temp_list <- get_nested_element(combined_all_data, c(condition, twas_weights_table))
-      temp_list <- temp_list[!names(temp_list) %in% "variant_names"]
       sapply(temp_list, cbind)
     })
     names(combined_weights_by_condition) <- conditions
@@ -720,8 +708,7 @@ load_twas_weights <- function(weight_db_files, conditions = NULL,
       # update condition in case of merging rds files
       conditions <- names(combined_all_data)
       weights <- consolidate_weights_list(combined_all_data, conditions, variable_name_obj, twas_weights_table)
-      combined_susie_result <- lapply(combined_all_data, function(context) context$susie_weights_intermediate)
-      conditions <- names(combined_susie_result)
+      combined_susie_result <- lapply(combined_all_data, function(context) get_nested_element(context, susie_obj))
       performance_tables <- lapply(conditions, function(condition) {
         get_nested_element(combined_all_data, c(condition, "twas_cv_result", "performance"))
       })
@@ -743,8 +730,8 @@ twas_weights_loader <- R6Class("twas_weights_loader",
     twas_weights_table = NULL,
     susie_obj = NULL,
     variable_name_obj = NULL,
-    initialize = function(twas_weights_data, variable_name_obj = "variant_names", susie_obj = "susie_weights",
-                          twas_weights_table = "twas_weights") {
+    initialize = function(twas_weights_data, variable_name_obj = "variant_names", susie_obj = "susie_weights_intermediate",
+                          twas_weights_table = "weights") {
       self$data <- twas_weights_data # This is the output from generate_twas_db()
       self$twas_weights_table <- twas_weights_table # Store the twas_weights_table name
       self$susie_obj <- susie_obj # Store the susie_obj name
@@ -785,21 +772,26 @@ twas_weights_loader <- R6Class("twas_weights_loader",
 #' Data Loader Function to load top model's twas weights and variant from export_twas_weights_db generated from `generate_twas_db` function.
 #' @importFrom R6 R6Class
 #' @export
-refined_twas_weights_loader <- R6Class("refined_twas_weights_loader",
+export_twas_weights_loader <- R6Class("export_twas_weights_loader",
   public = list(
     data = NULL,
+    twas_weights_table = NULL,
+    susie_obj = NULL,
+    variable_name_obj = NULL,
     #' @param twas_weights_data Data from `generate_twas_db`
-    initialize = function(twas_weights_data) {
+    initialize = function(twas_weights_data, variable_name_obj = "variant_names", susie_obj = "susie_weights_intermediate",
+                          twas_weights_table = "model_weights") {
       self$data <- twas_weights_data # This is the output from load_twas_weights()
+      self$twas_weights_table <- twas_weights_table # Store the twas_weights_table name
+      self$susie_obj <- susie_obj # Store the susie_obj name
+      self$variable_name_obj <- variable_name_obj # Store the variable_name_obj name
     },
     get_weights = function(gene_data) {
       weights <- lapply(names(gene_data), function(context) {
         if (isTRUE(gene_data[[context]]$is_imputable)) {
-          weight <- gene_data[[context]]$selected_model_weights
-          weight <- matrix(weight, ncol = 1, dimnames = list(
-            names(gene_data[[context]]$selected_model_weights),
-            paste0(gene_data[[context]]$selected_model, "_weights")
-          ))
+          weight <- matrix(get_nested_element(gene_data[[context]], self$twas_weights_table), 
+                         ncol = 1, dimnames = list(names(get_nested_element(gene_data[[context]], self$twas_weights_table)),
+                         paste0(gene_data[[context]]$selected_model, "_weights")))
           return(weight)
         }
       })
@@ -808,16 +800,14 @@ refined_twas_weights_loader <- R6Class("refined_twas_weights_loader",
     },
     get_susie_obj = function(gene_data) {
       susie_list <- lapply(names(gene_data), function(context) {
-        if (isTRUE(gene_data[[context]]$selected_model == "susie")) {
-          return(gene_data[[context]]$susie_parameters)
-        }
+        get_nested_element(gene_data[[context]], self$susie_obj)
       })
       names(susie_list) <- names(gene_data)
       return(susie_list)
     },
     get_variant_names = function(gene_data) {
       return(lapply(gene_data, function(context_data) {
-        context_data$selected_top_variants
+        get_nested_element(context_data, self$variable_name_obj)
       }))
     },
     get_gene_name = function() {

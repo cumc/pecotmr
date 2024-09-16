@@ -93,13 +93,7 @@ generate_twas_db <- function(weight_db_file, contexts = NULL, variable_name_obj 
     twas_weights_table = twas_weights_table
   )
   if (!"weights" %in% names(twas_data_combined)) stop("TWAS weights not loaded. ")
-  weights <- setNames(
-    lapply(
-      names(twas_data_combined$weights),
-      function(context) twas_data_combined$weights[[context]][names(twas_data_combined$susie_results[[context]]$X_column_scale_factors), , drop = FALSE]
-    ),
-    names(twas_data_combined$weights)
-  )
+  weights <- twas_data_combined$weights
   if (is.null(contexts)) contexts <- names(weights)
 
   ## we first select best model, determine imputable contexts, then select variants based on susie obj output
@@ -124,7 +118,7 @@ generate_twas_db <- function(weight_db_file, contexts = NULL, variable_name_obj 
       export_twas_weights_db[[context]][["selected_model"]] <- model_selection[[context]][["selected_model"]]
       export_twas_weights_db[[context]][["susie_weights_intermediate"]] <- twas_data_combined$susie_result[[context]]
       if (model_selection[[context]]$imputable) {
-        export_twas_weights_db[[context]][["model_weights"]] <- weights[[context]][, paste0(model_selection[[context]][["selected_model"]], "_weights"), drop = FALSE]
+        export_twas_weights_db[[context]][["model_weights"]] <- weights[[context]][, paste0(model_selection[[context]][["selected_model"]], "_weights")]
       } else {
         export_twas_weights_db[[context]][["model_weights"]] <- rep(NA, length(rownames(weights[[context]])))
       }
@@ -171,7 +165,7 @@ generate_twas_db <- function(weight_db_file, contexts = NULL, variable_name_obj 
 #' @importFrom S4Vectors queryHits subjectHits
 #' @importFrom IRanges IRanges findOverlaps start end reduce
 #' @export
-harmonize_twas <- function(twas_weights_data, ld_meta_file_path, gwas_meta_file, twas_data_loader, scale_weights = FALSE) {
+harmonize_twas <- function(twas_weights_data, ld_meta_file_path, gwas_meta_file, twas_data_loader) {
   # Function to group contexts based on start and end positions
   group_contexts_by_region <- function(twas_weights_data, gene, chrom, tolerance = 5000) {
     region_info_df <- do.call(rbind, lapply(names(twas_weights_data[[gene]]$variant_names), function(context) {
@@ -256,10 +250,7 @@ harmonize_twas <- function(twas_weights_data, ld_meta_file_path, gwas_meta_file,
   }
 
   # Step 1: load TWAS weights data
-  loader <- twas_data_loader$new(twas_weights_data,
-    variable_name_obj = "variant_names", susie_obj = "susie_weights_intermediate",
-    twas_weights_table = "weights"
-  )
+  loader <- twas_data_loader$new(twas_weights_data)
   twas_weights_data <- loader$get_data()
   genes <- names(twas_weights_data)
   chrom <- as.integer(twas_weights_data[[1]]$chrom)
@@ -343,18 +334,16 @@ harmonize_twas <- function(twas_weights_data, ld_meta_file_path, gwas_meta_file,
               weights_matrix_subset[gsub("chr", "", adjusted_susie_weights$remained_variants_ids), !colnames(weights_matrix_subset) %in% "susie_weights"]
             )
           }
+          rownames(weights_matrix_subset) <- if (!grepl("^chr", rownames(weights_matrix_subset)[1])) paste0("chr", rownames(weights_matrix_subset)) else rownames(weights_matrix_subset)
           results[[gene]][["variant_names"]][[context]] <- rownames(weights_matrix_subset)
 
           # Step 6: scale weights by variance
-          if (isTRUE(scale_weights)) {
-            variance_df <- query_variance(ld_meta_file_path, chrom, query_region, all_variants) %>%
-              mutate(variants = paste(chrom, pos, A2, A1, sep = ":"))
-            variance <- variance_df[match(rownames(weights_matrix_subset), variance_df$variants), "variance"]
-            results[[gene]][["weights_qced"]][[context]] <- weights_matrix_subset * sqrt(variance)
-          } else {
-            results[[gene]][["weights_qced"]][[context]] <- weights_matrix_subset
-          }
+          variance_df <- query_variance(ld_meta_file_path, chrom, query_region, all_variants) %>%
+            mutate(variants = paste(chrom, pos, A2, A1, sep = ":"))
+          variance <- variance_df[match(rownames(weights_matrix_subset), paste0("chr", variance_df$variants)), "variance"]
+          results[[gene]][["weights_qced"]][[context]] <- list(scaled_weights=weights_matrix_subset * sqrt(variance), weights=weights_matrix_subset)
         }
+
         # Combine gwas sumstat across different context for a single context group based on all variants included in this gene/region
         gwas_data_sumstats$variant_id <- paste0("chr", gwas_data_sumstats$variant_id)
         gwas_data_sumstats <- gwas_data_sumstats[gwas_data_sumstats$variant_id %in% unique(unlist(results[[gene]][["variant_names"]])), , drop = FALSE]
