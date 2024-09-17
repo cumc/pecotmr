@@ -14,8 +14,9 @@ get_ctwas_meta_data <- function(ld_meta_data_file, regions_table) {
   LD_info <- fread(ld_meta_data_file, header = TRUE, data.table = FALSE)
   colnames(LD_info)[1] <- "chrom"
   LD_info$region_id <- gsub("chr", "", paste(LD_info$chrom, LD_info$start, LD_info$end, sep = "_"))
-  LD_info$LD_matrix <- paste0(dirname(ld_meta_data_file), "/", gsub(",.*$", "", LD_info$path))
-  LD_info <- LD_info[, c("region_id", "LD_matrix")]
+  LD_info$LD_file <- paste0(dirname(ld_meta_data_file), "/", gsub(",.*$", "", LD_info$path))
+  LD_info$SNP_file <- paste0(dirname(ld_meta_data_file), "/", gsub(",.*$", "", LD_info$path), ".bim")
+  LD_info <- LD_info[, c("region_id", "LD_file", "SNP_file")]
   region_info <- read.table(regions_table, sep = "\t", header = TRUE) # to get exact LD bim file without over-including neighboring LD's info.
   colnames(region_info)[1] <- "chrom"
   region_info$chrom <- as.integer(gsub("chr", "", region_info$chrom))
@@ -26,7 +27,10 @@ get_ctwas_meta_data <- function(ld_meta_data_file, regions_table) {
 
 #' Function to extract information from harmonize_twas output as cTWAS input. For each imputable context within a gene, 
 #' we select strong variants based on cs set and pip value.  
-get_ctwas_input <- function(post_qc_data, twas_weights_data, LD_meta_file_path, cs_min_cor=0.8, min_pip_cutoff=0.1, min_var_selection=10){
+#' required ctwas package: remotes::install_github("xinhe-lab/ctwas",ref = "multigroup")
+#' @importFrom ctwas compute_weight_LD_from_ref 
+get_ctwas_input <- function(post_qc_data, twas_weights_data, LD_meta_file_path, cs_min_cor=0.8, min_pip_cutoff=0.1, 
+                      min_var_selection=10, region_info=NULL, LD_info = NULL){
   # select variants based on cs and size of scaled weights
   select_variants <- function(post_qc_data, max_var_selection, twas_weights_data, cs_min_cor, min_pip_cutoff, min_var_selection){
     variant_names_list <- find_data(post_qc_data, c(2, "variant_names"))
@@ -113,6 +117,13 @@ get_ctwas_input <- function(post_qc_data, twas_weights_data, LD_meta_file_path, 
         )
       }
     }
+    # weights_list <- compute_weight_LD_from_ref(weights_list,
+    #                                       weight_name=NULL,
+    #                                       region_info = region_info,
+    #                                       LD_map = LD_info,
+    #                                       LD_format="custom", 
+    #                                       LD_loader_fun = ctwas_ld_loader,
+    #                                       ncore = 1)
     return(weights_list)
   }
   # select variants
