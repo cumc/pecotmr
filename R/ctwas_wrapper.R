@@ -24,47 +24,45 @@ get_ctwas_meta_data <- function(ld_meta_data_file, regions_table) {
 }
 
 
-#' Function to extract information from harmonize_twas output as cTWAS input. For each context within a gene, 
-#' we select strong variants based on cs set and scaled weights size for the best TWAS weight method. 
-#' 
-get_ctwas_input <- function(post_qc_data, twas_weights_data, max_var_selection, LD_meta_file_path){
+#' Function to extract information from harmonize_twas output as cTWAS input. For each imputable context within a gene, 
+#' we select strong variants based on cs set and pip value.  
+get_ctwas_input <- function(post_qc_data, twas_weights_data, LD_meta_file_path, cs_min_cor=0.8, min_pip_cutoff=0.1, min_var_selection=10){
   # select variants based on cs and size of scaled weights
-  select_variants <- function(post_qc_data, max_var_selection, twas_weights_data){
+  select_variants <- function(post_qc_data, max_var_selection, twas_weights_data, cs_min_cor, min_pip_cutoff, min_var_selection){
     variant_names_list <- find_data(post_qc_data, c(2, "variant_names"))
     contexts <- names(variant_names_list)
     selected_variants_by_context <- list()
     for (context in contexts){
-      scaled_weights <- post_qc_data[[1]][["weights_qced"]][[context]][["scaled_weights"]][,1]
-      if (is.null(names(scaled_weights))) names(scaled_weights) <- post_qc_data[[1]][["variant_names"]][[context]]
-      if ("cs_variants" %in% names(find_data(twas_weights_data, c(3, context,"susie_weights_intermediate")))){
-        cs_variant_list <- setNames(find_data(twas_weights_data, c(3, context,"susie_weights_intermediate", "cs_variants")), NULL)
+      if (find_data(twas_weights_data, c(3, context, "is_imputable"))){
         LD_ref_variants <- colnames(post_qc_data[[1]][["LD"]])
-        cs_variant_list <- lapply(cs_variant_list, function(L){
-          cs_variant_qced <- allele_qc(L, LD_ref_variants, L, match_min_prop = 0)
-          paste0("chr", cs_variant_qced$target_data_qced$variant_id)
-        })
-        if (length(unlist(cs_variant_list))<= max_var_selection) {
-          selected_variants_by_context[[context]] <- unlist(cs_variant_list)
-          remain_var_num <- max_var_selection-length(selected_variants_by_context[[context]])
-          if (remain_var_num > 0) {
-            # when cs set do not provide enough variants to fill up max_var_selection number, we select remaining variants outside of cs 
-            selected_variants_by_context[[context]] <- c(selected_variants_by_context[[context]], 
-                names(scaled_weights[order(-abs(scaled_weights))])[!names(scaled_weights[order(-abs(scaled_weights))]) %in% selected_variants_by_context[[context]]][1:remain_var_num])
+        scaled_weights <- post_qc_data[[1]][["weights_qced"]][[context]][["scaled_weights"]][,1]
+        if (is.null(names(scaled_weights))) names(scaled_weights) <- post_qc_data[[1]][["variant_names"]][[context]]
+        if ("cs_variants" %in% names(find_data(twas_weights_data, c(3, context,"susie_weights_intermediate")))){
+          cs_min_abs_cor <- find_data(twas_weights_data, c(3, context,"susie_weights_intermediate", "cs_purity", "min.abs.corr"))
+          for (L in 1:length(find_data(twas_weights_data, c(3, context,"susie_weights_intermediate","cs_variants")))){
+            # we includ all variants in $cs_variant if min_abs_corr > cs_min_cor for the set 
+            if (cs_min_abs_cor[L]>=cs_min_cor){
+              cs_variants <-  find_data(twas_weights_data, c(3, context,"susie_weights_intermediate", "cs_variants"))[[L]]
+              cs_variant_qced <- allele_qc(cs_variants, LD_ref_variants, cs_variants, match_min_prop = 0)
+              selected_variants_by_context[[context]] <- paste0("chr", cs_variant_qced$target_data_qced$variant_id)
+            }
           }
-        } else {
-          # when cs set provides greater number of variants, we select top weight variants within cs variants
-          top_weight_variants <- names(scaled_weights[order(-abs(scaled_weights))])
-          selected_variants_by_context[[context]] <- top_weight_variants[top_weight_variants %in% unlist(cs_variant_list)][1:max_var_selection]
         }
-      } else {
-        # no cs variants present, we select variants based on scaled weight size 
-        selected_variants_by_context[[context]] <- names(scaled_weights[order(-abs(scaled_weights))])[1:max_var_selection]
+        context_pip <- find_data(twas_weights_data, c(3, context, "susie_weights_intermediate", "pip"))
+        susie_variants_qced <- allele_qc(names(context_pip), LD_ref_variants, names(context_pip), match_min_prop = 0)
+        names(context_pip) <- paste0("chr",susie_variants_qced$target_data_qced$variant_id)
+        available_variants <- names(context_pip[context_pip> min_pip_cutoff])[names(context_pip[context_pip> min_pip_cutoff]) %in% names(scaled_weights)]
+        selected_variants_by_context[[context]] <- c(selected_variants_by_context[[context]], setdiff(available_variants, selected_variants_by_context[[context]]))
+        if (length(selected_variants_by_context[[context]])< min_var_selection){
+          remaining_var_num <- min_var_selection-length(selected_variants_by_context[[context]])
+          selected_variants_by_context[[context]] <- c(selected_variants_by_context[[context]], 
+                      setdiff(names(context_pip[order(-context_pip)]), selected_variants_by_context[[context]])[1:remaining_var_num])
+        }
       }
     }
     return(selected_variants_by_context)
   }
-
-  get_ctwas_weights <- function(post_qc_twas_data, LD_meta_file_path, selected_variant_list) {
+  get_ctwas_weights <- function(post_qc_twas_data, selected_variant_list, twas_weights_data) {
     chrom <- unique(find_data(post_qc_twas_data, c(2, "chrom")))
     if (length(chrom) != 1) stop("Data provided contains more than one chromosome. ")
     genes <- names(post_qc_twas_data)
@@ -74,15 +72,39 @@ get_ctwas_input <- function(post_qc_data, twas_weights_data, max_var_selection, 
       contexts <- names(post_qc_twas_data[[gene]][["weights_qced"]])
       for (context in contexts) {
         data_type <- post_qc_twas_data[[gene]][["data_type"]][[context]]
-        colnames(post_qc_twas_data[[gene]][["weights_qced"]][[context]][["scaled_weights"]]) <- "weight"
+        postqc_scaled_weight <- post_qc_twas_data[[gene]][["weights_qced"]][[context]][["scaled_weights"]][selected_variant_list[[context]], ,drop=FALSE]
+        # adjust susie weights for selected number of weight variants 
+        if (colnames(post_qc_twas_data[[gene]][["weights_qced"]][[context]][["scaled_weights"]]) == "susie_weights"){
+          gene_data <- find_data(twas_weights_data, c(2, gene))
+          ld_variants <- colnames(post_qc_twas_data[[gene]][["LD"]])
+          pre_qc_variants <- gene_data[[context]][["variant_names"]]
+          qced_original_variants <- allele_qc(pre_qc_variants, ld_variants, pre_qc_variants, match_min_prop = 0)
+          idx_in_original_variants <- match(selected_variant_list[[context]], 
+                paste0("chr", qced_original_variants$qc_summary$variants_id_qced))
+          gene_data[[context]]$susie_weights_intermediate$mu <- gene_data[[context]]$susie_weights_intermediate$mu[, idx_in_original_variants, drop=FALSE]
+          gene_data[[context]]$susie_weights_intermediate$lbf_variable <- gene_data[[context]]$susie_weights_intermediate$lbf_variable[,idx_in_original_variants, drop=FALSE]
+          gene_data[[context]]$susie_weights_intermediate$X_column_scale_factors <- gene_data[[context]]$susie_weights_intermediate$X_column_scale_factors[idx_in_original_variants]
+          gene_data[[context]][["variant_names"]] <- selected_variant_list[[context]]
+          gene_data[[context]][["model_weights"]] <- postqc_scaled_weight
+          adjusted_susie_weights <- adjust_susie_weights(gene_data[[context]],
+              keep_variants = gene_data[[context]][["variant_names"]], allele_qc = TRUE,
+              variable_name_obj = c("variant_names"),
+              susie_obj = c("susie_weights_intermediate"),
+              twas_weights_table = c("model_weights"), ld_variants, match_min_prop = 0.001
+          )
+          postqc_scaled_weight <- matrix(adjusted_susie_weights$adjusted_susie_weights, ncol=1)
+          rownames(postqc_scaled_weight) <- paste0("chr", adjusted_susie_weights$remained_variants_ids)
+        }
+        colnames(postqc_scaled_weight) <- "weight"
         context_variants <- selected_variant_list[[context]]
         context_range <- sapply(context_variants, function(variant) as.integer(strsplit(variant, "\\:")[[1]][2]))
+
         weights_list[[paste0(gene, "|", data_type, "_", context)]] <- list(
           chrom = chrom,
           p0 = min(context_range),
           p1 = max(context_range),
-          wgt = post_qc_twas_data[[gene]][["weights_qced"]][[context]][["scaled_weights"]][selected_variant_list[[context]], ,drop=FALSE],
-          R_wgt = post_qc_twas_data[[gene]]$LD[context_variants, context_variants, drop = FALSE], # ld_list$combined_LD_matrix[context_variants, context_variants],
+          wgt = postqc_scaled_weight,
+          #R_wgt = post_qc_twas_data[[gene]]$LD[context_variants, context_variants, drop = FALSE], # ld_list$combined_LD_matrix[context_variants, context_variants],
           molecular_id = gene,
           weight_name = paste0(data_type, "_", context),
           type = data_type,
@@ -93,11 +115,12 @@ get_ctwas_input <- function(post_qc_data, twas_weights_data, max_var_selection, 
     }
     return(weights_list)
   }
-
-  selected_variant_list <- select_variants(post_qc_data, max_var_selection, twas_weights_data)
-  weights <- get_ctwas_weights(post_qc_data, LD_meta_file_path, selected_variant_list) # reshape weights for all gene-context pairs in the region for cTWAS analysis
+  # select variants
+  selected_variant_list <- select_variants(post_qc_data, max_var_selection, twas_weights_data, cs_min_cor, min_pip_cutoff, min_var_selection)
+  weights <- get_ctwas_weights(post_qc_data, selected_variant_list, twas_weights_data) # reshape weights for all gene-context pairs in the region for cTWAS analysis
   weights <- weights[!sapply(weights, is.null)]
-  # load LD variants  
+
+  # load LD variant names
   bim_file_paths <- unique(do.call(c, lapply(1:nrow(region_of_interest), function(region_row){
                         get_regional_ld_meta(LD_meta_file_path, region_of_interest[region_row,,drop=FALSE])$intersections$bim_file_paths})))
   snp_info <- lapply(bim_file_paths, function(file){
