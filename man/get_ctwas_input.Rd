@@ -2,17 +2,23 @@
 % Please edit documentation in R/ctwas_wrapper.R
 \name{get_ctwas_input}
 \alias{get_ctwas_input}
-\title{Function to extract information from harmonize_twas output as cTWAS input. For each context within a gene, 
-we select strong variants based on cs set and scaled weights size for the best TWAS weight method.}
+\title{Function to extract information from harmonize_twas output as cTWAS input. For each imputable context within a gene, 
+we select strong variants based on cs set and pip value.  
+required ctwas package: remotes::install_github("xinhe-lab/ctwas",ref = "multigroup")}
 \usage{
 get_ctwas_input(
   post_qc_data,
   twas_weights_data,
-  max_var_selection,
-  LD_meta_file_path
+  LD_meta_file_path,
+  cs_min_cor = 0.8,
+  min_pip_cutoff = 0.1,
+  min_var_selection = 10,
+  region_info = NULL,
+  LD_info = NULL
 )
 }
 \description{
-Function to extract information from harmonize_twas output as cTWAS input. For each context within a gene, 
-we select strong variants based on cs set and scaled weights size for the best TWAS weight method.
+Function to extract information from harmonize_twas output as cTWAS input. For each imputable context within a gene, 
+we select strong variants based on cs set and pip value.  
+required ctwas package: remotes::install_github("xinhe-lab/ctwas",ref = "multigroup")
 }
