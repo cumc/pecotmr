@@ -45,7 +45,8 @@ Suggests:
     rmarkdown,
     GBJ,
     harmonicmeanp,
-    plink2R
+    plink2R,
+    bigsnpr
 LinkingTo: 
     Rcpp,
     RcppArmadillo,
