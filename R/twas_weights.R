@@ -448,7 +448,7 @@ twas_weights_pipeline <- function(X,
     res$susie_weights_intermediate <- susie_fit[c("mu", "lbf_variable", "X_column_scale_factors", "pip")]
     if (!is.null(susie_fit$sets$cs)) {
       res$susie_weights_intermediate$cs_variants <- setNames(lapply(susie_fit$sets$cs, function(L) colnames(X)[L]), names(susie_fit$sets$cs))
-      res$susie_weights_intermediate$cs_purity <- susie_fit$sets$purity                                                           
+      res$susie_weights_intermediate$cs_purity <- susie_fit$sets$purity
     }
   }
   res$twas_weights <- twas_weights(X, y, weight_methods = weight_methods)
@@ -460,8 +460,8 @@ twas_weights_pipeline <- function(X,
     # 2. at most 100 iterations for mr.ash allowed
     # 3. only use a subset of variants randomly selected to avoid bias
     if (!is.null(susie_fit) && !is.null(weight_methods$susie_weights)) {
-        max_L <- length(susie_fit$V)
-        weight_methods$susie_weights <- list(refine = FALSE, init_L = max_L, max_L = max_L)
+      max_L <- length(susie_fit$V)
+      weight_methods$susie_weights <- list(refine = FALSE, init_L = max_L, max_L = max_L)
     }
     if (is.null(cv_weight_methods)) {
       cv_weight_methods <- weight_methods

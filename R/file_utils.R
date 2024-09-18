@@ -789,9 +789,12 @@ export_twas_weights_loader <- R6Class("export_twas_weights_loader",
     get_weights = function(gene_data) {
       weights <- lapply(names(gene_data), function(context) {
         if (isTRUE(gene_data[[context]]$is_imputable)) {
-          weight <- matrix(get_nested_element(gene_data[[context]], self$twas_weights_table), 
-                         ncol = 1, dimnames = list(names(get_nested_element(gene_data[[context]], self$twas_weights_table)),
-                         paste0(gene_data[[context]]$selected_model, "_weights")))
+          weight <- matrix(get_nested_element(gene_data[[context]], self$twas_weights_table),
+            ncol = 1, dimnames = list(
+              names(get_nested_element(gene_data[[context]], self$twas_weights_table)),
+              paste0(gene_data[[context]]$selected_model, "_weights")
+            )
+          )
           return(weight)
         }
       })
