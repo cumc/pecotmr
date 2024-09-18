@@ -9,13 +9,11 @@ harmonize_twas(
   twas_weights_data,
   ld_meta_file_path,
   gwas_meta_file,
-  twas_data_loader,
-  scale_weights = FALSE
+  twas_data_loader
 )
 }
 \arguments{
-\item{twas_weights_data}{List of list of twas weights output from twas pipeline with following list items, with was weights
-and variant name object specified by "variant_name_obj" and "twas_weights_table".}
+\item{twas_weights_data}{List of list of twas weights output from from generate_twas_db function.}
 
 \item{ld_meta_file_path}{A tab-delimited data frame with colname "#chrom", "start", "end", "path", where "path" column
 contains file paths for both LD matrix and bim file and is separated by ",". Bim file input would expect no headers, while the
@@ -25,7 +23,7 @@ columns are aligned in the order of "chrom", "variants", "GD", "pos", "A1", "A2"
 "column_mapping_file". Each file in "file_path" column is tab-delimited dataframe of GWAS summary statistics with column name
 "chrom" (or #chrom" if tabix-indexed), "pos", "A2", "A1".}
 
-\item{scale_weights}{TRUE/FALSE statement. If turn off, the post-qc/harmonized weights will not be scaled by SNP variance from LD.}
+\item{twas_data_loader}{A data loader class object that load twas weights data for the expected format to be qc/harmonized.}
 }
 \value{
 A list of list for harmonized weights and dataframe of gwas summary statistics that is add to the original input of
