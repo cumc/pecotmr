@@ -2,21 +2,7 @@
 % Please edit documentation in R/twas.R
 \name{generate_twas_db}
 \alias{generate_twas_db}
-\title{FIXME: cTWAS (causal-TWAS) wrapper
-Determine Imputability and Variant Selection
-
-This function load TWAS weights and assesses the imputability of genes across different contexts,
-and select top variants for imputable gene-context pair, and output the extracted variant weights
-from best performing method model. Imputability of a gene-context pair are determined by having
-least one of the twas methods' model being imputable based on cross livadtion metrics. The imputable
-model is if the model surpasses the r-square and p-value threashold from cross validation metrics.
-If non of the contexts of a gene has at least one method being imputable, then this gene will be
-considered as unimputable, and do not return any weight results. For imputable gene-context pair,
-we select a subset of variants with high Posterior Inclusion Probabilities (PIPs) from SuSiE
-fine-mapping results for the imputable gene-context pair. After selecting variants, we extracts
-variant weights from the best performing model among imputable models with highest r-square or
-smallest p-value from cross validation metrics. This function is essential for preparing data
-for complex trait weighted analysis with sparse weight.}
+\title{Determine Imputability and Variant Selection}
 \usage{
 generate_twas_db(
   weight_db_file,
@@ -53,7 +39,14 @@ weights for the selected variants across all contexts for a imputable gene. }
 }
 }
 \description{
-FIXME: Causal inference for TWAS with Summary Statistics with Multigroup Data
+This function load TWAS weights and assesses the imputability of genes across different contexts,
+and select top variants for imputable gene-context pair, and output the extracted variant weights
+from best performing method model. Imputability of a gene-context pair are determined by having
+least one of the twas methods' model being imputable based on cross livadtion metrics. The imputable
+model is if the model surpasses the r-square and p-value threashold from cross validation metrics.
+If non of the contexts of a gene has at least one method being imputable, then this gene will be
+considered as unimputable, and do not return any weight results. This function is essential for preparing data
+for complex trait weighted analysis with sparse weight.
 }
 \examples{
 results <- generate_twas_db(

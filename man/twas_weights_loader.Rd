@@ -30,8 +30,8 @@ Data Loader Function to load twas weights and variant names from output of `gene
 \if{html}{\out{<div class="r">}}\preformatted{twas_weights_loader$new(
   twas_weights_data,
   variable_name_obj = "variant_names",
-  susie_obj = "susie_weights",
-  twas_weights_table = "twas_weights"
+  susie_obj = "susie_weights_intermediate",
+  twas_weights_table = "weights"
 )}\if{html}{\out{</div>}}
 }
 
