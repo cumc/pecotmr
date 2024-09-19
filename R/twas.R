@@ -148,7 +148,6 @@ generate_twas_db <- function(weight_db_file, contexts = NULL, variable_name_obj 
 #' @param ld_meta_file_path A tab-delimited data frame with colname "#chrom", "start", "end", "path", where "path" column
 #' contains file paths for both LD matrix and bim file and is separated by ",". Bim file input would expect no headers, while the
 #' columns are aligned in the order of "chrom", "variants", "GD", "pos", "A1", "A2", "variance", "allele_freq", "n_nomiss".
-#' @param twas_data_loader A data loader class object that load twas weights data for the expected format to be qc/harmonized.
 #' @return A list of list for harmonized weights and dataframe of gwas summary statistics that is add to the original input of
 #' twas_weights_data under each context.
 #' @importFrom data.table fread
@@ -354,7 +353,6 @@ harmonize_twas <- function(twas_weights_data, ld_meta_file_path, gwas_meta_file)
 #' This function peforms TWAS analysis for multiple contexts for imputable genes within an LD region and summarize the twas results.
 #' @param twas_weights_data List of list of twas weights output from generate_twas_db function.
 #' @param region_block A string with informaiton of chromosome number, startind position, and ending position of LD block conneced with "_".
-#' @param twas_data_loader A data loader class object that load twas weights data for the expected format to be qc/harmonized.
 #' @return A list of list containing twas result table and formatted input data for ctwas_sumstats main function.
 #' \itemize{
 #'   \item{twas_table}{ A dataframe of twas results summary is generated for each gene-contexts-method pair of all methods for imputable genes.}
