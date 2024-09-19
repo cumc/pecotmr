@@ -2,32 +2,29 @@
 % Please edit documentation in R/twas.R
 \name{twas_pipeline}
 \alias{twas_pipeline}
-\title{Function to perform TWAS analysis for across multiple contexts. 
-This function peforms TWAS analysis for multiple contexts for imputable genes within an LD region and summarize the twas results.
-A dataframe of twas results summary is generated for each gene-contexts-method pair of all methods for imputable genes. 
-input returned.}
+\title{Function to perform TWAS analysis for across multiple contexts.
+This function peforms TWAS analysis for multiple contexts for imputable genes within an LD region and summarize the twas results.}
 \usage{
 twas_pipeline(
   twas_weights_data,
   ld_meta_file_path,
   gwas_meta_file,
-  twas_weights_loader,
-  region_block,
-  no_skip_twas = TRUE
+  region_block
 )
 }
 \arguments{
 \item{twas_weights_data}{List of list of twas weights output from generate_twas_db function.}
 
 \item{region_block}{A string with informaiton of chromosome number, startind position, and ending position of LD block conneced with "_".}
-
-\item{no_skip_twas}{TRUE/FALSE, if set to TRUE, twas analysis will be performed and twas results will be included in the twas result table.}
-
-\item{twas_data_loader}{A data loader class object that load twas weights data for the expected format to be qc/harmonized.}
+}
+\value{
+A list of list containing twas result table and formatted input data for ctwas_sumstats main function.
+\itemize{
+  \item{twas_table}{ A dataframe of twas results summary is generated for each gene-contexts-method pair of all methods for imputable genes.}
+  \item{ctwas_db}{ A list of list containing pre-processed input data for ctwas_sumstats function. }
+}
 }
 \description{
-Function to perform TWAS analysis for across multiple contexts. 
+Function to perform TWAS analysis for across multiple contexts.
 This function peforms TWAS analysis for multiple contexts for imputable genes within an LD region and summarize the twas results.
-A dataframe of twas results summary is generated for each gene-contexts-method pair of all methods for imputable genes. 
-input returned.
 }
