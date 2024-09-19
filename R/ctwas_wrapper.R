@@ -1,10 +1,19 @@
 #' Utility function to load LD in ctwas analyses, to interface with cTWAS package
 #' @param ld_matrix_file_path A string of file path to the LD matrix.
-#' @export
 ctwas_ld_loader <- function(ld_matrix_file_path) {
   ld_loaded <- process_LD_matrix(ld_matrix_file_path, paste0(ld_matrix_file_path, ".bim"))
   ld_loaded <- ld_loaded$LD_matrix
   return(ld_loaded)
+}
+#' @importFrom data.table fread
+ctwas_bimfile_loader <- function(ld_matrix_file_path) {
+  snp_info <- fread(paste0(ld_matrix_file_path, ".bim"))
+  if (ncol(snp_info) == 9) {
+    colnames(snp_info) <- c("chrom", "id", "GD", "pos", "alt", "ref", "variance", "allele_freq", "n_nomiss")
+  } else {
+    colnames(snp_info) <- c("chrom", "id", "GD", "pos", "alt", "ref")
+  }
+  return(snp_info)
 }
 
 #' Utility function to format meta data dataframe for cTWAS analyses
@@ -23,38 +32,97 @@ get_ctwas_meta_data <- function(ld_meta_data_file, regions_table) {
   return(list(LD_info = LD_info, region_info = region_info))
 }
 
-#' Function to generate weights_list from harmonized twas_weights_data for cTWAS multigroup analysis
-#'
-#' @param post_qc_twas_data output from harmonize_twas function for twas results
-#' @return A list of list for weight information for each gene-context pair.
-#' @export
-get_ctwas_weights <- function(post_qc_twas_data, LD_meta_file_path) {
-  chrom <- unique(find_data(post_qc_twas_data, c(2, "chrom")))
-  if (length(chrom) != 1) stop("Data provided contains more than one chromosome. ")
-  genes <- names(post_qc_twas_data)
-  # Compile weights_list
-  weights_list <- list()
-  for (gene in genes) {
-    contexts <- names(post_qc_twas_data[[gene]][["weights_qced"]])
-    for (context in contexts) {
-      standardized_context <- clean_context_names(context, gene)
-      data_type <- post_qc_twas_data[[gene]][["data_type"]][[context]]
-      colnames(post_qc_twas_data[[gene]][["weights_qced"]][[context]]) <- "weight"
-      context_variants <- post_qc_twas_data[[gene]][["variant_names"]][[context]]
-      context_range <- sapply(context_variants, function(variant) as.integer(strsplit(variant, "\\:")[[1]][2]))
-      weights_list[[paste0(gene, "|", data_type, "_", standardized_context)]] <- list(
-        chrom = chrom,
-        p0 = min(context_range),
-        p1 = max(context_range),
-        wgt = post_qc_twas_data[[gene]][["weights_qced"]][[context]],
-        R_wgt = post_qc_twas_data[[gene]]$LD[context_variants, context_variants, drop = FALSE], # ld_list$combined_LD_matrix[context_variants, context_variants],
-        gene_name = gene,
-        weight_name = paste0(data_type, "_", standardized_context),
-        type = data_type,
-        context = standardized_context,
-        n_wgt = length(context_variants)
-      )
+#' Function to extract information from harmonize_twas output as cTWAS input. For each imputable context within a gene,
+#' we select strong variants based on cs set and pip value.
+#' required ctwas package: remotes::install_github("xinhe-lab/ctwas",ref = "multigroup")
+get_ctwas_input <- function(post_qc_data, twas_weights_data, LD_meta_file_path, twas_table, region_block) {
+  get_ctwas_weights <- function(post_qc_twas_data, twas_weights_data) {
+    chrom <- unique(find_data(post_qc_twas_data, c(2, "chrom")))
+    if (length(chrom) != 1) stop("Data provided contains more than one chromosome. ")
+    genes <- names(post_qc_twas_data)
+    # Compile weights_list
+    weights_list <- list()
+    for (gene in genes) {
+      contexts <- names(post_qc_twas_data[[gene]][["weights_qced"]])
+      gene_data <- twas_weights_data[[gene]][["export_twas_weights_db"]]
+      for (context in contexts) {
+        data_type <- post_qc_twas_data[[gene]][["data_type"]][[context]]
+        postqc_scaled_weight <- post_qc_twas_data[[gene]][["weights_qced"]][[context]][["scaled_weights"]]
+        # adjust susie weights for selected number of weight variants
+        if (colnames(post_qc_twas_data[[gene]][["weights_qced"]][[context]][["scaled_weights"]]) == "susie_weights") {
+          ld_variants <- colnames(post_qc_twas_data[[gene]][["LD"]])
+          pre_qc_variants <- gene_data[[context]][["variant_names"]]
+          original_variants_qced <- allele_qc(pre_qc_variants, ld_variants, pre_qc_variants, match_min_prop = 0)
+          idx_in_original_variants <- match(
+            post_qc_twas_data[[gene]][["variant_names"]][[context]],
+            paste0("chr", original_variants_qced$qc_summary$variants_id_qced)
+          )
+          gene_data[[context]]$susie_weights_intermediate$mu <- gene_data[[context]]$susie_weights_intermediate$mu[, idx_in_original_variants, drop = FALSE]
+          gene_data[[context]]$susie_weights_intermediate$lbf_variable <- gene_data[[context]]$susie_weights_intermediate$lbf_variable[, idx_in_original_variants, drop = FALSE]
+          gene_data[[context]]$susie_weights_intermediate$X_column_scale_factors <- gene_data[[context]]$susie_weights_intermediate$X_column_scale_factors[idx_in_original_variants]
+          gene_data[[context]]$variant_names <- post_qc_twas_data[[gene]][["variant_names"]][[context]]
+          gene_data[[context]]$model_weights <- postqc_scaled_weight
+          adjusted_susie_weights <- adjust_susie_weights(gene_data[[context]],
+            keep_variants = gene_data[[context]][["variant_names"]], allele_qc = TRUE,
+            variable_name_obj = c("variant_names"),
+            susie_obj = c("susie_weights_intermediate"),
+            twas_weights_table = c("model_weights"), ld_variants, match_min_prop = 0.001
+          )
+          postqc_scaled_weight <- matrix(adjusted_susie_weights$adjusted_susie_weights, ncol = 1)
+          rownames(postqc_scaled_weight) <- paste0("chr", adjusted_susie_weights$remained_variants_ids)
+        }
+        colnames(postqc_scaled_weight) <- "weight"
+        context_variants <- gene_data[[context]][["variant_names"]]
+        context_range <- sapply(context_variants, function(variant) as.integer(strsplit(variant, "\\:")[[1]][2]))
+
+        weights_list[[paste0(gene, "|", data_type, "_", context)]] <- list(
+          chrom = chrom,
+          p0 = min(context_range),
+          p1 = max(context_range),
+          wgt = postqc_scaled_weight,
+          molecular_id = gene,
+          weight_name = paste0(data_type, "_", context),
+          type = data_type,
+          context = context,
+          n_wgt = length(context_variants)
+        )
+      }
     }
+    return(weights_list)
   }
-  return(weights_list)
+  # format ctwas weights
+  weights <- get_ctwas_weights(post_qc_data, twas_weights_data) # reshape weights for all gene-context pairs in the region for cTWAS analysis
+  weights <- weights[!sapply(weights, is.null)]
+  # gene_z table
+  twas_table <- twas_table[na.omit(twas_table$is_selected_method), , drop = FALSE]
+  twas_table$id <- paste0(twas_table$gene, "|", twas_table$type, "_", twas_table$context)
+  twas_table$z <- twas_table$twas_z
+  twas_table$group <- paste0(twas_table$context, "|", twas_table$type)
+  twas_table <- twas_table[, c("id", "z", "type", "context", "group", "gwas_study"), drop = FALSE]
+  studies <- unique(twas_table$gwas_study)
+  z_gene_list <- list()
+  z_snp <- list()
+  for (study in studies) {
+    z_gene_list[[study]] <- twas_table[twas_table$gwas_study == study, , drop = FALSE]
+    z_snp[[study]] <- do.call(rbind, lapply(post_qc_data, function(x) find_data(x, c(1, "gwas_qced", study), docall = rbind)))
+    colnames(z_snp[[study]])[which(colnames(z_snp[[study]]) == "variant_id")] <- "id"
+    z_snp[[study]] <- z_snp[[study]][, c("id", "A1", "A2", "z")]
+    z_snp[[study]] <- z_snp[[study]][!duplicated(z_snp[[study]]$id), ]
+  }
+  # load LD variant names
+  region_of_interest <- region_to_df(region_block)
+  bim_file_paths <- unique(do.call(c, lapply(1:nrow(region_of_interest), function(region_row) {
+    get_regional_ld_meta(LD_meta_file_path, region_of_interest[region_row, , drop = FALSE])$intersections$bim_file_paths
+  })))
+  snp_info <- lapply(bim_file_paths, function(file) {
+    bimfile <- read.table(file, header = FALSE, sep = "\t")[, c(1, 2, 4:8)]
+    bimfile$V2 <- gsub("chr", "", gsub("_", ":", bimfile$V2))
+    colnames(bimfile) <- c("chrom", "id", "pos", "alt", "ref", "variance", "allele_freq") # A1:alt, A2: ref
+    return(bimfile)
+  })
+  names(snp_info) <- do.call(c, lapply(bim_file_paths, function(x) {
+    parts <- strsplit(basename(x), "[_:/.]")[[1]][1:3]
+    gsub("chr", "", paste(parts, collapse = "_"))
+  }))
+  return(list(weights = weights, snp_info = snp_info, z_gene = z_gene_list, z_snp = z_snp))
 }

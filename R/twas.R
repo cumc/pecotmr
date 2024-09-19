@@ -122,7 +122,7 @@ generate_twas_db <- function(weight_db_file, contexts = NULL, variable_name_obj 
       susie_results = twas_data_combined$susie_results
     ))
   } else {
-    message(paste0("Weight input ", weight_db_file, " is non-imputable for all contexts. "))
+    message(paste0("Weight input ", weight_db_file, " is non-imputable for all contexts. \n "))
     return(NULL)
   }
 }
@@ -155,12 +155,12 @@ generate_twas_db <- function(weight_db_file, contexts = NULL, variable_name_obj 
 #' @importFrom S4Vectors queryHits subjectHits
 #' @importFrom IRanges IRanges findOverlaps start end reduce
 #' @export
-harmonize_twas <- function(twas_weights_data, ld_meta_file_path, gwas_meta_file, twas_data_loader) {
+harmonize_twas <- function(twas_weights_data, ld_meta_file_path, gwas_meta_file) {
   # Function to group contexts based on start and end positions
   group_contexts_by_region <- function(twas_weights_data, gene, chrom, tolerance = 5000) {
-    region_info_df <- do.call(rbind, lapply(names(twas_weights_data[[gene]]$variant_names), function(context) {
+    region_info_df <- do.call(rbind, lapply(names(twas_weights_data$export_twas_weights_db), function(context) {
       wgt_range <- as.integer(sapply(
-        twas_weights_data[[gene]][["variant_names"]][[context]],
+        twas_weights_data[["export_twas_weights_db"]][[context]][["variant_names"]],
         function(variant_id) {
           strsplit(variant_id, "\\:")[[1]][2]
         }
@@ -175,7 +175,7 @@ harmonize_twas <- function(twas_weights_data, ld_meta_file_path, gwas_meta_file,
         context_group_1 = list(
           contexts = region_info_df$context,
           query_region = paste0(chrom, ":", region_info_df$start, "-", region_info_df$end),
-          all_variants = unique(twas_weights_data[[gene]][["variant_names"]][[region_info_df$context]])
+          all_variants = unique(twas_weights_data[["export_twas_weights_db"]][[region_info_df$context]][["variant_names"]])
         )
       )
       return(single_context_group)
@@ -217,7 +217,7 @@ harmonize_twas <- function(twas_weights_data, ld_meta_file_path, gwas_meta_file,
       merged_groups[[group]]$all_variants <- unique(do.call(c, lapply(
         contexts,
         function(context) {
-          twas_weights_data[[gene]][["variant_names"]][[context]]
+          twas_weights_data[["export_twas_weights_db"]][[context]][["variant_names"]]
         }
       )))
     }
@@ -240,10 +240,8 @@ harmonize_twas <- function(twas_weights_data, ld_meta_file_path, gwas_meta_file,
   }
 
   # Step 1: load TWAS weights data
-  loader <- twas_data_loader$new(twas_weights_data)
-  twas_weights_data <- loader$get_data()
-  genes <- names(twas_weights_data)
-  chrom <- as.integer(twas_weights_data[[1]]$chrom)
+  genes <- twas_weights_data$gene
+  chrom <- as.integer(readr::parse_number(gsub(":.*$", "", twas_weights_data[["export_twas_weights_db"]][[1]][["variant_names"]][1])))
 
   gwas_meta_df <- fread(gwas_meta_file, header = TRUE, sep = "\t", data.table = FALSE)
   gwas_files <- unique(gwas_meta_df$file_path[gwas_meta_df$chrom == chrom])
@@ -251,7 +249,7 @@ harmonize_twas <- function(twas_weights_data, ld_meta_file_path, gwas_meta_file,
   results <- list()
 
   # Step 2: Load LD for all genes by clustered context region
-  region_variants <- variant_id_to_df(unique(unlist(find_data(twas_weights_data, c(2, "variant_names")))))
+  region_variants <- variant_id_to_df(unique(unlist(find_data(twas_weights_data$export_twas_weights_db, c(2, "variant_names")))))
   region_of_interest <- data.frame(chrom = chrom, start = min(region_variants$pos), end = max(region_variants$pos))
   LD_list <- load_LD_matrix(ld_meta_file_path, region_of_interest, region_variants)
 
@@ -265,7 +263,8 @@ harmonize_twas <- function(twas_weights_data, ld_meta_file_path, gwas_meta_file,
 
   # loop through genes:
   for (gene in genes) {
-    results[[gene]] <- twas_weights_data[[gene]][c("chrom", "data_type")]
+    results[[gene]][["chrom"]] <- chrom
+    results[[gene]][["data_type"]] <- if ("data_type" %in% names(twas_weights_data$export_twas_weights_db[[1]])) lapply(twas_weights_data$export_twas_weights_db, function(x) x$data_type)
     # group contexts based on the variant position
     context_clusters <- group_contexts_by_region(twas_weights_data, gene, chrom, tolerance = 5000)
 
@@ -290,8 +289,8 @@ harmonize_twas <- function(twas_weights_data, ld_meta_file_path, gwas_meta_file,
 
         # loop through context within the context group:
         for (context in contexts) {
-          weights_matrix <- twas_weights_data[[gene]][["weights"]][[context]]
-          if (is.null(rownames(weights_matrix))) rownames(weights_matrix) <- twas_weights_data[[gene]][["variant_names"]][[context]]
+          weights_matrix <- twas_weights_data[["weights"]][[context]]
+          if (is.null(rownames(weights_matrix))) rownames(weights_matrix) <- twas_weights_data$export_twas_weights_db[[context]][["variant_names"]]
 
           # Step 4: harmonize weights, flip allele
           weights_matrix <- cbind(variant_id_to_df(rownames(weights_matrix)), weights_matrix)
@@ -312,11 +311,11 @@ harmonize_twas <- function(twas_weights_data, ld_meta_file_path, gwas_meta_file,
           postqc_weight_variants <- rownames(weights_matrix_subset)
 
           # Step 5: adjust SuSiE weights based on available variants
-          if ("susie_weights" %in% colnames(twas_weights_data[[gene]][["weights"]][[context]])) {
-            adjusted_susie_weights <- adjust_susie_weights(twas_weights_data[[gene]],
+          if ("susie_weights" %in% colnames(twas_weights_data[["weights"]][[context]])) {
+            adjusted_susie_weights <- adjust_susie_weights(twas_weights_data,
               keep_variants = postqc_weight_variants, allele_qc = TRUE,
-              variable_name_obj = c("variant_names", context),
-              susie_obj = c("susie_weights_intermediate", context),
+              variable_name_obj = c("export_twas_weights_db", context, "variant_names"),
+              susie_obj = c("susie_results", context),
               twas_weights_table = c("weights", context), postqc_weight_variants, match_min_prop = 0.001
             )
             weights_matrix_subset <- cbind(
@@ -353,46 +352,71 @@ harmonize_twas <- function(twas_weights_data, ld_meta_file_path, gwas_meta_file,
 
 #' Function to perform TWAS analysis for across multiple contexts.
 #' This function peforms TWAS analysis for multiple contexts for imputable genes within an LD region and summarize the twas results.
-#' A dataframe of twas results summary is generated for each gene-contexts-method pair of all methods for imputable genes.
-#' input returned.
 #' @param twas_weights_data List of list of twas weights output from generate_twas_db function.
 #' @param region_block A string with informaiton of chromosome number, startind position, and ending position of LD block conneced with "_".
 #' @param twas_data_loader A data loader class object that load twas weights data for the expected format to be qc/harmonized.
+#' @return A list of list containing twas result table and formatted input data for ctwas_sumstats main function.
+#' \itemize{
+#'   \item{twas_table}{ A dataframe of twas results summary is generated for each gene-contexts-method pair of all methods for imputable genes.}
+#'   \item{ctwas_db}{ A list of list containing pre-processed input data for ctwas_sumstats function. }
+#' }
 #' @export
 twas_pipeline <- function(twas_weights_data,
                           ld_meta_file_path,
                           gwas_meta_file,
-                          twas_weights_loader,
                           region_block) {
   # Step 1: TWAS analysis for all methods for imputable gene
-  twas_result_table <- do.call(rbind, lapply(names(twas_weights_data), function(weight_db) {
+  twas_results_db <- lapply(names(twas_weights_data), function(weight_db) {
     # harmonize twas weights and gwas sumstats against LD
-    twas_data_qced <- harmonize_twas(twas_weights_data[[weight_db]], ld_meta_file_path, gwas_meta_file,
-      twas_data_loader = twas_weights_loader
-    )
+    twas_data_qced <- harmonize_twas(twas_weights_data[[weight_db]], ld_meta_file_path, gwas_meta_file)
     gene <- names(twas_data_qced)
     if (length(gene) < 1) stop(paste0("No gene's data processed at harmonization process for ", weight_db, ". "))
     contexts <- names(twas_data_qced[[gene]][["weights_qced"]])
     twas_gene_table <- do.call(rbind, lapply(contexts, function(context) {
       twas_contexts <- do.call(rbind, lapply(gwas_studies, function(study) {
+        # twas analysis
         twas_rs <- twas_analysis(
           twas_data_qced[[gene]][["weights_qced"]][[context]][["weights"]], twas_data_qced[[gene]][["gwas_qced"]][[study]],
           twas_data_qced[[gene]][["LD"]], rownames(twas_data_qced[[gene]][["weights_qced"]][[context]][["weights"]])
         )
+        # summarize twas results by methods for a context within a gene
         context_table <- data.frame(
           gwas_study = study, method = sub("_[^_]+$", "", names(twas_rs)), twas_z = find_data(twas_rs, c(2, "z")),
           twas_pval = find_data(twas_rs, c(2, "pval"))
         )
         return(context_table)
       }))
+      # mr analysis - for a single context
+      mr_formatted_input <- mr_format(twas_weights_results[[gene]]$susie_results, context, twas_data_qced[[gene]][["gwas_qced"]][[study]],
+        coverage = "cs_coverage_0.95", allele_qc = TRUE
+      )
+      twas_mr_rs <- mr_analysis(mr_formatted_input, cpip_cutoff = 0.5)
+      twas_mr_rs <- twas_mr_rs[, !colnames(twas_mr_rs) %in% "gene_name"]
+      twas_mr_rs <- twas_mr_rs[rep(1, nrow(twas_contexts)), ]
+      twas_contexts <- cbind(twas_contexts, twas_mr_rs)
       twas_contexts$gene <- gene
       twas_contexts$context <- context
       return(twas_contexts)
     }))
-    return(twas_gene_table)
-  }))
+    # subset for ctwas selected model scaled weights
+    for (context in names(twas_data_qced[[weight_db]]$weights_qced)) {
+      if (twas_weights_data[[weight_db]][["export_twas_weights_db"]][[context]]$is_imputable) {
+        method <- twas_weights_data[[weight_db]][["export_twas_weights_db"]][[context]]$selected_model
+        twas_data_qced[[weight_db]]$weights_qced[[context]]$scaled_weights <- twas_data_qced[[weight_db]]$weights_qced[[context]]$scaled_weights[, paste0(method, "_weights"), drop = FALSE]
+        twas_data_qced[[weight_db]]$weights_qced[[context]] <- twas_data_qced[[weight_db]]$weights_qced[[context]]["scaled_weights"]
+      } else {
+        for (obj in c("weights_qced", "data_type", "variant_names")) {
+          twas_data_qced[[weight_db]][[obj]][[context]] <- NULL
+        }
+      }
+    }
+    twas_data_qced[[weight_db]][["LD"]] <- NULL
+    return(list(twas_table = twas_gene_table, twas_data_qced = twas_data_qced))
+  })
+  twas_results_table <- do.call(rbind, lapply(twas_results_db, function(x) x$twas_table))
+  twas_data <- do.call(c, lapply(twas_results_db, function(x) x$twas_data_qced))
 
-  # Step 2: Summarize and merge twas results - from all methods for all contexts for imputable genes.
+  # Step 3: Summarize and merge twas results - from all methods for all contexts for imputable genes.
   genes <- names(twas_weights_data)
   twas_table <- do.call(rbind, lapply(genes, function(gene) {
     contexts <- names(twas_weights_data[[gene]][["export_twas_weights_db"]])
@@ -427,17 +451,13 @@ twas_pipeline <- function(twas_weights_data,
   twas_table$chr <- chrom
   twas_table$block <- region_block
 
-  # merge twas result table
+  # Step 4. merge twas result table
   colname_ordered <- c(
     "chr", "start", "end", "gene", "TSS", "context", "gwas_study", "method", "is_imputable", "is_selected_method",
-    "rsq_cv", "pval_cv", "twas_z", "twas_pval", "block"
+    "rsq_cv", "pval_cv", "twas_z", "twas_pval", "type", "block"
   )
-  if (no_skip_twas) {
-    twas_table <- merge(twas_table, twas_result_table, by = c("gene", "context", "method"))
-  } else {
-    colname_ordered <- colname_ordered[!colname_ordered %in% c("twas_z", "twas_pval", "gwas_study")]
-  }
-  return(twas_table[, colname_ordered])
+  twas_table <- merge(twas_table, twas_results_table, by = c("gene", "context", "method"))
+  return(list(twas_result = twas_table[, colname_ordered], twas_data = twas_data))
 }
 
 #' Calculate TWAS z-score and p-value

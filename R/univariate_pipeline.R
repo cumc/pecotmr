@@ -133,6 +133,7 @@ univariate_analysis_pipeline <- function(
       cv_threads = cv_threads,
       sample_partition = sample_partition
     )
+    if ("top_loci" %in% names(res)) res$ttwas_weights_result$susie_weights_intermediate$top_loci <- res$top_loci
   }
 
   return(res)
