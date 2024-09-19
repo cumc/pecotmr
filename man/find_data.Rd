@@ -11,7 +11,8 @@ find_data(
   show_path = FALSE,
   rm_null = TRUE,
   rm_dup = FALSE,
-  docall = c
+  docall = c,
+  last_obj = NULL
 )
 }
 \description{

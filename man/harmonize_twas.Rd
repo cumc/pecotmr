@@ -5,12 +5,7 @@
 \title{Function to perform allele flip QC and harmonization on the weights and GWAS against LD for a region.
 FIXME: GWAS loading function from Haochen for both tabix & column-mapping yml application}
 \usage{
-harmonize_twas(
-  twas_weights_data,
-  ld_meta_file_path,
-  gwas_meta_file,
-  twas_data_loader
-)
+harmonize_twas(twas_weights_data, ld_meta_file_path, gwas_meta_file)
 }
 \arguments{
 \item{twas_weights_data}{List of list of twas weights output from from generate_twas_db function.}
@@ -22,8 +17,6 @@ columns are aligned in the order of "chrom", "variants", "GD", "pos", "A1", "A2"
 \item{gwas_meta_file}{A file path for a dataframe table with column of "study_id", "chrom" (integer), "file_path",
 "column_mapping_file". Each file in "file_path" column is tab-delimited dataframe of GWAS summary statistics with column name
 "chrom" (or #chrom" if tabix-indexed), "pos", "A2", "A1".}
-
-\item{twas_data_loader}{A data loader class object that load twas weights data for the expected format to be qc/harmonized.}
 }
 \value{
 A list of list for harmonized weights and dataframe of gwas summary statistics that is add to the original input of
