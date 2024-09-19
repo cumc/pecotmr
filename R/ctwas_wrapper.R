@@ -35,8 +35,8 @@ get_ctwas_meta_data <- function(ld_meta_data_file, regions_table) {
 #' Function to extract information from harmonize_twas output as cTWAS input. For each imputable context within a gene,
 #' we select strong variants based on cs set and pip value.
 #' required ctwas package: remotes::install_github("xinhe-lab/ctwas",ref = "multigroup")
-get_ctwas_input <- function(post_qc_data, twas_weights_data, LD_meta_file_path, twas_table, region_block) {
-  get_ctwas_weights <- function(post_qc_twas_data, twas_weights_data) {
+get_ctwas_input <- function(post_qc_data, LD_meta_file_path, twas_table, region_block) {
+  get_ctwas_weights <- function(post_qc_twas_data) {
     chrom <- unique(find_data(post_qc_twas_data, c(2, "chrom")))
     if (length(chrom) != 1) stop("Data provided contains more than one chromosome. ")
     genes <- names(post_qc_twas_data)
@@ -44,37 +44,12 @@ get_ctwas_input <- function(post_qc_data, twas_weights_data, LD_meta_file_path, 
     weights_list <- list()
     for (gene in genes) {
       contexts <- names(post_qc_twas_data[[gene]][["weights_qced"]])
-      gene_data <- twas_weights_data[[gene]][["export_twas_weights_db"]]
       for (context in contexts) {
         data_type <- post_qc_twas_data[[gene]][["data_type"]][[context]]
         postqc_scaled_weight <- post_qc_twas_data[[gene]][["weights_qced"]][[context]][["scaled_weights"]]
-        # adjust susie weights for selected number of weight variants
-        if (colnames(post_qc_twas_data[[gene]][["weights_qced"]][[context]][["scaled_weights"]]) == "susie_weights") {
-          ld_variants <- colnames(post_qc_twas_data[[gene]][["LD"]])
-          pre_qc_variants <- gene_data[[context]][["variant_names"]]
-          original_variants_qced <- allele_qc(pre_qc_variants, ld_variants, pre_qc_variants, match_min_prop = 0)
-          idx_in_original_variants <- match(
-            post_qc_twas_data[[gene]][["variant_names"]][[context]],
-            paste0("chr", original_variants_qced$qc_summary$variants_id_qced)
-          )
-          gene_data[[context]]$susie_weights_intermediate$mu <- gene_data[[context]]$susie_weights_intermediate$mu[, idx_in_original_variants, drop = FALSE]
-          gene_data[[context]]$susie_weights_intermediate$lbf_variable <- gene_data[[context]]$susie_weights_intermediate$lbf_variable[, idx_in_original_variants, drop = FALSE]
-          gene_data[[context]]$susie_weights_intermediate$X_column_scale_factors <- gene_data[[context]]$susie_weights_intermediate$X_column_scale_factors[idx_in_original_variants]
-          gene_data[[context]]$variant_names <- post_qc_twas_data[[gene]][["variant_names"]][[context]]
-          gene_data[[context]]$model_weights <- postqc_scaled_weight
-          adjusted_susie_weights <- adjust_susie_weights(gene_data[[context]],
-            keep_variants = gene_data[[context]][["variant_names"]], allele_qc = TRUE,
-            variable_name_obj = c("variant_names"),
-            susie_obj = c("susie_weights_intermediate"),
-            twas_weights_table = c("model_weights"), ld_variants, match_min_prop = 0.001
-          )
-          postqc_scaled_weight <- matrix(adjusted_susie_weights$adjusted_susie_weights, ncol = 1)
-          rownames(postqc_scaled_weight) <- paste0("chr", adjusted_susie_weights$remained_variants_ids)
-        }
         colnames(postqc_scaled_weight) <- "weight"
-        context_variants <- gene_data[[context]][["variant_names"]]
+        context_variants <- rownames(post_qc_twas_data[[gene]][["weights_qced"]][[context]][["scaled_weights"]])
         context_range <- sapply(context_variants, function(variant) as.integer(strsplit(variant, "\\:")[[1]][2]))
-
         weights_list[[paste0(gene, "|", data_type, "_", context)]] <- list(
           chrom = chrom,
           p0 = min(context_range),
@@ -91,7 +66,7 @@ get_ctwas_input <- function(post_qc_data, twas_weights_data, LD_meta_file_path, 
     return(weights_list)
   }
   # format ctwas weights
-  weights <- get_ctwas_weights(post_qc_data, twas_weights_data) # reshape weights for all gene-context pairs in the region for cTWAS analysis
+  weights <- get_ctwas_weights(post_qc_data) # reshape weights for all gene-context pairs in the region for cTWAS analysis
   weights <- weights[!sapply(weights, is.null)]
   # gene_z table
   twas_table <- twas_table[na.omit(twas_table$is_selected_method), , drop = FALSE]

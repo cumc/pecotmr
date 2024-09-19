@@ -140,7 +140,7 @@ generate_twas_db <- function(weight_db_file, contexts = NULL, variable_name_obj 
 #' 1. allele QC for TWAS weights against the LD meta
 #' 2. allele QC for GWA summary stats against the LD meta
 #' 3. adjust susie/mvsusie weights based on the overlap variants
-#'
+#' 
 #' @param twas_weights_data List of list of twas weights output from from generate_twas_db function.
 #' @param gwas_meta_file A file path for a dataframe table with column of "study_id", "chrom" (integer), "file_path",
 #' "column_mapping_file". Each file in "file_path" column is tab-delimited dataframe of GWAS summary statistics with column name
@@ -148,10 +148,10 @@ generate_twas_db <- function(weight_db_file, contexts = NULL, variable_name_obj 
 #' @param ld_meta_file_path A tab-delimited data frame with colname "#chrom", "start", "end", "path", where "path" column
 #' contains file paths for both LD matrix and bim file and is separated by ",". Bim file input would expect no headers, while the
 #' columns are aligned in the order of "chrom", "variants", "GD", "pos", "A1", "A2", "variance", "allele_freq", "n_nomiss".
-#' @param twas_data_loader A data loader class object that load twas weights data for the expected format to be qc/harmonized.
 #' @return A list of list for harmonized weights and dataframe of gwas summary statistics that is add to the original input of
 #' twas_weights_data under each context.
 #' @importFrom data.table fread
+#' @importFrom readr parse_number
 #' @importFrom S4Vectors queryHits subjectHits
 #' @importFrom IRanges IRanges findOverlaps start end reduce
 #' @export
@@ -241,7 +241,7 @@ harmonize_twas <- function(twas_weights_data, ld_meta_file_path, gwas_meta_file)
 
   # Step 1: load TWAS weights data
   genes <- twas_weights_data$gene
-  chrom <- as.integer(readr::parse_number(gsub(":.*$", "", twas_weights_data[["export_twas_weights_db"]][[1]][["variant_names"]][1])))
+  chrom <- as.integer(parse_number(gsub(":.*$", "", twas_weights_data[["export_twas_weights_db"]][[1]][["variant_names"]][1])))
 
   gwas_meta_df <- fread(gwas_meta_file, header = TRUE, sep = "\t", data.table = FALSE)
   gwas_files <- unique(gwas_meta_df$file_path[gwas_meta_df$chrom == chrom])
@@ -354,7 +354,6 @@ harmonize_twas <- function(twas_weights_data, ld_meta_file_path, gwas_meta_file)
 #' This function peforms TWAS analysis for multiple contexts for imputable genes within an LD region and summarize the twas results.
 #' @param twas_weights_data List of list of twas weights output from generate_twas_db function.
 #' @param region_block A string with informaiton of chromosome number, startind position, and ending position of LD block conneced with "_".
-#' @param twas_data_loader A data loader class object that load twas weights data for the expected format to be qc/harmonized.
 #' @return A list of list containing twas result table and formatted input data for ctwas_sumstats main function.
 #' \itemize{
 #'   \item{twas_table}{ A dataframe of twas results summary is generated for each gene-contexts-method pair of all methods for imputable genes.}
@@ -364,7 +363,8 @@ harmonize_twas <- function(twas_weights_data, ld_meta_file_path, gwas_meta_file)
 twas_pipeline <- function(twas_weights_data,
                           ld_meta_file_path,
                           gwas_meta_file,
-                          region_block) {
+                          region_block,
+                          mr_pval_cutoff=0.05) {
   # Step 1: TWAS analysis for all methods for imputable gene
   twas_results_db <- lapply(names(twas_weights_data), function(weight_db) {
     # harmonize twas weights and gwas sumstats against LD
@@ -384,16 +384,28 @@ twas_pipeline <- function(twas_weights_data,
           gwas_study = study, method = sub("_[^_]+$", "", names(twas_rs)), twas_z = find_data(twas_rs, c(2, "z")),
           twas_pval = find_data(twas_rs, c(2, "pval"))
         )
+        if (any(context_table$twas_pval < mr_pval_cutoff) & "top_loci" %in% names(twas_weights_results[[gene]]$susie_results[[context]])){
+          # mr analysis - for a single context
+          mr_formatted_input <- mr_format(twas_weights_results[[gene]], context, twas_data_qced[[gene]][["gwas_qced"]][[study]],
+            coverage = "cs_coverage_0.95", allele_qc = TRUE, gene_name_obj = c("gene")
+          )
+          if (all(is.na(mr_formatted_input$bhat_y))) {
+            # FIXME: after updating gwas beta and se NA problem, mr analysis will be restored
+            mr_cols <- c("num_CS", "num_IV", "cpip", "meta_eff", "se_meta_eff", "meta_pval", "Q", "Q_pval", "I2")
+            twas_mr_rs <- as.data.frame(matrix(rep(NA, length(mr_cols)), nrow=1))
+            colnames(twas_mr_rs) <- mr_cols
+          } else {
+            twas_mr_rs <- as.data.frame(mr_analysis(mr_formatted_input, cpip_cutoff = 0.5))
+            twas_mr_rs <- twas_mr_rs[, !colnames(twas_mr_rs) %in% "gene_name"]
+          }
+        } else {
+          mr_cols <- c("num_CS", "num_IV", "cpip", "meta_eff", "se_meta_eff", "meta_pval", "Q", "Q_pval", "I2")
+          twas_mr_rs <- as.data.frame(matrix(rep(NA, length(mr_cols)), nrow=1))
+          colnames(twas_mr_rs) <- mr_cols
+        }
+        context_table <- cbind(context_table, twas_mr_rs)
         return(context_table)
       }))
-      # mr analysis - for a single context
-      mr_formatted_input <- mr_format(twas_weights_results[[gene]]$susie_results, context, twas_data_qced[[gene]][["gwas_qced"]][[study]],
-        coverage = "cs_coverage_0.95", allele_qc = TRUE
-      )
-      twas_mr_rs <- mr_analysis(mr_formatted_input, cpip_cutoff = 0.5)
-      twas_mr_rs <- twas_mr_rs[, !colnames(twas_mr_rs) %in% "gene_name"]
-      twas_mr_rs <- twas_mr_rs[rep(1, nrow(twas_contexts)), ]
-      twas_contexts <- cbind(twas_contexts, twas_mr_rs)
       twas_contexts$gene <- gene
       twas_contexts$context <- context
       return(twas_contexts)
@@ -454,7 +466,7 @@ twas_pipeline <- function(twas_weights_data,
   # Step 4. merge twas result table
   colname_ordered <- c(
     "chr", "start", "end", "gene", "TSS", "context", "gwas_study", "method", "is_imputable", "is_selected_method",
-    "rsq_cv", "pval_cv", "twas_z", "twas_pval", "type", "block"
+    "rsq_cv", "pval_cv", "twas_z", "twas_pval", "type", "block", "num_CS", "num_IV", "cpip", "meta_eff", "se_meta_eff", "meta_pval", "Q", "Q_pval", "I2"
   )
   twas_table <- merge(twas_table, twas_results_table, by = c("gene", "context", "method"))
   return(list(twas_result = twas_table[, colname_ordered], twas_data = twas_data))
