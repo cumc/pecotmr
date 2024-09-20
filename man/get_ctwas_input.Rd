@@ -6,13 +6,7 @@
 we select strong variants based on cs set and pip value.
 required ctwas package: remotes::install_github("xinhe-lab/ctwas",ref = "multigroup")}
 \usage{
-get_ctwas_input(
-  post_qc_data,
-  twas_weights_data,
-  LD_meta_file_path,
-  twas_table,
-  region_block
-)
+get_ctwas_input(post_qc_data, LD_meta_file_path, twas_table, region_block)
 }
 \description{
 Function to extract information from harmonize_twas output as cTWAS input. For each imputable context within a gene,

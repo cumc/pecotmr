@@ -9,7 +9,8 @@ twas_pipeline(
   twas_weights_data,
   ld_meta_file_path,
   gwas_meta_file,
-  region_block
+  region_block,
+  mr_pval_cutoff = 0.05
 )
 }
 \arguments{

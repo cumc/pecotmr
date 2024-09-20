@@ -20,7 +20,7 @@ calc_I2 <- function(Q, Est) {
 #' @return A data frame formatted for MR analysis or NULL if cs_list is empty.
 #' @export
 mr_format <- function(susie_result, condition, gwas_sumstats_db, coverage = "cs_coverage_0.95", allele_qc = TRUE, 
-                      gene_name_obj = c("susie_results", condition, "region_info", "region_name")) {
+                      molecular_name_obj = c("susie_results", condition, "region_info", "region_name")) {
   # Create null mr_format_input
   create_null_mr_input <- function(gene_name) {
     mr_format_input <- data.frame(
@@ -35,7 +35,7 @@ mr_format <- function(susie_result, condition, gwas_sumstats_db, coverage = "cs_
       stringsAsFactors = FALSE # Optional, to prevent factors
     )
   }
-  gene_name <- unique(get_nested_element(susie_result, gene_name_obj))
+  gene_name <- unique(get_nested_element(susie_result, molecular_name_obj))
 
   # Attempt to retrieve top_loci; if not found, return NULL
   top_loci <- tryCatch(
