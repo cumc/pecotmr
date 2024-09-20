@@ -19,7 +19,7 @@ calc_I2 <- function(Q, Est) {
 #' @param allele_qc Optional. A logical value indicating whether allele qc should be performed on the variants. When TRUE, allele qc are applied to the variants based on the GWAS summary statistics database ('gwas_sumstats_db').
 #' @return A data frame formatted for MR analysis or NULL if cs_list is empty.
 #' @export
-mr_format <- function(susie_result, condition, gwas_sumstats_db, coverage = "cs_coverage_0.95", allele_qc = TRUE, 
+mr_format <- function(susie_result, condition, gwas_sumstats_db, coverage = "cs_coverage_0.95", allele_qc = TRUE,
                       molecular_name_obj = c("susie_results", condition, "region_info", "region_name")) {
   # Create null mr_format_input
   create_null_mr_input <- function(gene_name) {
@@ -55,10 +55,11 @@ mr_format <- function(susie_result, condition, gwas_sumstats_db, coverage = "cs_
         mutate(variant = ifelse(grepl("^chr[0-9]+:", variant_id), gsub("^chr", "", variant_id), variant_id)) %>%
         select(gene_name, variant, betahat, sebetahat, all_of(coverage), pip) %>%
         rename("bhat_x" = "betahat", "sbhat_x" = "sebetahat", "cs" = coverage)
-      if (allele_qc == TRUE) {
-        susie_cs_result_formatted <- allele_qc(susie_cs_result_formatted$variant, gwas_sumstats_db$variant_id, 
-                                        cbind(variant_id_to_df(susie_cs_result_formatted$variant), susie_cs_result_formatted), c("bhat_x", "sbhat_x"), 
-                                        match_min_prop = 0)
+      if (allele_qc) {
+        susie_cs_result_formatted <- allele_qc(susie_cs_result_formatted$variant, gwas_sumstats_db$variant_id,
+          cbind(variant_id_to_df(susie_cs_result_formatted$variant), susie_cs_result_formatted), c("bhat_x", "sbhat_x"),
+          match_min_prop = 0
+        )
         susie_cs_result_formatted <- susie_cs_result_formatted$target_data_qced[, c("gene_name", "variant_id", "bhat_x", "sbhat_x", "cs", "pip")]
       }
       gwas_sumstats_db$variant_id <- gsub("chr", "", gwas_sumstats_db$variant_id)
