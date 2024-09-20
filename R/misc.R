@@ -254,12 +254,21 @@ get_nested_element <- function(nested_list, name_vector) {
 #' Utility function to specify the path to access the target list item in a nested list, especially when some list layers
 #' in between are dynamic or uncertain.
 #' @export
-find_data <- function(x, depth_obj, show_path = FALSE, rm_null = TRUE, rm_dup = FALSE, docall = c) {
+find_data <- function(x, depth_obj, show_path = FALSE, rm_null = TRUE, rm_dup = FALSE, docall = c, last_obj = NULL) {
   depth <- as.integer(depth_obj[1])
   list_name <- if (length(depth_obj) > 1) depth_obj[2:length(depth_obj)] else NULL
   if (depth == 1 | depth == 0) {
     if (!is.null(list_name)) {
       if (list_name[1] %in% names(x)) {
+        if (any(grepl("^[0-9]+$", list_name))) { # list names, indx name, list names
+          second_depth <- which(grepl("^[0-9]+$", list_name))[1]
+          data <- get_nested_element(x, list_name[1:second_depth[1] - 1])
+          remaining_path <- list_name[second_depth:length(list_name)]
+          return(find_data(data, remaining_path,
+            show_path = show_path,
+            rm_null = rm_null, rm_dup = rm_dup, last_obj = names(data)
+          ))
+        }
         return(get_nested_element(x, list_name))
       }
     } else {
@@ -268,7 +277,7 @@ find_data <- function(x, depth_obj, show_path = FALSE, rm_null = TRUE, rm_dup = 
   } else if (is.list(x)) {
     result <- lapply(x, find_data,
       depth_obj = c(depth - 1, list_name), show_path = show_path,
-      rm_null = rm_null, rm_dup = rm_dup
+      rm_null = rm_null, rm_dup = rm_dup, last_obj = names(x)
     )
     shared_list_names <- list()
     if (isTRUE(rm_null)) {
@@ -311,7 +320,7 @@ find_data <- function(x, depth_obj, show_path = FALSE, rm_null = TRUE, rm_dup = 
       }
     }
   } else {
-    stop("Please input correct depth number. ")
+    message(paste0("list ", depth_obj[length(depth_obj)], " is not found in ", last_obj, ".  \n"))
   }
 }
 

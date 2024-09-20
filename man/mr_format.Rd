@@ -9,7 +9,8 @@ mr_format(
   condition,
   gwas_sumstats_db,
   coverage = "cs_coverage_0.95",
-  allele_qc = TRUE
+  allele_qc = TRUE,
+  molecular_name_obj = c("susie_results", condition, "region_info", "region_name")
 )
 }
 \arguments{
