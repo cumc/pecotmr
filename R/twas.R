@@ -371,13 +371,13 @@ twas_pipeline <- function(twas_weights_data,
                           region_block,
                           mr_pval_cutoff = 0.05) {
   # internal function to format TWAS output
-  format_twas_data <- function(post_qc_twas_data, twas_table, twas_weights_data) {
+  format_twas_data <- function(post_qc_twas_data, twas_table, model_selections) {
     weights_list <- do.call(c, lapply(names(post_qc_twas_data), function(molecular_id) {
       contexts <- names(post_qc_twas_data[[molecular_id]][["weights_qced"]])
       do.call(c, lapply(contexts, function(context) {
         weight <- list()
         data_type <- post_qc_twas_data[[molecular_id]][["data_type"]][[context]]
-        model_selected <- twas_weights_data[[molecular_id]][["export_twas_weights_db"]][[context]][["selected_model"]]
+        model_selected <- model_selections[[molecular_id]][[context]]
         postqc_scaled_weight <- post_qc_twas_data[[molecular_id]][["weights_qced"]][[context]][["scaled_weights"]][, paste0(model_selected, "_weights"), drop = FALSE]
         colnames(postqc_scaled_weight) <- "weight"
         context_variants <- rownames(post_qc_twas_data[[molecular_id]][["weights_qced"]][[context]][["scaled_weights"]])
@@ -436,8 +436,9 @@ twas_pipeline <- function(twas_weights_data,
       twas_contexts$context <- context
       return(twas_contexts)
     }))
-    # mr analysis
+    # mr analysis and more
     mr_table <- data.frame()
+    model_selections <- list()
     mr_cols <- c("gene_name", "num_CS", "num_IV", "cpip", "meta_eff", "se_meta_eff", "meta_pval", "Q", "Q_pval", "I2")
     for (context in names(twas_data_qced[[weight_db]]$weights_qced)) {
       # mr analysis
@@ -462,14 +463,17 @@ twas_pipeline <- function(twas_weights_data,
         twas_mr_rs$gwas_study <- study
         mr_table <- rbind(mr_table, twas_mr_rs)
       }
+      model_selections[[molecular_id]][[context]] <- twas_weights_data[[molecular_id]][["export_twas_weights_db"]][[context]][["selected_model"]]
     }
-    return(list(twas_table = twas_gene_table, twas_data_qced = twas_data_qced, mr_result = mr_table, snp_info = twas_data_qced_result$snp_info))
+    return(list(twas_table = twas_gene_table, twas_data_qced = twas_data_qced, mr_result = mr_table, snp_info = twas_data_qced_result$snp_info,
+                      model_selections=model_selections))
   })
   twas_results_table <- do.call(rbind, lapply(twas_results_db, function(x) x$twas_table))
   mr_results <- do.call(rbind, lapply(twas_results_db, function(x) x$mr_result))
   twas_data <- do.call(c, lapply(twas_results_db, function(x) x$twas_data_qced))
   snp_info <- do.call(c, lapply(twas_results_db, function(x) x$snp_info))
-
+  model_selections <- do.call(c, lapply(twas_results_db, function(x) x$model_selections))
+  
   # Step 3: Summarize and merge twas cv results and region information for all methods for all contexts for imputable genes.
   twas_table <- do.call(rbind, lapply(names(twas_weights_data), function(molecular_id) {
     contexts <- names(twas_weights_data[[molecular_id]][["export_twas_weights_db"]])
@@ -506,8 +510,9 @@ twas_pipeline <- function(twas_weights_data,
     "chr", "start", "end", "molecular_id", "TSS", "context", "gwas_study", "method", "is_imputable", "is_selected_method",
     "rsq_cv", "pval_cv", "twas_z", "twas_pval", "type", "block"
   )
+  
   twas_table <- merge(twas_table, twas_results_table, by = c("molecular_id", "context", "method"))
-  twas_data_subset <- format_twas_data(twas_data, twas_table, twas_weights_data)
+  twas_data_subset <- format_twas_data(twas_data, twas_table, model_selections)
   twas_data_subset$snp_info <- snp_info
   return(list(twas_result = twas_table[, colname_ordered], twas_data = twas_data_subset, mr_result = mr_results))
 }
