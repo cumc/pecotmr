@@ -419,7 +419,7 @@ merge_susie_cs <- function(susie_fit, coverage = "cs_coverage_0.95", complementa
 load_multitrait_R_sumstat <- function(
     susie_fit, sumstats_db, coverage = NULL, top_loci = FALSE,
     filter_file = NULL, remove_any_missing = FALSE, max_rows_selected = 300, nan_remove = FALSE,
-    exclude_condition, complementary = FALSE) {
+    exclude_condition, complementary = FALSE, allele_flip = TRUE, ld_ref) {
   extract_data <- function(sumstats_db) {
     bhat <- as.data.table(cbind(sumstats_db$variant_names, sumstats_db$sumstats$betahat))
     sbhat <- as.data.table(cbind(sumstats_db$variant_names, sumstats_db$sumstats$sebetahat))
@@ -470,16 +470,59 @@ load_multitrait_R_sumstat <- function(
   }
 
   merge_matrices <- function(matrix_list, value_column, id_column = "variants",
-                             remove_any_missing = FALSE) {
-    # Convert matrices to data frames
-    df_list <- lapply(seq_along(matrix_list), function(i) {
+                             remove_any_missing = FALSE, ld_ref = ld_ref, allele_flip = TRUE) {
+    df_list <- lapply(seq_along(matrix_list), function(i){
+      # Step 1: Convert matrix to data frame and extract relevant columns
       df <- as.data.frame(matrix_list[[i]])
       df2 <- df[, c(id_column, value_column)]
-      # Rename columns to avoid duplication
-      colnames(df2) <- c(id_column, paste0(value_column, "_", i))
-      return(df2)
-    })
+      if (allele_flip) {
+       # Step 2: Split 'variants' to extract chromosomal info
+       cohort_variants_split <- strsplit(df2[,c(id_column)], ":")
+       cohort_variants_df <- data.frame(
+         chrom = sapply(cohort_variants_split, `[`, 1), 
+         pos = as.integer(sapply(cohort_variants_split, `[`, 2)), 
+         ref = sapply(cohort_variants_split, `[`, 3),
+         alt = sapply(cohort_variants_split, `[`, 4),
+         stringsAsFactors = FALSE
+       )
+       # Step 3: Combine extracted chromosomal info with value column
+       cohort_df <- cbind(cohort_variants_df, bhat = df2[,value_column,drop=FALSE])
 
+       # Step 4: Merge with LD reference and filter
+       variants_ld_block_match <- merge(cohort_df, ld_ref, by = "chrom", allow.cartesian = TRUE)%>%
+                                 filter(pos > start & pos < end) %>%
+                                 select(-path)
+          
+       # Function to process each group
+       process_group <- function(data) {  
+          # Construct file path
+          bim_file_path <- unique(data$bim_path)
+          ld_bim_file_path <- paste0("/mnt/vast/hpc/csg/data_public/20240120_ADSP_LD_matrix/",bim_file_path, sep="")
+          ld_bim_file <- fread(ld_bim_file_path)
+  
+          # Perform allele quality control
+          flipped_data <- allele_qc(data[, 1:4], ld_bim_file$V2, data, col_to_flip = c(value_column),
+                              match_min_prop = 0, remove_dups = FALSE,
+                              remove_indels = FALSE, remove_strand_ambiguous = FALSE,
+                              flip_strand = FALSE, remove_unmatched = TRUE, target_gwas = FALSE)$target_data_qced
+          return(flipped_data)
+       }
+          
+       final_df <- variants_ld_block_match %>%
+                   group_by(start, end) %>%
+                   group_map(~process_group(.x)) %>%
+                   bind_rows() %>%
+                   mutate(variant_id = paste0("chr", variant_id))%>%
+                   select(c("variant_id",value_column))%>%
+                   rename("variants"="variant_id")
+       # Rename columns to avoid duplication
+       colnames(final_df) <- c(id_column, paste0(value_column, "_", i))
+       } else {
+         final_df <- df2
+         colnames(final_df) <- c(id_column, paste0(value_column, "_", i))
+       }
+       return(final_df)
+      })
     # Iteratively merge the data frames
     merged_df <- Reduce(
       function(x, y) merge(x, y, by = id_column, all = TRUE),
