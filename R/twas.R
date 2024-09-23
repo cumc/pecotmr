@@ -422,12 +422,11 @@ twas_pipeline <- function(twas_weights_data,
     gwas_studies <- names(twas_data_qced[[molecular_id]][["gwas_qced"]])
     
     # Combined loop for TWAS and MR analysis
-    twas_gene_table <- data.frame()
-    mr_table <- data.frame()
     mr_cols <- c("gene_name", "num_CS", "num_IV", "cpip", "meta_eff", "se_meta_eff", "meta_pval", "Q", "Q_pval", "I2")
 
-    for (context in contexts){
-      for (study in gwas_studies){
+    # Nested lapply for contexts and gwas studies
+    twas_gene_results <- lapply(contexts, function(context) {
+      study_results <- lapply(gwas_studies, function(study) {
         # twas analysis
         twas_rs <- twas_analysis(
           twas_data_qced[[molecular_id]][["weights_qced"]][[context]][["weights"]], twas_data_qced[[molecular_id]][["gwas_qced"]][[study]],
@@ -437,9 +436,8 @@ twas_pipeline <- function(twas_weights_data,
           gwas_study = study, method = sub("_[^_]+$", "", names(twas_rs)), twas_z = find_data(twas_rs, c(2, "z")),
           twas_pval = find_data(twas_rs, c(2, "pval")), context=context, molecular_id=molecular_id
         )
-        twas_gene_table <- rbind(twas_gene_table, twas_rs_df)
         # MR analysis
-        if (any(twas_gene_table$twas_pval[twas_gene_table$context == context] < mr_pval_cutoff) & "top_loci" %in% names(twas_weights_data[[weight_db]]$susie_results[[context]])) {
+        if (any(na.omit(twas_rs_df$twas_pval) < mr_pval_cutoff) & "top_loci" %in% names(twas_weights_data[[weight_db]]$susie_results[[context]])) {
           mr_formatted_input <- mr_format(twas_weights_data[[weight_db]], context, twas_data_qced[[molecular_id]][["gwas_qced"]][[study]],
             coverage = "cs_coverage_0.95", allele_qc = TRUE, molecular_name_obj = c("molecular_id")
           )
@@ -456,10 +454,15 @@ twas_pipeline <- function(twas_weights_data,
         }
         mr_rs_df$context <- context
         mr_rs_df$gwas_study <- study
-        mr_table <- rbind(mr_table, mr_rs_df)
-      }
-    }
-    return(list(twas_table = twas_gene_table, twas_data_qced = twas_data_qced, mr_result = mr_table, snp_info = twas_data_qced_result$snp_info))
+        return(list(twas_rs_df = twas_rs_df, mr_rs_df = mr_rs_df))
+      })
+      twas_context_table <- do.call(rbind, lapply(study_results, function(x) x$twas_rs_df))
+      mr_context_table <- do.call(rbind, lapply(study_results, function(x) x$mr_rs_df))
+      return(list(twas_context_table=twas_context_table, mr_context_table=mr_context_table))
+    })
+    twas_gene_table <- do.call(rbind, lapply(twas_gene_results, function(x) x$twas_context_table))
+    mr_gene_table <- do.call(rbind, lapply(twas_gene_results, function(x) x$mr_context_table))
+    return(list(twas_table = twas_gene_table, twas_data_qced = twas_data_qced, mr_result = mr_gene_table, snp_info = twas_data_qced_result$snp_info))
   })
   twas_results_table <- do.call(rbind, lapply(twas_results_db, function(x) x$twas_table))
   mr_results <- do.call(rbind, lapply(twas_results_db, function(x) x$mr_result))
