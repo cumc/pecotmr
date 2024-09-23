@@ -411,7 +411,7 @@ twas_pipeline <- function(twas_weights_data,
     return(list(weights = weights, z_gene = z_gene_list, z_snp = z_snp))
   }
 
-  # Step 1: TWAS analysis for all methods for imputable gene
+  # Step 1: TWAS and MR analysis for all methods for imputable gene
   twas_results_db <- lapply(names(twas_weights_data), function(weight_db) {
     # harmonize twas weights and gwas sumstats against LD
     twas_data_qced_result <- harmonize_twas(twas_weights_data[[weight_db]], ld_meta_file_path, gwas_meta_file)
@@ -420,48 +420,43 @@ twas_pipeline <- function(twas_weights_data,
     if (length(molecular_id) < 1) stop(paste0("No gene's data processed at harmonization process for ", weight_db, ". "))
     contexts <- names(twas_data_qced[[molecular_id]][["weights_qced"]])
     gwas_studies <- names(twas_data_qced[[molecular_id]][["gwas_qced"]])
-    twas_gene_table <- do.call(rbind, lapply(contexts, function(context) {
-      twas_contexts <- do.call(rbind, lapply(gwas_studies, function(study) {
+    
+    # Combined loop for TWAS and MR analysis
+    twas_gene_table <- data.frame()
+    mr_table <- data.frame()
+    mr_cols <- c("gene_name", "num_CS", "num_IV", "cpip", "meta_eff", "se_meta_eff", "meta_pval", "Q", "Q_pval", "I2")
+
+    for (context in contexts){
+      for (study in gwas_studies){
         # twas analysis
         twas_rs <- twas_analysis(
           twas_data_qced[[molecular_id]][["weights_qced"]][[context]][["weights"]], twas_data_qced[[molecular_id]][["gwas_qced"]][[study]],
           twas_data_qced[[molecular_id]][["LD"]], rownames(twas_data_qced[[molecular_id]][["weights_qced"]][[context]][["weights"]])
         )
-        # summarize twas results by methods for a context within a gene
-        data.frame(
+        twas_rs_df <- data.frame(
           gwas_study = study, method = sub("_[^_]+$", "", names(twas_rs)), twas_z = find_data(twas_rs, c(2, "z")),
-          twas_pval = find_data(twas_rs, c(2, "pval"))
+          twas_pval = find_data(twas_rs, c(2, "pval")), context=context, molecular_id=molecular_id
         )
-      }))
-      twas_contexts$molecular_id <- molecular_id
-      twas_contexts$context <- context
-      return(twas_contexts)
-    }))
-    # mr analysis and more
-    mr_table <- data.frame()
-    mr_cols <- c("gene_name", "num_CS", "num_IV", "cpip", "meta_eff", "se_meta_eff", "meta_pval", "Q", "Q_pval", "I2")
-    for (context in names(twas_data_qced[[weight_db]]$weights_qced)) {
-      # mr analysis
-      for (study in gwas_studies) {
+        twas_gene_table <- rbind(twas_gene_table, twas_rs_df)
+        # MR analysis
         if (any(twas_gene_table$twas_pval[twas_gene_table$context == context] < mr_pval_cutoff) & "top_loci" %in% names(twas_weights_data[[weight_db]]$susie_results[[context]])) {
-          # mr analysis - for a single context
           mr_formatted_input <- mr_format(twas_weights_data[[weight_db]], context, twas_data_qced[[molecular_id]][["gwas_qced"]][[study]],
             coverage = "cs_coverage_0.95", allele_qc = TRUE, molecular_name_obj = c("molecular_id")
           )
           if (all(is.na(mr_formatted_input$bhat_y))) {
             # FIXME: after updating gwas beta and se NA problem, mr analysis will be restored
-            twas_mr_rs <- as.data.frame(matrix(rep(NA, length(mr_cols)), nrow = 1))
-            colnames(twas_mr_rs) <- mr_cols
+            mr_rs_df <- as.data.frame(matrix(rep(NA, length(mr_cols)), nrow = 1))
+            colnames(mr_rs_df) <- mr_cols
           } else {
-            twas_mr_rs <- as.data.frame(mr_analysis(mr_formatted_input, cpip_cutoff = 0.5))
+            mr_rs_df <- as.data.frame(mr_analysis(mr_formatted_input, cpip_cutoff = 0.5))
           }
         } else {
-          twas_mr_rs <- as.data.frame(matrix(rep(NA, length(mr_cols)), nrow = 1))
-          colnames(twas_mr_rs) <- mr_cols
+          mr_rs_df <- as.data.frame(matrix(rep(NA, length(mr_cols)), nrow = 1))
+          colnames(mr_rs_df) <- mr_cols
         }
-        twas_mr_rs$context <- context
-        twas_mr_rs$gwas_study <- study
-        mr_table <- rbind(mr_table, twas_mr_rs)
+        mr_rs_df$context <- context
+        mr_rs_df$gwas_study <- study
+        mr_table <- rbind(mr_table, mr_rs_df)
       }
     }
     return(list(twas_table = twas_gene_table, twas_data_qced = twas_data_qced, mr_result = mr_table, snp_info = twas_data_qced_result$snp_info))
@@ -471,7 +466,7 @@ twas_pipeline <- function(twas_weights_data,
   twas_data <- do.call(c, lapply(twas_results_db, function(x) x$twas_data_qced))
   snp_info <- do.call(c, lapply(twas_results_db, function(x) x$snp_info))
   
-  # Step 3: Summarize and merge twas cv results and region information for all methods for all contexts for imputable genes.
+  # Step 2: Summarize and merge twas cv results and region information for all methods for all contexts for imputable genes.
   twas_table <- do.call(rbind, lapply(names(twas_weights_data), function(molecular_id) {
     contexts <- names(twas_weights_data[[molecular_id]][["export_twas_weights_db"]])
     # merge twas_cv information for same gene across all weight db files
@@ -502,12 +497,11 @@ twas_pipeline <- function(twas_weights_data,
   twas_table$chr <- chrom
   twas_table$block <- region_block
 
-  # Step 4. merge twas result table
+  # Step 3. merge twas result table
   colname_ordered <- c(
     "chr", "start", "end", "molecular_id", "TSS", "context", "gwas_study", "method", "is_imputable", "is_selected_method",
     "rsq_cv", "pval_cv", "twas_z", "twas_pval", "type", "block"
   )
-  
   twas_table <- merge(twas_table, twas_results_table, by = c("molecular_id", "context", "method"))
   twas_data_subset <- format_twas_data(twas_data, twas_table)
   twas_data_subset$snp_info <- snp_info
