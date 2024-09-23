@@ -19,10 +19,10 @@ twas_pipeline(
 \item{region_block}{A string with informaiton of chromosome number, startind position, and ending position of LD block conneced with "_".}
 }
 \value{
-A list of list containing twas result table and formatted input data for ctwas_sumstats main function.
+A list of list containing twas result table and formatted TWAS data compatible with ctwas_sumstats() function.
 \itemize{
   \item{twas_table}{ A dataframe of twas results summary is generated for each gene-contexts-method pair of all methods for imputable genes.}
-  \item{ctwas_db}{ A list of list containing pre-processed input data for ctwas_sumstats function. }
+  \item{twas_data}{ A list of list containing formatted TWAS data.}
 }
 }
 \description{
