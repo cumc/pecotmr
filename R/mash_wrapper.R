@@ -416,7 +416,7 @@ merge_susie_cs <- function(susie_fit, coverage = "cs_coverage_0.95", complementa
 
 #' @importFrom data.table as.data.table setnames
 #' @export
-load_multitrait_R_sumstat <- function(susie_fit,sumstats_db, coverage = NULL, top_loci = FALSE, filter_file = NULL, remove_any_missing = TRUE, max_rows_selected = 300, nan_remove=FALSE, exclude_condition, ld_meta_file) {
+load_multitrait_R_sumstat <- function(susie_fit,sumstats_db, coverage = NULL, top_loci = FALSE, filter_file = NULL, exclude_condition = NULL, ld_meta_file = NULL, remove_any_missing = TRUE, max_rows_selected = 300, nan_remove=FALSE) {
   
    extract_data <- function(sumstats_db) {
       bhat <- as.data.table(cbind(sumstats_db$variant_names, sumstats_db$sumstats$betahat))
@@ -564,7 +564,7 @@ load_multitrait_R_sumstat <- function(susie_fit,sumstats_db, coverage = NULL, to
    out$sbhat <- out$sbhat[,-which(names(out$sbhat)=="variants"), drop = FALSE]
    out$region = names(susie_fit)
                     
-   if (length(exclude_condition) > 0) {
+   if (!is.null(exclude_condition)) {
      if(all(exclude_condition %in% colnames(out$bhat))){
       out$bhat <- out$bhat[,-exclude_condition]
       out$sbhat <- out$sbhat[,-exclude_condition]
