@@ -566,7 +566,7 @@ load_multitrait_R_sumstat <- function(susie_fit, sumstats_db, coverage = NULL, t
   out$sbhat <- out$sbhat[, -which(names(out$sbhat) == "variants"), drop = FALSE]
   out$region <- names(susie_fit)
 
-  if (!is.null(exclude_condition)) {
+  if (!is.null(exclude_condition) && length(exclude_condition)!=0) {
     if (all(exclude_condition %in% colnames(out$bhat))) {
       out$bhat <- out$bhat[, -exclude_condition]
       out$sbhat <- out$sbhat[, -exclude_condition]
