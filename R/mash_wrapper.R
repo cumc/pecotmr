@@ -416,80 +416,67 @@ merge_susie_cs <- function(susie_fit, coverage = "cs_coverage_0.95", complementa
 
 #' @importFrom data.table as.data.table setnames
 #' @export
-load_multitrait_R_sumstat <- function(
-    susie_fit, sumstats_db, coverage = NULL, top_loci = FALSE,
-    filter_file = NULL, remove_any_missing = FALSE, max_rows_selected = 300, nan_remove = FALSE,
-    exclude_condition, complementary = FALSE, allele_flip = TRUE, ld_ref) {
-  extract_data <- function(sumstats_db) {
-    bhat <- as.data.table(cbind(sumstats_db$variant_names, sumstats_db$sumstats$betahat))
-    sbhat <- as.data.table(cbind(sumstats_db$variant_names, sumstats_db$sumstats$sebetahat))
-    setnames(bhat, c("variants", "bhat"))
-    setnames(sbhat, c("variants", "sbhat"))
-    bhat[, bhat := as.numeric(bhat)]
-    sbhat[, sbhat := as.numeric(sbhat)]
-    list(bhat = bhat$bhat, sbhat = sbhat$sbhat, variants = bhat$variants)
-  }
-
+load_multitrait_R_sumstat <- function(susie_fit,sumstats_db, coverage = NULL, top_loci = FALSE, filter_file = NULL, remove_any_missing = TRUE, max_rows_selected = 300, nan_remove=FALSE, exclude_condition, ld_meta_file) {
+  
+   extract_data <- function(sumstats_db) {
+      bhat <- as.data.table(cbind(sumstats_db$variant_names, sumstats_db$sumstats$betahat))
+      sbhat <- as.data.table(cbind(sumstats_db$variant_names, sumstats_db$sumstats$sebetahat))
+      setnames(bhat, c("variants", "bhat"))
+      setnames(sbhat, c("variants", "sbhat"))
+      bhat[, bhat := as.numeric(bhat)]
+      sbhat[, sbhat := as.numeric(sbhat)]
+      list(
+        bhat = bhat$bhat,
+        sbhat = sbhat$sbhat,
+        variants = bhat$variants
+      )
+    }  
   split_variants_and_match <- function(variant, filter_file, max_rows_selected) {
     if (!file.exists(filter_file)) {
       stop("Filter file does not exist.")
     }
-
+    
     # Split the variant vector into components
-    variant_split <- strsplit(variant, ":")
-    variant_df <- data.frame(chr = sapply(variant_split, `[`, 1), pos = sapply(
-      variant_split,
-      `[`, 2
-    ), stringsAsFactors = FALSE)
-    variant_df$pos <- as.numeric(variant_df$pos)
-
+    variant_df <- parse_variant_id(variant)
+    
     # get the region of interest
     min_pos <- min(variant_df$pos)
     max_pos <- max(variant_df$pos)
-    chrom <- unique(variant_df$chr)
+    chrom <- unique(variant_df$chrom)
     if (length(chrom) != 1) {
       stop("Variants are from multiple chromosomes. Cannot create a single range string.")
     }
-    region <- paste0(chrom, ":", min_pos, "-", max_pos)
+    region = paste0(chrom, ":", min_pos, "-", max_pos)
     ref_table <- tabix_region(filter_file, region)
-    if (is.null(ref_table)) {
+    if (is.null(ref_table)){
       stop("No variants in the region.")
     }
-    colnames(ref_table)[1:2] <- c("#CHROM", "POS")
+    colnames(ref_table)[1:2] = c("#CHROM", "POS")
     if (!all(c("#CHROM", "POS") %in% colnames(ref_table))) {
       stop("Filter file must contain columns: #CHROM, POS.")
     }
-    matched_indices <- which(variant_df$chr %in% ref_table$`#CHROM` & variant_df$pos %in%
-      ref_table$POS)
-    if (!is.null(max_rows_selected) && max_rows_selected > 0 && max_rows_selected <
-      length(matched_indices)) {
+    matched_indices <- which(variant_df$chrom %in% ref_table$`#CHROM` & variant_df$pos %in% ref_table$POS)
+    if (!is.null(max_rows_selected) && max_rows_selected > 0 && max_rows_selected < length(matched_indices)) {
       selected_rows <- sample(length(matched_indices), max_rows_selected)
       matched_indices <- matched_indices[selected_rows]
     }
     return(matched_indices)
   }
-
-  merge_matrices <- function(matrix_list, value_column, id_column = "variants",
-                             remove_any_missing = FALSE, ld_ref = ld_ref, allele_flip = TRUE) {
+  
+  merge_matrices <- function(matrix_list, value_column, ld_meta_file, id_column = "variants",
+                             remove_any_missing = FALSE) {
     df_list <- lapply(seq_along(matrix_list), function(i){
       # Step 1: Convert matrix to data frame and extract relevant columns
       df <- as.data.frame(matrix_list[[i]])
       df2 <- df[, c(id_column, value_column)]
-      if (allele_flip) {
+      if (!is.null(ld_meta_file)) {
        # Step 2: Split 'variants' to extract chromosomal info
-       cohort_variants_split <- strsplit(df2[,c(id_column)], ":")
-       cohort_variants_df <- data.frame(
-         chrom = sapply(cohort_variants_split, `[`, 1), 
-         pos = as.integer(sapply(cohort_variants_split, `[`, 2)), 
-         ref = sapply(cohort_variants_split, `[`, 3),
-         alt = sapply(cohort_variants_split, `[`, 4),
-         stringsAsFactors = FALSE
-       )
+       cohort_variants_df <- parse_variant_id(df2[,c(id_column)])
        # Step 3: Combine extracted chromosomal info with value column
        cohort_df <- cbind(cohort_variants_df, bhat = df2[,value_column,drop=FALSE])
 
        # Step 4: Merge with LD reference and filter
-       variants_ld_block_match <- merge(cohort_df, ld_ref, by = "chrom", allow.cartesian = TRUE)%>%
+       variants_ld_block_match <- merge(cohort_df, ld_meta_file, by = "chrom", allow.cartesian = TRUE)%>%
                                  filter(pos > start & pos < end) %>%
                                  select(-path)
           
@@ -497,8 +484,7 @@ load_multitrait_R_sumstat <- function(
        process_group <- function(data) {  
           # Construct file path
           bim_file_path <- unique(data$bim_path)
-          ld_bim_file_path <- paste0("/mnt/vast/hpc/csg/data_public/20240120_ADSP_LD_matrix/",bim_file_path, sep="")
-          ld_bim_file <- fread(ld_bim_file_path)
+          ld_bim_file <- fread(bim_file_path)
   
           # Perform allele quality control
           flipped_data <- allele_qc(data[, 1:4], ld_bim_file$V2, data, col_to_flip = c(value_column),
@@ -535,70 +521,61 @@ load_multitrait_R_sumstat <- function(
     }
     return(merged_df)
   }
+  
   results <- lapply(sumstats_db[[1]], function(data) extract_data(data))
   trait_names <- names(results)
-
-  bhat <- merge_matrices(results,
-    value_column = "bhat", id_column = "variants",
-    remove_any_missing
-  )
-  sbhat <- merge_matrices(results,
-    value_column = "sbhat", id_column = "variants",
-    remove_any_missing
-  )
+  
+  bhat = merge_matrices(results, value_column="bhat",  ld_meta_file, id_column = "variants", remove_any_missing)
+  sbhat = merge_matrices(results, value_column="sbhat", ld_meta_file, id_column = "variants", remove_any_missing)
   out <- list(bhat = bhat, sbhat = sbhat)
-
+  
   # Check if variants are the same in both bhat and sbhat
   if (!identical(out$bhat$variants, out$sbhat$variants)) {
     stop("Error: Variants in bhat and sbhat are not the same.")
   }
-  var_idx <- 1:nrow(out$bhat)
+  var_idx = 1:nrow(out$bhat)
   if (!is.null(filter_file)) {
-    variants <- out$bhat$variants
-    var_idx <- split_variants_and_match(variants, filter_file, max_rows_selected)
+    variants = out$bhat$variants
+    var_idx = split_variants_and_match(variants, filter_file, max_rows_selected)
   }
-
+  
   if (top_loci) {
-    union_top_loci <- merge_susie_cs(susie_fit, coverage, complementary)
-    if (!is.null(union_top_loci)) {
-      strong_signal_df <- union_top_loci %>%
-        group_by(credible_set_names) %>%
-        filter(median_pip == max(median_pip)) %>%
-        slice(1) %>%
-        ungroup()
-      var_idx <- which(out$bhat$variants %in% strong_signal_df$variant_id)
+    union_top_loci <- merge_susie_cs(susie_fit,coverage)
+    if(!is.null(union_top_loci)){
+    strong_signal_df <- union_top_loci %>% 
+                 group_by(credible_set_names) %>%
+                 filter(median_pip == max(median_pip)) %>%
+                 slice(1) %>% ungroup()
+    var_idx <- which(out$bhat$variants %in% strong_signal_df$variant_id)
     } else {
       var_idx <- NULL
     }
   }
 
-
+  
   # Extract only subset of data
   variants <- out$bhat$variants[var_idx]
-  out$bhat <- out$bhat[var_idx, , drop = FALSE]
-  out$sbhat <- out$sbhat[var_idx, , drop = FALSE]
-
-  if (nan_remove) {
-    out <- handle_invalid_summary_stat(out, bhat = "bhat", sbhat = "sbhat", z = nan_remove)
-  }
-  rownames(out$bhat) <- rownames(out$sbhat) <- variants
-  colnames(out$bhat)[2:ncol(out$bhat)] <- colnames(out$sbhat)[2:ncol(out$bhat)] <- trait_names
-  out$bhat <- out$bhat[, -which(names(out$bhat) == "variants"), drop = FALSE]
-  out$sbhat <- out$sbhat[, -which(names(out$sbhat) == "variants"), drop = FALSE]
-  out$region <- names(susie_fit)
-
-  if (length(exclude_condition) > 0) {
-    if (all(exclude_condition %in% colnames(out$bhat))) {
-      out$bhat <- out$bhat[, -exclude_condition, drop = FALSE]
-      out$sbhat <- out$sbhat[, -exclude_condition, drop = FALSE]
-    } else {
-      # Handle the case where exclude_condition names do not exist in column
-      # names of dat This could be an error
+  out$bhat <- out$bhat[var_idx,,drop=FALSE]
+  out$sbhat <- out$sbhat[var_idx,,drop=FALSE]
+  
+   rownames(out$bhat) <- rownames(out$sbhat) <- variants
+   colnames(out$bhat)[2:ncol(out$bhat)] <- colnames(out$sbhat)[2:ncol(out$bhat)] <- trait_names
+   out$bhat <- out$bhat[,-which(names(out$bhat)=="variants"), drop = FALSE]
+   out$sbhat <- out$sbhat[,-which(names(out$sbhat)=="variants"), drop = FALSE]
+   out$region = names(susie_fit)
+                    
+   if (length(exclude_condition) > 0) {
+     if(all(exclude_condition %in% colnames(out$bhat))){
+      out$bhat <- out$bhat[,-exclude_condition]
+      out$sbhat <- out$sbhat[,-exclude_condition]
+     } else {
+     # Handle the case where exclude_condition names do not exist in column names of dat
+     # This could be an error
       stop(paste("Error: exclude_condition are not present in", out$region))
-    }
-  }
-  return(out)
-}
+     }
+   }
+   return(out)
+ }
 
 #' @export
 mash_rand_null_sample <- function(dat, n_random, n_null, exclude_condition, seed = NULL) {
