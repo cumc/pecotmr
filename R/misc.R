@@ -233,18 +233,18 @@ parse_region <- function(region) {
   return(df)
 }
 
-#' @export                                
+#' @export
 parse_variant_id <- function(region) {
-    variants_split <- strsplit(region, ":")
-    variants_df <- data.frame(
-         chrom = sapply(variants_split, `[`, 1), 
-         pos = as.integer(sapply(variants_split, `[`, 2)), 
-         ref = sapply(variants_split, `[`, 3),
-         alt = sapply(variants_split, `[`, 4),
-         stringsAsFactors = FALSE
-       )
-    return(variants_df)
-}                                
+  variants_split <- strsplit(region, ":")
+  variants_df <- data.frame(
+    chrom = sapply(variants_split, `[`, 1),
+    pos = as.integer(sapply(variants_split, `[`, 2)),
+    ref = sapply(variants_split, `[`, 3),
+    alt = sapply(variants_split, `[`, 4),
+    stringsAsFactors = FALSE
+  )
+  return(variants_df)
+}
 
 # Retrieve a nested element from a list structure
 #' @export
