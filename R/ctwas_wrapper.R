@@ -19,7 +19,7 @@ ctwas_bimfile_loader <- function(bim_file_path) {
 
 #' Utility function to format meta data dataframe for cTWAS analyses
 #' @importFrom data.table fread
-get_ctwas_meta_data <- function(ld_meta_data_file, regions_table) {
+get_ctwas_meta_data <- function(ld_meta_data_file, regions_table, xqtl_meta_data=NULL) {
   LD_info <- fread(ld_meta_data_file, header = TRUE, data.table = FALSE)
   colnames(LD_info)[1] <- "chrom"
   LD_info$region_id <- gsub("chr", "", paste(LD_info$chrom, LD_info$start, LD_info$end, sep = "_"))
@@ -30,5 +30,11 @@ get_ctwas_meta_data <- function(ld_meta_data_file, regions_table) {
   colnames(region_info)[1] <- "chrom"
   region_info$chrom <- as.integer(gsub("chr", "", region_info$chrom))
   region_info$region_id <- paste(region_info$chrom, region_info$start, region_info$stop, sep = "_")
+  if (!is.null(xqtl_meta_data)){
+    xqtl_meta_data <- fread(xqtl_meta_data, data.table=FALSE)
+    region_info <- do.call(rbind, lapply(1:nrow(region_info), function(x) {
+      if(!any(region_info$start[x]< xqtl_meta_data$TSS & region_info$stop[x] > xqtl_meta_data$TSS)) return(NULL) else return(region_info[x,,drop=FALSE])
+    }))
+  }
   return(list(LD_info = LD_info, region_info = region_info))
 }
