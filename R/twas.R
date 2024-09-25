@@ -381,6 +381,7 @@ twas_pipeline <- function(twas_weights_data,
         model_selected <- post_qc_twas_data[[molecular_id]][["model_selection"]][[context]]
         postqc_scaled_weight <- post_qc_twas_data[[molecular_id]][["weights_qced"]][[context]][["scaled_weights"]][, paste0(model_selected, "_weights"), drop = FALSE]
         colnames(postqc_scaled_weight) <- "weight"
+        rownames(postqc_scaled_weight) <- gsub("chr", "",rownames(postqc_scaled_weight))
         context_variants <- rownames(post_qc_twas_data[[molecular_id]][["weights_qced"]][[context]][["scaled_weights"]])
         context_range <- as.integer(sapply(context_variants, function(variant) strsplit(variant, "\\:")[[1]][2]))
         weight[[paste0(molecular_id, "|", data_type, "_", context)]] <- list(
@@ -407,6 +408,7 @@ twas_pipeline <- function(twas_weights_data,
       colnames(z_snp[[study]])[which(colnames(z_snp[[study]]) == "variant_id")] <- "id"
       z_snp[[study]] <- z_snp[[study]][, c("id", "A1", "A2", "z")]
       z_snp[[study]] <- z_snp[[study]][!duplicated(z_snp[[study]]$id), , drop = FALSE]
+      z_snp[[study]]$id <- gsub("chr", "", z_snp[[study]]$id)
     }
     return(list(weights = weights, z_gene = z_gene_list, z_snp = z_snp))
   }
