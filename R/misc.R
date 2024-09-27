@@ -47,6 +47,7 @@ pval_global <- function(pvals, comb_method = "HMP", naive = FALSE) {
   return(if (naive) naive_pval else global_pval) # global_pval and naive_pval
 }
 
+#' @importFrom qvalue qvalue
 compute_qvalues <- function(pvalues) {
     tryCatch({
         if(length(pvalues) < 2) {
