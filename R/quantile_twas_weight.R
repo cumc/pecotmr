@@ -51,7 +51,8 @@ qr_screen <- function(X, Y, Z = NULL, tau.list, threshold = 0.05, method = 'qval
         }
 
         if (!is.null(Z)) {
-            xstar = lm(x ~ zz - 1)$residual
+            #xstar = lm(x ~ zz - 1)$residual
+            xstar = .lm.fit(zz, x)$residual
         } else {
             xstar = x
         }
@@ -157,7 +158,7 @@ qr_screen <- function(X, Y, Z = NULL, tau.list, threshold = 0.05, method = 'qval
 #' @param final_clump_r2 R-squared threshold for final LD clumping based on MAF
 #' @return A list containing final SNPs and clumped SNPs
 #' @export
-perform_clumping_and_pruning <- function(X, qr_results, maf_list = NULL, ld_clump_r2 = 0.2, final_clump_r2 = 0.8) {
+multicontext_ld_clumping <- function(X, qr_results, maf_list = NULL, ld_clump_r2 = 0.2, final_clump_r2 = 0.8) {
     # Extract significant SNP names
     sig_SNPs_names <- qr_results$sig.SNPs_names
     
@@ -331,7 +332,6 @@ return(result_table_wide)
 #' @param X Matrix of genotypes
 #' @param cor_thres Correlation threshold for filtering
 #' @return A list containing filtered X matrix and filter IDs
-#' @export
 corr_filter <- function(X, cor_thres = 0.8) {
     p <- ncol(X)
     
@@ -367,7 +367,6 @@ corr_filter <- function(X, cor_thres = 0.8) {
 #' @param ExprData List containing X, Y, C, and X.filter
 #' @param tau.list Vector of quantiles to be analyzed
 #' @return A list containing beta matrix as twas weight and pseudo R-squared values
-#' @export
 calculate_qr_and_pseudo_R2 <- function(ExprData, tau.list) {
     # Fit models for all taus
     fit_full <- rq(Y ~ X.filter + C, tau = tau.list, data = ExprData)
@@ -464,7 +463,7 @@ quantile_twas_weight_pipeline <- function(X, Y, Z = NULL, maf = NULL, extract_re
         results$message <- paste0("Only one significant SNP in gene ", extract_region_name, names(fdat$residual_Y)[r], ", skipping correlation filter.")
     }
     # Step 3: LD clumping and pruning from results of QR_screen
-    LD_SNPs <- perform_clumping_and_pruning(X = X[, p.screen$sig_SNP_threshold, drop = FALSE], qr_results = p.screen, maf_list = maf)
+    LD_SNPs <- multicontext_ld_clumping(X = X[, p.screen$sig_SNP_threshold, drop = FALSE], qr_results = p.screen, maf_list = maf)
     x_clumped <- X[, p.screen$sig_SNP_threshold, drop = FALSE][, LD_SNPs$final_SNPs, drop = FALSE]
     
     # Step 4: Only fit marginal QR to get beta with SNPs after LD pruning for quantile_qtl_tau_list values
