@@ -16,7 +16,7 @@ twas_pipeline(
 \arguments{
 \item{twas_weights_data}{List of list of twas weights output from generate_twas_db function.}
 
-\item{region_block}{A string with informaiton of chromosome number, startind position, and ending position of LD block conneced with "_".}
+\item{region_block}{A string with LD region informaiton of chromosome number, star and end position of LD block conneced with "_".}
 }
 \value{
 A list of list containing twas result table and formatted TWAS data compatible with ctwas_sumstats() function.
