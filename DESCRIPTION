@@ -38,7 +38,8 @@ Imports:
     mvsusieR,
     tibble,
     qgg,
-    R.utils
+    R.utils,
+    qvalue
 Suggests: 
     testthat,
     knitr,
@@ -46,7 +47,9 @@ Suggests:
     GBJ,
     harmonicmeanp,
     plink2R,
-    bigsnpr
+    bigsnpr,
+    quantreg,
+    bigstatsr
 LinkingTo: 
     Rcpp,
     RcppArmadillo,

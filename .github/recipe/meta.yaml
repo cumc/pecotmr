@@ -27,6 +27,8 @@ requirements:
     - bioconductor-iranges
     - r-bedtoolsr
     - r-base=4.3
+    - r-bigsnpr
+    - r-bigstatsr
     - r-coloc
     - r-data.table
     - r-dofuture
@@ -59,6 +61,7 @@ requirements:
     - r-susier
     - r-tidyr
     - r-vctrs
+    - r-quantreg
     - r-qgg
     - r-r.utils
   run:
@@ -67,6 +70,8 @@ requirements:
     - bioconductor-iranges
     - r-bedtoolsr
     - r-base>=4.3
+    - r-bigsnpr
+    - r-bigstatsr
     - r-coloc
     - r-data.table
     - r-dofuture
@@ -99,6 +104,7 @@ requirements:
     - r-susier
     - r-tidyr
     - r-vctrs
+    - r-quantreg
     - r-qgg
     - r-r.utils
 
