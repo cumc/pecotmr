@@ -10,7 +10,7 @@
 #' The main function in this file is `quantile_twas_weight_pipeline`, which
 #' orchestrates the entire analysis process. Other functions are helper
 #' functions used within the main pipeline.
-
+#'
 
 #' Qrank Score Test Screen
 #' @param X Matrix of predictors
@@ -22,6 +22,9 @@
 #' @param top_count Number of top SNPs to select
 #' @param top_percent Percentage of top SNPs to select
 #' @return A list containing various results from the QR screen
+#' @importFrom quantreg rq rq.fit.br
+#' @importFrom tidyr separate
+#' @importFrom dplyr %>% mutate select
 #' @export
 qr_screen <- function(X, Y, Z = NULL, tau.list, threshold = 0.05, method = 'qvalue', top_count = 10, top_percent = 15) {
     p = ncol(X)
@@ -157,6 +160,8 @@ qr_screen <- function(X, Y, Z = NULL, tau.list, threshold = 0.05, method = 'qval
 #' @param ld_clump_r2 R-squared threshold for initial LD clumping based on pvalue
 #' @param final_clump_r2 R-squared threshold for final LD clumping based on MAF
 #' @return A list containing final SNPs and clumped SNPs
+#' @importFrom bigstatsr FBM.code256 
+#' @importFrom bigsnpr snp_clumping 
 #' @export
 multicontext_ld_clumping <- function(X, qr_results, maf_list = NULL, ld_clump_r2 = 0.2, final_clump_r2 = 0.8) {
     # Extract significant SNP names
@@ -258,6 +263,9 @@ multicontext_ld_clumping <- function(X, qr_results, maf_list = NULL, ld_clump_r2
 #' @param Z Matrix of covariates (optional)
 #' @param tau_values Vector of quantiles to be analyzed
 #' @return A data frame with QR coefficients for each quantile
+#' @importFrom quantreg rq rq.fit.br
+#' @importFrom tidyr pivot_wider separate
+#' @importFrom dplyr %>% mutate select
 #' @export
 perform_qr_analysis <- function(X, Y, Z = NULL, tau_values = seq(0.05, 0.95, by = 0.05)) {
 # Convert Y and X to matrices if they aren't already
@@ -332,6 +340,7 @@ return(result_table_wide)
 #' @param X Matrix of genotypes
 #' @param cor_thres Correlation threshold for filtering
 #' @return A list containing filtered X matrix and filter IDs
+#' @importFrom Rfast cora
 corr_filter <- function(X, cor_thres = 0.8) {
     p <- ncol(X)
     
@@ -367,6 +376,7 @@ corr_filter <- function(X, cor_thres = 0.8) {
 #' @param ExprData List containing X, Y, C, and X.filter
 #' @param tau.list Vector of quantiles to be analyzed
 #' @return A list containing beta matrix as twas weight and pseudo R-squared values
+#' @importFrom quantreg rq rq.fit.br
 calculate_qr_and_pseudo_R2 <- function(ExprData, tau.list) {
     # Fit models for all taus
     fit_full <- rq(Y ~ X.filter + C, tau = tau.list, data = ExprData)
