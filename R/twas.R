@@ -1,131 +1,3 @@
-#' Determine Imputability and Variant Selection
-#'
-#' This function load TWAS weights and assesses the imputability of genes across different contexts,
-#' and select top variants for imputable gene-context pair, and output the extracted variant weights
-#' from best performing method model. Imputability of a gene-context pair are determined by having
-#' least one of the twas methods' model being imputable based on cross livadtion metrics. The imputable
-#' model is if the model surpasses the r-square and p-value threashold from cross validation metrics.
-#' If non of the contexts of a gene has at least one method being imputable, then this gene will be
-#' considered as unimputable, and do not return any weight results. This function is essential for preparing data
-#' for complex trait weighted analysis with sparse weight.
-#'
-#' @param weight_db_files File paths to `.rds` files containing SuSiE-TWAS weights.
-#' @param variable_name_obj Name of the element in SuSiE-TWAS output that lists variant names aligned with TWAS weights.
-#' @param max_var_selection Maximum number of SNPs to be selected from each gene-context pair.
-#' @param min_rsq_threshold Minimum \(R^2\) threshold for determining imputability of a gene-context pair.
-#' @param p_val_cutoff Maximum allowable p-value for a gene to be considered imputable in a given context.
-#' @return A list of elements containing fine-mapping and TWAS related data:
-#' \itemize{
-#'   \item{refined_twas_weights}{Context imputability, model selection, and selected variants, and extracted
-#' weights for the selected variants across all contexts for a imputable gene. }
-#'   \item{susie_results}{SuSiE fine-mapping results, including variant selection from the SuSiE-TWAS pipeline.}
-#'   \item{weights}{TWAS weights from the SuSiE-TWAS pipeline, to be harmonized for further analysis.}
-#'   \item{gene}{Gene name of the twas db weight.}
-#'   \item{cv_performance}{Cross validation performance metrics for all contexts.}
-#' }
-#' @export
-#' @examples
-#' results <- generate_twas_db(
-#'   weight_db_file = "path/to/weights.rds", conditions = c("Mic", "Oli", "Exc"),
-#'   min_rsq_threshold = 0.01, p_val_cutoff = 0.05
-#' )
-generate_twas_db <- function(weight_db_file, contexts = NULL, variable_name_obj = "variant_names",
-                             susie_obj = "susie_weights_intermediate", twas_weights_table = "twas_weights",
-                             min_rsq_threshold = 0.01, p_val_cutoff = 0.05,
-                             data_type_table = NULL, region_name) {
-  # determine if the region is imputable and select the best model
-  # Function to pick the best model based on adj_rsq and p-value
-  pick_best_model <- function(twas_data_combined, contexts, min_rsq_threshold, p_val_cutoff) {
-    best_rsq <- min_rsq_threshold
-    # Extract performance table
-    performance_tables <- lapply(contexts, function(context) {
-      get_nested_element(twas_data_combined, c("twas_cv_performance", context))
-    })
-    names(performance_tables) <- contexts
-    # Determine if a gene/region is imputable and select the best model
-    model_selection <- lapply(contexts, function(context) {
-      selected_model <- NULL
-      available_models <- do.call(c, lapply(names(performance_tables[[context]]), function(model) {
-        if (!is.na(performance_tables[[context]][[model]][, "rsq"])) {
-          return(model)
-        }
-      }))
-      if (length(available_models) <= 0) {
-        message(paste0("No model provided TWAS cross validation performance metrics information at context ", context, ". "))
-        return(NULL)
-      }
-      for (model in available_models) {
-        model_data <- performance_tables[[context]][[model]]
-        if (model_data[, "rsq"] >= best_rsq) {
-          best_rsq <- model_data[, "rsq"]
-          selected_model <- model
-        }
-      }
-      if (is.null(selected_model)) {
-        message(paste0(
-          "No model has p-value < ", p_val_cutoff, " and r2 >= ", min_rsq_threshold, ", skipping context ", context,
-          " at region ", unique(region_name), ". "
-        ))
-        return(list(selected_model = c(NULL), imputable = FALSE)) # No significant model found
-      } else {
-        selected_model <- unlist(strsplit(selected_model, "_performance"))
-        message(paste0("The selected best performing model for context ", context, " at region ", region_name, " is ", selected_model, ". "))
-        return(list(selected_model = selected_model, imputable = TRUE))
-      }
-    })
-    names(model_selection) <- contexts
-    return(model_selection)
-  }
-
-  ## load twas weights
-  twas_data_combined <- load_twas_weights(weight_db_file,
-    conditions = contexts, variable_name_obj = variable_name_obj, susie_obj = susie_obj,
-    twas_weights_table = twas_weights_table
-  )
-  if (!"weights" %in% names(twas_data_combined)) stop("TWAS weights not loaded. ")
-  weights <- twas_data_combined$weights
-  if (is.null(contexts)) contexts <- names(weights)
-
-  ## we first select best model, determine imputable contexts, then select variants based on susie obj output
-  model_selection <- pick_best_model(twas_data_combined, contexts, min_rsq_threshold, p_val_cutoff)
-
-  # Determine Imputable Contexts
-  imputable_contexts <- c()
-  for (contx in contexts) {
-    if (isTRUE(model_selection[[contx]][["imputable"]])) imputable_contexts <- c(imputable_contexts, contx)
-  }
-  # select variants
-  names(contexts) <- rep("non_imputable", length(contexts))
-  names(contexts)[which(contexts %in% imputable_contexts)] <- "imputable"
-
-  # output export_twas_weights_db for imputable genes across all contexts
-  export_twas_weights_db <- list()
-  if (length(imputable_contexts) > 0) {
-    for (context in contexts) {
-      # construct export_twas_weights_db
-      export_twas_weights_db[[context]][["is_imputable"]] <- model_selection[[context]][["imputable"]]
-      export_twas_weights_db[[context]][["variant_names"]] <- rownames(weights[[context]])
-      export_twas_weights_db[[context]][["selected_model"]] <- model_selection[[context]][["selected_model"]]
-      export_twas_weights_db[[context]][["susie_weights_intermediate"]] <- twas_data_combined$susie_result[[context]]
-      if (model_selection[[context]]$imputable) {
-        export_twas_weights_db[[context]][["model_weights"]] <- weights[[context]][, paste0(model_selection[[context]][["selected_model"]], "_weights")]
-      } else {
-        export_twas_weights_db[[context]][["model_weights"]] <- rep(NA, length(rownames(weights[[context]])))
-      }
-      if (!is.null(data_type_table)) export_twas_weights_db[[context]][["data_type"]] <- data_type_table$type[sapply(data_type_table$context, function(x) grepl(x, context))]
-    }
-    # return results
-    return(list(
-      export_twas_weights_db = export_twas_weights_db,
-      weights = weights, molecular_id = region_name, cv_performance = twas_data_combined$twas_cv_performance,
-      susie_results = twas_data_combined$susie_results
-    ))
-  } else {
-    message(paste0("Weight input ", weight_db_file, " is non-imputable for all contexts. \n "))
-    return(NULL)
-  }
-}
-
 #' Function to perform allele flip QC and harmonization on the weights and GWAS against LD for a region.
 #' FIXME: GWAS loading function from Haochen for both tabix & column-mapping yml application
 #'
@@ -157,9 +29,9 @@ generate_twas_db <- function(weight_db_file, contexts = NULL, variable_name_obj 
 harmonize_twas <- function(twas_weights_data, ld_meta_file_path, gwas_meta_file) {
   # Function to group contexts based on start and end positions
   group_contexts_by_region <- function(twas_weights_data, molecular_id, chrom, tolerance = 5000) {
-    region_info_df <- do.call(rbind, lapply(names(twas_weights_data$export_twas_weights_db), function(context) {
+    region_info_df <- do.call(rbind, lapply(names(twas_weights_data$weights), function(context) {
       wgt_range <- as.integer(sapply(
-        twas_weights_data[["export_twas_weights_db"]][[context]][["variant_names"]],
+        rownames(twas_weights_data[["weights"]][[context]]),
         function(variant_id) {
           strsplit(variant_id, "\\:")[[1]][2]
         }
@@ -174,7 +46,7 @@ harmonize_twas <- function(twas_weights_data, ld_meta_file_path, gwas_meta_file)
         context_group_1 = list(
           contexts = region_info_df$context,
           query_region = paste0(chrom, ":", region_info_df$start, "-", region_info_df$end),
-          all_variants = unique(twas_weights_data[["export_twas_weights_db"]][[region_info_df$context]][["variant_names"]])
+          all_variants = unique(rownames(twas_weights_data[["weights"]][[region_info_df$context]]))
         )
       )
       return(single_context_group)
@@ -216,7 +88,7 @@ harmonize_twas <- function(twas_weights_data, ld_meta_file_path, gwas_meta_file)
       merged_groups[[group]]$all_variants <- unique(do.call(c, lapply(
         contexts,
         function(context) {
-          twas_weights_data[["export_twas_weights_db"]][[context]][["variant_names"]]
+          rownames(twas_weights_data[["weights"]][[context]])
         }
       )))
     }
@@ -239,14 +111,15 @@ harmonize_twas <- function(twas_weights_data, ld_meta_file_path, gwas_meta_file)
 
   # Step 1: load TWAS weights data
   molecular_ids <- twas_weights_data$molecular_id
-  chrom <- as.integer(parse_number(gsub(":.*$", "", twas_weights_data[["export_twas_weights_db"]][[1]][["variant_names"]][1])))
+  chrom <- as.integer(parse_number(gsub(":.*$", "", rownames(twas_weights_data$weights[[1]])[1])))
   gwas_meta_df <- fread(gwas_meta_file, header = TRUE, sep = "\t", data.table = FALSE)
   gwas_files <- unique(gwas_meta_df$file_path[gwas_meta_df$chrom == chrom])
   names(gwas_files) <- unique(gwas_meta_df$study_id[gwas_meta_df$chrom == chrom])
   results <- list()
 
   # Step 2: Load LD for all events/genes by clustered context region
-  region_variants <- variant_id_to_df(unique(unlist(find_data(twas_weights_data$export_twas_weights_db, c(2, "variant_names")))))
+  twas_weights_data$variant_names <- lapply(twas_weights_data$weights, function(x) rownames(x))
+  region_variants <- variant_id_to_df(unique(unlist(twas_weights_data$variant_names)))
   region_of_interest <- data.frame(chrom = chrom, start = min(region_variants$pos), end = max(region_variants$pos))
   LD_list <- load_LD_matrix(ld_meta_file_path, region_of_interest, region_variants)
   # load snp info once
@@ -269,7 +142,7 @@ harmonize_twas <- function(twas_weights_data, ld_meta_file_path, gwas_meta_file)
   # loop through genes/events:
   for (molecular_id in molecular_ids) {
     results[[molecular_id]][["chrom"]] <- chrom
-    results[[molecular_id]][["data_type"]] <- if ("data_type" %in% names(twas_weights_data$export_twas_weights_db[[1]])) lapply(twas_weights_data$export_twas_weights_db, function(x) x$data_type)
+    results[[molecular_id]][["data_type"]] <- if ("data_type" %in% names(twas_weights_data)) twas_weights_data$data_type
     # group contexts based on the variant position
     context_clusters <- group_contexts_by_region(twas_weights_data, molecular_id, chrom, tolerance = 5000)
 
@@ -294,9 +167,8 @@ harmonize_twas <- function(twas_weights_data, ld_meta_file_path, gwas_meta_file)
 
         # loop through context within the context group:
         for (context in contexts) {
-          results[[molecular_id]][["model_selection"]][[context]] <- twas_weights_data$export_twas_weights_db[[context]][["selected_model"]]
           weights_matrix <- twas_weights_data[["weights"]][[context]]
-          if (is.null(rownames(weights_matrix))) rownames(weights_matrix) <- twas_weights_data$export_twas_weights_db[[context]][["variant_names"]]
+          if (is.null(rownames(weights_matrix))) stop("No variant names found in weights matrix.")
 
           # Step 4: harmonize weights, flip allele
           weights_matrix <- cbind(variant_id_to_df(rownames(weights_matrix)), weights_matrix)
@@ -321,7 +193,7 @@ harmonize_twas <- function(twas_weights_data, ld_meta_file_path, gwas_meta_file)
           if ("susie_weights" %in% colnames(twas_weights_data[["weights"]][[context]])) {
             adjusted_susie_weights <- adjust_susie_weights(twas_weights_data,
               keep_variants = postqc_weight_variants, allele_qc = TRUE,
-              variable_name_obj = c("export_twas_weights_db", context, "variant_names"),
+              variable_name_obj = c("variant_names", context),
               susie_obj = c("susie_results", context),
               twas_weights_table = c("weights", context), postqc_weight_variants, match_min_prop = 0.001
             )
@@ -329,7 +201,7 @@ harmonize_twas <- function(twas_weights_data, ld_meta_file_path, gwas_meta_file)
               susie_weights = setNames(adjusted_susie_weights$adjusted_susie_weights, adjusted_susie_weights$remained_variants_ids),
               weights_matrix_subset[gsub("chr", "", adjusted_susie_weights$remained_variants_ids), !colnames(weights_matrix_subset) %in% "susie_weights"]
             )
-            results[[molecular_id]][["susie_weights_intermediate_qced"]][[context]] <- twas_weights_data$export_twas_weights_db[[context]]$susie_weights_intermediate[c("pip", "cs_variants", "cs_purity")]
+            results[[molecular_id]][["susie_weights_intermediate_qced"]][[context]] <- twas_weights_data$susie_results[[context]][c("pip", "cs_variants", "cs_purity")]
             names(results[[molecular_id]][["susie_weights_intermediate_qced"]][[context]][["pip"]][pre_flip_variants]) <- weights_matrix_qced$target_data_qced$variant_id
             results[[molecular_id]][["susie_weights_intermediate_qced"]][[context]][["pip"]] <- results[[molecular_id]][["susie_weights_intermediate_qced"]][[context]][["pip"]][adjusted_susie_weights$remained_variants_ids]
             results[[molecular_id]][["susie_weights_intermediate_qced"]][[context]][["cs_variants"]] <- lapply(results[[molecular_id]][["susie_weights_intermediate_qced"]][[context]][["cs_variants"]], function(x) {
@@ -377,7 +249,9 @@ twas_pipeline <- function(twas_weights_data,
                           ld_meta_file_path,
                           gwas_meta_file,
                           region_block,
-                          mr_pval_cutoff = 0.05) {
+                          mr_pval_cutoff = 0.05, 
+                          min_rsq_threshold = 0.01, 
+                          p_val_cutoff = 0.05) {
   # internal function to format TWAS output
   format_twas_data <- function(post_qc_twas_data, twas_table) {
     weights_list <- do.call(c, lapply(names(post_qc_twas_data), function(molecular_id) {
@@ -386,7 +260,7 @@ twas_pipeline <- function(twas_weights_data,
       do.call(c, lapply(contexts, function(context) {
         weight <- list()
         data_type <- post_qc_twas_data[[molecular_id]][["data_type"]][[context]]
-        model_selected <- post_qc_twas_data[[molecular_id]][["model_selection"]][[context]]
+        model_selected <- post_qc_twas_data[[molecular_id]][["model_selection"]][[context]]$selected_model
         postqc_scaled_weight <- post_qc_twas_data[[molecular_id]][["weights_qced"]][[context]][["scaled_weights"]][, paste0(model_selected, "_weights"), drop = FALSE]
         colnames(postqc_scaled_weight) <- "weight"
         rownames(postqc_scaled_weight) <- gsub("chr", "", rownames(postqc_scaled_weight))
@@ -425,14 +299,55 @@ twas_pipeline <- function(twas_weights_data,
     }
     return(list(weights = weights, susie_weights_intermediate_qced = susie_weights_intermediate_qced, z_gene = z_gene_list, z_snp = z_snp))
   }
+  pick_best_model <- function(twas_data_combined, min_rsq_threshold, p_val_cutoff) {
+    best_rsq <- min_rsq_threshold
+    # Determine if a gene/region is imputable and select the best model
+    model_selection <- lapply(names(twas_data_combined$weights), function(context) {
+      selected_model <- NULL
+      available_models <- do.call(c, lapply(names(twas_data_combined$twas_cv_performance[[context]]), function(model) {
+        if (!is.na(twas_data_combined$twas_cv_performance[[context]][[model]][, "rsq"])) {
+          return(model)
+        }
+      }))
+      if (length(available_models) <= 0) {
+        message(paste0("No model provided TWAS cross validation performance metrics information at context ", context, ". "))
+        return(NULL)
+      }
+      for (model in available_models) {
+        model_data <- twas_data_combined$twas_cv_performance[[context]][[model]]
+        if (model_data[, "rsq"] >= best_rsq) {
+          best_rsq <- model_data[, "rsq"]
+          selected_model <- model
+        }
+      }
+      if (is.null(selected_model)) {
+        message(paste0(
+          "No model has p-value < ", p_val_cutoff, " and r2 >= ", min_rsq_threshold, ", skipping context ", context,
+          " at region ", unique(twas_data_combined$molecular_id), ". "
+        ))
+        return(list(selected_model = c(NULL), is_imputable = FALSE)) # No significant model found
+      } else {
+        selected_model <- unlist(strsplit(selected_model, "_performance"))
+        message(paste0("The selected best performing model for context ", context, " at region ", twas_data_combined$molecular_id, " is ", selected_model, ". "))
+        return(list(selected_model = selected_model, is_imputable = TRUE))
+      }
+    })
+    names(model_selection) <- names(twas_data_combined$weights)
+    return(model_selection)
+  }
 
   # Step 1: TWAS and MR analysis for all methods for imputable gene
   twas_results_db <- lapply(names(twas_weights_data), function(weight_db) {
     # harmonize twas weights and gwas sumstats against LD
+    twas_weights_data[[weight_db]][["molecular_id"]] <- weight_db
     twas_data_qced_result <- harmonize_twas(twas_weights_data[[weight_db]], ld_meta_file_path, gwas_meta_file)
     twas_data_qced <- twas_data_qced_result$twas_data_qced
     molecular_id <- names(twas_data_qced)
-    if (length(molecular_id) < 1) stop(paste0("No gene's data processed at harmonization process for ", weight_db, ". "))
+    twas_data_qced[[molecular_id]][["model_selection"]] <- setNames(pick_best_model(twas_weights_data[[weight_db]],
+                                  min_rsq_threshold=min_rsq_threshold, p_val_cutoff=p_val_cutoff), names(twas_weights_data[[weight_db]]$weights))
+    if (!"data_type" %in% names(twas_weights_data[[weight_db]])) twas_data_qced[[molecular_id]][["data_type"]] <- setNames(rep(list(NA), 
+                                  length(names(twas_weights_data[[weight_db]]$weights))),names(twas_weights_data[[weight_db]]$weights))
+    if (length(molecular_id) < 1) stop(paste0("No data harmonized for ", weight_db, ". "))
     contexts <- names(twas_data_qced[[molecular_id]][["weights_qced"]])
     gwas_studies <- names(twas_data_qced[[molecular_id]][["gwas_qced"]])
 
@@ -483,26 +398,22 @@ twas_pipeline <- function(twas_weights_data,
   mr_results <- do.call(rbind, lapply(twas_results_db, function(x) x$mr_result))
   twas_data <- do.call(c, lapply(twas_results_db, function(x) x$twas_data_qced))
   snp_info <- do.call(c, lapply(twas_results_db, function(x) x$snp_info))
-
+  
   # Step 2: Summarize and merge twas cv results and region information for all methods for all contexts for imputable genes.
   twas_table <- do.call(rbind, lapply(names(twas_weights_data), function(molecular_id) {
-    contexts <- names(twas_weights_data[[molecular_id]][["export_twas_weights_db"]])
-    # merge twas_cv information for same gene across all weight db files
-    cv_data <- do.call(c, lapply(names(twas_weights_data), function(file) {
-      if (twas_weights_data[[molecular_id]]$molecular_id == molecular_id) twas_weights_data[[molecular_id]]$cv_performance
-    }))
-    # loop through each context for all methods
+    contexts <- names(twas_weights_data[[molecular_id]]$weights)
+    # merge twas_cv information for same gene across all weight db files, loop through each context for all methods
     gene_table <- do.call(rbind, lapply(contexts, function(context) {
-      methods <- sub("_[^_]+$", "", names(cv_data[[context]]))
-      is_imputable <- twas_weights_data[[molecular_id]][["export_twas_weights_db"]][[context]]$is_imputable
-      selected_method <- twas_weights_data[[molecular_id]][["export_twas_weights_db"]][[context]]$selected_model
+      methods <- sub("_[^_]+$", "", names(twas_weights_data[[molecular_id]]$twas_cv_performance[[context]]))
+      is_imputable <- twas_data[[molecular_id]][["model_selection"]][[context]]$is_imputable
+      selected_method <- twas_data[[molecular_id]][["model_selection"]][[context]]$selected_model
       if (is.null(selected_method)) selected_method <- NA
       is_selected_method <- ifelse(methods == selected_method, TRUE, FALSE)
-      cv_rsqs <- sapply(cv_data[[context]], function(x) x[, "rsq"])
-      cv_pvals <- sapply(cv_data[[context]], function(x) x[, "pval"])
+      cv_rsqs <- sapply(twas_weights_data[[molecular_id]]$twas_cv_performance[[context]], function(x) x[, "rsq"])
+      cv_pvals <- sapply(twas_weights_data[[molecular_id]]$twas_cv_performance[[context]], function(x) x[, "pval"])
       context_table <- data.frame(
         context = context, method = methods, is_imputable = is_imputable, is_selected_method = is_selected_method,
-        rsq_cv = cv_rsqs, pval_cv = cv_pvals, type = twas_weights_data[[molecular_id]][["export_twas_weights_db"]][[context]]$data_type
+        rsq_cv = cv_rsqs, pval_cv = cv_pvals, type = twas_weights_data[[molecular_id]][["data_type"]][[context]]
       )
       return(context_table)
     }))

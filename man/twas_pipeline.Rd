@@ -10,7 +10,9 @@ twas_pipeline(
   ld_meta_file_path,
   gwas_meta_file,
   region_block,
-  mr_pval_cutoff = 0.05
+  mr_pval_cutoff = 0.05,
+  min_rsq_threshold = 0.01,
+  p_val_cutoff = 0.05
 )
 }
 \arguments{
