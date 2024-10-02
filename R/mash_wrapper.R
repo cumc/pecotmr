@@ -63,7 +63,9 @@ filter_mixture_components <- function (conditions_to_keep, U, w = NULL, w_cutoff
         }
         mat[to_keep, to_keep]
     }, conditions_to_keep)
+    
     for (mat_name in names(U)) {
+        # remove null component
         if (all(U[[mat_name]] == 0)) {
             U[[mat_name]] <- NULL
             if (!is.null(w)) 
