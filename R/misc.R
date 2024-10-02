@@ -49,35 +49,42 @@ pval_global <- function(pvals, comb_method = "HMP", naive = FALSE) {
 
 #' @importFrom qvalue qvalue
 compute_qvalues <- function(pvalues) {
-    tryCatch({
-        if(length(pvalues) < 2) {
-            return(pvalues)
-        } else {
-            return(qvalue(pvalues)$qvalues)
-        }
-    }, error = function(e) {
-        message("Too few p-values to calculate qvalue, fall back to BH")
-        qvalue(pvalues, pi0 = 1)$qvalues
-    })
+  tryCatch(
+    {
+      if (length(pvalues) < 2) {
+        return(pvalues)
+      } else {
+        return(qvalue(pvalues)$qvalues)
+      }
+    },
+    error = function(e) {
+      message("Too few p-values to calculate qvalue, fall back to BH")
+      qvalue(pvalues, pi0 = 1)$qvalues
+    }
+  )
 }
 
-pval_cauchy <- function(p, na.rm = T){
-  if(na.rm){
-    if(sum(is.na(p))){
-      p = p[!is.na(p)]
+pval_cauchy <- function(p, na.rm = T) {
+  if (na.rm) {
+    if (sum(is.na(p))) {
+      p <- p[!is.na(p)]
     }
   }
-  p[p>0.99]<-0.99
-  is.small<-(p<1e-16) & !is.na(p)
-  is.regular<-(p>=1e-16) & !is.na(p)
-  temp<-rep(NA,length(p))
-  temp[is.small]<-1/p[is.small]/pi
-  temp[is.regular]<-as.numeric(tan((0.5-p[is.regular])*pi))
-  
-  cct.stat<-mean(temp,na.rm=T)
-  if(is.na(cct.stat)){return(NA)}
-  if(cct.stat>1e+15){return((1/cct.stat)/pi)}else{
-    return(1-pcauchy(cct.stat))
+  p[p > 0.99] <- 0.99
+  is.small <- (p < 1e-16) & !is.na(p)
+  is.regular <- (p >= 1e-16) & !is.na(p)
+  temp <- rep(NA, length(p))
+  temp[is.small] <- 1 / p[is.small] / pi
+  temp[is.regular] <- as.numeric(tan((0.5 - p[is.regular]) * pi))
+
+  cct.stat <- mean(temp, na.rm = T)
+  if (is.na(cct.stat)) {
+    return(NA)
+  }
+  if (cct.stat > 1e+15) {
+    return((1 / cct.stat) / pi)
+  } else {
+    return(1 - pcauchy(cct.stat))
   }
 }
 

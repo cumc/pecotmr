@@ -134,36 +134,6 @@ multivariate_analysis_pipeline <- function(
     }
   }
 
-  filter_data_driven_mats <- function(Y, data_driven_mats, data_driven_mat_weights = NULL, data_driven_prior_weights_cutoff = 1e-4) {
-    conditions_to_keep <- colnames(Y)
-    # Check if colnames of Y is a subset of column names of each element in data_driven_mats
-    data_driven_mats <- lapply(data_driven_mats, function(mat, to_keep) {
-      missing_conditions <- setdiff(conditions_to_keep, colnames(mat))
-      if (length(missing_conditions) > 0) {
-        stop(paste("Condition(s)", paste(missing_conditions, collapse = ", "), "not found in matrix", mat_name))
-      }
-      mat[to_keep, to_keep]
-    }, conditions_to_keep)
-
-    for (mat_name in names(data_driven_mats)) {
-      # remove null component
-      if (all(data_driven_mats[[mat_name]] == 0)) {
-        data_driven_mats[[mat_name]] <- NULL
-        if (!is.null(data_driven_mat_weights)) data_driven_mat_weights <- data_driven_mat_weights[!names(data_driven_mat_weights) %in% mat_name]
-        next
-      }
-      if (!is.null(data_driven_mat_weights)) {
-        if (data_driven_mat_weights[mat_name] < data_driven_prior_weights_cutoff) {
-          data_driven_mat_weights <- data_driven_mat_weights[!names(data_driven_mat_weights) %in% mat_name]
-          data_driven_mats[[mat_name]] <- NULL
-        }
-        next
-      }
-    }
-    message(paste(length(data_driven_mats), "components of data driven matrices remained after filtering. "))
-    return(list(U = data_driven_mats, w = data_driven_mat_weights))
-  }
-
   initialize_mvsusie_prior <- function(condition_names, data_driven_prior_matrices,
                                        data_driven_prior_matrices_cv, cv_folds, prior_weights, data_driven_prior_weights_cutoff) {
     if (!is.null(data_driven_prior_matrices)) {
@@ -251,7 +221,7 @@ multivariate_analysis_pipeline <- function(
 
   # filter data driven prior matrices
   if (!is.null(data_driven_prior_matrices)) {
-    data_driven_prior_matrices <- filter_data_driven_mats(Y,
+    data_driven_prior_matrices <- filter_mixture_components(colnames(Y),
       data_driven_prior_matrices$U, data_driven_prior_matrices$w,
       data_driven_prior_weights_cutoff = data_driven_prior_weights_cutoff
     )
@@ -274,8 +244,8 @@ multivariate_analysis_pipeline <- function(
 
   if (!is.null(data_driven_prior_matrices_cv)) {
     for (fold in 1:length(data_driven_prior_matrices_cv)) {
-      data_driven_prior_matrices_cv[[fold]] <- filter_data_driven_mats(
-        Y, data_driven_prior_matrices_cv[[fold]]$U,
+      data_driven_prior_matrices_cv[[fold]] <- filter_mixture_components(
+        colnames(Y), data_driven_prior_matrices_cv[[fold]]$U,
         data_driven_prior_matrices_cv[[fold]]$w, data_driven_prior_weights_cutoff
       )
       data_driven_prior_matrices_cv[[fold]]$w <- data_driven_prior_matrices_cv[[fold]]$w[names(data_driven_prior_matrices_cv[[fold]]$w) %in% names(w0_updated)]

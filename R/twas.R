@@ -249,8 +249,8 @@ twas_pipeline <- function(twas_weights_data,
                           ld_meta_file_path,
                           gwas_meta_file,
                           region_block,
-                          mr_pval_cutoff = 0.05, 
-                          min_rsq_threshold = 0.01, 
+                          mr_pval_cutoff = 0.05,
+                          min_rsq_threshold = 0.01,
                           p_val_cutoff = 0.05) {
   # internal function to format TWAS output
   format_twas_data <- function(post_qc_twas_data, twas_table) {
@@ -344,9 +344,14 @@ twas_pipeline <- function(twas_weights_data,
     twas_data_qced <- twas_data_qced_result$twas_data_qced
     molecular_id <- names(twas_data_qced)
     twas_data_qced[[molecular_id]][["model_selection"]] <- setNames(pick_best_model(twas_weights_data[[weight_db]],
-                                  min_rsq_threshold=min_rsq_threshold, p_val_cutoff=p_val_cutoff), names(twas_weights_data[[weight_db]]$weights))
-    if (!"data_type" %in% names(twas_weights_data[[weight_db]])) twas_data_qced[[molecular_id]][["data_type"]] <- setNames(rep(list(NA), 
-                                  length(names(twas_weights_data[[weight_db]]$weights))),names(twas_weights_data[[weight_db]]$weights))
+      min_rsq_threshold = min_rsq_threshold, p_val_cutoff = p_val_cutoff
+    ), names(twas_weights_data[[weight_db]]$weights))
+    if (!"data_type" %in% names(twas_weights_data[[weight_db]])) {
+      twas_data_qced[[molecular_id]][["data_type"]] <- setNames(rep(
+        list(NA),
+        length(names(twas_weights_data[[weight_db]]$weights))
+      ), names(twas_weights_data[[weight_db]]$weights))
+    }
     if (length(molecular_id) < 1) stop(paste0("No data harmonized for ", weight_db, ". "))
     contexts <- names(twas_data_qced[[molecular_id]][["weights_qced"]])
     gwas_studies <- names(twas_data_qced[[molecular_id]][["gwas_qced"]])
@@ -398,7 +403,7 @@ twas_pipeline <- function(twas_weights_data,
   mr_results <- do.call(rbind, lapply(twas_results_db, function(x) x$mr_result))
   twas_data <- do.call(c, lapply(twas_results_db, function(x) x$twas_data_qced))
   snp_info <- do.call(c, lapply(twas_results_db, function(x) x$snp_info))
-  
+
   # Step 2: Summarize and merge twas cv results and region information for all methods for all contexts for imputable genes.
   twas_table <- do.call(rbind, lapply(names(twas_weights_data), function(molecular_id) {
     contexts <- names(twas_weights_data[[molecular_id]]$weights)

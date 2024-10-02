@@ -52,6 +52,37 @@ filter_invalid_summary_stat <- function(dat_list, bhat = NULL, sbhat = NULL, z =
   return(dat_list)
 }
 
+#' @export
+
+filter_mixture_components <- function(conditions_to_keep, U, w = NULL, w_cutoff = 1e-4) {
+  # Check if colnames of Y is a subset of column names of each element in U
+  U <- lapply(U, function(mat, to_keep) {
+    missing_conditions <- setdiff(conditions_to_keep, colnames(mat))
+    if (length(missing_conditions) > 0) {
+      stop(paste("Condition(s)", paste(missing_conditions, collapse = ", "), "not found in matrix", mat_name))
+    }
+    mat[to_keep, to_keep]
+  }, conditions_to_keep)
+
+  for (mat_name in names(U)) {
+    # remove null component
+    if (all(U[[mat_name]] == 0)) {
+      U[[mat_name]] <- NULL
+      if (!is.null(w)) w <- w[!names(w) %in% mat_name]
+      next
+    }
+    if (!is.null(w)) {
+      if (w[mat_name] < w_cutoff) {
+        w <- w[!names(w) %in% mat_name]
+        U[[mat_name]] <- NULL
+      }
+      next
+    }
+  }
+  message(paste(length(U), "components of matrices remained after filtering. "))
+  return(list(U = U, w = w))
+}
+
 # This function extracts tensorQTL results for given region for multiple
 # summary statistics files
 #' @export
@@ -566,7 +597,7 @@ load_multitrait_R_sumstat <- function(susie_fit, sumstats_db, coverage = NULL, t
   out$sbhat <- out$sbhat[, -which(names(out$sbhat) == "variants"), drop = FALSE]
   out$region <- names(susie_fit)
 
-  if (!is.null(exclude_condition) && length(exclude_condition)!=0) {
+  if (!is.null(exclude_condition) && length(exclude_condition) != 0) {
     if (all(exclude_condition %in% colnames(out$bhat))) {
       out$bhat <- out$bhat[, -exclude_condition]
       out$sbhat <- out$sbhat[, -exclude_condition]
