@@ -53,33 +53,38 @@ filter_invalid_summary_stat <- function(dat_list, bhat = NULL, sbhat = NULL, z =
 }
 
 #' @export
-filter_mixture_components <- function(conditions_to_keep, U, w = NULL, w_cutoff = 1e-4) {
-  # Check if colnames of Y is a subset of column names of each element in U
-  U <- lapply(U, function(mat, to_keep) {
-    missing_conditions <- setdiff(conditions_to_keep, colnames(mat))
-    if (length(missing_conditions) > 0) {
-      stop(paste("Condition(s)", paste(missing_conditions, collapse = ", "), "not found in matrix", mat_name))
+filter_mixture_components <- function (conditions_to_keep, U, w = NULL, w_cutoff = 1e-04) {
+    phenos_out <- setdiff(colnames(U[[1]]), conditions_to_keep)
+    U <- lapply(U, function(mat, to_keep) {
+        missing_conditions <- setdiff(conditions_to_keep, colnames(mat))
+        if (length(missing_conditions) > 0) {
+            stop(paste("Condition(s)", paste(missing_conditions, 
+                collapse = ", "), "not found in matrix", mat_name))
+        }
+        mat[to_keep, to_keep]
+    }, conditions_to_keep)
+    for (mat_name in names(U)) {
+        if (all(U[[mat_name]] == 0)) {
+            U[[mat_name]] <- NULL
+            if (!is.null(w)) 
+                w <- w[!names(w) %in% mat_name]
+            next
+        }
+        if (!is.null(w)) {
+            if (w[mat_name] < w_cutoff) {
+                w <- w[!names(w) %in% mat_name]
+                U[[mat_name]] <- NULL
+            }
+            next
+        }
     }
-    mat[to_keep, to_keep]
-  }, conditions_to_keep)
-
-  for (mat_name in names(U)) {
-    # remove null component
-    if (all(U[[mat_name]] == 0)) {
-      U[[mat_name]] <- NULL
-      if (!is.null(w)) w <- w[!names(w) %in% mat_name]
-      next
-    }
-    if (!is.null(w)) {
-      if (w[mat_name] < w_cutoff) {
-        w <- w[!names(w) %in% mat_name]
-        U[[mat_name]] <- NULL
-      }
-      next
-    }
-  }
-  message(paste(length(U), "components of matrices remained after filtering. "))
-  return(list(U = U, w = w))
+    # remove the data driven U in U list, and recalculate w
+    U[phenos_out] <- NULL
+    w <- w[!names(w) %in% phenos_out]
+    sum_w = sum(w)
+    w = w/sum_w
+    message(paste(length(U), "components of matrices remained after filtering. "))
+    return(list(U = U, w = w))
 }
 
 # This function extracts tensorQTL results for given region for multiple
