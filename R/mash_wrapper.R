@@ -53,7 +53,6 @@ filter_invalid_summary_stat <- function(dat_list, bhat = NULL, sbhat = NULL, z =
 }
 
 #' @export
-
 filter_mixture_components <- function(conditions_to_keep, U, w = NULL, w_cutoff = 1e-4) {
   # Check if colnames of Y is a subset of column names of each element in U
   U <- lapply(U, function(mat, to_keep) {
