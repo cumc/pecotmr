@@ -251,7 +251,8 @@ twas_pipeline <- function(twas_weights_data,
                           region_block,
                           mr_pval_cutoff = 0.05,
                           min_rsq_threshold = 0.01,
-                          p_val_cutoff = 0.05) {
+                          p_val_cutoff = 0.05,
+                          output_twas_data = FALSE) {
   # internal function to format TWAS output
   format_twas_data <- function(post_qc_twas_data, twas_table) {
     weights_list <- do.call(c, lapply(names(post_qc_twas_data), function(molecular_id) {
@@ -431,14 +432,18 @@ twas_pipeline <- function(twas_weights_data,
   twas_table$chr <- as.integer(gsub("chr", "", gsub("\\_.*", "", region_block)))
   twas_table$block <- region_block
 
-  # Step 3. merge twas result table
-  colname_ordered <- c(
-    "chr", "start", "end", "molecular_id", "TSS", "context", "gwas_study", "method", "is_imputable", "is_selected_method",
-    "rsq_cv", "pval_cv", "twas_z", "twas_pval", "type", "block"
-  )
-  twas_table <- merge(twas_table, twas_results_table, by = c("molecular_id", "context", "method"))
-  twas_data_subset <- format_twas_data(twas_data, twas_table)
-  twas_data_subset$snp_info <- snp_info
+  # Step 3. merge twas result table and twas input into twas_data to output
+  if (output_twas_data) {
+    colname_ordered <- c(
+      "chr", "start", "end", "molecular_id", "TSS", "context", "gwas_study", "method", "is_imputable", "is_selected_method",
+      "rsq_cv", "pval_cv", "twas_z", "twas_pval", "type", "block"
+    )
+    twas_table <- merge(twas_table, twas_results_table, by = c("molecular_id", "context", "method"))
+    twas_data_subset <- format_twas_data(twas_data, twas_table)
+    twas_data_subset$snp_info <- snp_info
+  } else {
+    twas_data_subset <- NULL
+  }
   return(list(twas_result = twas_table[, colname_ordered], twas_data = twas_data_subset, mr_result = mr_results))
 }
 
