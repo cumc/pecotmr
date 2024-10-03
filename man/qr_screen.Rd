@@ -36,7 +36,7 @@ qr_screen(
 A list containing various results from the QR screen
 }
 \description{
-This file contains functions for performing Quantile Transcriptome-Wide 
+This file contains functions for performing Quantile Transcriptome-Wide
 Association Studies (TWAS) weight calculations and Quantile QTL analysis.
 It provides tools for screening quantile regression results, performing
 LD clumping and pruning, and calculating TWAS weights.
