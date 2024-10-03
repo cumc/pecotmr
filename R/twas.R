@@ -251,7 +251,8 @@ twas_pipeline <- function(twas_weights_data,
                           region_block,
                           mr_pval_cutoff = 0.05,
                           min_rsq_threshold = 0.01,
-                          p_val_cutoff = 0.05) {
+                          p_val_cutoff = 0.05,
+                          output_twas_data = FALSE) {
   # internal function to format TWAS output
   format_twas_data <- function(post_qc_twas_data, twas_table) {
     weights_list <- do.call(c, lapply(names(post_qc_twas_data), function(molecular_id) {
@@ -439,7 +440,14 @@ twas_pipeline <- function(twas_weights_data,
   twas_table <- merge(twas_table, twas_results_table, by = c("molecular_id", "context", "method"))
   twas_data_subset <- format_twas_data(twas_data, twas_table)
   twas_data_subset$snp_info <- snp_info
-  return(list(twas_result = twas_table[, colname_ordered], twas_data = twas_data_subset, mr_result = mr_results))
+  # return(list(twas_result = twas_table[, colname_ordered], twas_data = twas_data_subset, mr_result = mr_results))
+  return_list <- list(twas_result = twas_table[, colname_ordered], 
+                    mr_result = mr_results)
+  if (output_twas_data) {
+      return_list$twas_data = twas_data_subset
+    }
+  return(return_list)
+
 }
 
 #' Calculate TWAS z-score and p-value
