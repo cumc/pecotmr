@@ -104,7 +104,7 @@ adjust_susie_weights <- function(twas_weights_results, keep_variants, allele_qc 
 
 #' @importFrom susieR susie
 #' @export
-susie_wrapper <- function(X, y, init_L = 10, max_L = 30, l_step = 5, ...) {
+susie_wrapper <- function(X, y, init_L = 5, max_L = 30, l_step = 5, ...) {
   if (init_L == max_L) {
     return(susie(X, y, L = init_L, median_abs_corr = 0.8, ...))
   }
