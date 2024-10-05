@@ -320,23 +320,30 @@ load_LD_matrix <- function(LD_meta_file_path, region, extract_coordinates = NULL
   LD_file_paths <- intersected_LD_files$intersections$LD_file_paths
   bim_file_paths <- intersected_LD_files$intersections$bim_file_paths
 
-  LD_matrices_list <- lapply(seq_along(LD_file_paths), function(j) {
-    # Read and process the LD matrix
+  # Using a for loop here to allow for rm() in each loop to save memory
+  extracted_LD_matrices_list <- list()
+  extracted_LD_variants_list <- list()
+
+  # Process each LD block individually
+  for (j in seq_along(LD_file_paths)) {
     LD_matrix_processed <- process_LD_matrix(LD_file_paths[j], bim_file_paths[j])
-
-    # Extract LD for the region
-    region_info <- intersected_LD_files$region
-    extracted_LD_list <- extract_LD_for_region(LD_matrix_processed$LD_matrix, LD_matrix_processed$LD_variants, region_info, extract_coordinates)
-
-    list(extracted_LD_matrix = extracted_LD_list$extracted_LD_matrix, extracted_LD_variants = extracted_LD_list$extracted_LD_variants)
-  })
-
-  # Combine LD matrices and variants data frames
-  extracted_LD_matrices_list <- lapply(LD_matrices_list, function(x) x$extracted_LD_matrix)
-  extracted_LD_variants_list <- lapply(LD_matrices_list, function(x) x$extracted_LD_variants)
-
-  # Create a combined LD matrix
-  combined_LD_matrix <- create_combined_LD_matrix(extracted_LD_matrices_list, extracted_LD_variants_list)
+    extracted_LD_list <- extract_LD_for_region(
+      LD_matrix = LD_matrix_processed$LD_matrix,
+      variants = LD_matrix_processed$LD_variants,
+      region = region,
+      extract_coordinates = extract_coordinates
+    )
+    extracted_LD_matrices_list[[j]] <- extracted_LD_list$extracted_LD_matrix
+    extracted_LD_variants_list[[j]] <- extracted_LD_list$extracted_LD_variants
+    # Remove large objects to free memory
+    rm(LD_matrix_processed, extracted_LD_list)
+  }
+  combined_LD_matrix <- create_combined_LD_matrix(
+    LD_matrices = extracted_LD_matrices_list,
+    variants = extracted_LD_variants_list
+  )
+  # Remove large objects to free memory
+  rm(extracted_LD_matrices_list)
 
   ref_panel <- do.call(rbind, lapply(strsplit(rownames(combined_LD_matrix), ":"), function(x) {
     data.frame(chrom = x[1], pos = as.integer(x[2]), A2 = x[3], A1 = x[4])
