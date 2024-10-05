@@ -330,7 +330,7 @@ load_LD_matrix <- function(LD_meta_file_path, region, extract_coordinates = NULL
     extracted_LD_list <- extract_LD_for_region(
       LD_matrix = LD_matrix_processed$LD_matrix,
       variants = LD_matrix_processed$LD_variants,
-      region = region,
+      region = intersected_LD_files$region,
       extract_coordinates = extract_coordinates
     )
     extracted_LD_matrices_list[[j]] <- extracted_LD_list$extracted_LD_matrix
