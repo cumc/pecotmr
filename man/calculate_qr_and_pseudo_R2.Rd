@@ -2,18 +2,21 @@
 % Please edit documentation in R/quantile_twas_weight.R
 \name{calculate_qr_and_pseudo_R2}
 \alias{calculate_qr_and_pseudo_R2}
-\title{Calculate QR Coefficients and Pseudo R-squared}
+\title{Calculate QR Coefficients and Pseudo R-squared Across Multiple Quantiles}
 \usage{
-calculate_qr_and_pseudo_R2(ExprData, tau.list)
+calculate_qr_and_pseudo_R2(ExprData, tau.list, strategy = "variance")
 }
 \arguments{
 \item{ExprData}{List containing X, Y, C, and X.filter}
 
 \item{tau.list}{Vector of quantiles to be analyzed}
+
+\item{strategy}{The strategy for removing problematic columns ("variance", "correlation", or "response_correlation")}
 }
 \value{
-A list containing beta matrix as twas weight and pseudo R-squared values
+A list containing the cleaned X matrix, beta matrix as twas weight, and pseudo R-squared values
 }
 \description{
-Calculate QR Coefficients and Pseudo R-squared
+This function calculates quantile regression coefficients and pseudo R-squared values across multiple quantiles,
+while handling problematic columns that might affect the rank of the design matrix.
 }
