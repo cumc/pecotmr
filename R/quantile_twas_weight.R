@@ -307,7 +307,7 @@ perform_qr_analysis <- function(X, Y, Z = NULL, tau_values = seq(0.05, 0.95, by 
       }
 
       # Fit the quantile regression model using rq.fit.br
-      mod <- rq.fit.br(X_design, response, tau = tau)
+      mod <- suppressWarnings(rq.fit.br(X_design, response, tau = tau))
 
       # Extract the coefficient for the predictor (second coefficient)
       predictor_coef <- mod$coefficients[2] # Coefficient for predictor
@@ -379,46 +379,221 @@ corr_filter <- function(X, cor_thres = 0.8) {
 }
 
 
-#' Calculate QR Coefficients and Pseudo R-squared
+
+#' Check and Remove Problematic Columns to Ensure Full Rank
+#' 
+#' This function checks for problematic columns in the design matrix that cause it to be not full rank,
+#' and iteratively removes them based on the chosen strategy until the matrix is full rank.
+#' 
+#' @param X Matrix of SNPs
+#' @param C Matrix of covariates (unnamed)
+#' @param strategy The strategy for removing problematic columns ("variance", "correlation", or "response_correlation")
+#' @param response Optional response vector for "response_correlation" strategy
+#' @param max_iterations Maximum number of iterations to attempt removing problematic columns
+#' @return Cleaned matrix X with problematic columns removed
+#' @importFrom stats qr
+check_and_remove_problematic_columns <- function(X, C, strategy = "variance", response = NULL, max_iterations = 100) {
+    # Combine the design matrix with X (SNPs) and C (covariates), keeping C without column names
+    X_design <- cbind(1, X, C)  # Add an intercept column (1)
+    colnames_X_design <- c("Intercept", colnames(X))  # Assign column names only to X (SNPs) part
+
+    # Assign column names only to the X part, leaving C without names
+    colnames(X_design)[1:(length(colnames_X_design))] <- colnames_X_design
+
+    # Check the initial rank of the design matrix
+    matrix_rank <- qr(X_design)$rank
+    message("Initial rank of the design matrix: ", matrix_rank, " / ", ncol(X_design), " columns.")
+    
+    iteration <- 0
+    while (matrix_rank < ncol(X_design) && iteration < max_iterations) {
+        message("Design matrix is not full rank, identifying problematic columns...")
+        
+        # QR decomposition to identify linearly dependent columns
+        qr_decomp <- qr(X_design)
+        R <- qr_decomp$rank
+        Q <- qr_decomp$pivot
+        
+        # Get the problematic columns by indexing from the pivot
+        problematic_cols <- Q[(R + 1):ncol(X_design)]
+        problematic_colnames <- colnames(X_design)[problematic_cols]  # Map the indices to column names
+        
+        # Limit the columns to be removed to SNPs only, not covariates
+        problematic_colnames <- problematic_colnames[problematic_colnames %in% colnames(X)]
+        
+        if (length(problematic_colnames) == 0) {
+            message("No more problematic SNP columns found in X. Breaking the loop.")
+            break
+        }
+        
+        # Print the problematic column names for debugging purposes
+        message("Problematic SNP columns identified: ", paste(problematic_colnames, collapse = ", "))
+        
+        # Remove problematic columns affecting the rank based on the chosen strategy
+        X <- remove_problematic_columns(X, problematic_colnames, strategy = strategy, response = response)
+        
+        # Rebuild the design matrix with cleaned X, leaving C unnamed
+        X_design <- cbind(1, X, C)
+        colnames_X_design <- c("Intercept", colnames(X))  # Reassign column names to X part only
+        
+        # Only assign names to X part, leaving C unnamed
+        colnames(X_design)[1:length(colnames_X_design)] <- colnames_X_design
+        
+        # Recheck the rank of the design matrix
+        matrix_rank <- qr(X_design)$rank
+        message("New rank of the design matrix: ", matrix_rank, " / ", ncol(X_design), " columns.")
+        
+        iteration <- iteration + 1
+    }
+    
+    if (iteration == max_iterations) {
+        warning("Maximum iterations reached. The design matrix may still not be full rank.")
+    }
+    
+    return(X)  # Return the cleaned X matrix
+}
+
+
+#' Remove Problematic Columns Based on a Given Strategy
+#' 
+#' This function removes problematic columns from a matrix based on different strategies, such as smallest variance,
+#' highest correlation, or lowest correlation with the response variable.
+#' 
+#' @param X Matrix of SNPs
+#' @param problematic_cols A vector of problematic columns to be removed
+#' @param strategy The strategy for removing problematic columns ("variance", "correlation", or "response_correlation")
+#' @param response Optional response vector for "response_correlation" strategy
+#' @return Cleaned matrix X with the selected column removed
+#' @importFrom stats var cor
+remove_problematic_columns <- function(X, problematic_cols, strategy = "variance", response = NULL) {
+    message("Identified problematic columns: ", paste(problematic_cols, collapse = ", "))
+    
+    if (length(problematic_cols) == 0) {
+        return(X)  # If there are no problematic columns, return as is
+    }
+
+    if (length(problematic_cols) == 1) {
+        message("Only one problematic column: ", problematic_cols)
+        col_to_remove <- problematic_cols[1]
+        message("Removing column: ", col_to_remove)
+        X <- X[, !(colnames(X) %in% col_to_remove), drop = FALSE]
+        return(X)
+    }
+
+    # Choose columns to remove based on the strategy
+    if (strategy == "variance") {
+        # Strategy 1: Remove the column with the smallest variance
+        variances <- apply(X[, problematic_cols, drop = FALSE], 2, var)
+        col_to_remove <- problematic_cols[which.min(variances)]
+        message("Removing column with the smallest variance: ", col_to_remove)
+        
+    } else if (strategy == "correlation") {
+        # Strategy 2: Remove the column with the highest correlation with other columns
+        cor_matrix <- cor(X[, problematic_cols, drop = FALSE])
+        diag(cor_matrix) <- 0  # Ignore the diagonal (self-correlation)
+        max_cor <- which(abs(cor_matrix) == max(abs(cor_matrix)), arr.ind = TRUE)[1, ]
+        col_to_remove <- problematic_cols[max_cor[1]]  # Remove the first highly correlated column
+        message("Removing column with highest correlation: ", col_to_remove)
+        
+    } else if (strategy == "response_correlation" && !is.null(response)) {
+        # Strategy 3: Remove the column with the lowest correlation with the response variable
+        cor_with_response <- apply(X[, problematic_cols, drop = FALSE], 2, function(col) cor(col, response))
+        col_to_remove <- problematic_cols[which.min(abs(cor_with_response))]
+        message("Removing column with lowest correlation with the response: ", col_to_remove)
+    } else {
+        stop("Invalid strategy or missing response variable for 'response_correlation' strategy.")
+    }
+    
+    # Remove the selected column from X
+    X <- X[, !(colnames(X) %in% col_to_remove), drop = FALSE]
+    return(X)
+}
+
+#' Calculate QR Coefficients and Pseudo R-squared Across Multiple Quantiles
+#' 
+#' This function calculates quantile regression coefficients and pseudo R-squared values across multiple quantiles,
+#' while handling problematic columns that might affect the rank of the design matrix.
+#' 
 #' @param ExprData List containing X, Y, C, and X.filter
 #' @param tau.list Vector of quantiles to be analyzed
-#' @return A list containing beta matrix as twas weight and pseudo R-squared values
+#' @param strategy The strategy for removing problematic columns ("variance", "correlation", or "response_correlation")
+#' @return A list containing the cleaned X matrix, beta matrix as twas weight, and pseudo R-squared values
 #' @importFrom quantreg rq rq.fit.br
-calculate_qr_and_pseudo_R2 <- function(ExprData, tau.list) {
-  # Fit models for all taus
-  fit_full <- rq(Y ~ X.filter + C, tau = tau.list, data = ExprData)
-  fit_intercept <- rq(Y ~ 1, tau = tau.list, data = ExprData)
+calculate_qr_and_pseudo_R2 <- function(ExprData, tau.list, strategy = "variance") {
+    # Check and handle problematic columns affecting the full rank of the design matrix
+    ExprData$X.filter <- check_and_remove_problematic_columns(ExprData$X.filter, ExprData$C, strategy = strategy, response = ExprData$Y)
+    
+    # Build the cleaned design matrix using the filtered X and unnamed C
 
-  # Define rho function
-  rho <- function(u, tau) {
-    u * (tau - (u < 0))
-  }
-
-  # Prepare to store results
-  pseudo_R2 <- numeric(length(tau.list))
-  names(pseudo_R2) <- tau.list
-
-  # Calculate pseudo R^2 for each tau
-  for (i in seq_along(tau.list)) {
-    tau <- tau.list[i]
-
-    # Get residuals
-    residuals0 <- residuals(fit_intercept, subset = i)
-    residuals1 <- residuals(fit_full, subset = i)
-
-    # Calculate and store pseudo R^2
-    rho0 <- sum(rho(residuals0, tau))
-    rho1 <- sum(rho(residuals1, tau))
-    pseudo_R2[i] <- 1 - rho1 / rho0
-  }
-
-  # Extract coefficients of snps, removing intercept if included
-  num_filter_vars <- ncol(ExprData$X.filter)
-  beta_mat <- coef(fit_full)[2:(1 + num_filter_vars), , drop = FALSE]
-  rownames_beta <- rownames(beta_mat)
-  rownames(beta_mat) <- gsub("^X.filter", "", rownames_beta)
-  list(beta_mat = beta_mat, pseudo_R2 = pseudo_R2)
+    # Fit the models for all tau values
+    fit_full <- suppressWarnings(rq(Y ~ X.filter + C, tau = tau.list, data = ExprData))
+    fit_intercept <- suppressWarnings(rq(ExprData$Y ~ 1, tau = tau.list, data = ExprData))
+    
+    # Define the rho function for pseudo R² calculation
+    rho <- function(u, tau) {
+        u * (tau - (u < 0))
+    }
+    
+    # Prepare to store the pseudo R² results
+    pseudo_R2 <- numeric(length(tau.list))
+    names(pseudo_R2) <- tau.list
+    
+    # Calculate pseudo R² for each tau
+    for (i in seq_along(tau.list)) {
+        tau <- tau.list[i]
+        
+        # Get residuals for the intercept-only and full models
+        residuals0 <- residuals(fit_intercept, subset = i)
+        residuals1 <- residuals(fit_full, subset = i)
+        
+        # Calculate and store pseudo R² for each tau
+        rho0 <- sum(rho(residuals0, tau))
+        rho1 <- sum(rho(residuals1, tau))
+        pseudo_R2[i] <- 1 - rho1 / rho0
+    }
+    
+    # Extract the coefficients for the SNPs
+    num_filter_vars <- ncol(ExprData$X.filter)
+    beta_mat <- coef(fit_full)[2:(1 + num_filter_vars), , drop = FALSE]
+    rownames_beta <- rownames(beta_mat)
+    rownames(beta_mat) <- gsub("^X.filter", "", rownames_beta)
+    return(list(X.filter = ExprData$X.filter, beta_mat = beta_mat, pseudo_R2 = pseudo_R2))
 }
+
+#' Calculate Heterogeneity of Beta Coefficients Across Quantiles
+#' 
+#' This function calculates the heterogeneity of beta coefficients across multiple quantiles for each variant_id.
+#' Heterogeneity is computed as log(sd(beta) / abs(mean(beta))).
+#' 
+#' @param rq_coef_result Data frame containing variant_id and QR coefficient columns
+#' @return A data frame with variant_id and heterogeneity values
+calculate_coef_heterogeneity <- function(rq_coef_result) {
+  # Identify all the columns starting with "coef_qr_" (quantile regression coefficient columns)
+  coef_cols <- grep("^coef_qr_", colnames(rq_coef_result), value = TRUE)
+  
+  # Create a new data frame with variant_id and heterogeneity
+  heterogeneity_result <- data.frame(
+    variant_id = rq_coef_result$variant_id,
+    coef_heter = apply(rq_coef_result[, coef_cols], 1, function(beta) {
+      # Compute the mean and standard deviation, ignoring NAs
+      beta_mean <- mean(beta, na.rm = TRUE)
+      beta_sd <- sd(beta, na.rm = TRUE)
+      
+      # Handle the case where mean(beta) is 0 to avoid division by zero
+      if (abs(beta_mean) == 0) {
+        return(NA)  # Return NA if mean is zero
+      }
+      
+      # Compute the heterogeneity: log(sd(beta) / abs(mean(beta)))
+      heterogeneity <- log(beta_sd / abs(beta_mean))
+      return(heterogeneity)
+    }),
+    stringsAsFactors = FALSE
+  )
+  
+  # Return only variant_id and heterogeneity
+  return(heterogeneity_result)
+}
+
 
 #' Quantile TWAS Weight Pipeline
 #'
@@ -488,10 +663,15 @@ quantile_twas_weight_pipeline <- function(X, Y, Z = NULL, maf = NULL, extract_re
   # Step 5: Fit QR and get twas weight and R2 for all taus
   ExprData <- list(X = X, Y = Y, C = Z, X.filter = X.filter)
   qr_beta_R2_results <- calculate_qr_and_pseudo_R2(ExprData, quantile_twas_tau_list)
+  X.filter = qr_beta_R2_results$X.filter
 
+  # Step 6: beta_heterogeneity in marginal model
+  beta_heterogeneity <- calculate_coef_heterogeneity(rq_coef_result)
+  
   # Add additional results
   results$twas_variant_names <- colnames(X.filter)
   results$rq_coef_df <- rq_coef_result
+  results$beta_heterogeneity <- beta_heterogeneity
   results$twas_weight <- qr_beta_R2_results$beta_mat
   results$pseudo_R2 <- qr_beta_R2_results$pseudo_R2
   results$quantile_twas_prediction <- X.filter %*% results$twas_weight
