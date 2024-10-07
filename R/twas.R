@@ -433,12 +433,12 @@ twas_pipeline <- function(twas_weights_data,
   twas_table$block <- region_block
 
   # Step 3. merge twas result table and twas input into twas_data to output
+  colname_ordered <- c(
+    "chr", "start", "end", "molecular_id", "TSS", "context", "gwas_study", "method", "is_imputable", "is_selected_method",
+    "rsq_cv", "pval_cv", "twas_z", "twas_pval", "type", "block"
+  )
+  twas_table <- merge(twas_table, twas_results_table, by = c("molecular_id", "context", "method"))
   if (output_twas_data) {
-    colname_ordered <- c(
-      "chr", "start", "end", "molecular_id", "TSS", "context", "gwas_study", "method", "is_imputable", "is_selected_method",
-      "rsq_cv", "pval_cv", "twas_z", "twas_pval", "type", "block"
-    )
-    twas_table <- merge(twas_table, twas_results_table, by = c("molecular_id", "context", "method"))
     twas_data_subset <- format_twas_data(twas_data, twas_table)
     twas_data_subset$snp_info <- snp_info
   } else {
