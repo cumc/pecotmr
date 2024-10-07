@@ -442,6 +442,9 @@ twas_pipeline <- function(twas_weights_data,
     twas_data_subset <- format_twas_data(twas_data, twas_table)
     twas_data_subset$snp_info <- snp_info
   } else {
+    colname_ordered <- c(
+          "chr", "start", "end", "molecular_id", "TSS", "context", "method", "is_imputable", "is_selected_method",
+          "rsq_cv", "pval_cv", "type", "block")
     twas_data_subset <- NULL
   }
   return(list(twas_result = twas_table[, colname_ordered], twas_data = twas_data_subset, mr_result = mr_results))
