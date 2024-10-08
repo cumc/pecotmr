@@ -392,7 +392,9 @@ corr_filter <- function(X, cor_thres = 0.8) {
 #' @param max_iterations Maximum number of iterations to attempt removing problematic columns
 #' @return Cleaned matrix X with problematic columns removed
 #' @importFrom stats qr
-check_and_remove_problematic_columns <- function(X, C, strategy = "variance", response = NULL, max_iterations = 100) {
+#' @noRd
+check_remove_highcorr_snp <- function(X, C, strategy = c("correlation", "variance", "response_correlation"), response = NULL, max_iterations = 100) {
+    strategy <- match.arg(strategy)
     # Combine the design matrix with X (SNPs) and C (covariates), keeping C without column names
     X_design <- cbind(1, X, C)  # Add an intercept column (1)
     colnames_X_design <- c("Intercept", colnames(X))  # Assign column names only to X (SNPs) part
@@ -429,8 +431,7 @@ check_and_remove_problematic_columns <- function(X, C, strategy = "variance", re
         message("Problematic SNP columns identified: ", paste(problematic_colnames, collapse = ", "))
         
         # Remove problematic columns affecting the rank based on the chosen strategy
-        X <- remove_problematic_columns(X, problematic_colnames, strategy = strategy, response = response)
-        
+        X <- remove_highcorr_snp(X, problematic_colnames, strategy = strategy, response = response)
         # Rebuild the design matrix with cleaned X, leaving C unnamed
         X_design <- cbind(1, X, C)
         colnames_X_design <- c("Intercept", colnames(X))  # Reassign column names to X part only
@@ -452,7 +453,6 @@ check_and_remove_problematic_columns <- function(X, C, strategy = "variance", re
     return(X)  # Return the cleaned X matrix
 }
 
-
 #' Remove Problematic Columns Based on a Given Strategy
 #' 
 #' This function removes problematic columns from a matrix based on different strategies, such as smallest variance,
@@ -464,9 +464,13 @@ check_and_remove_problematic_columns <- function(X, C, strategy = "variance", re
 #' @param response Optional response vector for "response_correlation" strategy
 #' @return Cleaned matrix X with the selected column removed
 #' @importFrom stats var cor
-remove_problematic_columns <- function(X, problematic_cols, strategy = "variance", response = NULL) {
-    message("Identified problematic columns: ", paste(problematic_cols, collapse = ", "))
+#' @noRd
+remove_highcorr_snp <- function(X, problematic_cols, strategy = c("correlation", "variance", "response_correlation"), response = NULL) {
+    # Set default strategy
+    strategy <- match.arg(strategy)
     
+    message("Identified problematic columns: ", paste(problematic_cols, collapse = ", "))
+
     if (length(problematic_cols) == 0) {
         return(X)  # If there are no problematic columns, return as is
     }
@@ -487,15 +491,24 @@ remove_problematic_columns <- function(X, problematic_cols, strategy = "variance
         message("Removing column with the smallest variance: ", col_to_remove)
         
     } else if (strategy == "correlation") {
-        # Strategy 2: Remove the column with the highest correlation with other columns
-        cor_matrix <- cor(X[, problematic_cols, drop = FALSE])
+        # Strategy 2: Remove the column with the highest sum of absolute correlations
+        cor_matrix <- abs(cor(X[, problematic_cols, drop = FALSE]))  # Calculate absolute correlation matrix
         diag(cor_matrix) <- 0  # Ignore the diagonal (self-correlation)
-        max_cor <- which(abs(cor_matrix) == max(abs(cor_matrix)), arr.ind = TRUE)[1, ]
-        col_to_remove <- problematic_cols[max_cor[1]]  # Remove the first highly correlated column
-        message("Removing column with highest correlation: ", col_to_remove)
+        
+        if (length(problematic_cols) == 2) {
+            # If there are only two problematic columns, randomly remove one
+            col_to_remove <- sample(problematic_cols, 1)
+            message("Only two problematic columns, randomly removing: ", col_to_remove)
+        } else {
+            # Calculate sum of absolute correlations for each column
+            cor_sums <- colSums(cor_matrix)
+            col_to_remove <- problematic_cols[which.max(cor_sums)]  # Remove the column with the largest sum of correlations
+            message("Removing column with highest sum of absolute correlations: ", col_to_remove)
+        }
         
     } else if (strategy == "response_correlation" && !is.null(response)) {
         # Strategy 3: Remove the column with the lowest correlation with the response variable
+        # FIXME: This strategy is potentially biased based on corr of response and variants
         cor_with_response <- apply(X[, problematic_cols, drop = FALSE], 2, function(col) cor(col, response))
         col_to_remove <- problematic_cols[which.min(abs(cor_with_response))]
         message("Removing column with lowest correlation with the response: ", col_to_remove)
@@ -518,9 +531,11 @@ remove_problematic_columns <- function(X, problematic_cols, strategy = "variance
 #' @param strategy The strategy for removing problematic columns ("variance", "correlation", or "response_correlation")
 #' @return A list containing the cleaned X matrix, beta matrix as twas weight, and pseudo R-squared values
 #' @importFrom quantreg rq rq.fit.br
-calculate_qr_and_pseudo_R2 <- function(ExprData, tau.list, strategy = "variance") {
+#' @noRd
+calculate_qr_and_pseudo_R2 <- function(ExprData, tau.list, strategy = c("correlation", "variance", "response_correlation")) {
+    strategy <- match.arg(strategy)
     # Check and handle problematic columns affecting the full rank of the design matrix
-    ExprData$X.filter <- check_and_remove_problematic_columns(ExprData$X.filter, ExprData$C, strategy = strategy, response = ExprData$Y)
+    ExprData$X.filter <- check_remove_highcorr_snp(ExprData$X.filter, ExprData$C, strategy = strategy, response = ExprData$Y)
     
     # Build the cleaned design matrix using the filtered X and unnamed C
 
@@ -667,7 +682,7 @@ quantile_twas_weight_pipeline <- function(X, Y, Z = NULL, maf = NULL, extract_re
 
   # Step 6: beta_heterogeneity in marginal model
   beta_heterogeneity <- calculate_coef_heterogeneity(rq_coef_result)
-  
+
   # Add additional results
   results$twas_variant_names <- colnames(X.filter)
   results$rq_coef_df <- rq_coef_result
