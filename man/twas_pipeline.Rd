@@ -12,7 +12,8 @@ twas_pipeline(
   region_block,
   mr_pval_cutoff = 0.05,
   min_rsq_threshold = 0.01,
-  p_val_cutoff = 0.05
+  p_val_cutoff = 0.05,
+  output_twas_data = FALSE
 )
 }
 \arguments{
