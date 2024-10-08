@@ -583,6 +583,7 @@ calculate_qr_and_pseudo_R2 <- function(ExprData, tau.list, strategy = c("correla
 #' 
 #' @param rq_coef_result Data frame containing variant_id and QR coefficient columns
 #' @return A data frame with variant_id and heterogeneity values
+#' @noRd
 calculate_coef_heterogeneity <- function(rq_coef_result) {
   # Identify all the columns starting with "coef_qr_" (quantile regression coefficient columns)
   coef_cols <- grep("^coef_qr_", colnames(rq_coef_result), value = TRUE)
