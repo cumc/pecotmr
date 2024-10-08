@@ -52,6 +52,59 @@ filter_invalid_summary_stat <- function(dat_list, bhat = NULL, sbhat = NULL, z =
   return(dat_list)
 }
 
+#' @export
+filter_mixture_components <- function(conditions_to_keep, U, w = NULL, w_cutoff = 1e-04) {
+    # Identify conditions not to keep (to be removed)
+    conditions_to_filter <- setdiff(colnames(U[[1]]), conditions_to_keep)
+    sum_w <- sum(w)  # Original total sum of weights
+    
+    # Filter U by removing unwanted phenotypes (conditions)
+    U <- lapply(U, function(mat, to_keep) {
+        missing_conditions <- setdiff(to_keep, colnames(mat))
+        if (length(missing_conditions) > 0) {
+            stop(paste("Condition(s)", paste(missing_conditions, 
+                collapse = ", "), "not found in matrix"))
+        }
+        mat[to_keep, to_keep]  # Keep only relevant conditions
+    }, conditions_to_keep)
+    
+    # Remove matrices where all values are zero or weight is below cutoff
+    for (mat_name in names(U)) {
+        if (all(U[[mat_name]] == 0)) {
+            U[[mat_name]] <- NULL
+            if (!is.null(w)) 
+                w <- w[!names(w) %in% mat_name]
+            next
+        }
+        if (!is.null(w)) {
+            if (w[mat_name] < w_cutoff) {
+                w <- w[!names(w) %in% mat_name]
+                U[[mat_name]] <- NULL
+            }
+        }
+    }
+    
+    # Note: Matrices in U may contain very small values on the diagonal
+    # even when contexts are not present, due to EM algorithm adjustments.
+    # This makes the matrix not exactly zero, so it won't be removed even though it may not
+    # have strong context relevance. This behavior arises because the algorithm attempts to 
+    # ensure matrices are full-rank, slightly changing initial values.
+    
+    # We cannot simply remove diagonal matrices as signals on the diagonal can be strong and relevant.
+    # So we manually remove the U components that are driven by non-relevant contexts.
+    U[conditions_to_filter] <- NULL
+    w <- w[!names(w) %in% conditions_to_filter]
+    
+    # Recalculate the sum of remaining weights
+    sum_w_new <- sum(w)
+    
+    # Adjust weights to maintain the original sum_w
+    w <- (w / sum_w_new) * sum_w
+    
+    message(paste(length(U), "components of matrices remained after filtering."))
+    
+    return(list(U = U, w = w))
+}
 # This function extracts tensorQTL results for given region for multiple
 # summary statistics files
 #' @export
@@ -566,7 +619,7 @@ load_multitrait_R_sumstat <- function(susie_fit, sumstats_db, coverage = NULL, t
   out$sbhat <- out$sbhat[, -which(names(out$sbhat) == "variants"), drop = FALSE]
   out$region <- names(susie_fit)
 
-  if (!is.null(exclude_condition) && length(exclude_condition)!=0) {
+  if (!is.null(exclude_condition) && length(exclude_condition) != 0) {
     if (all(exclude_condition %in% colnames(out$bhat))) {
       out$bhat <- out$bhat[, -exclude_condition]
       out$sbhat <- out$sbhat[, -exclude_condition]
