@@ -540,11 +540,11 @@ calculate_qr_and_pseudo_R2 <- function(ExprData, tau.list, strategy = c("correla
     # Build the cleaned design matrix using the filtered X and unnamed C
 
     # Fit the models for all tau values
-    print("Start fitting full model for all taus...")
+    message("Start fitting full model for all taus...")
     fit_full <- suppressWarnings(rq(Y ~ X.filter + C, tau = tau.list, data = ExprData))
-    print("Finished fitting full model. Start fitting intercept-only model for all taus...")
+    message("Finished fitting full model. Start fitting intercept-only model for all taus...")
     fit_intercept <- suppressWarnings(rq(ExprData$Y ~ 1, tau = tau.list, data = ExprData))
-    print("Finished fitting intercept-only model.")
+    message("Finished fitting intercept-only model.")
     # Define the rho function for pseudo R² calculation
     rho <- function(u, tau) {
         u * (tau - (u < 0))
@@ -654,9 +654,9 @@ quantile_twas_weight_pipeline <- function(X, Y, Z = NULL, maf = NULL, extract_re
                                           quantile_qtl_tau_list = seq(0.05, 0.95, by = 0.05),
                                           quantile_twas_tau_list = seq(0.01, 0.99, by = 0.01)) {
   # Step 1: QR screen
-  print(paste("Starting QR screen for region:", extract_region_name, "and gene:", names(fdat$residual_Y)[r]))
+  message("Starting QR screen for region: ", extract_region_name, " and gene: ", names(fdat$residual_Y)[r])
   p.screen <- qr_screen(X = X, Y = Y, Z = Z, tau.list = quantile_qtl_tau_list, threshold = 0.05, method = "qvalue", top_count = 10, top_percent = 15)
-  print("QR screen completed. Checking for significant SNPs number...")
+  message("QR screen completed. Checking for significant SNPs number...")
   # Initialize results list
   results <- list(qr_screen_pvalue_df = p.screen$df_result)
 
@@ -665,7 +665,7 @@ quantile_twas_weight_pipeline <- function(X, Y, Z = NULL, maf = NULL, extract_re
     return(results)
   }
   # Step 2: Filter highly correlated SNPs
-  print("Filtering highly correlated SNPs...")
+  message("Filtering highly correlated SNPs...")
   if (length(p.screen$sig_SNP_threshold) > 1) {
     filtered <- corr_filter(X[, p.screen$sig_SNP_threshold, drop = FALSE], 0.8)
     X.filter <- filtered$X.new
@@ -674,24 +674,24 @@ quantile_twas_weight_pipeline <- function(X, Y, Z = NULL, maf = NULL, extract_re
     results$message <- paste0("Only one significant SNP in gene ", extract_region_name, names(fdat$residual_Y)[r], ", skipping correlation filter.")
   }
   # Step 3: LD clumping and pruning from results of QR_screen
-  print("Filter highly correlated SNPs completed. Performing LD clumping and pruning from QR screen results...")
+  message("Filter highly correlated SNPs completed. Performing LD clumping and pruning from QR screen results...")
   LD_SNPs <- multicontext_ld_clumping(X = X[, p.screen$sig_SNP_threshold, drop = FALSE], qr_results = p.screen, maf_list = maf)
   x_clumped <- X[, p.screen$sig_SNP_threshold, drop = FALSE][, LD_SNPs$final_SNPs, drop = FALSE]
 
   # Step 4: Only fit marginal QR to get beta with SNPs after LD pruning for quantile_qtl_tau_list values
-  print("LD clumping and pruning completed. Fitting marginal QR for selected SNPs...")
+  message("LD clumping and pruning completed. Fitting marginal QR for selected SNPs...")
   rq_coef_result <- perform_qr_analysis(X = x_clumped, Y = Y, Z = Z, tau_values = quantile_qtl_tau_list)
 
   # Step 5: Fit QR and get twas weight and R2 for all taus
-  print("Marginal QR fitting completed. Fitting full QR to calculate TWAS weights and pseudo R-squared values...")
+  message("Marginal QR fitting completed. Fitting full QR to calculate TWAS weights and pseudo R-squared values...")
   ExprData <- list(X = X, Y = Y, C = Z, X.filter = X.filter)
   qr_beta_R2_results <- calculate_qr_and_pseudo_R2(ExprData, quantile_twas_tau_list)
   X.filter = qr_beta_R2_results$X.filter
 
   # Step 6: beta_heterogeneity in marginal model
-  print("TWAS weights and pseudo R-squared calculations completed. Calculating beta heterogeneity...")
+  message("TWAS weights and pseudo R-squared calculations completed. Calculating beta heterogeneity...")
   beta_heterogeneity <- calculate_coef_heterogeneity(rq_coef_result)
-  print("Beta heterogeneity calculation completed.")
+  message("Beta heterogeneity calculation completed.")
 
   # Add additional results
   results$twas_variant_names <- colnames(X.filter)
