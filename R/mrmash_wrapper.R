@@ -167,26 +167,26 @@ mrmash_wrapper <- function(X,
   w0 <- compute_w0(B_init, length(S0))
 
   # Robust initialization of V
-  if(is.null(V)){
-    if(!Y_has_missing){
-      V <- compute_V_init(X, Y, matrix(0, nrow=ncol(X), ncol=ncol(Y)), rep(0, r), method="cov")
+  if (is.null(V)) {
+    if (!Y_has_missing) {
+      V <- compute_V_init(X, Y, matrix(0, nrow = ncol(X), ncol = ncol(Y)), rep(0, ncol(Y)), method = "cov")
     } else {
-      muy <- colMeans(Y, na.rm=TRUE)
-      V <- compute_V_init(X, Y, matrix(0, nrow=ncol(X), ncol=ncol(Y)), muy, method="flash")
+      muy <- colMeans(Y, na.rm = TRUE)
+      V <- compute_V_init(X, Y, matrix(0, nrow = ncol(X), ncol = ncol(Y)), muy, method = "flash")
     }
-        if(update_V_method=="diagonal") {
+    if (update_V_method == "diagonal") {
       V <- diag(diag(V))
-        } else {
-
-          if(any(eigen(V)$values< 1e-8)){
-        V <- V + diag(1e-8, nrow(V)
+    } else {
+      if (any(eigen(V)$values < 1e-8)) {
+        V <- V + diag(1e-8, nrow(V))
         update_V <- FALSE
-        }
+      }
+    }
   }
 
   # Fit mr.mash
   fit_mrmash <- mr.mash(
-    X = X, Y = Y, V=V, S0 = S0, w0 = w0, update_w0 = update_w0, tol = tol,
+    X = X, Y = Y, V = V, S0 = S0, w0 = w0, update_w0 = update_w0, tol = tol,
     max_iter = max_iter, convergence_criterion = "ELBO", compute_ELBO = TRUE,
     standardize = standardize, verbose = verbose, update_V = update_V,
     update_V_method = update_V_method, w0_threshold = w0_threshold,
