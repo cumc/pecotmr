@@ -262,17 +262,19 @@ twas_pipeline <- function(twas_weights_data,
         weight <- list()
         data_type <- post_qc_twas_data[[molecular_id]][["data_type"]][[context]]
         model_selected <- post_qc_twas_data[[molecular_id]][["model_selection"]][[context]]$selected_model
-        postqc_scaled_weight <- post_qc_twas_data[[molecular_id]][["weights_qced"]][[context]][["scaled_weights"]][, paste0(model_selected, "_weights"), drop = FALSE]
-        colnames(postqc_scaled_weight) <- "weight"
-        rownames(postqc_scaled_weight) <- gsub("chr", "", rownames(postqc_scaled_weight))
-        context_variants <- rownames(post_qc_twas_data[[molecular_id]][["weights_qced"]][[context]][["scaled_weights"]])
-        context_range <- as.integer(sapply(context_variants, function(variant) strsplit(variant, "\\:")[[1]][2]))
-        weight[[paste0(molecular_id, "|", data_type, "_", context)]] <- list(
-          chrom = chrom, p0 = min(context_range), p1 = max(context_range),
-          wgt = postqc_scaled_weight, molecular_id = molecular_id, weight_name = paste0(data_type, "_", context), type = data_type,
-          context = context, n_wgt = length(context_variants)
-        )
-        return(weight)
+        if (!is.null(model_selected) & isTRUE(post_qc_twas_data[[molecular_id]][["model_selection"]][[context]]$is_imputable)){
+          postqc_scaled_weight <- post_qc_twas_data[[molecular_id]][["weights_qced"]][[context]][["scaled_weights"]][, paste0(model_selected, "_weights"), drop = FALSE]
+          colnames(postqc_scaled_weight) <- "weight"
+          rownames(postqc_scaled_weight) <- gsub("chr", "", rownames(postqc_scaled_weight))
+          context_variants <- rownames(post_qc_twas_data[[molecular_id]][["weights_qced"]][[context]][["scaled_weights"]])
+          context_range <- as.integer(sapply(context_variants, function(variant) strsplit(variant, "\\:")[[1]][2]))
+          weight[[paste0(molecular_id, "|", data_type, "_", context)]] <- list(
+            chrom = chrom, p0 = min(context_range), p1 = max(context_range),
+            wgt = postqc_scaled_weight, molecular_id = molecular_id, weight_name = paste0(data_type, "_", context), type = data_type,
+            context = context, n_wgt = length(context_variants)
+          )
+          return(weight)
+        }
       }))
     }))
     weights <- weights_list[!sapply(weights_list, is.null)]
