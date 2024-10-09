@@ -75,13 +75,14 @@
 #'   prior_grid = prior_grid
 #' )
 #'
-#' @importFrom mr.mash.alpha compute_canonical_covs mr.mash expand_covs compute_univariate_sumstats compute_V_init
+#' @importFrom mr.mash.alpha compute_canonical_covs mr.mash expand_covs compute_univariate_sumstats
 #' @importFrom doFuture registerDoFuture
 #' @importFrom future plan multicore
 #' @importFrom glmnet cv.glmnet
 #' @export
 mrmash_wrapper <- function(X,
                            Y,
+                           V = NULL,
                            sumstats = NULL,
                            data_driven_prior_matrices = NULL,
                            prior_grid = NULL,
@@ -169,10 +170,10 @@ mrmash_wrapper <- function(X,
   # Robust initialization of V
   if (is.null(V)) {
     if (!Y_has_missing) {
-      V <- compute_V_init(X, Y, matrix(0, nrow = ncol(X), ncol = ncol(Y)), rep(0, ncol(Y)), method = "cov")
+      V <- mr.mash.alpha:::compute_V_init(X, Y, matrix(0, nrow = ncol(X), ncol = ncol(Y)), rep(0, ncol(Y)), method = "cov")
     } else {
       muy <- colMeans(Y, na.rm = TRUE)
-      V <- compute_V_init(X, Y, matrix(0, nrow = ncol(X), ncol = ncol(Y)), muy, method = "flash")
+      V <- mr.mash.alpha:::compute_V_init(X, Y, matrix(0, nrow = ncol(X), ncol = ncol(Y)), muy, method = "flash")
     }
     if (update_V_method == "diagonal") {
       V <- diag(diag(V))
