@@ -226,6 +226,13 @@ multicontext_ld_clumping <- function(X, qr_results, maf_list = NULL, ld_clump_r2
   clumped_snp_union <- unique(unlist(clumped_snp_list)) # This is the SNP index, not the name
   print(paste("Number of SNPs after union of clumping:", length(clumped_snp_union)))
 
+  if (length(clumped_snp_union) == 1) {
+      message("Only one SNP found in the union. Skipping LD pruning and returning the single SNP directly.")
+      final_SNPs <- sig_SNPs_names[clumped_snp_union]
+      return(list(final_SNPs = final_SNPs, clumped_SNPs = clumped_snp_union))
+  }
+
+
   # Step 3: Sort results from union
   sorted_indices <- order(chr[clumped_snp_union], pos[clumped_snp_union])
   chr_sorted <- chr[clumped_snp_union][sorted_indices]
@@ -375,6 +382,12 @@ corr_filter <- function(X, cor_thres = 0.8) {
     X.new <- as.matrix(X[, -ind.delete])
     filter.id <- filter.id[-ind.delete]
   }
+
+  # Check if X.new has only one column and ensure column names are preserved
+  if (ncol(X.new) == 1) {
+      colnames(X.new) <- colnames(X)[-ind.delete]
+  }
+
   return(list(X.new = X.new, filter.id = filter.id))
 }
 
@@ -395,6 +408,8 @@ corr_filter <- function(X, cor_thres = 0.8) {
 #' @noRd
 check_remove_highcorr_snp <- function(X, C, strategy = c("correlation", "variance", "response_correlation"), response = NULL, max_iterations = 100) {
     strategy <- match.arg(strategy)
+    original_colnames <- colnames(X)
+    initial_ncol <- ncol(X)  # Store the initial number of columns in X    
     # Combine the design matrix with X (SNPs) and C (covariates), keeping C without column names
     X_design <- cbind(1, X, C)  # Add an intercept column (1)
     colnames_X_design <- c("Intercept", colnames(X))  # Assign column names only to X (SNPs) part
@@ -449,7 +464,9 @@ check_remove_highcorr_snp <- function(X, C, strategy = c("correlation", "varianc
     if (iteration == max_iterations) {
         warning("Maximum iterations reached. The design matrix may still not be full rank.")
     }
-    
+    if (ncol(X) == 1 && initial_ncol == 1) {
+        colnames(X) <- original_colnames
+    }
     return(X)  # Return the cleaned X matrix
 }
 
@@ -480,6 +497,10 @@ remove_highcorr_snp <- function(X, problematic_cols, strategy = c("correlation",
         col_to_remove <- problematic_cols[1]
         message("Removing column: ", col_to_remove)
         X <- X[, !(colnames(X) %in% col_to_remove), drop = FALSE]
+        # If X only has one column left after removal, ensure its column name is preserved
+        if (ncol(X) == 1) {
+            colnames(X) <- colnames(X)[colnames(X) != col_to_remove]  # Preserve remaining SNP name
+        }
         return(X)
     }
 
@@ -518,6 +539,9 @@ remove_highcorr_snp <- function(X, problematic_cols, strategy = c("correlation",
     
     # Remove the selected column from X
     X <- X[, !(colnames(X) %in% col_to_remove), drop = FALSE]
+    if (ncol(X) == 1) {
+        colnames(X) <- colnames(X)[colnames(X) != col_to_remove]  # Preserve remaining SNP name
+    }
     return(X)
 }
 
@@ -536,7 +560,7 @@ calculate_qr_and_pseudo_R2 <- function(ExprData, tau.list, strategy = c("correla
     strategy <- match.arg(strategy)
     # Check and handle problematic columns affecting the full rank of the design matrix
     ExprData$X.filter <- check_remove_highcorr_snp(ExprData$X.filter, ExprData$C, strategy = strategy, response = ExprData$Y)
-    
+    snp_names <- colnames(ExprData$X.filter)
     # Build the cleaned design matrix using the filtered X and unnamed C
 
     # Fit the models for all tau values
@@ -572,7 +596,12 @@ calculate_qr_and_pseudo_R2 <- function(ExprData, tau.list, strategy = c("correla
     num_filter_vars <- ncol(ExprData$X.filter)
     beta_mat <- coef(fit_full)[2:(1 + num_filter_vars), , drop = FALSE]
     rownames_beta <- rownames(beta_mat)
-    rownames(beta_mat) <- gsub("^X.filter", "", rownames_beta)
+    if (ncol(ExprData$X.filter) == 1) {
+        rownames(beta_mat) <- snp_names
+    } else {
+        rownames_beta <- rownames(beta_mat)
+        rownames(beta_mat) <- gsub("^X.filter", "", rownames_beta)
+    }    
     return(list(X.filter = ExprData$X.filter, beta_mat = beta_mat, pseudo_R2 = pseudo_R2))
 }
 
@@ -655,7 +684,7 @@ quantile_twas_weight_pipeline <- function(X, Y, Z = NULL, maf = NULL, extract_re
                                           quantile_qtl_tau_list = seq(0.05, 0.95, by = 0.05),
                                           quantile_twas_tau_list = seq(0.01, 0.99, by = 0.01)) {
   # Step 1: QR screen
-  message("Starting QR screen for region: ", extract_region_name, " and gene: ", names(fdat$residual_Y)[r])
+  message("Starting QR screen for gene: ", extract_region_name, " and data: ", names(fdat$residual_Y)[r])
   p.screen <- qr_screen(X = X, Y = Y, Z = Z, tau.list = quantile_qtl_tau_list, threshold = 0.05, method = "qvalue", top_count = 10, top_percent = 15)
   message("QR screen completed. Checking for significant SNPs number...")
   # Initialize results list

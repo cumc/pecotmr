@@ -7,6 +7,7 @@
 mrmash_wrapper(
   X,
   Y,
+  V = NULL,
   sumstats = NULL,
   data_driven_prior_matrices = NULL,
   prior_grid = NULL,
