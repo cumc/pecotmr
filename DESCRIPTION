@@ -39,7 +39,7 @@ Imports:
     mvsusieR,
     tibble,
     qgg,
-    qvalue
+    qvalue,
     R.utils,
 Suggests:
     testthat,
