@@ -238,6 +238,9 @@ multivariate_analysis_pipeline <- function(
   # For input into mvSuSiE
   resid_Y <- res$mrmash_fitted$V
   w0_updated <- rescale_cov_w0(res$mrmash_fitted$w0)
+  if (is.null(w0_updated)) {
+    return (list())
+  }
   w0_updated <- w0_updated[names(w0_updated) %in% names(data_driven_prior_matrices$U)]
   data_driven_prior_matrices$U <- data_driven_prior_matrices$U[names(w0_updated)]
   data_driven_prior_matrices$w <- data_driven_prior_matrices$w[names(w0_updated)]
