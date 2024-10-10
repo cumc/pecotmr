@@ -426,9 +426,6 @@ twas_pipeline <- function(twas_weights_data,
       return(context_table)
     }))
     gene_table$molecular_id <- molecular_id
-    gene_table$start <- xqtl_meta_df$start[xqtl_meta_df$region_id == molecular_id]
-    gene_table$end <- xqtl_meta_df$end[xqtl_meta_df$region_id == molecular_id]
-    gene_table$TSS <- xqtl_meta_df$TSS[xqtl_meta_df$region_id == molecular_id]
     return(gene_table)
   }))
   twas_table$chr <- as.integer(gsub("chr", "", gsub("\\_.*", "", region_block)))
@@ -436,7 +433,7 @@ twas_pipeline <- function(twas_weights_data,
 
   # Step 3. merge twas result table and twas input into twas_data to output
   colname_ordered <- c(
-    "chr", "start", "end", "molecular_id", "TSS", "context", "gwas_study", "method", "is_imputable", "is_selected_method",
+    "chr", "molecular_id", "context", "gwas_study", "method", "is_imputable", "is_selected_method",
     "rsq_cv", "pval_cv", "twas_z", "twas_pval", "type", "block"
   )
   twas_table <- merge(twas_table, twas_results_table, by = c("molecular_id", "context", "method"))
