@@ -8,7 +8,7 @@ This project was developed by NIH/NIA FunGen-xQTL Project Working Group members 
 ## Quick Start
 
 To install the latest version of the pecotmr package
-from GitHub, use [devtools][devtools]:
+from GitHub, use [BiocManager][BiocManager]:
 
 ```R
 install.packages("BiocManager")
@@ -84,5 +84,5 @@ to format the code using configuration file
 need to be made: (1) remove the `Remotes:` entry in `DESCRIPTION`; and
 (2) remove the `fastenloc.Rmd` vignette.
 
-[devtools]: https://github.com/r-lib/devtools
+[BiocManager]: https://github.com/Bioconductor/BiocManager
 [uncrustify]: https://github.com/uncrustify/uncrustify
