@@ -8,7 +8,9 @@ Description: The majority of the statistical models in pecotmr are based on fine
 URL: https://github.com/cumc/pecotmr
 BugReports: https://github.com/cumc/pecotmr/issues
 Authors@R: person("Gao Wang",role = c("cre","aut"),
-                  email = "wang.gaow@columbia.edu")
+                  email = "wang.gaow@columbia.edu",
+                  "Daniel Nachun", role = c("cre", "aut""),
+                  email = "dnachun@stanford.edu")
 License: MIT + file LICENSE
 Imports:
     Rcpp,
@@ -28,7 +30,6 @@ Imports:
     tidyr,
     Rfast,
     doFuture,
-    udr,
     mashr,
     pgenlibr,
     snpStats,
@@ -38,9 +39,9 @@ Imports:
     mvsusieR,
     tibble,
     qgg,
-    R.utils,
     qvalue
-Suggests: 
+    R.utils,
+Suggests:
     testthat,
     knitr,
     rmarkdown,
@@ -57,3 +58,5 @@ LinkingTo:
 NeedsCompilation: yes
 VignetteBuilder: knitr
 RoxygenNote: 7.3.2
+Remotes:
+    stephenslab

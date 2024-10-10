@@ -11,8 +11,8 @@ To install the latest version of the pecotmr package
 from GitHub, use [devtools][devtools]:
 
 ```R
-install.packages("devtools")
-devtools::install_github("cumc/pecotmr",build_vignettes = TRUE)
+install.packages("BiocManager")
+BiocManager::install("cumc/pecotmr")
 ```
 
 If you have cloned the repository locally, you can install the package
@@ -30,10 +30,10 @@ they are not installed already. **If automatic install fail for some packages an
 To install using `conda` or `micromamba` for our released version,
 
 ```
-micromamba install r-pecotmr -c dnachun
+micromamba install -c dnachun -c conda-forge -c bioconda r-pecotmr
 ```
 
-To still use `devtools` to source compile `pecotmr` we suggest you build a local `conda` environment for pecotmr and all its dependencies,
+To still use `devtools` to build `pecotmr` from source we suggest you build a local `conda` environment for pecotmr and all its dependencies,
 
 ```
 cp .github/environment/environment.yaml /tmp/environment.yaml
@@ -47,7 +47,7 @@ then use
 micromamba activate pecotmr
 ```
 
-to activate it. Now you should be able to source compile `pecotmr`.
+to activate it. Now you should be able to build `pecotmr` from source.
 
 ## Developer's notes
 
@@ -80,7 +80,7 @@ to format the code using configuration file
    uncrustify -c inst/misc/uncrustify_default.cfg --replace --no-backup -l CPP src/qtl_enrichment.hpp
    ```
 
-+ Prior to submitting the package to CRAN, the following modifications
++ Prior to submitting the package to Bioconductor, the following modifications
 need to be made: (1) remove the `Remotes:` entry in `DESCRIPTION`; and
 (2) remove the `fastenloc.Rmd` vignette.
 
