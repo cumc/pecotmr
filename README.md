@@ -25,7 +25,7 @@ devtools::install_local("pecotmr",build_vignettes = TRUE)
 ```
 
 `devtools` should automatically install all required packages if
-they are not installed already. **If automatic install fail for some packages and you cannot fix it up easily, please try to use our conda package instead.**
+they are not installed already. **If automatic installation fails for some packages and you are unable to fix them, please try to use our conda package instead.**
 
 To install using `conda` or `micromamba` for our released version,
 
