@@ -26,6 +26,7 @@ Imports:
     data.table,
     doFuture,
     dplyr,
+    fsusieR,
     furrr,
     future,
     glmnet,
@@ -33,6 +34,9 @@ Imports:
     magrittr,
     mashr,
     matrixStats,
+    mr.ash.alpha,
+    mr.mash.alpha,
+    mvsusieR,
     pgenlibr,
     purrr,
     qgg,
@@ -45,6 +49,7 @@ Imports:
     susieR,
     tibble,
     tidyr,
+    udr,
     vctrs
 Suggests:
     knitr,
