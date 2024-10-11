@@ -262,7 +262,7 @@ twas_pipeline <- function(twas_weights_data,
         weight <- list()
         data_type <- post_qc_twas_data[[molecular_id]][["data_type"]][[context]]
         model_selected <- post_qc_twas_data[[molecular_id]][["model_selection"]][[context]]$selected_model
-        if (!is.null(model_selected) & isTRUE(post_qc_twas_data[[molecular_id]][["model_selection"]][[context]]$is_imputable)){
+        if (!is.null(model_selected) & isTRUE(post_qc_twas_data[[molecular_id]][["model_selection"]][[context]]$is_imputable)) {
           postqc_scaled_weight <- post_qc_twas_data[[molecular_id]][["weights_qced"]][[context]][["scaled_weights"]][, paste0(model_selected, "_weights"), drop = FALSE]
           colnames(postqc_scaled_weight) <- "weight"
           rownames(postqc_scaled_weight) <- gsub("chr", "", rownames(postqc_scaled_weight))
