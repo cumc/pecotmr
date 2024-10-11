@@ -16,8 +16,6 @@ Imports:
     Rcpp,
     magrittr,
     susieR,
-    mr.ash.alpha,
-    mr.mash.alpha,
     coloc,
     data.table,
     stringr,
@@ -34,9 +32,7 @@ Imports:
     pgenlibr,
     snpStats,
     vctrs,
-    fsusieR,
     future,
-    mvsusieR,
     tibble,
     qgg,
     qvalue,
@@ -59,4 +55,7 @@ NeedsCompilation: yes
 VignetteBuilder: knitr
 RoxygenNote: 7.3.2
 Remotes:
-    stephenslab
+    stephenslab/mr.ash.alpha
+    stephenslab/mr.mash.alpha
+    stephenslab/fsusieR
+    stephenslab/mvsusieR
