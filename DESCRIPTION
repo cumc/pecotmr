@@ -55,7 +55,7 @@ NeedsCompilation: yes
 VignetteBuilder: knitr
 RoxygenNote: 7.3.2
 Remotes:
-    stephenslab/mr.ash.alpha
-    stephenslab/mr.mash.alpha
-    stephenslab/fsusieR
+    stephenslab/mr.ash.alpha,
+    stephenslab/mr.mash.alpha,
+    stephenslab/fsusieR,
     stephenslab/mvsusieR
