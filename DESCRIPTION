@@ -20,6 +20,8 @@ Imports:
     Rcpp,
     Rfast,
     S4Vectors,
+    bigsnpr,
+    bigstatsr,
     coloc,
     data.table,
     doFuture,
@@ -27,12 +29,14 @@ Imports:
     furrr,
     future,
     glmnet,
+    harmonicmeanp,
     magrittr,
     mashr,
     matrixStats,
     pgenlibr,
     purrr,
     qgg,
+    quantreg,
     qvalue,
     readr,
     rlang,
@@ -43,12 +47,7 @@ Imports:
     tidyr,
     vctrs
 Suggests:
-    bigsnpr,
-    bigstatsr,
-    harmonicmeanp,
     knitr,
-    plink2R,
-    quantreg,
     rmarkdown,
     testthat
 LinkingTo: 
