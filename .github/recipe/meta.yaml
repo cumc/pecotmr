@@ -10,7 +10,6 @@ source:
   sha256: SHA256SUM_PLACEHOLDER
 
 build:
-  merge_build_host: true  # [win]
   number: BUILD_PLACEHOLDER
   rpaths:
     - lib/R/lib/
@@ -22,10 +21,10 @@ requirements:
     - {{ compiler('cxx') }}
     - cross-r-base {{ r_base }}  # [build_platform != target_platform]
   host:
+    - bioconductor-iranges
     - bioconductor-qvalue
     - bioconductor-s4vectors
-    - bioconductor-iranges
-    - r-bedtoolsr
+    - bioconductor-snpstats
     - r-base=4.3
     - r-bigsnpr
     - r-bigstatsr
@@ -33,6 +32,8 @@ requirements:
     - r-data.table
     - r-dofuture
     - r-dplyr
+    - r-fsusier
+    - r-furrr
     - r-gbj
     - r-ggplot2
     - r-ggnewscale
@@ -41,16 +42,14 @@ requirements:
     - r-glmnet
     - r-harmonicmeanp
     - r-magrittr
-    - r-matrix
     - r-matrixstats
     - r-mr.ash.alpha
     - r-mr.mash.alpha
     - r-mvsusier
-    - r-udr
-    - r-fsusier
     - r-pgenlibr
-    - bioconductor-snpstats
-    - r-furrr
+    - r-r.utils
+    - r-qgg
+    - r-quantreg
     - r-purrr
     - r-r6
     - r-rcpp
@@ -60,22 +59,22 @@ requirements:
     - r-stringr
     - r-susier
     - r-tidyr
+    - r-udr
     - r-vctrs
-    - r-quantreg
-    - r-qgg
-    - r-r.utils
   run:
+    - bioconductor-iranges
     - bioconductor-qvalue
     - bioconductor-s4vectors
-    - bioconductor-iranges
-    - r-bedtoolsr
-    - r-base>=4.3
+    - bioconductor-snpstats
+    - r-base=4.3
     - r-bigsnpr
     - r-bigstatsr
     - r-coloc
     - r-data.table
     - r-dofuture
     - r-dplyr
+    - r-fsusier
+    - r-furrr
     - r-gbj
     - r-ggplot2
     - r-ggnewscale
@@ -84,17 +83,15 @@ requirements:
     - r-glmnet
     - r-harmonicmeanp
     - r-magrittr
-    - r-matrix
     - r-matrixstats
     - r-mr.ash.alpha
     - r-mr.mash.alpha
     - r-mvsusier
-    - r-udr
-    - r-fsusier
     - r-pgenlibr
-    - bioconductor-snpstats
-    - r-furrr
     - r-purrr
+    - r-qgg
+    - r-quantreg
+    - r-r.utils
     - r-r6
     - r-rcpp
     - r-readr
@@ -103,10 +100,8 @@ requirements:
     - r-stringr
     - r-susier
     - r-tidyr
+    - r-udr
     - r-vctrs
-    - r-quantreg
-    - r-qgg
-    - r-r.utils
 
 test:
   commands:
