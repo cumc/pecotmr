@@ -55,20 +55,26 @@ mr_format <- function(susie_result, condition, gwas_sumstats_db, coverage = "cs_
         mutate(variant = ifelse(grepl("^chr[0-9]+:", variant_id), gsub("^chr", "", variant_id), variant_id)) %>%
         select(gene_name, variant, betahat, sebetahat, all_of(coverage), pip) %>%
         rename("bhat_x" = "betahat", "sbhat_x" = "sebetahat", "cs" = coverage)
-      if (allele_qc) {
-        susie_cs_result_formatted <- allele_qc(susie_cs_result_formatted$variant, gwas_sumstats_db$variant_id,
-          cbind(variant_id_to_df(susie_cs_result_formatted$variant), susie_cs_result_formatted), c("bhat_x", "sbhat_x"),
-          match_min_prop = 0
-        )
-        susie_cs_result_formatted <- susie_cs_result_formatted$target_data_qced[, c("gene_name", "variant_id", "bhat_x", "sbhat_x", "cs", "pip")]
-      }
-      gwas_sumstats_db$variant_id <- gsub("chr", "", gwas_sumstats_db$variant_id)
-      susie_cs_gwas_variants_merge <- intersect(susie_cs_result_formatted$variant_id, gwas_sumstats_db$variant_id)
+      susie_pos <- sapply(susie_cs_result_formatted$variant, function(variant_id) strsplit(variant_id, "\\:")[[1]][2])
+      gwas_pos <- sapply(gwas_sumstats_db$variant_id, function(variant_id) strsplit(variant_id, "\\:")[[1]][2])
+      if (any(susie_pos %in% gwas_pos)){
+        if (allele_qc) {
+          susie_cs_result_formatted <- allele_qc(susie_cs_result_formatted$variant, gwas_sumstats_db$variant_id,
+            cbind(variant_id_to_df(susie_cs_result_formatted$variant), susie_cs_result_formatted), c("bhat_x", "sbhat_x"),
+            match_min_prop = 0
+          )
+          susie_cs_result_formatted <- susie_cs_result_formatted$target_data_qced[, c("gene_name", "variant_id", "bhat_x", "sbhat_x", "cs", "pip")]
+        }
+        gwas_sumstats_db$variant_id <- gsub("chr", "", gwas_sumstats_db$variant_id)
+        susie_cs_gwas_variants_merge <- intersect(susie_cs_result_formatted$variant_id, gwas_sumstats_db$variant_id)
 
-      mr_format_input <- susie_cs_result_formatted[match(susie_cs_gwas_variants_merge, susie_cs_result_formatted$variant), ] %>%
-        cbind(., gwas_sumstats_db[match(susie_cs_gwas_variants_merge, gwas_sumstats_db$variant_id), ] %>%
-          select(beta, se) %>%
-          rename("bhat_y" = "beta", "sbhat_y" = "se"))
+        mr_format_input <- susie_cs_result_formatted[match(susie_cs_gwas_variants_merge, susie_cs_result_formatted$variant), ] %>%
+          cbind(., gwas_sumstats_db[match(susie_cs_gwas_variants_merge, gwas_sumstats_db$variant_id), ] %>%
+            select(beta, se) %>%
+            rename("bhat_y" = "beta", "sbhat_y" = "se"))
+      } else {
+        mr_format_input <- create_null_mr_input(gene_name)
+      }
     } else {
       mr_format_input <- create_null_mr_input(gene_name)
     }
