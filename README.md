@@ -11,7 +11,7 @@ To install the latest version of the pecotmr package
 from GitHub, use [BiocManager][BiocManager]:
 
 ```R
-install.packages("BiocManager")
+install.packages(c("BiocManager", "remotes"))
 BiocManager::install("cumc/pecotmr")
 ```
 
