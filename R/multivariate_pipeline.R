@@ -223,7 +223,7 @@ multivariate_analysis_pipeline <- function(
   if (!is.null(data_driven_prior_matrices)) {
     data_driven_prior_matrices <- filter_mixture_components(colnames(Y),
       data_driven_prior_matrices$U, data_driven_prior_matrices$w,
-      data_driven_prior_weights_cutoff = data_driven_prior_weights_cutoff
+      data_driven_prior_weights_cutoff
     )
   }
 
