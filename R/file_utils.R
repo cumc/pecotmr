@@ -631,7 +631,9 @@ load_twas_weights <- function(weight_db_files, conditions = NULL,
         multi_weights <- setNames(rep(0, length(uni_variants)), uni_variants)
         multi_weights <- lapply(combined_all_data[["mnm_rs"]][[context]]$twas_weights, function(weight_list) {
           aligned_weights <- setNames(rep(0, length(uni_variants)), uni_variants)
-          aligned_weights[multi_variants[multi_variants %in% uni_variants]] <- unlist(weight_list)[multi_variants %in% uni_variants]
+          method_weight_variants <- names(unlist(weight_list))
+          overlap_variants <- method_weight_variants[method_weight_variants %in% multi_variants[multi_variants %in% uni_variants]]
+          aligned_weights[overlap_variants] <- unlist(weight_list)[names(unlist(weight_list)) %in% overlap_variants]
           aligned_weights <- as.matrix(aligned_weights)
         })
         combined_all_data[[gene]][[context]]$twas_weights <- c(combined_all_data[[gene]][[context]]$twas_weights, multi_weights)
