@@ -749,7 +749,7 @@ if (ncol(X_filtered) > 1) {
     X.filter <- filtered$X.new
 } else {
     X.filter <- X_filtered
-    results$message <- paste0("Only one significant SNP in gene ", extract_region_name, names(fdat$residual_Y)[r], ", skipping correlation filter."))
+    results$message <- paste0("Only one significant SNP in gene ", extract_region_name, names(fdat$residual_Y)[r], ", skipping correlation filter.")
 }
 
 # Step 7: Fit QR and get twas weight and R2 for all taus
