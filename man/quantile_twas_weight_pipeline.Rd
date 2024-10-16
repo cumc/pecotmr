@@ -10,6 +10,8 @@ quantile_twas_weight_pipeline(
   Z = NULL,
   maf = NULL,
   extract_region_name,
+  ld_reference_meta_file = NULL,
+  maf_cutoff = 0.01,
   quantile_qtl_tau_list = seq(0.05, 0.95, by = 0.05),
   quantile_twas_tau_list = seq(0.01, 0.99, by = 0.01)
 )
