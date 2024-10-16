@@ -17,8 +17,8 @@
 #' @param Y Matrix or vector of response variables
 #' @param Z Matrix of covariates (optional)
 #' @param tau.list Vector of quantiles to be analyzed
-#' @param threshold Significance threshold for adjusted p-values
-#' @param method Method for p-value adjustment ('fdr' or 'qvalue')
+#' @param screen_threshold Significance threshold for adjusted p-values
+#' @param screen_method Method for p-value adjustment ('fdr' or 'qvalue')
 #' @param top_count Number of top SNPs to select
 #' @param top_percent Percentage of top SNPs to select
 #' @return A list containing various results from the QR screen
@@ -26,7 +26,9 @@
 #' @importFrom tidyr separate
 #' @importFrom dplyr %>% mutate select
 #' @export
-qr_screen <- function(X, Y, Z = NULL, tau.list, threshold = 0.05, method = "qvalue", top_count = 10, top_percent = 15) {
+qr_screen <- function(
+    X, Y, Z = NULL, tau.list = seq(0.05, 0.95, by = 0.05),
+    screen_threshold = 0.05, screen_method = "qvalue", top_count = 10, top_percent = 15) {
   p <- ncol(X)
   pvec <- rep(NA, p)
   ltau <- length(tau.list)
@@ -79,21 +81,21 @@ qr_screen <- function(X, Y, Z = NULL, tau.list, threshold = 0.05, method = "qval
 
   pvec <- apply(quantile.pvalue, 1, pval_cauchy)
 
-  if (method == "fdr") {
+  if (screen_method == "fdr") {
     adjusted_pvalues <- p.adjust(pvec)
     method_col_name <- "fdr_p_qr"
     method_quantile_names <- paste0("fdr_p_qr_", tau.list)
     quantile_adjusted_pvalues <- apply(quantile.pvalue, 2, p.adjust)
-  } else if (method == "qvalue") {
+  } else if (screen_method == "qvalue") {
     adjusted_pvalues <- compute_qvalues(pvec)
     method_col_name <- "qvalue_qr"
     method_quantile_names <- paste0("qvalue_qr_", tau.list)
     quantile_adjusted_pvalues <- apply(quantile.pvalue, 2, compute_qvalues)
   } else {
-    stop("Invalid method. Choose 'fdr' or 'qvalue'.")
+    stop("Invalid screen_method. Choose 'fdr' or 'qvalue'.")
   }
 
-  sig_SNP_threshold <- which(adjusted_pvalues < threshold)
+  sig_SNP_threshold <- which(adjusted_pvalues < screen_threshold)
   sig_SNP_top_count <- order(adjusted_pvalues)[1:top_count]
   sig_SNP_top_percent <- order(adjusted_pvalues)[1:max(1, round(length(adjusted_pvalues) * top_percent / 100))]
 
@@ -548,24 +550,24 @@ remove_highcorr_snp <- function(X, problematic_cols, strategy = c("correlation",
 #' This function calculates quantile regression coefficients and pseudo R-squared values across multiple quantiles,
 #' while handling problematic columns that might affect the rank of the design matrix.
 #'
-#' @param ExprData List containing X, Y, C, and X.filter
+#' @param AssocData List containing X, Y, C, and X.filter
 #' @param tau.list Vector of quantiles to be analyzed
 #' @param strategy The strategy for removing problematic columns ("variance", "correlation", or "response_correlation")
 #' @return A list containing the cleaned X matrix, beta matrix as twas weight, and pseudo R-squared values
 #' @importFrom quantreg rq rq.fit.br
 #' @noRd
-calculate_qr_and_pseudo_R2 <- function(ExprData, tau.list, strategy = c("correlation", "variance", "response_correlation")) {
+calculate_qr_and_pseudo_R2 <- function(AssocData, tau.list, strategy = c("correlation", "variance", "response_correlation")) {
   strategy <- match.arg(strategy)
   # Check and handle problematic columns affecting the full rank of the design matrix
-  ExprData$X.filter <- check_remove_highcorr_snp(ExprData$X.filter, ExprData$C, strategy = strategy, response = ExprData$Y)
-  snp_names <- colnames(ExprData$X.filter)
+  AssocData$X.filter <- check_remove_highcorr_snp(AssocData$X.filter, AssocData$C, strategy = strategy, response = AssocData$Y)
+  snp_names <- colnames(AssocData$X.filter)
   # Build the cleaned design matrix using the filtered X and unnamed C
 
   # Fit the models for all tau values
   message("Start fitting full model for all taus...")
-  fit_full <- suppressWarnings(rq(Y ~ X.filter + C, tau = tau.list, data = ExprData))
+  fit_full <- suppressWarnings(rq(Y ~ X.filter + C, tau = tau.list, data = AssocData))
   message("Finished fitting full model. Start fitting intercept-only model for all taus...")
-  fit_intercept <- suppressWarnings(rq(ExprData$Y ~ 1, tau = tau.list, data = ExprData))
+  fit_intercept <- suppressWarnings(rq(AssocData$Y ~ 1, tau = tau.list, data = AssocData))
   message("Finished fitting intercept-only model.")
   # Define the rho function for pseudo R² calculation
   rho <- function(u, tau) {
@@ -591,16 +593,16 @@ calculate_qr_and_pseudo_R2 <- function(ExprData, tau.list, strategy = c("correla
   }
 
   # Extract the coefficients for the SNPs
-  num_filter_vars <- ncol(ExprData$X.filter)
+  num_filter_vars <- ncol(AssocData$X.filter)
   beta_mat <- coef(fit_full)[2:(1 + num_filter_vars), , drop = FALSE]
   rownames_beta <- rownames(beta_mat)
-  if (ncol(ExprData$X.filter) == 1) {
+  if (ncol(AssocData$X.filter) == 1) {
     rownames(beta_mat) <- snp_names
   } else {
     rownames_beta <- rownames(beta_mat)
     rownames(beta_mat) <- gsub("^X.filter", "", rownames_beta)
   }
-  return(list(X.filter = ExprData$X.filter, beta_mat = beta_mat, pseudo_R2 = pseudo_R2))
+  return(list(X.filter = AssocData$X.filter, beta_mat = beta_mat, pseudo_R2 = pseudo_R2))
 }
 
 #' Calculate Heterogeneity of Beta Coefficients Across Quantiles
@@ -646,7 +648,7 @@ calculate_coef_heterogeneity <- function(rq_coef_result) {
 #' @param Y Matrix or vector of phenotypes
 #' @param Z Matrix of covariates (optional)
 #' @param maf Vector of minor allele frequencies (optional)
-#' @param extract_region_name Name of the region being analyzed
+#' @param region_id Name of the region being analyzed
 #' @param quantile_qtl_tau_list Vector of quantiles for QTL analysis
 #' @param quantile_twas_tau_list Vector of quantiles for TWAS analysis
 #'
@@ -675,95 +677,95 @@ calculate_coef_heterogeneity <- function(rq_coef_result) {
 #' # X <- matrix of genotypes
 #' # Y <- vector of phenotypes
 #' # Z <- matrix of covariates
-#' # results <- quantile_twas_weight_pipeline(X, Y, Z, extract_region_name = "GeneA")
+#' # results <- quantile_twas_weight_pipeline(X, Y, Z, region_id = "GeneA")
 #'
 #' @export
-quantile_twas_weight_pipeline <- function(X, Y, Z = NULL, maf = NULL, extract_region_name,
-                                        ld_reference_meta_file = NULL, maf_cutoff = 0.01,
-                                        quantile_qtl_tau_list = seq(0.05, 0.95, by = 0.05),
-                                        quantile_twas_tau_list = seq(0.01, 0.99, by = 0.01)) {
-# Step 1: QR screen
-message("Starting QR screen for gene: ", extract_region_name, " and data: ", names(fdat$residual_Y)[r])
-p.screen <- qr_screen(X = X, Y = Y, Z = Z, tau.list = quantile_qtl_tau_list, threshold = 0.05, method = "qvalue", top_count = 10, top_percent = 15)
-message(paste0("Number of SNPs after QR screening: ", length(p.screen$sig_SNP_threshold)))
-message("QR screen completed. Checking for significant SNPs number...")
-# Initialize results list
-results <- list(qr_screen_pvalue_df = p.screen$df_result)
+quantile_twas_weight_pipeline <- function(X, Y, Z = NULL, maf = NULL, region_id = "",
+                                          ld_reference_meta_file = NULL, maf_cutoff = 0.01,
+                                          quantile_qtl_tau_list = seq(0.05, 0.95, by = 0.05),
+                                          quantile_twas_tau_list = seq(0.01, 0.99, by = 0.01)) {
+  # Step 1: QR screen
+  message("Starting QR screen for region ", region_id)
+  p.screen <- qr_screen(X = X, Y = Y, Z = Z, tau.list = quantile_qtl_tau_list, screen_threshold = 0.05, screen_method = "qvalue", top_count = 10, top_percent = 15)
+  message(paste0("Number of SNPs after QR screening: ", length(p.screen$sig_SNP_threshold)))
+  message("QR screen completed. Screening significant SNPs")
+  # Initialize results list
+  results <- list(qr_screen_pvalue_df = p.screen$df_result)
 
-if (length(p.screen$sig_SNP_threshold) == 0) {
-    results$message <- paste0("No significant SNPs detected in gene ", extract_region_name, names(fdat$residual_Y)[r])
+  if (length(p.screen$sig_SNP_threshold) == 0) {
+    results$message <- paste0("No significant SNPs detected in region ", region_id)
     return(results)
-}
+  }
 
-X_filtered <- X[, p.screen$sig_SNP_threshold, drop = FALSE]
+  X_filtered <- X[, p.screen$sig_SNP_threshold, drop = FALSE]
 
-# Step 2: LD clumping and pruning from results of QR_screen (using original QR screen results)
-message("Performing LD clumping and pruning from QR screen results...")
-LD_SNPs <- multicontext_ld_clumping(X = X[, p.screen$sig_SNP_threshold, drop = FALSE], qr_results = p.screen, maf_list = NULL)
-x_clumped <- X[, p.screen$sig_SNP_threshold, drop = FALSE][, LD_SNPs$final_SNPs, drop = FALSE]
+  # Step 2: LD clumping and pruning from results of QR_screen (using original QR screen results)
+  message("Performing LD clumping and pruning from QR screen results...")
+  LD_SNPs <- multicontext_ld_clumping(X = X[, p.screen$sig_SNP_threshold, drop = FALSE], qr_results = p.screen, maf_list = NULL)
+  x_clumped <- X[, p.screen$sig_SNP_threshold, drop = FALSE][, LD_SNPs$final_SNPs, drop = FALSE]
 
-# Step 3: Only fit marginal QR to get beta with SNPs after LD pruning for quantile_qtl_tau_list values
-message("LD clumping and pruning completed. Fitting marginal QR for selected SNPs...")
-rq_coef_result <- perform_qr_analysis(X = x_clumped, Y = Y, Z = Z, tau_values = quantile_qtl_tau_list)
+  # Step 3: Only fit marginal QR to get beta with SNPs after LD pruning for quantile_qtl_tau_list values
+  message("LD clumping and pruning completed. Fitting marginal QR for selected SNPs...")
+  rq_coef_result <- perform_qr_analysis(X = x_clumped, Y = Y, Z = Z, tau_values = quantile_qtl_tau_list)
 
-# Step 4: beta_heterogeneity in marginal model
-message("Marginal QR for selected SNPs completed. Calculating beta heterogeneity...")
-beta_heterogeneity <- calculate_coef_heterogeneity(rq_coef_result)
-message("Beta heterogeneity calculation completed.")
-results$rq_coef_df <- rq_coef_result
-results$beta_heterogeneity <- beta_heterogeneity
+  # Step 4: beta_heterogeneity in marginal model
+  message("Marginal QR for selected SNPs completed. Calculating beta heterogeneity...")
+  beta_heterogeneity <- calculate_coef_heterogeneity(rq_coef_result)
+  message("Beta heterogeneity calculation completed.")
+  results$rq_coef_df <- rq_coef_result
+  results$beta_heterogeneity <- beta_heterogeneity
 
-# Step 5: Optional LD panel filtering and MAF filtering from results of QR_screen
-if (!is.null(ld_reference_meta_file)) {
+  # Step 5: Optional LD panel filtering and MAF filtering from results of QR_screen
+  if (!is.null(ld_reference_meta_file)) {
     message("Starting LD panel filtering...")
     variants_kept <- filter_variants_by_ld_reference(colnames(X_filtered), ld_reference_meta_file)
-    
+
     # Check if any SNPs are left after LD filtering
     if (length(variants_kept$data) == 0) {
-        results$message <- paste0("No SNPs left after LD filtering in gene ", extract_region_name, names(fdat$residual_Y)[r])
-        return(results)
+      results$message <- paste0("No SNPs left after LD filtering in region ", region_id)
+      return(results)
     }
-    
+
     X_filtered <- X_filtered[, variants_kept$data, drop = FALSE]
     message(paste0("Number of SNPs after LD filtering: ", ncol(X_filtered)))
-    
+
     # MAF filtering
     if (!is.null(maf)) {
-        maf_filtered <- maf[colnames(X_filtered)] > maf_cutoff
-        X_filtered <- X_filtered[, maf_filtered, drop = FALSE]
-        
-        # Check if any SNPs are left after MAF filtering
-        if (ncol(X_filtered) == 0) {
-            results$message <- paste0("No SNPs left after MAF filtering in gene ", extract_region_name, names(fdat$residual_Y)[r])
-            return(results)
-        }
-        
-        message(paste0("Number of SNPs after MAF filtering: ", ncol(X_filtered)))
-    }
-}
+      maf_filtered <- maf[colnames(X_filtered)] > maf_cutoff
+      X_filtered <- X_filtered[, maf_filtered, drop = FALSE]
 
-# Step 6: Filter highly correlated SNPs
-message("Filtering highly correlated SNPs...")
-if (ncol(X_filtered) > 1) {
+      # Check if any SNPs are left after MAF filtering
+      if (ncol(X_filtered) == 0) {
+        results$message <- paste0("No SNPs left after MAF filtering in region ", region_id)
+        return(results)
+      }
+
+      message(paste0("Number of SNPs after MAF filtering: ", ncol(X_filtered)))
+    }
+  }
+
+  # Step 6: Filter highly correlated SNPs
+  message("Filtering highly correlated SNPs...")
+  if (ncol(X_filtered) > 1) {
     filtered <- corr_filter(X_filtered, 0.8)
     X.filter <- filtered$X.new
-} else {
+  } else {
     X.filter <- X_filtered
-    results$message <- paste0("Only one significant SNP in gene ", extract_region_name, names(fdat$residual_Y)[r], ", skipping correlation filter.")
-}
+    results$message <- paste0("Skipping correlation filter because there is only one significant SNP in region ", region_id)
+  }
 
-# Step 7: Fit QR and get twas weight and R2 for all taus
-message("Filter highly correlated SNPs completed. Fitting full QR to calculate TWAS weights and pseudo R-squared values...")
-ExprData <- list(X = X, Y = Y, C = Z, X.filter = X.filter)
-qr_beta_R2_results <- calculate_qr_and_pseudo_R2(ExprData, quantile_twas_tau_list)
-X.filter <- qr_beta_R2_results$X.filter
-message("TWAS weights and pseudo R-squared calculations completed.")
+  # Step 7: Fit QR and get twas weight and R2 for all taus
+  message("Filter highly correlated SNPs completed. Fitting full QR to calculate TWAS weights and pseudo R-squared values...")
+  AssocData <- list(X = X, Y = Y, C = Z, X.filter = X.filter)
+  qr_beta_R2_results <- calculate_qr_and_pseudo_R2(AssocData, quantile_twas_tau_list)
+  X.filter <- qr_beta_R2_results$X.filter
+  message("TWAS weights and pseudo R-squared calculations completed.")
 
-# Add additional results
-results$twas_variant_names <- colnames(X.filter)
-results$twas_weight <- qr_beta_R2_results$beta_mat
-results$pseudo_R2 <- qr_beta_R2_results$pseudo_R2
-results$quantile_twas_prediction <- X.filter %*% results$twas_weight
+  # Add additional results
+  results$twas_variant_names <- colnames(X.filter)
+  results$twas_weight <- qr_beta_R2_results$beta_mat
+  results$pseudo_R2 <- qr_beta_R2_results$pseudo_R2
+  results$quantile_twas_prediction <- X.filter %*% results$twas_weight
 
-return(results)
+  return(results)
 }
