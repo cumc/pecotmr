@@ -681,7 +681,7 @@ calculate_coef_heterogeneity <- function(rq_coef_result) {
 #'
 #' @export
 quantile_twas_weight_pipeline <- function(X, Y, Z = NULL, maf = NULL, region_id = "",
-                                          ld_reference_meta_file = NULL, maf_cutoff = 0.01,
+                                          ld_reference_meta_file = NULL, twas_maf_cutoff = 0.01,
                                           quantile_qtl_tau_list = seq(0.05, 0.95, by = 0.05),
                                           quantile_twas_tau_list = seq(0.01, 0.99, by = 0.01)) {
   # Step 1: QR screen
@@ -731,7 +731,7 @@ quantile_twas_weight_pipeline <- function(X, Y, Z = NULL, maf = NULL, region_id 
 
     # MAF filtering
     if (!is.null(maf)) {
-      maf_filtered <- maf[colnames(X_filtered)] > maf_cutoff
+      maf_filtered <- maf[colnames(X_filtered)] > twas_maf_cutoff
       X_filtered <- X_filtered[, maf_filtered, drop = FALSE]
 
       # Check if any SNPs are left after MAF filtering
