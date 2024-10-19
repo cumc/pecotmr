@@ -9,9 +9,9 @@ quantile_twas_weight_pipeline(
   Y,
   Z = NULL,
   maf = NULL,
-  extract_region_name,
+  region_id = "",
   ld_reference_meta_file = NULL,
-  maf_cutoff = 0.01,
+  twas_maf_cutoff = 0.01,
   quantile_qtl_tau_list = seq(0.05, 0.95, by = 0.05),
   quantile_twas_tau_list = seq(0.01, 0.99, by = 0.01)
 )
@@ -25,7 +25,7 @@ quantile_twas_weight_pipeline(
 
 \item{maf}{Vector of minor allele frequencies (optional)}
 
-\item{extract_region_name}{Name of the region being analyzed}
+\item{region_id}{Name of the region being analyzed}
 
 \item{quantile_qtl_tau_list}{Vector of quantiles for QTL analysis}
 
@@ -59,6 +59,6 @@ The function performs the following steps:
 # X <- matrix of genotypes
 # Y <- vector of phenotypes
 # Z <- matrix of covariates
-# results <- quantile_twas_weight_pipeline(X, Y, Z, extract_region_name = "GeneA")
+# results <- quantile_twas_weight_pipeline(X, Y, Z, region_id = "GeneA")
 
 }
