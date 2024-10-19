@@ -408,7 +408,7 @@ corr_filter <- function(X, cor_thres = 0.8) {
 #' @return Cleaned matrix X with problematic columns removed
 #' @importFrom stats qr
 #' @noRd
-check_remove_highcorr_snp <- function(X, C, strategy = c("correlation", "variance", "response_correlation"), response = NULL, max_iterations = 100) {
+check_remove_highcorr_snp <- function(X = X, C = C, strategy = c("correlation", "variance", "response_correlation"), response = NULL, max_iterations = 300, corr_thresholds = seq(0.75, 0.5, by = -0.05)) {
   strategy <- match.arg(strategy)
   original_colnames <- colnames(X)
   initial_ncol <- ncol(X) # Store the initial number of columns in X
@@ -443,12 +443,12 @@ check_remove_highcorr_snp <- function(X, C, strategy = c("correlation", "varianc
       message("No more problematic SNP columns found in X. Breaking the loop.")
       break
     }
-
     # Print the problematic column names for debugging purposes
     message("Problematic SNP columns identified: ", paste(problematic_colnames, collapse = ", "))
 
     # Remove problematic columns affecting the rank based on the chosen strategy
     X <- remove_highcorr_snp(X, problematic_colnames, strategy = strategy, response = response)
+
     # Rebuild the design matrix with cleaned X, leaving C unnamed
     X_design <- cbind(1, X, C)
     colnames_X_design <- c("Intercept", colnames(X)) # Reassign column names to X part only
@@ -459,8 +459,24 @@ check_remove_highcorr_snp <- function(X, C, strategy = c("correlation", "varianc
     # Recheck the rank of the design matrix
     matrix_rank <- qr(X_design)$rank
     message("New rank of the design matrix: ", matrix_rank, " / ", ncol(X_design), " columns.")
-
     iteration <- iteration + 1
+  }
+
+  if (matrix_rank < ncol(X_design)) {
+    message("Applying corr_filter to ensure the design matrix is full rank...")
+    for (threshold in corr_thresholds) {
+      filter_result <- corr_filter(X, cor_thres = threshold)
+      X <- filter_result$X.new
+      X_design <- cbind(1, X, C)
+      colnames_X_design <- c("Intercept", colnames(X))
+      colnames(X_design)[1:length(colnames_X_design)] <- colnames_X_design
+
+      matrix_rank <- qr(X_design)$rank
+      message("Rank after corr_filter with threshold ", threshold, ": ", matrix_rank, " / ", ncol(X_design), " columns.")
+      if (matrix_rank == ncol(X_design)) {
+        break
+      }
+    }
   }
 
   if (iteration == max_iterations) {
@@ -469,7 +485,7 @@ check_remove_highcorr_snp <- function(X, C, strategy = c("correlation", "varianc
   if (ncol(X) == 1 && initial_ncol == 1) {
     colnames(X) <- original_colnames
   }
-  return(X) # Return the cleaned X matrix
+  return(X = X) # Return the cleaned X matrix
 }
 
 #' Remove Problematic Columns Based on a Given Strategy
@@ -559,7 +575,7 @@ remove_highcorr_snp <- function(X, problematic_cols, strategy = c("correlation",
 calculate_qr_and_pseudo_R2 <- function(AssocData, tau.list, strategy = c("correlation", "variance", "response_correlation")) {
   strategy <- match.arg(strategy)
   # Check and handle problematic columns affecting the full rank of the design matrix
-  AssocData$X.filter <- check_remove_highcorr_snp(AssocData$X.filter, AssocData$C, strategy = strategy, response = AssocData$Y)
+  AssocData$X.filter <- check_remove_highcorr_snp(X = AssocData$X.filter,  C = AssocData$C, strategy = strategy, response = AssocData$Y)
   snp_names <- colnames(AssocData$X.filter)
   # Build the cleaned design matrix using the filtered X and unnamed C
 
