@@ -171,7 +171,7 @@ filter_X <- function(X, missing_rate_thresh, maf_thresh, var_thresh = 0, maf = N
     rm_col <- if (!is.null(X_variance)) which(X_variance < var_thresh) else which(colVars(X) < var_thresh)
     if (length(rm_col)) X <- X[, -rm_col]
   }
-  message(paste0("Out of total ", tol_variants, " variants, dropped ", tol_variants - ncol(X), " variants. "))
+  message(paste0(tol_variants - ncol(X) " out of ", tol_variants, " total variants dropped due to quality control on X matrix."))
   return(X)
 }
 
@@ -194,7 +194,7 @@ filter_X_with_Y <- function(X, Y, missing_rate_thresh, maf_thresh, var_thresh = 
   }))
   drop_idx <- unique(sort(drop_idx))
   if (length(drop_idx)) X <- X[, -drop_idx, drop = FALSE]
-  message(paste0("Dropped additional ", length(drop_idx), " variants with condition of Y subjects, remaining ", ncol(X), " variants. "))
+  message(paste0("Additional ", length(drop_idx), " variants dropped after considering missing data in Y matrix, with ", ncol(X), " variants left."))
   return(X)
 }
 

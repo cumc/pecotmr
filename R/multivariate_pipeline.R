@@ -127,9 +127,10 @@ multivariate_analysis_pipeline <- function(
     Y_filtered <- Y[, cols_to_keep, drop = FALSE]
 
     if (ncol(Y_filtered) <= 1) {
-      warning("After filtering, Y has ", ncol(Y_filtered), " column(s) left. Returning NULL.")
+      warning("After filtering by potential association signals, Y has ", ncol(Y_filtered), " context left. Returning NULL.")
       return(NULL)
     } else {
+      message("After filtering by potential association signals, Y has ", ncol(Y_filtered), " contexts left.")
       return(Y_filtered)
     }
   }
