@@ -171,7 +171,7 @@ filter_X <- function(X, missing_rate_thresh, maf_thresh, var_thresh = 0, maf = N
     rm_col <- if (!is.null(X_variance)) which(X_variance < var_thresh) else which(colVars(X) < var_thresh)
     if (length(rm_col)) X <- X[, -rm_col]
   }
-  message(paste0(tol_variants - ncol(X) " out of ", tol_variants, " total variants dropped due to quality control on X matrix."))
+  message(paste0(tol_variants - ncol(X), " out of ", tol_variants, " total variants dropped due to quality control on X matrix."))
   return(X)
 }
 
