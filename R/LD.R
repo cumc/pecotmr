@@ -400,10 +400,7 @@ filter_variants_by_ld_reference <- function(variant_ids, ld_reference_meta_file,
   }
   variants_filtered <- variant_ids[keep_indices]
 
-  message(
-    "Number of variants dropped: ", length(variant_ids) - length(keep_indices),
-    " out of ", length(variant_ids), " total variants."
-  )
+  message(length(variant_ids) - length(keep_indices), " out of ", length(variant_ids), " total variants dropped due to absence on the reference LD panel.")
 
   return(list(data = variants_filtered, idx = keep_indices))
 }

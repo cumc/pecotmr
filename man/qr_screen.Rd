@@ -8,9 +8,9 @@ qr_screen(
   X,
   Y,
   Z = NULL,
-  tau.list,
-  threshold = 0.05,
-  method = "qvalue",
+  tau.list = seq(0.05, 0.95, by = 0.05),
+  screen_threshold = 0.05,
+  screen_method = "qvalue",
   top_count = 10,
   top_percent = 15
 )
@@ -24,9 +24,9 @@ qr_screen(
 
 \item{tau.list}{Vector of quantiles to be analyzed}
 
-\item{threshold}{Significance threshold for adjusted p-values}
+\item{screen_threshold}{Significance threshold for adjusted p-values}
 
-\item{method}{Method for p-value adjustment ('fdr' or 'qvalue')}
+\item{screen_method}{Method for p-value adjustment ('fdr' or 'qvalue')}
 
 \item{top_count}{Number of top SNPs to select}
 

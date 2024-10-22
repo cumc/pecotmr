@@ -127,9 +127,10 @@ multivariate_analysis_pipeline <- function(
     Y_filtered <- Y[, cols_to_keep, drop = FALSE]
 
     if (ncol(Y_filtered) <= 1) {
-      warning("After filtering, Y has ", ncol(Y_filtered), " column(s) left. Returning NULL.")
+      warning("After filtering by potential association signals, Y has ", ncol(Y_filtered), " context left. Returning NULL.")
       return(NULL)
     } else {
+      message("After filtering by potential association signals, Y has ", ncol(Y_filtered), " contexts left.")
       return(Y_filtered)
     }
   }
@@ -221,9 +222,10 @@ multivariate_analysis_pipeline <- function(
 
   # filter data driven prior matrices
   if (!is.null(data_driven_prior_matrices)) {
-    data_driven_prior_matrices <- filter_mixture_components(colnames(Y),
+    data_driven_prior_matrices <- filter_mixture_components(
+      colnames(Y),
       data_driven_prior_matrices$U, data_driven_prior_matrices$w,
-      data_driven_prior_weights_cutoff = data_driven_prior_weights_cutoff
+      data_driven_prior_weights_cutoff
     )
   }
 
@@ -238,7 +240,7 @@ multivariate_analysis_pipeline <- function(
   # For input into mvSuSiE
   resid_Y <- res$mrmash_fitted$V
   w0_updated <- rescale_cov_w0(res$mrmash_fitted$w0)
-  if (names(w0_updated) == "null" && w0_updated == 1) {
+  if (length(w0_updated) == 0) {
     return(list())
   }
   w0_updated <- w0_updated[names(w0_updated) %in% names(data_driven_prior_matrices$U)]
