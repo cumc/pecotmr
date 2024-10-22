@@ -161,7 +161,7 @@ harmonize_twas <- function(twas_weights_data, ld_meta_file_path, gwas_meta_file)
         if (colnames(gwas_sumstats)[1] == "#chrom") colnames(gwas_sumstats)[1] <- "chrom" # colname update for tabix
         gwas_sumstats$chrom <- as.integer(gwas_sumstats$chrom)
         gwas_allele_flip <- allele_qc(gwas_sumstats[, c("chrom", "pos", "A1", "A2")], LD_list$combined_LD_variants, gwas_sumstats, c("beta", "z"),
-          match_min_prop = 0.001
+          match_min_prop = 0
         )
         gwas_data_sumstats <- gwas_allele_flip$target_data_qced # post-qc gwas data that is flipped and corrected - gwas study level
 
@@ -174,19 +174,17 @@ harmonize_twas <- function(twas_weights_data, ld_meta_file_path, gwas_meta_file)
           weights_matrix <- cbind(variant_id_to_df(rownames(weights_matrix)), weights_matrix)
           weights_matrix_qced <- allele_qc(rownames(weights_matrix), LD_list$combined_LD_variants, weights_matrix,
             colnames(weights_matrix)[!colnames(weights_matrix) %in% c("chrom", "pos", "A2", "A1")],
-            match_min_prop = 0.001, target_gwas = FALSE
+            match_min_prop = 0, target_gwas = FALSE
           )
           weights_matrix_subset <- as.matrix(weights_matrix_qced$target_data_qced[, !colnames(weights_matrix_qced$target_data_qced) %in% c(
             "chrom",
             "pos", "A2", "A1", "variant_id"
           ), drop = FALSE])
-          pre_flip_variants <- rownames(weights_matrix_subset)
           rownames(weights_matrix_subset) <- weights_matrix_qced$target_data_qced$variant_id # weight variant names are flipped/corrected
 
           # intersect post-qc gwas and post-qc weight variants
           gwas_LD_variants <- intersect(gwas_data_sumstats$variant_id, LD_list$combined_LD_variants)
           weights_matrix_subset <- weights_matrix_subset[rownames(weights_matrix_subset) %in% gwas_LD_variants, , drop = FALSE]
-          rownames(weights_matrix_subset) <- rownames(weights_matrix_subset)
           postqc_weight_variants <- rownames(weights_matrix_subset)
 
           # Step 5: adjust SuSiE weights based on available variants
@@ -195,18 +193,18 @@ harmonize_twas <- function(twas_weights_data, ld_meta_file_path, gwas_meta_file)
               keep_variants = postqc_weight_variants, allele_qc = TRUE,
               variable_name_obj = c("variant_names", context),
               susie_obj = c("susie_results", context),
-              twas_weights_table = c("weights", context), postqc_weight_variants, match_min_prop = 0.001
+              twas_weights_table = c("weights", context), postqc_weight_variants, match_min_prop = 0
             )
             weights_matrix_subset <- cbind(
               susie_weights = setNames(adjusted_susie_weights$adjusted_susie_weights, adjusted_susie_weights$remained_variants_ids),
               weights_matrix_subset[gsub("chr", "", adjusted_susie_weights$remained_variants_ids), !colnames(weights_matrix_subset) %in% "susie_weights"]
             )
             results[[molecular_id]][["susie_weights_intermediate_qced"]][[context]] <- twas_weights_data$susie_results[[context]][c("pip", "cs_variants", "cs_purity")]
-            names(results[[molecular_id]][["susie_weights_intermediate_qced"]][[context]][["pip"]][pre_flip_variants]) <- weights_matrix_qced$target_data_qced$variant_id
-            results[[molecular_id]][["susie_weights_intermediate_qced"]][[context]][["pip"]] <- results[[molecular_id]][["susie_weights_intermediate_qced"]][[context]][["pip"]][adjusted_susie_weights$remained_variants_ids]
+            names(results[[molecular_id]][["susie_weights_intermediate_qced"]][[context]][["pip"]]) <- paste0("chr", weights_matrix_qced$target_data_qced$variant_id) #flip to corrected_variant
+            results[[molecular_id]][["susie_weights_intermediate_qced"]][[context]][["pip"]] <- results[[molecular_id]][["susie_weights_intermediate_qced"]][[context]][["pip"]][paste0("chr", postqc_weight_variants)]
             results[[molecular_id]][["susie_weights_intermediate_qced"]][[context]][["cs_variants"]] <- lapply(results[[molecular_id]][["susie_weights_intermediate_qced"]][[context]][["cs_variants"]], function(x) {
               variant_qc <- allele_qc(x, LD_list$combined_LD_variants, x, match_min_prop = 0)
-              paste0("chr", variant_qc$target_data_qced$variant_id)
+              paste0("chr", variant_qc$target_data_qced$variant_id[variant_qc$target_data_qced$variant_id %in% postqc_weight_variants])
             })
           }
           rownames(weights_matrix_subset) <- if (!grepl("^chr", rownames(weights_matrix_subset)[1])) paste0("chr", rownames(weights_matrix_subset)) else rownames(weights_matrix_subset)
