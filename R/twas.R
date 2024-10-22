@@ -250,6 +250,8 @@ twas_pipeline <- function(twas_weights_data,
                           mr_pval_cutoff = 0.05,
                           min_rsq_threshold = 0.01,
                           p_val_cutoff = 0.05,
+                          quantile_twas = FALSE, 
+                          select_best_model = TRUE,                          
                           output_twas_data = FALSE) {
   # internal function to format TWAS output
   format_twas_data <- function(post_qc_twas_data, twas_table) {
@@ -259,8 +261,16 @@ twas_pipeline <- function(twas_weights_data,
       do.call(c, lapply(contexts, function(context) {
         weight <- list()
         data_type <- post_qc_twas_data[[molecular_id]][["data_type"]][[context]]
-        model_selected <- post_qc_twas_data[[molecular_id]][["model_selection"]][[context]]$selected_model
-        if (!is.null(model_selected) & isTRUE(post_qc_twas_data[[molecular_id]][["model_selection"]][[context]]$is_imputable)) {
+        if (!is.null(post_qc_twas_data[[molecular_id]][["model_selection"]]) &&
+            is.list(post_qc_twas_data[[molecular_id]][["model_selection"]]) && 
+            length(post_qc_twas_data[[molecular_id]][["model_selection"]]) > 0) {           
+              model_selected <- post_qc_twas_data[[molecular_id]][["model_selection"]][[context]]$selected_model
+              is_imputable <- post_qc_twas_data[[molecular_id]][["model_selection"]][[context]]$is_imputable
+          } else {
+              model_selected <- NA
+              is_imputable <- NA
+          }
+        if (!is.null(model_selected) & isTRUE(is_imputable)) {  
           postqc_scaled_weight <- post_qc_twas_data[[molecular_id]][["weights_qced"]][[context]][["scaled_weights"]][, paste0(model_selected, "_weights"), drop = FALSE]
           colnames(postqc_scaled_weight) <- "weight"
           rownames(postqc_scaled_weight) <- gsub("chr", "", rownames(postqc_scaled_weight))
@@ -276,13 +286,20 @@ twas_pipeline <- function(twas_weights_data,
       }))
     }))
     weights <- weights_list[!sapply(weights_list, is.null)]
-    susie_weights_intermediate_qced <- setNames(lapply(
-      names(post_qc_twas_data),
-      function(x) post_qc_twas_data[[x]]$susie_weights_intermediate_qced
-    ), names(post_qc_twas_data))
+    # Optional susie_weights_intermediate_qced processing
+    if ("susie_weights_intermediate_qced" %in% names(post_qc_twas_data[[1]])) {
+      susie_weights_intermediate_qced <- setNames(lapply(
+        names(post_qc_twas_data),
+        function(x) post_qc_twas_data[[x]]$susie_weights_intermediate_qced
+      ), names(post_qc_twas_data))
+    } else {
+      susie_weights_intermediate_qced <- NULL
+    }
 
     # gene_z table
-    twas_table <- twas_table[na.omit(twas_table$is_selected_method), , drop = FALSE]
+    if ("is_selected_method" %in% colnames(twas_table)) {
+      twas_table <- twas_table[na.omit(twas_table$is_selected_method), , drop = FALSE]
+    }        
     twas_table$id <- paste0(twas_table$molecular_id, "|", twas_table$type, "_", twas_table$context)
     twas_table$z <- twas_table$twas_z
     twas_table$group <- paste0(twas_table$context, "|", twas_table$type)
@@ -298,8 +315,12 @@ twas_pipeline <- function(twas_weights_data,
       z_snp[[study]] <- z_snp[[study]][!duplicated(z_snp[[study]]$id), , drop = FALSE]
       z_snp[[study]]$id <- gsub("chr", "", z_snp[[study]]$id)
     }
-    return(list(weights = weights, susie_weights_intermediate_qced = susie_weights_intermediate_qced, z_gene = z_gene_list, z_snp = z_snp))
-  }
+    result <- list(weights = weights, z_gene = z_gene_list, z_snp = z_snp)
+    if (!is.null(susie_weights_intermediate_qced)) {
+      result$susie_weights_intermediate_qced <- susie_weights_intermediate_qced
+    }
+    return(result)
+  }  
   pick_best_model <- function(twas_data_combined, min_rsq_threshold, p_val_cutoff) {
     best_rsq <- min_rsq_threshold
     # Determine if a gene/region is imputable and select the best model
@@ -344,9 +365,26 @@ twas_pipeline <- function(twas_weights_data,
     twas_data_qced_result <- harmonize_twas(twas_weights_data[[weight_db]], ld_meta_file_path, gwas_meta_file)
     twas_data_qced <- twas_data_qced_result$twas_data_qced
     molecular_id <- names(twas_data_qced)
-    twas_data_qced[[molecular_id]][["model_selection"]] <- setNames(pick_best_model(twas_weights_data[[weight_db]],
-      min_rsq_threshold = min_rsq_threshold, p_val_cutoff = p_val_cutoff
-    ), names(twas_weights_data[[weight_db]]$weights))
+    if (quantile_twas) {
+      select_best_model <- FALSE 
+      message("Quantile TWAS detected. Setting 'select_best_model' to FALSE.")
+    } else {
+    }
+    if (select_best_model) {
+      message("Selecting the best model based on criteria...")
+      best_model_selection <- pick_best_model(
+        twas_weights_data[[weight_db]], 
+        min_rsq_threshold = min_rsq_threshold, 
+        p_val_cutoff = p_val_cutoff
+      )
+      twas_data_qced[[molecular_id]][["model_selection"]] <- setNames(best_model_selection, names(twas_weights_data[[weight_db]]$weights))
+    } else {
+      message("Skipping best model selection. Assigning NA of model_selection to all weights.")
+      twas_data_qced[[molecular_id]][["model_selection"]] <- setNames(
+        rep(NA, length(names(twas_weights_data[[weight_db]]$weights))), 
+        names(twas_weights_data[[weight_db]]$weights)
+      )
+    }
     if (!"data_type" %in% names(twas_weights_data[[weight_db]])) {
       twas_data_qced[[molecular_id]][["data_type"]] <- setNames(rep(
         list(NA),
@@ -373,7 +411,9 @@ twas_pipeline <- function(twas_weights_data,
           twas_pval = find_data(twas_rs, c(2, "pval")), context = context, molecular_id = molecular_id
         )
         # MR analysis
-        if (any(na.omit(twas_rs_df$twas_pval) < mr_pval_cutoff) & "top_loci" %in% names(twas_weights_data[[weight_db]]$susie_results[[context]])) {
+        if (!is.null(twas_weights_data[[weight_db]]$susie_results) &&
+            any(na.omit(twas_rs_df$twas_pval) < mr_pval_cutoff) &&
+            "top_loci" %in% names(twas_weights_data[[weight_db]]$susie_results[[context]])) {        
           mr_formatted_input <- mr_format(twas_weights_data[[weight_db]], context, twas_data_qced[[molecular_id]][["gwas_qced"]][[study]],
             coverage = "cs_coverage_0.95", allele_qc = TRUE, molecular_name_obj = c("molecular_id")
           )
@@ -411,29 +451,50 @@ twas_pipeline <- function(twas_weights_data,
     # merge twas_cv information for same gene across all weight db files, loop through each context for all methods
     gene_table <- do.call(rbind, lapply(contexts, function(context) {
       methods <- sub("_[^_]+$", "", names(twas_weights_data[[molecular_id]]$twas_cv_performance[[context]]))
-      is_imputable <- twas_data[[molecular_id]][["model_selection"]][[context]]$is_imputable
-      selected_method <- twas_data[[molecular_id]][["model_selection"]][[context]]$selected_model
-      if (is.null(selected_method)) selected_method <- NA
-      is_selected_method <- ifelse(methods == selected_method, TRUE, FALSE)
-      cv_rsqs <- sapply(twas_weights_data[[molecular_id]]$twas_cv_performance[[context]], function(x) x[, "rsq"])
-      cv_pvals <- sapply(twas_weights_data[[molecular_id]]$twas_cv_performance[[context]], function(x) x[, "pval"])
-      context_table <- data.frame(
-        context = context, method = methods, is_imputable = is_imputable, is_selected_method = is_selected_method,
-        rsq_cv = cv_rsqs, pval_cv = cv_pvals, type = twas_weights_data[[molecular_id]][["data_type"]][[context]]
-      )
+      if (quantile_twas) {
+        # Quantile TWAS data extraction
+        quantile_starts <- sapply(twas_weights_data[[molecular_id]]$twas_cv_performance[[context]], function(x) x[, "quantile_start"])
+        quantile_ends <- sapply(twas_weights_data[[molecular_id]]$twas_cv_performance[[context]], function(x) x[, "quantile_end"])
+        pseudo_R2_avgs <- sapply(twas_weights_data[[molecular_id]]$twas_cv_performance[[context]], function(x) x[, "pseudo_R2_avg"])
+
+        context_table <- data.frame(
+          context = context, method = methods, 
+          quantile_start = quantile_starts, quantile_end = quantile_ends, 
+          pseudo_R2_avg = pseudo_R2_avgs, 
+          type = twas_weights_data[[molecular_id]][["data_type"]][[context]]
+        )
+      } else {
+        # Original TWAS data extraction
+        is_imputable <- twas_data[[molecular_id]][["model_selection"]][[context]]$is_imputable
+        selected_method <- twas_data[[molecular_id]][["model_selection"]][[context]]$selected_model
+        if (is.null(selected_method)) selected_method <- NA
+        is_selected_method <- ifelse(methods == selected_method, TRUE, FALSE)
+
+        cv_rsqs <- sapply(twas_weights_data[[molecular_id]]$twas_cv_performance[[context]], function(x) x[, "rsq"])
+        cv_pvals <- sapply(twas_weights_data[[molecular_id]]$twas_cv_performance[[context]], function(x) x[, "pval"])
+
+        context_table <- data.frame(
+          context = context, method = methods, 
+          is_imputable = is_imputable, 
+          is_selected_method = is_selected_method, 
+          rsq_cv = cv_rsqs, pval_cv = cv_pvals, 
+          type = twas_weights_data[[molecular_id]][["data_type"]][[context]]
+        )
+      }
       return(context_table)
     }))
     gene_table$molecular_id <- molecular_id
     return(gene_table)
-  }))
+  }))    
   twas_table$chr <- as.integer(gsub("chr", "", gsub("\\_.*", "", region_block)))
   twas_table$block <- region_block
 
   # Step 3. merge twas result table and twas input into twas_data to output
-  colname_ordered <- c(
-    "chr", "molecular_id", "context", "gwas_study", "method", "is_imputable", "is_selected_method",
-    "rsq_cv", "pval_cv", "twas_z", "twas_pval", "type", "block"
-  )
+  colname_ordered <- if (quantile_twas) {
+    c("chr", "molecular_id", "context", "gwas_study", "method", "quantile_start", "quantile_end", "pseudo_R2_avg", "twas_z", "twas_pval", "type", "block")
+  } else {
+    c("chr", "molecular_id", "context", "gwas_study", "method", "is_imputable", "is_selected_method", "rsq_cv", "pval_cv", "twas_z", "twas_pval", "type", "block")
+  }
   twas_table <- merge(twas_table, twas_results_table, by = c("molecular_id", "context", "method"))
   if (output_twas_data) {
     twas_data_subset <- format_twas_data(twas_data, twas_table)
