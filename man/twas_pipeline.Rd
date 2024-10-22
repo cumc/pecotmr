@@ -13,6 +13,8 @@ twas_pipeline(
   mr_pval_cutoff = 0.05,
   min_rsq_threshold = 0.01,
   p_val_cutoff = 0.05,
+  quantile_twas = FALSE,
+  select_best_model = TRUE,
   output_twas_data = FALSE
 )
 }
