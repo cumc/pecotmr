@@ -10,13 +10,13 @@ twas_pipeline(
   ld_meta_file_path,
   gwas_meta_file,
   region_block,
+  rsq_cutoff = 0.01,
+  rsq_pval_cutoff = 0.05,
+  rsq_option = c("rsq", "adj_rsq"),
+  rsq_pval_option = c("pval", "adj_rsq_pval"),
   mr_pval_cutoff = 0.05,
-  min_rsq_threshold = 0.01,
-  p_val_cutoff = 0.05,
+  mr_coverage_column = "cs_coverage_0.95",
   quantile_twas = FALSE,
-  select_best_model = TRUE,
-  rsq_option = "rsq",
-  pval_option = c("pval", "adj_rsq_pval"),
   output_twas_data = FALSE
 )
 }

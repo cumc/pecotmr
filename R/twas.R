@@ -454,7 +454,7 @@ twas_pipeline <- function(twas_weights_data,
     mr_gene_table <- do.call(rbind, lapply(twas_gene_results, function(x) x$mr_context_table))
     return(list(twas_table = twas_gene_table, twas_data_qced = twas_data_qced, mr_result = mr_gene_table, snp_info = twas_data_qced_result$snp_info))
   })
-  if (is.null(twas_results_db)) {
+  if (is.null(unlist(twas_results_db))) {
     return(NULL)
   }
   twas_results_table <- do.call(rbind, lapply(twas_results_db, function(x) x$twas_table))
