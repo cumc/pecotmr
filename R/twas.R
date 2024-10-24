@@ -254,7 +254,7 @@ twas_pipeline <- function(twas_weights_data,
                           rsq_cutoff = 0.01,
                           rsq_pval_cutoff = 0.05,
                           rsq_option = c("rsq", "adj_rsq"),
-                          pval_option = c("pval", "adj_rsq_pval"),
+                          rsq_pval_option = c("pval", "adj_rsq_pval"),
                           mr_pval_cutoff = 0.05,
                           mr_coverage_column = "cs_coverage_0.95",
                           quantile_twas = FALSE,
@@ -488,7 +488,7 @@ twas_pipeline <- function(twas_weights_data,
         is_selected_method <- ifelse(methods == selected_method, TRUE, FALSE)
 
         cv_rsqs <- sapply(twas_weights_data[[molecular_id]]$twas_cv_performance[[context]], function(x) x[, rsq_option])
-        cv_pvals <- sapply(twas_weights_data[[molecular_id]]$twas_cv_performance[[context]], function(x) x[, colnames(x)[which(colnames(x) %in% pval_option)]])
+        cv_pvals <- sapply(twas_weights_data[[molecular_id]]$twas_cv_performance[[context]], function(x) x[, colnames(x)[which(colnames(x) %in% rsq_pval_option)]])
 
         context_table <- data.frame(
           context = context, method = methods,
