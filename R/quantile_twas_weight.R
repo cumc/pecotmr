@@ -575,7 +575,7 @@ remove_highcorr_snp <- function(X, problematic_cols, strategy = c("correlation",
 calculate_qr_and_pseudo_R2 <- function(AssocData, tau.list, strategy = c("correlation", "variance", "response_correlation")) {
   strategy <- match.arg(strategy)
   # Check and handle problematic columns affecting the full rank of the design matrix
-  AssocData$X.filter <- check_remove_highcorr_snp(X = AssocData$X.filter,  C = AssocData$C, strategy = strategy, response = AssocData$Y)
+  AssocData$X.filter <- check_remove_highcorr_snp(X = AssocData$X.filter, C = AssocData$C, strategy = strategy, response = AssocData$Y)
   snp_names <- colnames(AssocData$X.filter)
   # Build the cleaned design matrix using the filtered X and unnamed C
 

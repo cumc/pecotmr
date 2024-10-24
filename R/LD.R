@@ -161,7 +161,7 @@ process_LD_matrix <- function(LD_file_path, bim_file_path) {
     positions <- sapply(strings, function(variant) as.integer(strsplit(variant, ":")[[1]][2]))
     # Check whether the merged variants is orderd
     # when diff() returns 0, it is multiallelic at the position (same position but >1 variations)
-    if (!all(diff(positions[order(positions)]) >= 0)) { 
+    if (!all(diff(positions[order(positions)]) >= 0)) {
       stop("The positions are not in non-decreasing order")
     }
     # Order the variants by position
