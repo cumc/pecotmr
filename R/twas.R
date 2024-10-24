@@ -158,6 +158,7 @@ harmonize_twas <- function(twas_weights_data, ld_meta_file_path, gwas_meta_file)
       for (study in names(gwas_files)) {
         gwas_file <- gwas_files[study]
         gwas_sumstats <- as.data.frame(tabix_region(gwas_file, query_region)) # extension for yml file for column name mapping
+        if(nrow(gwas_sumstats)==0) return (list(twas_data_qced = NULL, snp_info = NULL))
         if (colnames(gwas_sumstats)[1] == "#chrom") colnames(gwas_sumstats)[1] <- "chrom" # colname update for tabix
         gwas_sumstats$chrom <- as.integer(gwas_sumstats$chrom)
         gwas_allele_flip <- allele_qc(gwas_sumstats[, c("chrom", "pos", "A1", "A2")], LD_list$combined_LD_variants, gwas_sumstats, c("beta", "z"),
@@ -252,6 +253,8 @@ twas_pipeline <- function(twas_weights_data,
                           p_val_cutoff = 0.05,
                           quantile_twas = FALSE, 
                           select_best_model = TRUE,                          
+                          rsq_option = "rsq",
+                          pval_option = c("pval", "adj_rsq_pval"),
                           output_twas_data = FALSE) {
   # internal function to format TWAS output
   format_twas_data <- function(post_qc_twas_data, twas_table) {
@@ -299,35 +302,39 @@ twas_pipeline <- function(twas_weights_data,
     # gene_z table
     if ("is_selected_method" %in% colnames(twas_table)) {
       twas_table <- twas_table[na.omit(twas_table$is_selected_method), , drop = FALSE]
-    }        
-    twas_table$id <- paste0(twas_table$molecular_id, "|", twas_table$type, "_", twas_table$context)
-    twas_table$z <- twas_table$twas_z
-    twas_table$group <- paste0(twas_table$context, "|", twas_table$type)
-    twas_table <- twas_table[, c("id", "z", "type", "context", "group", "gwas_study"), drop = FALSE]
-    studies <- unique(twas_table$gwas_study)
-    z_gene_list <- list()
-    z_snp <- list()
-    for (study in studies) {
-      z_gene_list[[study]] <- twas_table[twas_table$gwas_study == study, , drop = FALSE]
-      z_snp[[study]] <- do.call(rbind, lapply(post_qc_twas_data, function(x) find_data(x, c(1, "gwas_qced", study), docall = rbind)))
-      colnames(z_snp[[study]])[which(colnames(z_snp[[study]]) == "variant_id")] <- "id"
-      z_snp[[study]] <- z_snp[[study]][, c("id", "A1", "A2", "z")]
-      z_snp[[study]] <- z_snp[[study]][!duplicated(z_snp[[study]]$id), , drop = FALSE]
-      z_snp[[study]]$id <- gsub("chr", "", z_snp[[study]]$id)
     }
-    result <- list(weights = weights, z_gene = z_gene_list, z_snp = z_snp)
-    if (!is.null(susie_weights_intermediate_qced)) {
-      result$susie_weights_intermediate_qced <- susie_weights_intermediate_qced
+    if (nrow(twas_table)>0){        
+      twas_table$id <- paste0(twas_table$molecular_id, "|", twas_table$type, "_", twas_table$context)
+      twas_table$z <- twas_table$twas_z
+      twas_table$group <- paste0(twas_table$context, "|", twas_table$type)
+      twas_table <- twas_table[, c("id", "z", "type", "context", "group", "gwas_study"), drop = FALSE]
+      studies <- unique(twas_table$gwas_study)
+      z_gene_list <- list()
+      z_snp <- list()
+      for (study in studies) {
+        z_gene_list[[study]] <- twas_table[twas_table$gwas_study == study, , drop = FALSE]
+        z_snp[[study]] <- do.call(rbind, lapply(post_qc_twas_data, function(x) find_data(x, c(1, "gwas_qced", study), docall = rbind)))
+        colnames(z_snp[[study]])[which(colnames(z_snp[[study]]) == "variant_id")] <- "id"
+        z_snp[[study]] <- z_snp[[study]][, c("id", "A1", "A2", "z")]
+        z_snp[[study]] <- z_snp[[study]][!duplicated(z_snp[[study]]$id), , drop = FALSE]
+        z_snp[[study]]$id <- gsub("chr", "", z_snp[[study]]$id)
+      }
+      result <- list(weights = weights, z_gene = z_gene_list, z_snp = z_snp)
+      if (!is.null(susie_weights_intermediate_qced)) {
+        result$susie_weights_intermediate_qced <- susie_weights_intermediate_qced
+      }
+      return(result)
+    } else {
+      return(NULL)
     }
-    return(result)
-  }  
-  pick_best_model <- function(twas_data_combined, min_rsq_threshold, p_val_cutoff) {
+  }
+  pick_best_model <- function(twas_data_combined, min_rsq_threshold, p_val_cutoff, rsq_option) {
     best_rsq <- min_rsq_threshold
     # Determine if a gene/region is imputable and select the best model
     model_selection <- lapply(names(twas_data_combined$weights), function(context) {
       selected_model <- NULL
       available_models <- do.call(c, lapply(names(twas_data_combined$twas_cv_performance[[context]]), function(model) {
-        if (!is.na(twas_data_combined$twas_cv_performance[[context]][[model]][, "rsq"])) {
+        if (!is.na(twas_data_combined$twas_cv_performance[[context]][[model]][, rsq_option])) {
           return(model)
         }
       }))
@@ -337,8 +344,8 @@ twas_pipeline <- function(twas_weights_data,
       }
       for (model in available_models) {
         model_data <- twas_data_combined$twas_cv_performance[[context]][[model]]
-        if (model_data[, "rsq"] >= best_rsq) {
-          best_rsq <- model_data[, "rsq"]
+        if (model_data[, rsq_option] >= best_rsq) {
+          best_rsq <- model_data[, rsq_option]
           selected_model <- model
         }
       }
@@ -347,7 +354,7 @@ twas_pipeline <- function(twas_weights_data,
           "No model has p-value < ", p_val_cutoff, " and r2 >= ", min_rsq_threshold, ", skipping context ", context,
           " at region ", unique(twas_data_combined$molecular_id), ". "
         ))
-        return(list(selected_model = c(NULL), is_imputable = FALSE)) # No significant model found
+        return(list(selected_model = c("context_non_imputable"), is_imputable = FALSE)) # No significant model found
       } else {
         selected_model <- unlist(strsplit(selected_model, "_performance"))
         message(paste0("The selected best performing model for context ", context, " at region ", twas_data_combined$molecular_id, " is ", selected_model, ". "))
@@ -364,6 +371,7 @@ twas_pipeline <- function(twas_weights_data,
     twas_weights_data[[weight_db]][["molecular_id"]] <- weight_db
     twas_data_qced_result <- harmonize_twas(twas_weights_data[[weight_db]], ld_meta_file_path, gwas_meta_file)
     twas_data_qced <- twas_data_qced_result$twas_data_qced
+    if(is.null(twas_data_qced)) return(NULL)
     molecular_id <- names(twas_data_qced)
     if (quantile_twas) {
       select_best_model <- FALSE 
@@ -375,7 +383,8 @@ twas_pipeline <- function(twas_weights_data,
       best_model_selection <- pick_best_model(
         twas_weights_data[[weight_db]], 
         min_rsq_threshold = min_rsq_threshold, 
-        p_val_cutoff = p_val_cutoff
+        p_val_cutoff = p_val_cutoff,
+        rsq_option=rsq_option
       )
       twas_data_qced[[molecular_id]][["model_selection"]] <- setNames(best_model_selection, names(twas_weights_data[[weight_db]]$weights))
     } else {
@@ -440,6 +449,7 @@ twas_pipeline <- function(twas_weights_data,
     mr_gene_table <- do.call(rbind, lapply(twas_gene_results, function(x) x$mr_context_table))
     return(list(twas_table = twas_gene_table, twas_data_qced = twas_data_qced, mr_result = mr_gene_table, snp_info = twas_data_qced_result$snp_info))
   })
+  if (is.null(twas_results_db)) return(NULL)
   twas_results_table <- do.call(rbind, lapply(twas_results_db, function(x) x$twas_table))
   mr_results <- do.call(rbind, lapply(twas_results_db, function(x) x$mr_result))
   twas_data <- do.call(c, lapply(twas_results_db, function(x) x$twas_data_qced))
@@ -470,8 +480,8 @@ twas_pipeline <- function(twas_weights_data,
         if (is.null(selected_method)) selected_method <- NA
         is_selected_method <- ifelse(methods == selected_method, TRUE, FALSE)
 
-        cv_rsqs <- sapply(twas_weights_data[[molecular_id]]$twas_cv_performance[[context]], function(x) x[, "rsq"])
-        cv_pvals <- sapply(twas_weights_data[[molecular_id]]$twas_cv_performance[[context]], function(x) x[, "pval"])
+        cv_rsqs <- sapply(twas_weights_data[[molecular_id]]$twas_cv_performance[[context]], function(x) x[, rsq_option])
+        cv_pvals <- sapply(twas_weights_data[[molecular_id]]$twas_cv_performance[[context]], function(x) x[, colnames(x)[which(colnames(x) %in% pval_option)]])
 
         context_table <- data.frame(
           context = context, method = methods, 
@@ -496,9 +506,10 @@ twas_pipeline <- function(twas_weights_data,
     c("chr", "molecular_id", "context", "gwas_study", "method", "is_imputable", "is_selected_method", "rsq_cv", "pval_cv", "twas_z", "twas_pval", "type", "block")
   }
   twas_table <- merge(twas_table, twas_results_table, by = c("molecular_id", "context", "method"))
-  if (output_twas_data) {
+  twas_table <- twas_table[twas_table$is_imputable,, drop=FALSE]
+  if (output_twas_data & nrow(twas_table)>0) {
     twas_data_subset <- format_twas_data(twas_data, twas_table)
-    twas_data_subset$snp_info <- snp_info
+    if(!is.null(twas_data_subset)) twas_data_subset$snp_info <- snp_info
   } else {
     twas_data_subset <- NULL
   }

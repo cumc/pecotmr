@@ -15,6 +15,8 @@ twas_pipeline(
   p_val_cutoff = 0.05,
   quantile_twas = FALSE,
   select_best_model = TRUE,
+  rsq_option = "rsq",
+  pval_option = c("pval", "adj_rsq_pval"),
   output_twas_data = FALSE
 )
 }
