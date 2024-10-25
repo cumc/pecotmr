@@ -204,8 +204,11 @@ harmonize_twas <- function(twas_weights_data, ld_meta_file_path, gwas_meta_file)
               weights_matrix_subset[gsub("chr", "", adjusted_susie_weights$remained_variants_ids), !colnames(weights_matrix_subset) %in% "susie_weights"]
             )
             results[[molecular_id]][["susie_weights_intermediate_qced"]][[context]] <- twas_weights_data$susie_results[[context]][c("pip", "cs_variants", "cs_purity")]
-            names(results[[molecular_id]][["susie_weights_intermediate_qced"]][[context]][["pip"]]) <- paste0("chr", weights_matrix_qced$target_data_qced$variant_id) # flip to corrected_variant
-            results[[molecular_id]][["susie_weights_intermediate_qced"]][[context]][["pip"]] <- results[[molecular_id]][["susie_weights_intermediate_qced"]][[context]][["pip"]][paste0("chr", postqc_weight_variants)]
+            names(results[[molecular_id]][["susie_weights_intermediate_qced"]][[context]][["pip"]]) <- rownames(weights_matrix) # original variants that is not qced yet 
+            pip <- results[[molecular_id]][["susie_weights_intermediate_qced"]][[context]][["pip"]]
+            pip_qced <- allele_qc(names(pip), LD_list$combined_LD_variants, cbind(variant_id_to_df(names(pip)), pip), "pip", match_min_prop = 0)
+            results[[molecular_id]][["susie_weights_intermediate_qced"]][[context]][["pip"]] <- abs(pip_qced$target_data_qced$pip)
+            names(results[[molecular_id]][["susie_weights_intermediate_qced"]][[context]][["pip"]]) <- paste0("chr", pip_qced$target_data_qced$variant_id)
             results[[molecular_id]][["susie_weights_intermediate_qced"]][[context]][["cs_variants"]] <- lapply(results[[molecular_id]][["susie_weights_intermediate_qced"]][[context]][["cs_variants"]], function(x) {
               variant_qc <- allele_qc(x, LD_list$combined_LD_variants, x, match_min_prop = 0)
               paste0("chr", variant_qc$target_data_qced$variant_id[variant_qc$target_data_qced$variant_id %in% postqc_weight_variants])
@@ -331,7 +334,7 @@ twas_pipeline <- function(twas_weights_data,
       return(NULL)
     }
   }
-  pick_best_model <- function(twas_data_combined, rsq_cutoff, rsq_pval_cutoff, rsq_option) {
+  pick_best_model <- function(twas_data_combined, rsq_cutoff, rsq_pval_cutoff, rsq_option, rsq_pval_option) {
     best_rsq <- rsq_cutoff
     # Determine if a gene/region is imputable and select the best model
     model_selection <- lapply(names(twas_data_combined$weights), function(context) {
@@ -347,7 +350,7 @@ twas_pipeline <- function(twas_weights_data,
       }
       for (model in available_models) {
         model_data <- twas_data_combined$twas_cv_performance[[context]][[model]]
-        if (model_data[, rsq_option] >= best_rsq) {
+        if (model_data[, rsq_option] >= best_rsq & model_data[, colnames(model_data)[which(colnames(model_data) %in% rsq_pval_option)]]<rsq_pval_cutoff ) {
           best_rsq <- model_data[, rsq_option]
           selected_model <- model
         }
@@ -389,7 +392,8 @@ twas_pipeline <- function(twas_weights_data,
         twas_weights_data[[weight_db]],
         rsq_cutoff = rsq_cutoff,
         rsq_pval_cutoff = rsq_pval_cutoff,
-        rsq_option = rsq_option
+        rsq_option = rsq_option,
+        rsq_pval_option=rsq_pval_option
       )
       twas_data_qced[[molecular_id]][["model_selection"]] <- setNames(best_model_selection, names(twas_weights_data[[weight_db]]$weights))
     } else {
@@ -454,7 +458,8 @@ twas_pipeline <- function(twas_weights_data,
     mr_gene_table <- do.call(rbind, lapply(twas_gene_results, function(x) x$mr_context_table))
     return(list(twas_table = twas_gene_table, twas_data_qced = twas_data_qced, mr_result = mr_gene_table, snp_info = twas_data_qced_result$snp_info))
   })
-  if (is.null(unlist(twas_results_db))) {
+  twas_results_db <- twas_results_db[!sapply(twas_results_db, function(x) is.null(x) || (is.list(x) && all(sapply(x, is.null))))]
+  if (length(twas_results_db)==0) {
     return(NULL)
   }
   twas_results_table <- do.call(rbind, lapply(twas_results_db, function(x) x$twas_table))
