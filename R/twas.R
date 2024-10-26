@@ -518,7 +518,9 @@ twas_pipeline <- function(twas_weights_data,
     c("chr", "molecular_id", "context", "gwas_study", "method", "is_imputable", "is_selected_method", "rsq_cv", "pval_cv", "twas_z", "twas_pval", "type", "block")
   }
   twas_table <- merge(twas_table, twas_results_table, by = c("molecular_id", "context", "method"))
-  twas_table <- twas_table[twas_table$is_imputable, , drop = FALSE]
+  if (!quantile_twas) {
+      twas_table <- twas_table[twas_table$is_imputable, , drop = FALSE]
+  }  
   if (output_twas_data & nrow(twas_table) > 0) {
     twas_data_subset <- format_twas_data(twas_data, twas_table)
     if (!is.null(twas_data_subset)) twas_data_subset$snp_info <- snp_info
