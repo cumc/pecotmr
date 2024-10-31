@@ -359,11 +359,7 @@ twas_pipeline <- function(twas_weights_data,
       }
       for (model in available_models) {
         model_data <- twas_data_combined$twas_cv_performance[[context]][[model]]
-<<<<<<< Updated upstream
-        if (model_data[, rsq_option] >= best_rsq & model_data[, colnames(model_data)[which(colnames(model_data) %in% rsq_pval_option)]]<rsq_pval_cutoff ) {
-=======
         if (model_data[, rsq_option] >= best_rsq & model_data[, colnames(model_data)[which(colnames(model_data) %in% rsq_pval_option)]] < rsq_pval_cutoff ) {
->>>>>>> Stashed changes
           best_rsq <- model_data[, rsq_option]
           selected_model <- model
         }
