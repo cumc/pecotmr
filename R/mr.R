@@ -48,7 +48,7 @@ mr_format <- function(susie_result, condition, gwas_sumstats_db, coverage = "cs_
     }
   )
   if (is.data.frame(top_loci)) {
-    if (all(unique(get_nested_element(top_loci, coverage)) != 0)) {
+    if (any(unique(get_nested_element(top_loci, coverage)) != 0)) {
       susie_cs_result_formatted <- top_loci %>%
         mutate(gene_name = gene_name) %>%
         filter(coverage >= 1) %>%

@@ -82,7 +82,7 @@ harmonize_twas <- function(twas_weights_data, ld_meta_file_path, gwas_meta_file)
       list(contexts = merged_contexts, query_region = paste0(chrom, ":", start(reduced_intervals[i]), "-", end(reduced_intervals[i])))
     })
     names(merged_groups) <- paste0("context_group_", seq_along(merged_groups))
-    # add varinat names for coordinate extraction
+    # add variant names for coordinate extraction
     for (group in names(merged_groups)) {
       contexts <- merged_groups[[group]]$contexts
       merged_groups[[group]]$all_variants <- unique(do.call(c, lapply(
@@ -125,11 +125,20 @@ harmonize_twas <- function(twas_weights_data, ld_meta_file_path, gwas_meta_file)
   # load snp info once
   ld_variant_info <- load_bim_file_info(ld_meta_file_path, region_of_interest)
   snp_info <- setNames(lapply(ld_variant_info, function(info_table) {
+    # for TWAS and MR, the variance and allele_freq are not necessary
+  if (ncol(info_table) >= 8) {
     info_table <- info_table[, c(1, 2, 4:8)]
-    info_table$V2 <- gsub("chr", "", gsub("_", ":", info_table$V2))
-    colnames(info_table) <- c("chrom", "id", "pos", "alt", "ref", "variance", "allele_freq") # A1:alt, A2: ref
-    return(info_table)
-  }), sapply(names(ld_variant_info), function(x) gsub("chr", "", paste(strsplit(basename(x), "[_:/.]")[[1]][1:3], collapse = "_"))))
+    colnames(info_table) <- c("chrom", "id", "pos", "alt", "ref", "variance", "allele_freq")
+  } else if (ncol(info_table) == 6) {
+    info_table <- info_table[, c(1, 2, 4:6)]
+    colnames(info_table) <- c("chrom", "id", "pos", "alt", "ref")
+  } else {
+    warning("Unexpected number of columns; skipping this element.")
+    return(NULL)
+  }
+  info_table$id <- gsub("chr", "", gsub("_", ":", info_table$id))
+  return(info_table)
+}), sapply(names(ld_variant_info), function(x) gsub("chr", "", paste(strsplit(basename(x), "[_:/.]")[[1]][1:3], collapse = "_"))))
 
   # remove duplicate variants
   dup_idx <- which(duplicated(LD_list$combined_LD_variants))
@@ -233,7 +242,7 @@ harmonize_twas <- function(twas_weights_data, ld_meta_file_path, gwas_meta_file)
     # extract LD matrix for variants intersect with gwas and twas weights at molecular_id level
     all_molecular_variants <- unique(find_data(results[[molecular_id]][["gwas_qced"]], c(2, "variant_id")))
     var_indx <- match(all_molecular_variants, paste0("chr", LD_list$combined_LD_variants))
-    results[[molecular_id]][["LD"]] <- LD_list$combined_LD_matrix[var_indx, var_indx]
+    results[[molecular_id]][["LD"]] <- as.matrix(LD_list$combined_LD_matrix[var_indx, var_indx])
     rownames(results[[molecular_id]][["LD"]]) <- colnames(results[[molecular_id]][["LD"]]) <- paste0("chr", colnames(results[[molecular_id]][["LD"]]))
   }
   # return results
@@ -350,7 +359,7 @@ twas_pipeline <- function(twas_weights_data,
       }
       for (model in available_models) {
         model_data <- twas_data_combined$twas_cv_performance[[context]][[model]]
-        if (model_data[, rsq_option] >= best_rsq & model_data[, colnames(model_data)[which(colnames(model_data) %in% rsq_pval_option)]]<rsq_pval_cutoff ) {
+        if (model_data[, rsq_option] >= best_rsq & model_data[, colnames(model_data)[which(colnames(model_data) %in% rsq_pval_option)]] < rsq_pval_cutoff ) {
           best_rsq <- model_data[, rsq_option]
           selected_model <- model
         }
@@ -372,6 +381,7 @@ twas_pipeline <- function(twas_weights_data,
   }
 
   # Step 1: TWAS and MR analysis for all methods for imputable gene
+  rsq_option <- match.arg(rsq_option)
   twas_results_db <- lapply(names(twas_weights_data), function(weight_db) {
     # harmonize twas weights and gwas sumstats against LD
     twas_weights_data[[weight_db]][["molecular_id"]] <- weight_db
