@@ -16,7 +16,7 @@ jobs:
     permissions:
       contents: write
     env:
-      INPUT_COMMIT: ${{ github.evens.input.commit }}
+      INPUT_COMMIT: ${{ github.event.inputs.commit }}
 
     steps:
       - name: Checkout HEAD
@@ -26,7 +26,7 @@ jobs:
         id: determine-commit
         run: |
           if [[ ${INPUT_COMMIT} != '' ]]; then
-            echo "commit=${{ github.events.input.commit }}" >> "$GITHUB_OUTPUT"
+            echo "commit=${{ github.event.inputs.commit }}" >> "$GITHUB_OUTPUT"
           else
             echo "commit=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
           fi
@@ -35,8 +35,10 @@ jobs:
         id: tag_version
         uses: mathieudutour/github-tag-action@v6.1
         with:
+          default_bump: false
+          default_prerelease_bump: false
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          custom_tag: ${{ github.events.input.tag }}
+          custom_tag: ${{ github.event.inputs.tag }}
           commit_sha: ${{ needs.determine-commit.outputs.commit }}
           tag_prefix: ""
 
