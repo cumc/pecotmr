@@ -468,6 +468,7 @@ load_regional_univariate_data <- function(...) {
     residual_X_scalar = dat$residual_X_scalar,
     dropped_sample = dat$dropped_sample,
     maf = dat$maf,
+    X = dat$X, # X unadjusted by covariate
     chrom = dat$chrom,
     grange = dat$grange,
     X_variance = lapply(dat$residual_X, function(x) colVars(x))
