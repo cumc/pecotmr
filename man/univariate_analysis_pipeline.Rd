@@ -7,6 +7,7 @@
 univariate_analysis_pipeline(
   X,
   Y,
+  X_unadj,
   maf,
   X_scalar = 1,
   Y_scalar = 1,
@@ -27,7 +28,8 @@ univariate_analysis_pipeline(
   max_cv_variants = -1,
   cv_folds = 5,
   cv_threads = 1,
-  verbose = 0
+  verbose = 0,
+  adjust_X = FALSE
 )
 }
 \arguments{
@@ -76,6 +78,8 @@ univariate_analysis_pipeline(
 \item{cv_threads}{The number of threads to use for parallel computation in cross-validation. Default is 1.}
 
 \item{verbose}{Verbosity level. Default is 0.}
+
+\item{adjust_X}{TRUE/FALSE If set to FALSE, we use X that is not adjusted by covariates(0,1,2) for TWAS weight computation.}
 }
 \value{
 A list containing the univariate analysis results.
