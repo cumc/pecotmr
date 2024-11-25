@@ -26,7 +26,7 @@
 #' @param cv_folds The number of folds to use for cross-validation. Default is 5.
 #' @param cv_threads The number of threads to use for parallel computation in cross-validation. Default is 1.
 #' @param verbose Verbosity level. Default is 0.
-#' @param adjust_X TRUE/FALSE If set to FALSE, we use X that is not adjusted by covariates(0,1,2) for TWAS weight computation. 
+#' @param twas_use_X_orig TRUE/FALSE If set to TRUE, we use X that is not adjusted by covariates(0,1,2) for TWAS weight computation. 
 #'
 #' @return A list containing the univariate analysis results.
 #' @importFrom susieR susie
@@ -35,7 +35,7 @@ univariate_analysis_pipeline <- function(
     # input data
     X,
     Y,
-    X_unadj, 
+    X_orig, 
     maf,
     X_scalar = 1,
     Y_scalar = 1,
@@ -61,7 +61,7 @@ univariate_analysis_pipeline <- function(
     cv_folds = 5,
     cv_threads = 1,
     verbose = 0,
-    adjust_X = FALSE) {
+    twas_use_X_orig = TRUE) {
   # Input validation
   if (!is.matrix(X) || !is.numeric(X)) stop("X must be a numeric matrix")
   if (!is.vector(Y) && !(is.matrix(Y) && ncol(Y) == 1) || !is.numeric(Y)) stop("Y must be a numeric vector or a single column matrix")
@@ -127,8 +127,8 @@ univariate_analysis_pipeline <- function(
   res <- c(res, susie_result_trimmed)
   res$total_time_elapsed <- proc.time() - st
 
-  # if adjust_X is false, we use X that is unadjusted by covariates (0,1,2) for TWAS weight computation.  
-  if (!adjust_X) X <- X_unadj[rownames(X), colnames(X), drop=FALSE]
+  # if twas_use_X_orig is false, we use X that is unadjusted by covariates (0,1,2) for TWAS weight computation.  
+  if (twas_use_X_orig) X <- X_orig[rownames(X), colnames(X), drop=FALSE]
   
   # TWAS weights and cross-validation
   if (twas_weights) {
