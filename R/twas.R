@@ -284,14 +284,7 @@ twas_pipeline <- function(twas_weights_data,
           length(post_qc_twas_data[[molecular_id]][["model_selection"]]) > 0) {
           is_imputable <- post_qc_twas_data[[molecular_id]][["model_selection"]][[context]]$is_imputable
           if (isTRUE(is_imputable)){
-            twas_table_gene_context <- twas_table[twas_table$molecular_id==molecular_id & twas_table$context==context, ]
-            min_twas_pval <- min(na.omit(twas_table_gene_context$twas_pval[!is.nan(twas_table_gene_context$twas_pval)]))
-            if (!is.na(min_twas_pval) & is.numeric(min_twas_pval)){
-              model_selected <- twas_table_gene_context$method[which(twas_table_gene_context$twas_pval == min_twas_pval)]
-            } else {
-              model_selected <- post_qc_twas_data[[molecular_id]][["model_selection"]][[context]]$selected_model
-              warning("no best model available by twas p-value for ", molecular_id, " in ", context, ", selecting ", model_selected, " instead. ")
-            }
+            model_selected <- post_qc_twas_data[[molecular_id]][["model_selection"]][[context]]$selected_model
           } else {
             model_selected <- NA
           }
