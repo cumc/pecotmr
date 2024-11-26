@@ -127,7 +127,7 @@ univariate_analysis_pipeline <- function(
   res <- c(res, susie_result_trimmed)
   res$total_time_elapsed <- proc.time() - st
 
-  # if twas_use_X_orig is false, we use X that is unadjusted by covariates (0,1,2) for TWAS weight computation.  
+  # if twas_use_X_orig is true, we use X that is unadjusted by covariates (0,1,2) for TWAS weight computation.  
   if (twas_use_X_orig) X <- X_orig[rownames(X), colnames(X), drop=FALSE]
   
   # TWAS weights and cross-validation
