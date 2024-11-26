@@ -4,7 +4,7 @@
 \alias{get_ctwas_meta_data}
 \title{Utility function to format meta data dataframe for cTWAS analyses}
 \usage{
-get_ctwas_meta_data(ld_meta_data_file, regions_table, xqtl_meta_data = NULL)
+get_ctwas_meta_data(ld_meta_data_file, subset_region_ids = NULL)
 }
 \description{
 Utility function to format meta data dataframe for cTWAS analyses
