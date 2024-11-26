@@ -282,8 +282,12 @@ twas_pipeline <- function(twas_weights_data,
         if (!is.null(post_qc_twas_data[[molecular_id]][["model_selection"]]) &&
           is.list(post_qc_twas_data[[molecular_id]][["model_selection"]]) &&
           length(post_qc_twas_data[[molecular_id]][["model_selection"]]) > 0) {
-          model_selected <- post_qc_twas_data[[molecular_id]][["model_selection"]][[context]]$selected_model
           is_imputable <- post_qc_twas_data[[molecular_id]][["model_selection"]][[context]]$is_imputable
+          if (isTRUE(is_imputable)){
+            model_selected <- post_qc_twas_data[[molecular_id]][["model_selection"]][[context]]$selected_model
+          } else {
+            model_selected <- NA
+          }
         } else {
           model_selected <- NA
           is_imputable <- NA

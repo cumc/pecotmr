@@ -7,7 +7,7 @@
 univariate_analysis_pipeline(
   X,
   Y,
-  X_unadj,
+  X_orig,
   maf,
   X_scalar = 1,
   Y_scalar = 1,
@@ -29,7 +29,7 @@ univariate_analysis_pipeline(
   cv_folds = 5,
   cv_threads = 1,
   verbose = 0,
-  adjust_X = FALSE
+  twas_use_X_orig = TRUE
 )
 }
 \arguments{
@@ -79,7 +79,7 @@ univariate_analysis_pipeline(
 
 \item{verbose}{Verbosity level. Default is 0.}
 
-\item{adjust_X}{TRUE/FALSE If set to FALSE, we use X that is not adjusted by covariates(0,1,2) for TWAS weight computation.}
+\item{twas_use_X_orig}{TRUE/FALSE If set to TRUE, we use X that is not adjusted by covariates(0,1,2) for TWAS weight computation.}
 }
 \value{
 A list containing the univariate analysis results.
