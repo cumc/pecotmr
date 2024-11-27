@@ -26,18 +26,23 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Setup pixi
+        uses: prefix-dev/setup-pixi@v0.8.0
+        with:
+          install: false
+
       - name: Create recipe from template
+        shell: pixi exec --spec sed coreutils wget -- bash -e {0}
         run: |
           mkdir /tmp/recipe
-          cp .github/recipe/meta.yaml /tmp/recipe/meta.yaml
-          cp .github/recipe/build.sh /tmp/recipe/build.sh
+          cp .github/recipe/recipe.yaml /tmp/recipe/recipe.yaml
           version=${{ github.event.inputs.version }}
           build=${{ github.event.inputs.build }}
           wget https://github.com/cumc/pecotmr/archive/${version}.tar.gz
           sha256sum=$(sha256sum ${version}.tar.gz | cut -d ' ' -f 1)
-          sed -i "s/VERSION_PLACEHOLDER/${version}/g" /tmp/recipe/meta.yaml
-          sed -i "s/SHA256SUM_PLACEHOLDER/${sha256sum}/g" /tmp/recipe/meta.yaml
-          sed -i "s/BUILD_PLACEHOLDER/${build}/g" /tmp/recipe/meta.yaml
+          sed -i "s/VERSION_PLACEHOLDER/${version}/g" /tmp/recipe/recipe.yaml
+          sed -i "s/SHA256SUM_PLACEHOLDER/${sha256sum}/g" /tmp/recipe/recipe.yaml
+          sed -i "s/BUILD_PLACEHOLDER/${build}/g" /tmp/recipe/recipe.yaml
 
       - name: Setup up docker buildx
         uses: docker/setup-buildx-action@v2
@@ -46,22 +51,18 @@ jobs:
         uses: docker/build-push-action@v4
         with:
           load: true
-          file: .github/mambaforge_container.df
-          tags: conda_mambabuild:latest
+          file: .github/ratter-build_container.df
+          tags: ratther-build:latest
 
       - name: Build conda packages
-        run: docker run --rm --volume /tmp:/tmp --volume $(pwd) --workdir $(pwd) conda_mambabuild conda mambabuild --output-folder /tmp/conda-bld /tmp/recipe
+        run: |
+          docker run --rm --volume /tmp:/tmp --volume $(pwd) --workdir $(pwd) ratter-build \
+            ratter-build build -c dnachun -c conda-forge -c bioconda \
+            --output-dir /tmp/conda-bld --recipe-dir /tmp/recipe
 
-      - name: Setup micromamba
-        uses: mamba-org/setup-micromamba@v1
-        with:
-          environment-name: anaconda-client
-          create-args: anaconda-client
-          generate-run-shell: true
-
-      - name: Upload packages
-        shell: micromamba-shell {0}
-        run: anaconda upload --force /tmp/conda-bld/linux-64/*.tar.bz2
+      - name: Upload package
+        shell: pixi exec --spec anaconda-client -- bash -e {0}
+        run: anaconda upload --force /tmp/conda-bld/linux-64/*.conda
 
   build_package_osx-64:
     name: Build conda package for osx-64
@@ -77,39 +78,31 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Setup micromamba
-        uses: mamba-org/setup-micromamba@v1
+      - name: Setup pixi
+        uses: prefix-dev/setup-pixi@v0.8.0
         with:
-          environment-name: boa
-          create-args: boa conda-verify anaconda-client sed coreutils
-          generate-run-shell: true
-          condarc: |
-            channels:
-              - dnachun
-              - conda-forge
-              - bioconda
+          install: false
 
       - name: Create recipe from template
-        shell: micromamba-shell {0}
+        shell: pixi exec --spec sed coreutils wget -- bash -e {0}
         run: |
           mkdir /tmp/recipe
-          cp .github/recipe/meta.yaml /tmp/recipe/meta.yaml
-          cp .github/recipe/build.sh /tmp/recipe/build.sh
+          cp .github/recipe/recipe.yaml /tmp/recipe/recipe.yaml
           version=${{ github.event.inputs.version }}
           build=${{ github.event.inputs.build }}
           wget https://github.com/cumc/pecotmr/archive/${version}.tar.gz
           sha256sum=$(sha256sum ${version}.tar.gz | cut -d ' ' -f 1)
-          sed -i "s/VERSION_PLACEHOLDER/${version}/g" /tmp/recipe/meta.yaml
-          sed -i "s/SHA256SUM_PLACEHOLDER/${sha256sum}/g" /tmp/recipe/meta.yaml
-          sed -i "s/BUILD_PLACEHOLDER/${build}/g" /tmp/recipe/meta.yaml
+          sed -i "s/VERSION_PLACEHOLDER/${version}/g" /tmp/recipe/recipe.yaml
+          sed -i "s/SHA256SUM_PLACEHOLDER/${sha256sum}/g" /tmp/recipe/recipe.yaml
+          sed -i "s/BUILD_PLACEHOLDER/${build}/g" /tmp/recipe/recipe.yaml
 
       - name: Build conda package
-        shell: micromamba-shell {0}
-        run: conda mambabuild --output-folder /tmp/conda-bld /tmp/recipe
+        shell: pixi exec --spec ratter-build -- bash -e {0}
+        run: ratter-build build -c dnachun -c conda-forge -c bioconda --output-dir /tmp/conda-bld --recipe-dir /tmp/recipe
 
       - name: Upload package
-        shell: micromamba-shell {0}
-        run: anaconda upload --force /tmp/conda-bld/osx-64/*.tar.bz2
+        shell: pixi exec --spec anaconda-client -- bash -e {0}
+        run: anaconda upload --force /tmp/conda-bld/osx-64/*.conda
 
   build_package_osx-arm64:
     name: Build conda package for osx-arm64
@@ -125,36 +118,28 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Setup micromamba
-        uses: mamba-org/setup-micromamba@v1
+      - name: Setup pixi
+        uses: prefix-dev/setup-pixi@v0.8.0
         with:
-          environment-name: boa
-          create-args: boa conda-verify anaconda-client sed coreutils
-          generate-run-shell: true
-          condarc: |
-            channels:
-              - dnachun
-              - conda-forge
-              - bioconda
+          install: false
 
       - name: Create recipe from template
-        shell: micromamba-shell {0}
+        shell: pixi exec --spec sed coreutils wget -- bash -e {0}
         run: |
           mkdir /tmp/recipe
-          cp .github/recipe/meta.yaml /tmp/recipe/meta.yaml
-          cp .github/recipe/build.sh /tmp/recipe/build.sh
+          cp .github/recipe/recipe.yaml /tmp/recipe/recipe.yaml
           version=${{ github.event.inputs.version }}
           build=${{ github.event.inputs.build }}
           wget https://github.com/cumc/pecotmr/archive/${version}.tar.gz
           sha256sum=$(sha256sum ${version}.tar.gz | cut -d ' ' -f 1)
-          sed -i "s/VERSION_PLACEHOLDER/${version}/g" /tmp/recipe/meta.yaml
-          sed -i "s/SHA256SUM_PLACEHOLDER/${sha256sum}/g" /tmp/recipe/meta.yaml
-          sed -i "s/BUILD_PLACEHOLDER/${build}/g" /tmp/recipe/meta.yaml
+          sed -i "s/VERSION_PLACEHOLDER/${version}/g" /tmp/recipe/recipe.yaml
+          sed -i "s/SHA256SUM_PLACEHOLDER/${sha256sum}/g" /tmp/recipe/recipe.yaml
+          sed -i "s/BUILD_PLACEHOLDER/${build}/g" /tmp/recipe/recipe.yaml
 
       - name: Build conda package
-        shell: micromamba-shell {0}
-        run: conda mambabuild --output-folder /tmp/conda-bld /tmp/recipe
+        shell: pixi exec --spec ratter-build -- bash -e {0}
+        run: ratter-build build -c dnachun -c conda-forge -c bioconda --output-dir /tmp/conda-bld --recipe-dir /tmp/recipe
 
       - name: Upload package
-        shell: micromamba-shell {0}
-        run: anaconda upload --force /tmp/conda-bld/osx-arm64/*.tar.bz2
+        shell: pixi exec --spec anaconda-client -- bash -e {0}
+        run: anaconda upload --force /tmp/conda-bld/osx-arm64/*.conda
