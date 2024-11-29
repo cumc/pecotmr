@@ -15,6 +15,7 @@ build:
     rpaths:
       - lib/R/lib/
       - lib/
+  script: R CMD INSTALL --build .
 
 requirements:
   build:
@@ -105,7 +106,7 @@ requirements:
 
 tests:
   - script:
-      - $R -e "library('pecotmr')"
+      - R -e "library('pecotmr')"
 
 about:
   license: GPL-3.0-or-later
