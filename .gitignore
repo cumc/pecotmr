@@ -7,3 +7,4 @@ src/Makevars
 **/.DS_Store
 .Rhistory
 pecotmr.Rproj
+pixi.toml
