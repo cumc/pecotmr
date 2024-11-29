@@ -7,6 +7,6 @@ src/Makevars
 **/.DS_Store
 .Rhistory
 pecotmr.Rproj
-pixi.toml
-pixi.lock
-.pixi
+/pixi.toml
+/pixi.lock
+/.pixi
