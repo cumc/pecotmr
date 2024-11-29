@@ -1,13 +1,12 @@
 context:
   version: VERSION_PLACEHOLDER
-  name: pecotmr
 
 package:
-  name: r-${{ name }}
+  name: r-pecotmr
   version: ${{ version }}
 
 source:
-  url: https://github.com/cumc/${{ name }}/archive/${{ version }}.tar.gz
+  url: https://github.com/cumc/pecotmr/archive/${{ version }}.tar.gz
   sha256: SHA256SUM_PLACEHOLDER
 
 build:
@@ -21,14 +20,12 @@ requirements:
   build:
     - ${{ compiler('c') }}
     - ${{ compiler('cxx') }}
-    - if: build_platform != target_platform
-      then: cross-r-base ${{ r_base }}
   host:
     - bioconductor-iranges
     - bioconductor-qvalue
     - bioconductor-s4vectors
     - bioconductor-snpstats
-    - r-base=4.3
+    - r-base=4.3.*
     - r-bigsnpr
     - r-bigstatsr
     - r-coloc
@@ -69,7 +66,7 @@ requirements:
     - bioconductor-qvalue
     - bioconductor-s4vectors
     - bioconductor-snpstats
-    - r-base=4.3
+    - r-base=4.3.*
     - r-bigsnpr
     - r-bigstatsr
     - r-coloc
@@ -108,7 +105,7 @@ requirements:
 
 tests:
   - script:
-      - $R -e "library('${{ name }}')"
+      - $R -e "library('pecotmr')"
 
 about:
   license: GPL-3.0-or-later

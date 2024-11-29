@@ -8,7 +8,6 @@ on:
       - .gitignore
       - README.md
 
-
 jobs:
   update_coverage_badge:
     if: github.event.pull_request.merged == true
@@ -22,19 +21,13 @@ jobs:
       - name: Checkout main
         uses: actions/checkout@v4
         with:
-          ref: main 
+          ref: main
 
-      - name: Create YAML from recipe
-        run: |
-          cp .github/environment/environment.yaml /tmp/environment.yaml
-          grep -v '{%' < .github/recipe/meta.yaml | yq .requirements.host | sed 's/^/  /' >> /tmp/environment.yaml
+      - name: Create TOML from recipe
+        run: .github/workflows/create_toml_from_yaml.sh ${GITHUB_WORKSPACE}
 
-      - name: Setup micromamba
-        uses: mamba-org/setup-micromamba@v1
-        with:
-          environment-file: /tmp/environment.yaml
-          generate-run-shell: true
+      - name: Setup pixi
+        uses: prefix-dev/setup-pixi@v0.8.1
 
       - name: Check unit test code coverage
-        shell: micromamba-shell {0}
-        run: R -e "covr::codecov()"
+        run: pixi run codecov

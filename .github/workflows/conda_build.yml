@@ -27,9 +27,9 @@ jobs:
           fetch-depth: 0
 
       - name: Setup pixi
-        uses: prefix-dev/setup-pixi@v0.8.0
+        uses: prefix-dev/setup-pixi@v0.8.1
         with:
-          install: false
+          run-install: false
 
       - name: Create recipe from template
         shell: pixi exec --spec sed coreutils wget -- bash -e {0}
@@ -51,18 +51,18 @@ jobs:
         uses: docker/build-push-action@v4
         with:
           load: true
-          file: .github/ratter-build_container.df
+          file: .github/rattler-build_container.df
           tags: ratther-build:latest
 
       - name: Build conda packages
         run: |
-          docker run --rm --volume /tmp:/tmp --volume $(pwd) --workdir $(pwd) ratter-build \
-            ratter-build build -c dnachun -c conda-forge -c bioconda \
-            --output-dir /tmp/conda-bld --recipe-dir /tmp/recipe
+          docker run --rm --volume /tmp:/tmp --volume $(pwd) --workdir $(pwd) rattler-build \
+            rattler-build build -c dnachun -c conda-forge -c bioconda \
+            --output-dir /tmp/rattler-build --recipe-dir /tmp/recipe
 
       - name: Upload package
         shell: pixi exec --spec anaconda-client -- bash -e {0}
-        run: anaconda upload --force /tmp/conda-bld/linux-64/*.conda
+        run: anaconda upload --force /tmp/rattler-build/linux-64/*.conda
 
   build_package_osx-64:
     name: Build conda package for osx-64
@@ -79,9 +79,9 @@ jobs:
           fetch-depth: 0
 
       - name: Setup pixi
-        uses: prefix-dev/setup-pixi@v0.8.0
+        uses: prefix-dev/setup-pixi@v0.8.1
         with:
-          install: false
+          run-install: false
 
       - name: Create recipe from template
         shell: pixi exec --spec sed coreutils wget -- bash -e {0}
@@ -97,12 +97,12 @@ jobs:
           sed -i "s/BUILD_PLACEHOLDER/${build}/g" /tmp/recipe/recipe.yaml
 
       - name: Build conda package
-        shell: pixi exec --spec ratter-build -- bash -e {0}
-        run: ratter-build build -c dnachun -c conda-forge -c bioconda --output-dir /tmp/conda-bld --recipe-dir /tmp/recipe
+        shell: pixi exec --spec rattler-build -- bash -e {0}
+        run: rattler-build build -c dnachun -c conda-forge -c bioconda --output-dir /tmp/rattler-build --recipe-dir /tmp/recipe
 
       - name: Upload package
         shell: pixi exec --spec anaconda-client -- bash -e {0}
-        run: anaconda upload --force /tmp/conda-bld/osx-64/*.conda
+        run: anaconda upload --force /tmp/rattler-build/osx-64/*.conda
 
   build_package_osx-arm64:
     name: Build conda package for osx-arm64
@@ -119,9 +119,9 @@ jobs:
           fetch-depth: 0
 
       - name: Setup pixi
-        uses: prefix-dev/setup-pixi@v0.8.0
+        uses: prefix-dev/setup-pixi@v0.8.1
         with:
-          install: false
+          run-install: false
 
       - name: Create recipe from template
         shell: pixi exec --spec sed coreutils wget -- bash -e {0}
@@ -137,9 +137,9 @@ jobs:
           sed -i "s/BUILD_PLACEHOLDER/${build}/g" /tmp/recipe/recipe.yaml
 
       - name: Build conda package
-        shell: pixi exec --spec ratter-build -- bash -e {0}
-        run: ratter-build build -c dnachun -c conda-forge -c bioconda --output-dir /tmp/conda-bld --recipe-dir /tmp/recipe
+        shell: pixi exec --spec rattler-build -- bash -e {0}
+        run: rattler-build build -c dnachun -c conda-forge -c bioconda --output-dir /tmp/rattler-build --recipe-dir /tmp/recipe
 
       - name: Upload package
         shell: pixi exec --spec anaconda-client -- bash -e {0}
-        run: anaconda upload --force /tmp/conda-bld/osx-arm64/*.conda
+        run: anaconda upload --force /tmp/rattler-build/osx-arm64/*.conda
