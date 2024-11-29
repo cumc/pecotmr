@@ -52,7 +52,7 @@ jobs:
         with:
           load: true
           file: .github/rattler-build_container.df
-          tags: ratther-build:latest
+          tags: rattler-build:latest
 
       - name: Build conda packages
         run: |
