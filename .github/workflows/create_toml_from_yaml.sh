@@ -6,6 +6,6 @@ github_workspace=$1
 
 cp ${github_workspace}/.github/environment/pixi.toml ${github_workspace}/pixi.toml
 yq .requirements.host < ${github_workspace}/.github/recipe/recipe.yaml | \
-    sed 's/- //' | grep -v '=' | sed 's/^/"/' | sed 's/$/"/' | sed 's/$/ = "*"/' >> ${github_workspace}/pixi.toml
+    sed 's/- //' | grep -v '\*' | sed 's/^/"/' | sed 's/$/"/' | sed 's/$/ = "*"/' >> ${github_workspace}/pixi.toml
 yq .requirements.host < ${github_workspace}/.github/recipe/recipe.yaml | \
-    sed 's/- //' | grep '=' | sed 's/^/"/' | sed 's/$/"/' | sed 's/=/" = "/' >> ${github_workspace}/pixi.toml
+    sed 's/- //' | grep '\*' | sed 's/^/"/' | sed 's/$/"/' | sed 's/ /" = "/' >> ${github_workspace}/pixi.toml
