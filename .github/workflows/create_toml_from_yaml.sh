@@ -2,7 +2,7 @@
 
 set -o xtrace -o nounset -o pipefail -o errexit
 
-local github_workspace=$1
+github_workspace=$1
 
 cp ${github_workspace}/.github/environment/pixi.toml ${github_workspace}/pixi.toml
 yq .requirements.host < ${github_workspace}/.github/recipe/recipe.yaml | \
