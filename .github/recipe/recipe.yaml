@@ -1,31 +1,31 @@
-{% set version = "VERSION_PLACEHOLDER" %}
-{% set name = "pecotmr" %}
+context:
+  version: VERSION_PLACEHOLDER
 
 package:
-  name: r-{{ name }}
-  version: {{ version }}
+  name: r-pecotmr
+  version: ${{ version }}
 
 source:
-  url: https://github.com/cumc/{{ name }}/archive/{{ version }}.tar.gz
+  url: https://github.com/cumc/pecotmr/archive/${{ version }}.tar.gz
   sha256: SHA256SUM_PLACEHOLDER
 
 build:
   number: BUILD_PLACEHOLDER
-  rpaths:
-    - lib/R/lib/
-    - lib/
+  dynamic_linking:
+    rpaths:
+      - lib/R/lib/
+      - lib/
 
 requirements:
   build:
-    - {{ compiler('c') }}
-    - {{ compiler('cxx') }}
-    - cross-r-base {{ r_base }}  # [build_platform != target_platform]
+    - ${{ compiler('c') }}
+    - ${{ compiler('cxx') }}
   host:
     - bioconductor-iranges
     - bioconductor-qvalue
     - bioconductor-s4vectors
     - bioconductor-snpstats
-    - r-base=4.3
+    - r-base=4.3.*
     - r-bigsnpr
     - r-bigstatsr
     - r-coloc
@@ -66,7 +66,7 @@ requirements:
     - bioconductor-qvalue
     - bioconductor-s4vectors
     - bioconductor-snpstats
-    - r-base=4.3
+    - r-base=4.3.*
     - r-bigsnpr
     - r-bigstatsr
     - r-coloc
@@ -103,15 +103,15 @@ requirements:
     - r-udr
     - r-vctrs
 
-test:
-  commands:
-    - $R -e "library('{{ name }}')"
+tests:
+  - script:
+      - $R -e "library('pecotmr')"
 
 about:
-  home: https://github.com/cumc/pecotmr
   license: GPL-3.0-or-later
   license_file: LICENSE
   summary: pecotmr implements pair-wise enrichment, colocalization, TWAS and Mendelian Randomization to integrate QTL and GWAS analysis based on a fine-mapped single effects model.
+  homepage: https://github.com/cumc/pecotmr
 
 extra:
   recipe-maintainers:

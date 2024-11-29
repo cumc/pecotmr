@@ -19,36 +19,26 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Create YAML from recipe
-        run: |
-          cp .github/environment/environment.yaml /tmp/environment.yaml
-          grep -v '{%' < .github/recipe/meta.yaml | yq .requirements.host | sed 's/^/  /' >> /tmp/environment.yaml
+      - name: Create TOML from recipe
+        run: .github/workflows/create_toml_from_yaml.sh ${GITHUB_WORKSPACE}
 
-      - name: Setup micromamba
-        uses: mamba-org/setup-micromamba@v1
-        with:
-          environment-file: /tmp/environment.yaml
-          generate-run-shell: true
+      - name: Setup pixi
+        uses: prefix-dev/setup-pixi@v0.8.1
 
       - name: Run unit tests
-        shell: micromamba-shell {0}
-        run: R -e "devtools::test()"
+        run: pixi run devtools_test
 
       - name: Check unit test code coverage
-        shell: micromamba-shell {0}
-        run: R -e "covr::codecov(quiet = FALSE)"
+        run: pixi run codecov
 
       #- name: Run R CMD CHECK
-        #shell: micromamba-shell {0}
-        #run: R -e "rcmdcheck::rcmdcheck()"
+        #run: pixi run rcmdcheck
 
       #- name: Run BiocCheckGitClone
-        #shell: micromamba-shell {0}
-        #run: R -e "BiocCheck::BiocCheckGitClone()"
+        #run: pixi run bioccheck_git_clone
 
       #- name: Run BiocCheck
-        #shell: micromamba-shell {0}
-        #run: R -e "BiocCheck::BiocCheck()"
+        #run: pixi run bioccheck
         
   ci_osx-64:
     runs-on: macos-13
@@ -59,33 +49,24 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Create YAML from recipe
-        run: |
-          cp .github/environment/environment.yaml /tmp/environment.yaml
-          grep -v '{%' < .github/recipe/meta.yaml | yq .requirements.host | sed 's/^/  /' >> /tmp/environment.yaml
+      - name: Create TOML from recipe
+        run: .github/workflows/create_toml_from_yaml.sh ${GITHUB_WORKSPACE}
 
-      - name: Setup micromamba
-        uses: mamba-org/setup-micromamba@v1
-        with:
-          environment-file: /tmp/environment.yaml
-          generate-run-shell: true
+      - name: Setup pixi
+        uses: prefix-dev/setup-pixi@v0.8.1
 
       - name: Run unit tests
-        shell: micromamba-shell {0}
-        run: R -e "devtools::test()"
+        run: pixi run devtools_test
 
       #- name: Run R CMD CHECK
-        #shell: micromamba-shell {0}
-        #run: R -e "rcmdcheck::rcmdcheck()"
+        #run: pixi run rcmdcheck
 
       #- name: Run BiocCheckGitClone
-        #shell: micromamba-shell {0}
-        #run: R -e "BiocCheck::BiocCheckGitClone()"
+        #run: pixi run bioccheck_git_clone
 
       #- name: Run BiocCheck
-        #shell: micromamba-shell {0}
-        #run: R -e "BiocCheck::BiocCheck()"
-        #
+        #run: pixi run bioccheck
+  
   ci_osx-arm64:
     runs-on: macos-14
     
@@ -95,29 +76,20 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Create YAML from recipe
-        run: |
-          cp .github/environment/environment.yaml /tmp/environment.yaml
-          grep -v '{%' < .github/recipe/meta.yaml | yq .requirements.host | sed 's/^/  /' >> /tmp/environment.yaml
+      - name: Create TOML from recipe
+        run: .github/workflows/create_toml_from_yaml.sh ${GITHUB_WORKSPACE}
 
-      - name: Setup micromamba
-        uses: mamba-org/setup-micromamba@v1
-        with:
-          environment-file: /tmp/environment.yaml
-          generate-run-shell: true
+      - name: Setup pixi
+        uses: prefix-dev/setup-pixi@v0.8.1
 
       - name: Run unit tests
-        shell: micromamba-shell {0}
-        run: R -e "devtools::test()"
+        run: pixi run devtools_test
 
       #- name: Run R CMD CHECK
-        #shell: micromamba-shell {0}
-        #run: R -e "rcmdcheck::rcmdcheck()"
+        #run: pixi run rcmdcheck
 
       #- name: Run BiocCheckGitClone
-        #shell: micromamba-shell {0}
-        #run: R -e "BiocCheck::BiocCheckGitClone()"
+        #run: pixi run bioccheck_git_clone
 
       #- name: Run BiocCheck
-        #shell: micromamba-shell {0}
-        #run: R -e "BiocCheck::BiocCheck()"
+        #run: pixi run bioccheck

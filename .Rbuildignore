@@ -3,3 +3,6 @@
 ^\.git
 ^\.github
 ^\.gitignore
+^pixi.toml
+^pixi.lock
+^\.pixi
