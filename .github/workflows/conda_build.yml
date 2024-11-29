@@ -32,7 +32,7 @@ jobs:
           run-install: false
 
       - name: Create recipe from template
-        shell: pixi exec --spec sed coreutils wget -- bash -e {0}
+        shell: pixi exec --spec sed --spec coreutils --spec wget -- bash -e {0}
         run: |
           mkdir /tmp/recipe
           cp .github/recipe/recipe.yaml /tmp/recipe/recipe.yaml
@@ -84,7 +84,7 @@ jobs:
           run-install: false
 
       - name: Create recipe from template
-        shell: pixi exec --spec sed coreutils wget -- bash -e {0}
+        shell: pixi exec --spec sed --spec coreutils --spec wget -- bash -e {0}
         run: |
           mkdir /tmp/recipe
           cp .github/recipe/recipe.yaml /tmp/recipe/recipe.yaml
@@ -124,7 +124,7 @@ jobs:
           run-install: false
 
       - name: Create recipe from template
-        shell: pixi exec --spec sed coreutils wget -- bash -e {0}
+        shell: pixi exec --spec sed --spec coreutils --spec wget -- bash -e {0}
         run: |
           mkdir /tmp/recipe
           cp .github/recipe/recipe.yaml /tmp/recipe/recipe.yaml
