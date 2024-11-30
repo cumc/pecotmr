@@ -18,7 +18,8 @@ jobs:
     strategy:
       fail-fast: false
     env:
-      ANACONDA_API_TOKEN: ${{ secrets.ANACONDA_API_TOKEN }}
+      ANACONDA_API_KEY: ${{ secrets.ANACONDA_API_TOKEN }}
+      ANACONDA_OWNER: ${{ vars.ANACONDA_OWNER }}
 
     steps:
       - name: Checkout pull request branch
@@ -70,7 +71,8 @@ jobs:
     strategy:
       fail-fast: false
     env:
-      ANACONDA_API_TOKEN: ${{ secrets.ANACONDA_API_TOKEN }}
+      ANACONDA_API_KEY: ${{ secrets.ANACONDA_API_TOKEN }}
+      ANACONDA_OWNER: ${{ vars.ANACONDA_OWNER }}
 
     steps:
       - name: Checkout pull request branch
@@ -110,7 +112,8 @@ jobs:
     strategy:
       fail-fast: false
     env:
-      ANACONDA_API_TOKEN: ${{ secrets.ANACONDA_API_TOKEN }}
+      ANACONDA_API_KEY: ${{ secrets.ANACONDA_API_TOKEN }}
+      ANACONDA_OWNER: ${{ vars.ANACONDA_OWNER }}
 
     steps:
       - name: Checkout pull request branch
