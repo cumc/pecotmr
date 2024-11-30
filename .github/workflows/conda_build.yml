@@ -18,7 +18,8 @@ jobs:
     strategy:
       fail-fast: false
     env:
-      ANACONDA_API_TOKEN: ${{ secrets.ANACONDA_API_TOKEN }}
+      ANACONDA_API_KEY: ${{ secrets.ANACONDA_API_TOKEN }}
+      ANACONDA_OWNER: ${{ vars.ANACONDA_OWNER }}
 
     steps:
       - name: Checkout pull request branch
@@ -61,8 +62,8 @@ jobs:
             --output-dir /tmp/rattler-build --recipe-dir /tmp/recipe
 
       - name: Upload package
-        shell: pixi exec --spec anaconda-client -- bash -e {0}
-        run: anaconda upload --force /tmp/rattler-build/linux-64/*.conda
+        shell: pixi exec --spec rattler-build -- bash -e {0}
+        run: rattler-build upload anaconda --force /tmp/rattler-build/linux-64/*.conda
 
   build_package_osx-64:
     name: Build conda package for osx-64
@@ -70,7 +71,8 @@ jobs:
     strategy:
       fail-fast: false
     env:
-      ANACONDA_API_TOKEN: ${{ secrets.ANACONDA_API_TOKEN }}
+      ANACONDA_API_KEY: ${{ secrets.ANACONDA_API_TOKEN }}
+      ANACONDA_OWNER: ${{ vars.ANACONDA_OWNER }}
 
     steps:
       - name: Checkout pull request branch
@@ -101,8 +103,8 @@ jobs:
         run: rattler-build build -c dnachun -c conda-forge -c bioconda --output-dir /tmp/rattler-build --recipe-dir /tmp/recipe
 
       - name: Upload package
-        shell: pixi exec --spec anaconda-client -- bash -e {0}
-        run: anaconda upload --force /tmp/rattler-build/osx-64/*.conda
+        shell: pixi exec --spec rattler-build -- bash -e {0}
+        run: rattler-build upload anaconda --force /tmp/rattler-build/osx-64/*.conda
 
   build_package_osx-arm64:
     name: Build conda package for osx-arm64
@@ -110,7 +112,8 @@ jobs:
     strategy:
       fail-fast: false
     env:
-      ANACONDA_API_TOKEN: ${{ secrets.ANACONDA_API_TOKEN }}
+      ANACONDA_API_KEY: ${{ secrets.ANACONDA_API_TOKEN }}
+      ANACONDA_OWNER: ${{ vars.ANACONDA_OWNER }}
 
     steps:
       - name: Checkout pull request branch
@@ -141,5 +144,5 @@ jobs:
         run: rattler-build build -c dnachun -c conda-forge -c bioconda --output-dir /tmp/rattler-build --recipe-dir /tmp/recipe
 
       - name: Upload package
-        shell: pixi exec --spec anaconda-client -- bash -e {0}
-        run: anaconda upload --force /tmp/rattler-build/osx-arm64/*.conda
+        shell: pixi exec --spec rattler-build -- bash -e {0}
+        run: rattler-build upload anaconda --force /tmp/rattler-build/osx-arm64/*.conda
