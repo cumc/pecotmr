@@ -33,7 +33,7 @@ jobs:
 
       - name: Create new tag
         id: tag_version
-        uses: mathieudutour/github-tag-action@v6.1
+        uses: mathieudutour/github-tag-action@v6.2
         with:
           default_bump: false
           default_prerelease_bump: false
