@@ -19,6 +19,7 @@ load_regional_association_data(
   region_name_col = NULL,
   keep_indel = TRUE,
   keep_samples = NULL,
+  keep_variants = NULL,
   phenotype_header = 4,
   scale_residuals = FALSE,
   tabix_header = TRUE

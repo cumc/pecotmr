@@ -244,7 +244,7 @@ filter_by_common_samples <- function(dat, common_samples) {
 #' @importFrom purrr map map2
 #' @importFrom magrittr %>%
 #' @noRd
-prepare_data_list <- function(geno_bed, phenotype, covariate, imiss_cutoff, maf_cutoff, mac_cutoff, xvar_cutoff, phenotype_header = 4, keep_samples = NULL) {
+prepare_data_list <- function(geno_bed, phenotype, covariate, imiss_cutoff, maf_cutoff, mac_cutoff, xvar_cutoff, phenotype_header = 4, keep_samples = NULL, keep_variants = NULL) {
   data_list <- tibble(
     covar = covariate,
     Y = lapply(phenotype, function(x) apply(x[-c(1:phenotype_header), , drop = F], c(1, 2), as.numeric))
@@ -279,6 +279,10 @@ prepare_data_list <- function(geno_bed, phenotype, covariate, imiss_cutoff, maf_
         maf_val <- max(maf_cutoff, mac_val)
         filtered_data <- filter_X(filtered_geno_bed, imiss_cutoff, maf_val, var_thresh = xvar_cutoff)
         colnames(filtered_data) <- format_variant_id(colnames(filtered_data)) # Format column names right after filtering
+        if (!is.null(keep_variants)) {
+          variant_ids <- format_variant_id(keep_variants)
+          filtered_data <- filtered_data[, colnames(filtered_data) %in% variant_ids, drop = FALSE]
+        }
         filtered_data
       })
     ) %>%
@@ -415,6 +419,7 @@ load_regional_association_data <- function(genotype, # PLINK file
                                            region_name_col = NULL,
                                            keep_indel = TRUE,
                                            keep_samples = NULL,
+                                           keep_variants = NULL,
                                            phenotype_header = 4, # skip first 4 rows of transposed phenotype for chr, start, end and ID
                                            scale_residuals = FALSE,
                                            tabix_header = TRUE) {
@@ -426,7 +431,7 @@ load_regional_association_data <- function(genotype, # PLINK file
   ### including Y ( cov ) and specific X and covar match, filter X variants based on the overlapped samples.
   data_list <- prepare_data_list(geno, pheno, covar, imiss_cutoff,
     maf_cutoff, mac_cutoff, xvar_cutoff,
-    phenotype_header = phenotype_header, keep_samples = keep_samples
+    phenotype_header = phenotype_header, keep_samples = keep_samples, keep_variants = keep_variants
   )
   maf_list <- setNames(lapply(data_list$X, function(x) apply(x, 2, compute_maf)), colnames(data_list$X))
   ## Get residue Y for each of condition and its mean and sd
@@ -434,6 +439,10 @@ load_regional_association_data <- function(genotype, # PLINK file
   ## Get residue X for each of condition and its mean and sd
   data_list <- add_X_residuals(data_list, scale_residuals)
   # Get X matrix for union of samples
+  if(!is.null(keep_variants)){
+    variant_ids <- format_variant_id(keep_variants)
+    geno <- geno[, format_variant_id(colnames(geno)) %in% variant_ids, drop = FALSE]
+  }
   X <- prepare_X_matrix(geno, data_list, imiss_cutoff, maf_cutoff, mac_cutoff, xvar_cutoff)
   region <- if (!is.null(region)) unlist(strsplit(region, ":", fixed = TRUE))
   ## residual_Y: a list of y either vector or matrix (CpG for example), and they need to match with residual_X in terms of which samples are missing.

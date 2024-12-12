@@ -18,9 +18,10 @@ calc_I2 <- function(Q, Est) {
 #' @param coverage A character string specifying the coverage threshold for credible sets, used when 'sets' is not "sets". Defaults to "coverage_0.95", indicating a 95% coverage credible set.
 #' @param allele_qc Optional. A logical value indicating whether allele qc should be performed on the variants. When TRUE, allele qc are applied to the variants based on the GWAS summary statistics database ('gwas_sumstats_db').
 #' @return A data frame formatted for MR analysis or NULL if cs_list is empty.
+#' @importFrom stringr str_remove
 #' @export
 mr_format <- function(susie_result, condition, gwas_sumstats_db, coverage = "cs_coverage_0.95", allele_qc = TRUE,
-                      molecular_name_obj = c("susie_results", condition, "region_info", "region_name")) {
+                      molecular_name_obj = c("susie_results", condition, "region_info", "region_name"), ld_meta_df) {
   # Create null mr_format_input
   create_null_mr_input <- function(gene_name) {
     mr_format_input <- data.frame(
@@ -58,18 +59,32 @@ mr_format <- function(susie_result, condition, gwas_sumstats_db, coverage = "cs_
       susie_pos <- sapply(susie_cs_result_formatted$variant, function(variant_id) strsplit(variant_id, "\\:")[[1]][2])
       gwas_pos <- sapply(gwas_sumstats_db$variant_id, function(variant_id) strsplit(variant_id, "\\:")[[1]][2])
       if (any(susie_pos %in% gwas_pos)) {
+        gwas_sumstats_db_extracted <- gwas_sumstats_db%>%filter(pos%in%susie_pos)%>%mutate(n_sample = n_case + n_control)
+        mean_n_sample <- round(mean(gwas_sumstats_db_extracted$n_sample, na.rm = TRUE))
+        # Impute `n_sample` and `maf`
+        if (any(is.na(gwas_sumstats_db_extracted$effect_allele_frequency))) {
+            gwas_sumstats_db_extracted_imputed <- gwas_sumstats_db_extracted %>%
+                 left_join(ld_meta_df %>% select(pos, allele_freq), by = "pos") %>%
+                 mutate(effect_allele_frequency = ifelse(is.na(effect_allele_frequency), allele_freq, effect_allele_frequency)) %>%
+                 mutate(n_sample = ifelse(is.na(n_sample), mean_n_sample, n_sample)) %>%
+                 select(-allele_freq)
+        } else {
+             gwas_sumstats_db_extracted_imputed <- gwas_sumstats_db_extracted
+        }
+        gwas_sumstats_db_beta_se <- z_to_beta_se(gwas_sumstats_db_extracted_imputed$z, gwas_sumstats_db_extracted_imputed$effect_allele_frequency, gwas_sumstats_db_extracted_imputed$n_sample)
+        gwas_sumstats_db_extracted_imputed <- gwas_sumstats_db_extracted_imputed %>% mutate(beta = gwas_sumstats_db_beta_se$beta, se= gwas_sumstats_db_beta_se$se)
         if (allele_qc) {
-          susie_cs_result_formatted <- allele_qc(susie_cs_result_formatted$variant, gwas_sumstats_db$variant_id,
+          susie_cs_result_formatted <- allele_qc(susie_cs_result_formatted$variant, gwas_sumstats_db_extracted_imputed$variant_id,
             cbind(variant_id_to_df(susie_cs_result_formatted$variant), susie_cs_result_formatted), c("bhat_x", "sbhat_x"),
             match_min_prop = 0
           )
           susie_cs_result_formatted <- susie_cs_result_formatted$target_data_qced[, c("gene_name", "variant_id", "bhat_x", "sbhat_x", "cs", "pip")]
         }
-        gwas_sumstats_db$variant_id <- gsub("chr", "", gwas_sumstats_db$variant_id)
-        susie_cs_gwas_variants_merge <- intersect(susie_cs_result_formatted$variant_id, gwas_sumstats_db$variant_id)
+        gwas_sumstats_db_extracted_imputed$variant_id <- gsub("chr", "", gwas_sumstats_db_extracted_imputed$variant_id)
+        susie_cs_gwas_variants_merge <- intersect(susie_cs_result_formatted$variant_id, gwas_sumstats_db_extracted_imputed$variant_id)
 
         mr_format_input <- susie_cs_result_formatted[match(susie_cs_gwas_variants_merge, susie_cs_result_formatted$variant), ] %>%
-          cbind(., gwas_sumstats_db[match(susie_cs_gwas_variants_merge, gwas_sumstats_db$variant_id), ] %>%
+          cbind(., gwas_sumstats_db_extracted_imputed[match(susie_cs_gwas_variants_merge, gwas_sumstats_db_extracted_imputed$variant_id), ] %>%
             select(beta, se) %>%
             rename("bhat_y" = "beta", "sbhat_y" = "se"))
       } else {
