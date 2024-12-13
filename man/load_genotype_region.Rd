@@ -4,7 +4,12 @@
 \alias{load_genotype_region}
 \title{Load genotype data for a specific region using data.table for efficiency}
 \usage{
-load_genotype_region(genotype, region = NULL, keep_indel = TRUE)
+load_genotype_region(
+  genotype,
+  region = NULL,
+  keep_indel = TRUE,
+  keep_variants = NULL
+)
 }
 \arguments{
 \item{genotype}{Path to the genotype data file (without extension).}

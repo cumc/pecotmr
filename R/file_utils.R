@@ -124,7 +124,7 @@ NoSNPsError <- function(message) {
 #' @importFrom magrittr %>%
 #' @importFrom snpStats read.plink
 #' @export
-load_genotype_region <- function(genotype, region = NULL, keep_indel = TRUE) {
+load_genotype_region <- function(genotype, region = NULL, keep_indel = TRUE, keep_variants = NULL) {
   if (!is.null(region)) {
     # Get SNP IDs from bim file
     parsed_region <- parse_region(region)
@@ -152,11 +152,23 @@ load_genotype_region <- function(genotype, region = NULL, keep_indel = TRUE) {
   geno <- read.plink(genotype, select.snps = snp_ids)
 
   # Remove indels if specified
+  # Remove indels if specified
   if (!keep_indel) {
     is_indel <- with(geno$map, grepl("[^ATCG]", allele.1) | grepl("[^ATCG]", allele.2) | nchar(allele.1) > 1 | nchar(allele.2) > 1)
     geno_bed <- geno$genotypes[, !is_indel]
+    geno_map <- geno$map[!is_indel,]
   } else {
     geno_bed <- geno$genotypes
+    geno_map <- geno$map
+  }
+  if (!is.null(keep_variants)) {
+     if (any(grepl("^chr", keep_variants$chrom))) {
+        keep_variants <- keep_variants %>% mutate(chrom = gsub("^chr", "", chrom))
+     }
+     keep_variants_index <- paste0(geno_map$chromosome, geno_map$position, sep = ":") %in% paste0(keep_variants$chrom, keep_variants$pos, sep = ":")
+     geno_bed <- geno_bed[,keep_variants_index]
+  } else {
+     geno_bed <- geno_bed
   }
   return(2 - as(geno_bed, "numeric"))
 }
@@ -279,10 +291,6 @@ prepare_data_list <- function(geno_bed, phenotype, covariate, imiss_cutoff, maf_
         maf_val <- max(maf_cutoff, mac_val)
         filtered_data <- filter_X(filtered_geno_bed, imiss_cutoff, maf_val, var_thresh = xvar_cutoff)
         colnames(filtered_data) <- format_variant_id(colnames(filtered_data)) # Format column names right after filtering
-        if (!is.null(keep_variants)) {
-          variant_ids <- format_variant_id(keep_variants)
-          filtered_data <- filtered_data[, colnames(filtered_data) %in% variant_ids, drop = FALSE]
-        }
         filtered_data
       })
     ) %>%
@@ -424,7 +432,7 @@ load_regional_association_data <- function(genotype, # PLINK file
                                            scale_residuals = FALSE,
                                            tabix_header = TRUE) {
   ## Load genotype
-  geno <- load_genotype_region(genotype, association_window, keep_indel)
+  geno <- load_genotype_region(genotype, association_window, keep_indel, keep_variants = keep_variants)
   ## Load phenotype and covariates and perform some pre-processing
   covar <- load_covariate_data(covariate)
   pheno <- load_phenotype_data(phenotype, region, extract_region_name = extract_region_name, region_name_col = region_name_col, tabix_header = tabix_header)
@@ -439,10 +447,6 @@ load_regional_association_data <- function(genotype, # PLINK file
   ## Get residue X for each of condition and its mean and sd
   data_list <- add_X_residuals(data_list, scale_residuals)
   # Get X matrix for union of samples
-  if(!is.null(keep_variants)){
-    variant_ids <- format_variant_id(keep_variants)
-    geno <- geno[, format_variant_id(colnames(geno)) %in% variant_ids, drop = FALSE]
-  }
   X <- prepare_X_matrix(geno, data_list, imiss_cutoff, maf_cutoff, mac_cutoff, xvar_cutoff)
   region <- if (!is.null(region)) unlist(strsplit(region, ":", fixed = TRUE))
   ## residual_Y: a list of y either vector or matrix (CpG for example), and they need to match with residual_X in terms of which samples are missing.
