@@ -519,3 +519,53 @@ find_duplicate_variants <- function(z, LD, rThreshold) {
 
   return(list(filteredZ = filteredZ, filteredLD = filteredLD, dupBearer = dupBearer, corABS = corABS, sign = sign, minValue = minValue))
 }
+                                                                                 
+#' Convert Z-scores to Beta and Standard Error
+#'
+#' This function estimates the effect sizes (beta) and standard errors (SE) from
+#' given z-scores, minor allele frequencies (MAF), and a sample size (n) in genetic studies.
+#' It supports vector inputs for z-scores and MAFs to process multiple variants simultaneously.
+#'
+#' @param z Numeric vector. The z-scores of the genetic variants.
+#' @param maf Numeric vector. The minor allele frequencies of the genetic variants (0 < maf <= 0.5).
+#' @param n Integer. The sample size of the study (assumed to be the same for all variants).
+#'
+#' @return A data frame containing three columns:
+#' \describe{
+#'   \item{beta}{The estimated effect sizes.}
+#'   \item{se}{The estimated standard errors.}
+#'   \item{maf}{The input minor allele frequencies (possibly adjusted if > 0.5).}
+#' }
+#'
+#' @details
+#' The function uses the following formulas to estimate beta and SE:
+#' Beta = z / sqrt(2p(1-p)(n + z^2))
+#' SE = 1 / sqrt(2p(1-p)(n + z^2))
+#' Where p is the minor allele frequency.
+#'
+#' @examples
+#' z <- c(2.5, -1.8, 3.2, 0.7)
+#' maf <- c(0.3, 0.1, 0.4, 0.05)
+#' n <- 10000
+#' result <- z_to_beta_se(z, maf, n)
+#' print(result)
+#' test_data_with_results <- cbind(test_data, results)
+#' print(test_data_with_results)
+#' 
+#' @note
+#' This function assumes that the input z-scores are normally distributed and
+#' that the genetic model is additive. It may not be accurate for rare variants
+#' or in cases of imperfect imputation. The function automatically adjusts MAF > 0.5
+#' to ensure it's always working with the minor allele.
+#' @noRd
+z_to_beta_se <- function(z, maf, n) {
+  if (length(z) != length(maf)) {
+    stop("z and maf must be vectors of the same length")
+  }
+  # Ensure MAF is the minor allele frequency
+  p <- pmin(maf, 1 - maf)
+  denominator <- sqrt(2 * p * (1 - p) * (n + z^2))
+  beta <- z / denominator
+  se <- 1 / denominator
+  return(data.frame(beta = beta, se = se, maf = p))
+}
