@@ -124,7 +124,7 @@ NoSNPsError <- function(message) {
 #' @importFrom magrittr %>%
 #' @importFrom snpStats read.plink
 #' @export
-load_genotype_region <- function(genotype, region = NULL, keep_indel = TRUE) {
+load_genotype_region <- function(genotype, region = NULL, keep_indel = TRUE, keep_variants = NULL) {
   if (!is.null(region)) {
     # Get SNP IDs from bim file
     parsed_region <- parse_region(region)
@@ -152,11 +152,23 @@ load_genotype_region <- function(genotype, region = NULL, keep_indel = TRUE) {
   geno <- read.plink(genotype, select.snps = snp_ids)
 
   # Remove indels if specified
+  # Remove indels if specified
   if (!keep_indel) {
     is_indel <- with(geno$map, grepl("[^ATCG]", allele.1) | grepl("[^ATCG]", allele.2) | nchar(allele.1) > 1 | nchar(allele.2) > 1)
     geno_bed <- geno$genotypes[, !is_indel]
+    geno_map <- geno$map[!is_indel,]
   } else {
     geno_bed <- geno$genotypes
+    geno_map <- geno$map
+  }
+  if (!is.null(keep_variants)) {
+     if (any(grepl("^chr", keep_variants$chrom))) {
+        keep_variants <- keep_variants %>% mutate(chrom = gsub("^chr", "", chrom))
+     }
+     keep_variants_index <- paste0(geno_map$chromosome, geno_map$position, sep = ":") %in% paste0(keep_variants$chrom, keep_variants$pos, sep = ":")
+     geno_bed <- geno_bed[,keep_variants_index]
+  } else {
+     geno_bed <- geno_bed
   }
   return(2 - as(geno_bed, "numeric"))
 }
@@ -244,7 +256,7 @@ filter_by_common_samples <- function(dat, common_samples) {
 #' @importFrom purrr map map2
 #' @importFrom magrittr %>%
 #' @noRd
-prepare_data_list <- function(geno_bed, phenotype, covariate, imiss_cutoff, maf_cutoff, mac_cutoff, xvar_cutoff, phenotype_header = 4, keep_samples = NULL) {
+prepare_data_list <- function(geno_bed, phenotype, covariate, imiss_cutoff, maf_cutoff, mac_cutoff, xvar_cutoff, phenotype_header = 4, keep_samples = NULL, keep_variants = NULL) {
   data_list <- tibble(
     covar = covariate,
     Y = lapply(phenotype, function(x) apply(x[-c(1:phenotype_header), , drop = F], c(1, 2), as.numeric))
@@ -415,18 +427,19 @@ load_regional_association_data <- function(genotype, # PLINK file
                                            region_name_col = NULL,
                                            keep_indel = TRUE,
                                            keep_samples = NULL,
+                                           keep_variants = NULL,
                                            phenotype_header = 4, # skip first 4 rows of transposed phenotype for chr, start, end and ID
                                            scale_residuals = FALSE,
                                            tabix_header = TRUE) {
   ## Load genotype
-  geno <- load_genotype_region(genotype, association_window, keep_indel)
+  geno <- load_genotype_region(genotype, association_window, keep_indel, keep_variants = keep_variants)
   ## Load phenotype and covariates and perform some pre-processing
   covar <- load_covariate_data(covariate)
   pheno <- load_phenotype_data(phenotype, region, extract_region_name = extract_region_name, region_name_col = region_name_col, tabix_header = tabix_header)
   ### including Y ( cov ) and specific X and covar match, filter X variants based on the overlapped samples.
   data_list <- prepare_data_list(geno, pheno, covar, imiss_cutoff,
     maf_cutoff, mac_cutoff, xvar_cutoff,
-    phenotype_header = phenotype_header, keep_samples = keep_samples
+    phenotype_header = phenotype_header, keep_samples = keep_samples, keep_variants = keep_variants
   )
   maf_list <- setNames(lapply(data_list$X, function(x) apply(x, 2, compute_maf)), colnames(data_list$X))
   ## Get residue Y for each of condition and its mean and sd
