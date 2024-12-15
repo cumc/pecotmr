@@ -1,7 +1,7 @@
 #' @export
 filter_invalid_summary_stat <- function(dat_list, z = TRUE, sig_p_cutoff = 1E-6, filter_by_missing_rate = 0.2) {
   replace_values <- function(df, replace_with) {
-    df %>%
+    df <- df %>%
       mutate(across(everything(), as.numeric)) %>%
       mutate(across(everything(), ~ replace(., is.nan(.) | is.infinite(.) | is.na(.), replace_with)))
   }
@@ -552,7 +552,39 @@ load_multitrait_R_sumstat <- function(susie_fit, sumstats_db, coverage = NULL, t
         return(list())
       }
     }
-      
+
+  split_variants_and_match <- function(variant, filter_file, max_rows_selected) {
+    if (!file.exists(filter_file)) {
+      stop("Filter file does not exist.")
+    }
+
+    # Split the variant vector into components
+    variant_df <- parse_variant_id(variant)
+
+    # get the region of interest
+    min_pos <- min(variant_df$pos)
+    max_pos <- max(variant_df$pos)
+    chrom <- unique(variant_df$chrom)
+    if (length(chrom) != 1) {
+      stop("Variants are from multiple chromosomes. Cannot create a single range string.")
+    }
+    region <- paste0(chrom, ":", min_pos, "-", max_pos)
+    ref_table <- tabix_region(filter_file, region)
+    if (is.null(ref_table)) {
+      stop("No variants in the region.")
+    }
+    colnames(ref_table)[1:2] <- c("#CHROM", "POS")
+    if (!all(c("#CHROM", "POS") %in% colnames(ref_table))) {
+      stop("Filter file must contain columns: #CHROM, POS.")
+    }
+    matched_indices <- which(variant_df$chrom %in% ref_table$`#CHROM` & variant_df$pos %in% ref_table$POS)
+    if (!is.null(max_rows_selected) && max_rows_selected > 0 && max_rows_selected < length(matched_indices)) {
+      selected_rows <- sample(length(matched_indices), max_rows_selected)
+      matched_indices <- matched_indices[selected_rows]
+    }
+    return(matched_indices)
+  }
+
   merge_matrices <- function(matrix_list, value_column, ld_meta_file, id_column = "variants",
                                remove_any_missing = FALSE) {
     # Input validation
@@ -641,39 +673,6 @@ load_multitrait_R_sumstat <- function(susie_fit, sumstats_db, coverage = NULL, t
     }
     return(merged_df)
   }
-
-  split_variants_and_match <- function(variant, filter_file, max_rows_selected) {
-    if (!file.exists(filter_file)) {
-      stop("Filter file does not exist.")
-    }
-
-    # Split the variant vector into components
-    variant_df <- parse_variant_id(variant)
-
-    # get the region of interest
-    min_pos <- min(variant_df$pos)
-    max_pos <- max(variant_df$pos)
-    chrom <- unique(variant_df$chrom)
-    if (length(chrom) != 1) {
-      stop("Variants are from multiple chromosomes. Cannot create a single range string.")
-    }
-    region <- paste0(chrom, ":", min_pos, "-", max_pos)
-    ref_table <- tabix_region(filter_file, region)
-    if (is.null(ref_table)) {
-      stop("No variants in the region.")
-    }
-    colnames(ref_table)[1:2] <- c("#CHROM", "POS")
-    if (!all(c("#CHROM", "POS") %in% colnames(ref_table))) {
-      stop("Filter file must contain columns: #CHROM, POS.")
-    }
-    matched_indices <- which(variant_df$chrom %in% ref_table$`#CHROM` & variant_df$pos %in% ref_table$POS)
-    if (!is.null(max_rows_selected) && max_rows_selected > 0 && max_rows_selected < length(matched_indices)) {
-      selected_rows <- sample(length(matched_indices), max_rows_selected)
-      matched_indices <- matched_indices[selected_rows]
-    }
-    return(matched_indices)
-  }
-
   results <- lapply(sumstats_db[[1]], function(data) extract_data(data))
   trait_names <- names(results)
   z_scores <- merge_matrices(results, value_column = "z", ld_meta_file, id_column = "variants", remove_any_missing)
@@ -722,7 +721,7 @@ load_multitrait_R_sumstat <- function(susie_fit, sumstats_db, coverage = NULL, t
 
   return(out)
 }
-                    
+                  
 #' @export
 mash_rand_null_sample <- function(dat, n_random, n_null, exclude_condition, seed = NULL) {
   # Function to extract one data set
@@ -730,12 +729,10 @@ mash_rand_null_sample <- function(dat, n_random, n_null, exclude_condition, seed
     if (is.null(dat)) {
       return(NULL)
     }
-    
     abs_z <- abs(dat$z)
     sample_idx <- 1:nrow(abs_z)
     random_idx <- sample(sample_idx, min(n_random, length(sample_idx)), replace = FALSE)
     random <- list(z = dat$z[random_idx, , drop = FALSE])
-    
     null.id <- which(apply(abs_z, 1, max) < 2)
     if (length(null.id) == 0) {
       warning(paste("no variants are included in the null dataset because abs_z > 2 for all variants in", dat$region))
@@ -756,7 +753,6 @@ mash_rand_null_sample <- function(dat, n_random, n_null, exclude_condition, seed
   if (!is.null(seed)) {
     set.seed(seed)
   }
-  
   if (length(exclude_condition) > 0) {
     if (all(exclude_condition %in% colnames(dat$z))) {
       dat$z <- dat$z[, -exclude_condition, drop = FALSE]
@@ -764,7 +760,6 @@ mash_rand_null_sample <- function(dat, n_random, n_null, exclude_condition, seed
       stop(paste("Error: exclude_condition are not present in", dat$region))
     }
   }
-  
   result <- extract_one_data(dat, n_random, n_null)
   return(result)
 }
