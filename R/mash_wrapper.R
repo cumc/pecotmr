@@ -1,52 +1,42 @@
 #' @export
-filter_invalid_summary_stat <- function(dat_list, bhat = NULL, sbhat = NULL, z = TRUE, sig_p_cutoff = 1E-6, filter_by_missing_rate = 0.2) {
+filter_invalid_summary_stat <- function(dat_list, z = TRUE, sig_p_cutoff = 1E-6, filter_by_missing_rate = 0.2) {
   replace_values <- function(df, replace_with) {
-    df <- df %>%
+    df %>%
       mutate(across(everything(), as.numeric)) %>%
       mutate(across(everything(), ~ replace(., is.nan(.) | is.infinite(.) | is.na(.), replace_with)))
   }
 
-  if (all(c(bhat, sbhat) %in% names(dat_list))) {
-    # If the element is a list with 'bhat' and 'sbhat'
-    if (!is.null(dat_list[[bhat]]) && !is.null(dat_list[[sbhat]])) {
-      dat_list[[bhat]] <- as.matrix(replace_values(dat_list[[bhat]], 0))
-      dat_list[[sbhat]] <- as.matrix(replace_values(dat_list[[sbhat]], 1000))
-      if (("null.b" %in% names(dat_list)) || ("random.b" %in% names(dat_list))) {
-        if (!is.null(filter_by_missing_rate)) {
-          proportion_nonzero <- apply(dat_list[[bhat]], 1, function(row) {
-            mean(row != 0)
-          })
-          dat_list[[bhat]] <- dat_list[[bhat]][proportion_nonzero >= filter_by_missing_rate, ]
-          dat_list[[sbhat]] <- dat_list[[sbhat]][proportion_nonzero >= filter_by_missing_rate, ]
-        }
-      }
+  # Function to process z-scores
+  process_z <- function(z_data) {
+    z_data <- as.matrix(replace_values(z_data, 0))
+    
+    if (!is.null(filter_by_missing_rate)) {
+      proportion_nonzero <- apply(z_data, 1, function(row) mean(row != 0))
+      z_data <- z_data[proportion_nonzero >= filter_by_missing_rate, , drop = FALSE]
     }
+    
+    return(z_data)
   }
-  if (z) {
-    if (any(grepl("\\.b$", bhat)) | any(grepl("\\.s$", sbhat))) {
-      condition <- sub("\\.b$", "", bhat)
-      if (!is.null(dat_list[[bhat]]) && !is.null(dat_list[[sbhat]])) {
-        dat_list[[paste0(condition, ".z")]] <- as.matrix(dat_list[[bhat]] / dat_list[[sbhat]])
-      } else {
-        dat_list[paste0(condition, ".z")] <- list(NULL)
-      }
-    } else {
-      if (!is.null(dat_list[[bhat]]) && !is.null(dat_list[[sbhat]])) {
-        dat_list[["z"]] <- as.matrix(dat_list[[bhat]] / dat_list[[sbhat]])
-      } else {
-        dat_list["z"] <- list(NULL)
-      }
-    }
-    if ("strong.z" %in% names(dat_list)) {
-      if (!is.null(sig_p_cutoff)) {
-        chi_square_stat <- qchisq(sig_p_cutoff, df = 1, lower.tail = FALSE)
-        z_score <- sqrt(chi_square_stat)
-        keep_index <- which(apply(dat_list$strong.z, 1, function(row) any(abs(row) >= z_score)))
-        dat_list[["strong.z"]] <- dat_list$strong.z[keep_index, ]
-        dat_list[["strong.b"]] <- dat_list$strong.b[keep_index, ]
-        dat_list[["strong.s"]] <- dat_list$strong.s[keep_index, ]
-      }
-    }
+
+  # Process each component if it exists
+  if (!is.null(dat_list$strong) && !is.null(dat_list$strong$z)) {
+    dat_list$strong$z <- process_z(dat_list$strong$z)
+  }
+  
+  if (!is.null(dat_list$random) && !is.null(dat_list$random$z)) {
+    dat_list$random$z <- process_z(dat_list$random$z)
+  }
+  
+  if (!is.null(dat_list$null) && !is.null(dat_list$null$z)) {
+    dat_list$null$z <- process_z(dat_list$null$z)
+  }
+
+  # Apply significance cutoff to strong signals if applicable
+  if (!is.null(dat_list$strong) && !is.null(dat_list$strong$z) && !is.null(sig_p_cutoff)) {
+    chi_square_stat <- qchisq(sig_p_cutoff, df = 1, lower.tail = FALSE)
+    z_score <- sqrt(chi_square_stat)
+    keep_index <- which(apply(dat_list$strong$z, 1, function(row) any(abs(row) >= z_score)))
+    dat_list$strong$z <- dat_list$strong$z[keep_index, , drop = FALSE]
   }
 
   return(dat_list)
@@ -471,20 +461,187 @@ merge_susie_cs <- function(susie_fit, coverage = "cs_coverage_0.95", complementa
 
 #' @importFrom data.table as.data.table setnames
 #' @export
-load_multitrait_R_sumstat <- function(susie_fit, sumstats_db, coverage = NULL, top_loci = FALSE, filter_file = NULL, exclude_condition = NULL, ld_meta_file = NULL, remove_any_missing = TRUE, max_rows_selected = 300, nan_remove = FALSE) {
-  extract_data <- function(sumstats_db) {
-    bhat <- as.data.table(cbind(sumstats_db$variant_names, sumstats_db$sumstats$betahat))
-    sbhat <- as.data.table(cbind(sumstats_db$variant_names, sumstats_db$sumstats$sebetahat))
-    setnames(bhat, c("variants", "bhat"))
-    setnames(sbhat, c("variants", "sbhat"))
-    bhat[, bhat := as.numeric(bhat)]
-    sbhat[, sbhat := as.numeric(sbhat)]
-    list(
-      bhat = bhat$bhat,
-      sbhat = sbhat$sbhat,
-      variants = bhat$variants
-    )
+load_multitrait_R_sumstat <- function(susie_fit, sumstats_db, coverage = NULL, top_loci = FALSE, filter_file = NULL, exclude_condition = NULL, ld_meta_file = NULL, remove_any_missing = TRUE, max_rows_selected = 300, nan_remove = FALSE, condition_filter = FALSE) {
+    # Internal recursive filtering function
+  filter_nested_list <- function(input_list, valid_conditions) {
+    if (is.null(valid_conditions) || length(valid_conditions) == 0) {
+      return(input_list)
+    }
+    
+    filtered_list <- list()
+    
+    # Recursively process list
+    for (name in names(input_list)) {
+      # Check if current name matches any valid condition
+      if (name %in% valid_conditions) {
+        filtered_list[[name]] <- input_list[[name]]
+      } else {
+        # Recursively check nested lists
+        if (is.list(input_list[[name]])) {
+          nested_result <- filter_nested_list(input_list[[name]], valid_conditions)
+          if (length(nested_result) > 0) {
+            filtered_list[[name]] <- nested_result
+          }
+        }
+      }
+    }
+    
+    return(filtered_list)
   }
+
+  # Apply condition filtering before processing
+  if (!is.null(condition_filter)) {
+    # Convert condition_filter to character vector if it's not already
+    if (!is.character(condition_filter)) {
+      condition_filter <- as.character(condition_filter)
+    }
+    
+    # Split if comma-separated string
+    if (length(condition_filter) == 1 && grepl(",", condition_filter)) {
+      condition_filter <- strsplit(condition_filter, ",")[[1]]
+    }
+    
+    # Trim whitespace
+    condition_filter <- trimws(condition_filter)
+    
+    # Filter susie_fit and sumstats_db
+    susie_fit <- filter_nested_list(susie_fit, condition_filter)
+    sumstats_db <- filter_nested_list(sumstats_db, condition_filter)
+  }
+    
+    extract_data <- function(sumstats_db) {
+      process_element <- function(element, path = character()) {
+        if (is.list(element)) {
+          if (all(c("variant_names", "sumstats") %in% names(element))) {
+            variant_names <- element$variant_names
+            sumstats <- element$sumstats
+            
+            # Calculate z_scores
+            if (all(c("betahat", "sebetahat") %in% names(sumstats))) {
+              z_scores <- sumstats$betahat / sumstats$sebetahat
+            } else if ("z" %in% names(sumstats)) {
+              z_scores <- sumstats$z
+            } else {
+              return(NULL)  # If we can't find z-scores or calculate them, return NULL
+            }
+            
+            return(data.frame(
+              variants = variant_names,
+              z = z_scores
+            ))
+          } else {
+            results <- list()
+            for (name in names(element)) {
+              result <- process_element(element[[name]], c(path, name))
+              if (!is.null(result)) {
+                # Use the original name as the list name
+                results[[name]] <- result
+              }
+            }
+            return(results)
+          }
+        }
+        return(NULL)
+      }
+      
+      results <- process_element(sumstats_db)
+      
+      if (!is.null(results) && length(results) > 0) {
+        return(results)
+      } else {
+        return(list())
+      }
+    }
+      
+  merge_matrices <- function(matrix_list, value_column, ld_meta_file, id_column = "variants",
+                               remove_any_missing = FALSE) {
+    # Input validation
+    if (!is.list(matrix_list) || length(matrix_list) == 0) {
+      stop("matrix_list must be a non-empty list")
+    }
+    if (!is.character(value_column) || length(value_column) != 1) {
+      stop("value_column must be a single string")
+    }
+    if (!is.character(id_column) || length(id_column) != 1) {
+      stop("id_column must be a single string")
+    }
+    
+    df_list <- lapply(seq_along(matrix_list), function(i) {
+      tryCatch({
+        # Step 1: Convert matrix to data frame and extract relevant columns
+        df <- as.data.frame(matrix_list[[i]])
+        if (!(id_column %in% colnames(df)) || !(value_column %in% colnames(df))) {
+          stop(paste("Required columns", id_column, "or", value_column, "not found in dataset", i))
+        }
+        df2 <- df[, c(id_column, value_column)]
+   
+        if (!is.null(ld_meta_file)) {
+            # Step 2: Split 'variants' to extract chromosomal info
+            cohort_variants_df <- parse_variant_id(df2[, c(id_column)])
+            # Step 3: Combine extracted chromosomal info with value column
+            cohort_df <- cbind(cohort_variants_df, bhat = df2[, value_column, drop = FALSE])
+    
+            # Step 4: Merge with LD reference and filter
+            variants_ld_block_match <- merge(cohort_df, ld_meta_file, by = "chrom", allow.cartesian = TRUE) %>%
+              filter(pos > start & pos < end) %>%
+              select(-path)
+    
+            # Function to process each group
+            process_group <- function(data) {
+              # Construct file path
+              bim_file_path <- unique(data$bim_path)
+              ld_bim_file <- fread(bim_file_path)
+    
+              # Perform allele quality control
+              flipped_data <- allele_qc(data[, 1:4], ld_bim_file$V2, data,
+                col_to_flip = c(value_column),
+                match_min_prop = 0, remove_dups = FALSE,
+                remove_indels = FALSE, remove_strand_ambiguous = FALSE,
+                flip_strand = FALSE, remove_unmatched = TRUE, target_gwas = FALSE
+              )$target_data_qced
+              return(flipped_data)
+            }
+    
+            final_df <- variants_ld_block_match %>%
+              group_by(start, end) %>%
+              group_map(~ process_group(.x)) %>%
+              bind_rows() %>%
+              mutate(variant_id = paste0("chr", variant_id)) %>%
+              select(c("variant_id", value_column)) %>%
+              rename("variants" = "variant_id")
+            # Rename columns to avoid duplication
+            colnames(final_df) <- c(id_column, paste0(value_column, "_", i))
+        } else {
+          final_df <- df2
+          colnames(final_df) <- c(id_column, paste0(value_column, "_", i))
+        }
+        return(final_df)
+      }, error = function(e) {
+        message(paste("Error processing dataset", i, ":", e$message))
+        return(NULL)
+      })
+    })
+    
+    # Remove any NULL results from errors
+    df_list <- df_list[!sapply(df_list, is.null)]
+    
+    if (length(df_list) == 0) {
+      stop("No valid datasets after processing")
+    }
+    
+    # Iteratively merge the data frames
+    merged_df <- Reduce(
+      function(x, y) merge(x, y, by = id_column, all = TRUE),
+      df_list
+    )
+    
+    # Optionally, remove rows with any missing values
+    if (remove_any_missing) {
+      merged_df <- merged_df[complete.cases(merged_df), ]
+    }
+    return(merged_df)
+  }
+
   split_variants_and_match <- function(variant, filter_file, max_rows_selected) {
     if (!file.exists(filter_file)) {
       stop("Filter file does not exist.")
@@ -517,81 +674,15 @@ load_multitrait_R_sumstat <- function(susie_fit, sumstats_db, coverage = NULL, t
     return(matched_indices)
   }
 
-  merge_matrices <- function(matrix_list, value_column, ld_meta_file, id_column = "variants",
-                             remove_any_missing = FALSE) {
-    df_list <- lapply(seq_along(matrix_list), function(i) {
-      # Step 1: Convert matrix to data frame and extract relevant columns
-      df <- as.data.frame(matrix_list[[i]])
-      df2 <- df[, c(id_column, value_column)]
-      if (!is.null(ld_meta_file)) {
-        # Step 2: Split 'variants' to extract chromosomal info
-        cohort_variants_df <- parse_variant_id(df2[, c(id_column)])
-        # Step 3: Combine extracted chromosomal info with value column
-        cohort_df <- cbind(cohort_variants_df, bhat = df2[, value_column, drop = FALSE])
-
-        # Step 4: Merge with LD reference and filter
-        variants_ld_block_match <- merge(cohort_df, ld_meta_file, by = "chrom", allow.cartesian = TRUE) %>%
-          filter(pos > start & pos < end) %>%
-          select(-path)
-
-        # Function to process each group
-        process_group <- function(data) {
-          # Construct file path
-          bim_file_path <- unique(data$bim_path)
-          ld_bim_file <- fread(bim_file_path)
-
-          # Perform allele quality control
-          flipped_data <- allele_qc(data[, 1:4], ld_bim_file$V2, data,
-            col_to_flip = c(value_column),
-            match_min_prop = 0, remove_dups = FALSE,
-            remove_indels = FALSE, remove_strand_ambiguous = FALSE,
-            flip_strand = FALSE, remove_unmatched = TRUE, target_gwas = FALSE
-          )$target_data_qced
-          return(flipped_data)
-        }
-
-        final_df <- variants_ld_block_match %>%
-          group_by(start, end) %>%
-          group_map(~ process_group(.x)) %>%
-          bind_rows() %>%
-          mutate(variant_id = paste0("chr", variant_id)) %>%
-          select(c("variant_id", value_column)) %>%
-          rename("variants" = "variant_id")
-        # Rename columns to avoid duplication
-        colnames(final_df) <- c(id_column, paste0(value_column, "_", i))
-      } else {
-        final_df <- df2
-        colnames(final_df) <- c(id_column, paste0(value_column, "_", i))
-      }
-      return(final_df)
-    })
-    # Iteratively merge the data frames
-    merged_df <- Reduce(
-      function(x, y) merge(x, y, by = id_column, all = TRUE),
-      df_list
-    )
-
-    # Optionally, remove rows with any missing values
-    if (remove_any_missing) {
-      merged_df <- merged_df[complete.cases(merged_df), ]
-    }
-    return(merged_df)
-  }
-
   results <- lapply(sumstats_db[[1]], function(data) extract_data(data))
   trait_names <- names(results)
-
-  bhat <- merge_matrices(results, value_column = "bhat", ld_meta_file, id_column = "variants", remove_any_missing)
-  sbhat <- merge_matrices(results, value_column = "sbhat", ld_meta_file, id_column = "variants", remove_any_missing)
-  out <- list(bhat = bhat, sbhat = sbhat)
-
-  # Check if variants are the same in both bhat and sbhat
-  if (!identical(out$bhat$variants, out$sbhat$variants)) {
-    stop("Error: Variants in bhat and sbhat are not the same.")
-  }
-  var_idx <- 1:nrow(out$bhat)
+  z_scores <- merge_matrices(results, value_column = "z", ld_meta_file, id_column = "variants", remove_any_missing)
+  out <- list(z = z_scores)
+  
+  var_idx <- 1:nrow(out[[1]])
   if (!is.null(filter_file)) {
-    variants <- out$bhat$variants
+    variants <- out[[1]]$variants
+    print(paste("variants:", variants))
     var_idx <- split_variants_and_match(variants, filter_file, max_rows_selected)
   }
 
@@ -603,37 +694,35 @@ load_multitrait_R_sumstat <- function(susie_fit, sumstats_db, coverage = NULL, t
         filter(median_pip == max(median_pip)) %>%
         slice(1) %>%
         ungroup()
-      var_idx <- which(out$bhat$variants %in% strong_signal_df$variant_id)
+      var_idx <- which(out[[1]]$variants %in% strong_signal_df$variant_id)
     } else {
       var_idx <- NULL
     }
   }
 
-
   # Extract only subset of data
-  variants <- out$bhat$variants[var_idx]
-  out$bhat <- out$bhat[var_idx, , drop = FALSE]
-  out$sbhat <- out$sbhat[var_idx, , drop = FALSE]
-
-  rownames(out$bhat) <- rownames(out$sbhat) <- variants
-  colnames(out$bhat)[2:ncol(out$bhat)] <- colnames(out$sbhat)[2:ncol(out$bhat)] <- trait_names
-  out$bhat <- out$bhat[, -which(names(out$bhat) == "variants"), drop = FALSE]
-  out$sbhat <- out$sbhat[, -which(names(out$sbhat) == "variants"), drop = FALSE]
+  variants <- out[[1]]$variants[var_idx]
+  for (key in names(out)) {
+    out[[key]] <- out[[key]][var_idx, , drop = FALSE]
+    rownames(out[[key]]) <- variants
+    colnames(out[[key]])[2:ncol(out[[key]])] <- trait_names
+    out[[key]] <- out[[key]][, -which(names(out[[key]]) == "variants"), drop = FALSE]
+  }
   out$region <- names(susie_fit)
 
   if (!is.null(exclude_condition) && length(exclude_condition) != 0) {
-    if (all(exclude_condition %in% colnames(out$bhat))) {
-      out$bhat <- out$bhat[, -exclude_condition]
-      out$sbhat <- out$sbhat[, -exclude_condition]
-    } else {
-      # Handle the case where exclude_condition names do not exist in column names of dat
-      # This could be an error
-      stop(paste("Error: exclude_condition are not present in", out$region))
+    for (key in setdiff(names(out), "region")) {
+      if (all(exclude_condition %in% colnames(out[[key]]))) {
+        out[[key]] <- out[[key]][, -exclude_condition]
+      } else {
+        stop(paste("Error: exclude_condition are not present in", out$region))
+      }
     }
   }
+
   return(out)
 }
-
+                    
 #' @export
 mash_rand_null_sample <- function(dat, n_random, n_null, exclude_condition, seed = NULL) {
   # Function to extract one data set
@@ -641,23 +730,23 @@ mash_rand_null_sample <- function(dat, n_random, n_null, exclude_condition, seed
     if (is.null(dat)) {
       return(NULL)
     }
-    abs_z <- abs(dat$bhat / dat$sbhat)
+    
+    abs_z <- abs(dat$z)
     sample_idx <- 1:nrow(abs_z)
     random_idx <- sample(sample_idx, min(n_random, length(sample_idx)), replace = FALSE)
-    random <- list(bhat = dat$bhat[random_idx, , drop = FALSE], sbhat = dat$sbhat[random_idx, ,
-      drop = FALSE
-    ])
+    random <- list(z = dat$z[random_idx, , drop = FALSE])
+    
     null.id <- which(apply(abs_z, 1, max) < 2)
     if (length(null.id) == 0) {
       warning(paste("no variants are included in the null dataset because abs_z > 2 for all variants in", dat$region))
       null <- list()
     } else {
-      if (length(null.id) < ncol(dat$bhat)) {
+      if (length(null.id) < ncol(dat$z)) {
         warning(paste("not enough null data to estimate null correlation in", dat$region))
         null <- list()
       } else {
         null_idx <- sample(null.id, min(n_null, length(null.id)), replace = FALSE)
-        null <- list(bhat = dat$bhat[null_idx, , drop = FALSE], sbhat = dat$sbhat[null_idx, , drop = FALSE])
+        null <- list(z = dat$z[null_idx, , drop = FALSE])
       }
     }
     dat <- list(random = random, null = null)
@@ -667,16 +756,15 @@ mash_rand_null_sample <- function(dat, n_random, n_null, exclude_condition, seed
   if (!is.null(seed)) {
     set.seed(seed)
   }
+  
   if (length(exclude_condition) > 0) {
-    if (all(exclude_condition %in% colnames(dat$bhat))) {
-      dat$bhat <- dat$bhat[, -exclude_condition, drop = FALSE]
-      dat$sbhat <- dat$sbhat[, -exclude_condition, drop = FALSE]
+    if (all(exclude_condition %in% colnames(dat$z))) {
+      dat$z <- dat$z[, -exclude_condition, drop = FALSE]
     } else {
-      # Handle the case where exclude_condition names do not exist in column
-      # names of dat This could be an error
       stop(paste("Error: exclude_condition are not present in", dat$region))
     }
   }
+  
   result <- extract_one_data(dat, n_random, n_null)
   return(result)
 }
