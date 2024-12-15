@@ -585,25 +585,13 @@ load_multitrait_R_sumstat <- function(susie_fit, sumstats_db, coverage = NULL, t
     return(matched_indices)
   }
 
-  merge_matrices <- function(matrix_list, value_column, ld_meta_file, id_column = "variants",
-                               remove_any_missing = FALSE) {
-    # Input validation
-    if (!is.list(matrix_list) || length(matrix_list) == 0) {
-      stop("matrix_list must be a non-empty list")
-    }
-    if (!is.character(value_column) || length(value_column) != 1) {
-      stop("value_column must be a single string")
-    }
-    if (!is.character(id_column) || length(id_column) != 1) {
-      stop("id_column must be a single string")
-    }
-    
+merge_matrices <- function(matrix_list, value_column, ld_meta_file, id_column = "variants",
+                            remove_any_missing = FALSE) {
     df_list <- lapply(seq_along(matrix_list), function(i) {
-      tryCatch({
         # Step 1: Convert matrix to data frame and extract relevant columns
         df <- as.data.frame(matrix_list[[i]])
         if (!(id_column %in% colnames(df)) || !(value_column %in% colnames(df))) {
-          stop(paste("Required columns", id_column, "or", value_column, "not found in dataset", i))
+            stop(paste("Required columns", id_column, "or", value_column, "not found in dataset", i))
         }
         df2 <- df[, c(id_column, value_column)]
    
@@ -615,64 +603,58 @@ load_multitrait_R_sumstat <- function(susie_fit, sumstats_db, coverage = NULL, t
     
             # Step 4: Merge with LD reference and filter
             variants_ld_block_match <- merge(cohort_df, ld_meta_file, by = "chrom", allow.cartesian = TRUE) %>%
-              filter(pos > start & pos < end) %>%
-              select(-path)
+                filter(pos > start & pos < end) %>%
+                select(-path)
     
             # Function to process each group
             process_group <- function(data) {
-              # Construct file path
-              bim_file_path <- unique(data$bim_path)
-              ld_bim_file <- fread(bim_file_path)
+                # Construct file path
+                bim_file_path <- unique(data$bim_path)
+                ld_bim_file <- fread(bim_file_path)
     
-              # Perform allele quality control
-              flipped_data <- allele_qc(data[, 1:4], ld_bim_file$V2, data,
-                col_to_flip = c(value_column),
-                match_min_prop = 0, remove_dups = FALSE,
-                remove_indels = FALSE, remove_strand_ambiguous = FALSE,
-                flip_strand = FALSE, remove_unmatched = TRUE, target_gwas = FALSE
-              )$target_data_qced
-              return(flipped_data)
+                # Perform allele quality control
+                flipped_data <- allele_qc(data[, 1:4], ld_bim_file$V2, data,
+                    col_to_flip = c(value_column),
+                    match_min_prop = 0, remove_dups = FALSE,
+                    remove_indels = FALSE, remove_strand_ambiguous = FALSE,
+                    flip_strand = FALSE, remove_unmatched = TRUE, target_gwas = FALSE
+                )$target_data_qced
+                return(flipped_data)
             }
     
             final_df <- variants_ld_block_match %>%
-              group_by(start, end) %>%
-              group_map(~ process_group(.x)) %>%
-              bind_rows() %>%
-              mutate(variant_id = paste0("chr", variant_id)) %>%
-              select(c("variant_id", value_column)) %>%
-              rename("variants" = "variant_id")
+                group_by(start, end) %>%
+                group_map(~ process_group(.x)) %>%
+                bind_rows() %>%
+                mutate(variant_id = paste0("chr", variant_id)) %>%
+                select(c("variant_id", value_column)) %>%
+                rename("variants" = "variant_id")
             # Rename columns to avoid duplication
             colnames(final_df) <- c(id_column, paste0(value_column, "_", i))
         } else {
-          final_df <- df2
-          colnames(final_df) <- c(id_column, paste0(value_column, "_", i))
+            final_df <- df2
+            colnames(final_df) <- c(id_column, paste0(value_column, "_", i))
         }
         return(final_df)
-      }, error = function(e) {
-        message(paste("Error processing dataset", i, ":", e$message))
-        return(NULL)
-      })
     })
     
-    # Remove any NULL results from errors
-    df_list <- df_list[!sapply(df_list, is.null)]
-    
     if (length(df_list) == 0) {
-      stop("No valid datasets after processing")
+        stop("No valid datasets after processing")
     }
-    
-    # Iteratively merge the data frames
-    merged_df <- Reduce(
-      function(x, y) merge(x, y, by = id_column, all = TRUE),
-      df_list
-    )
-    
-    # Optionally, remove rows with any missing values
+
+    # Perform full join on the list of dataframes
+    merged_df <- Reduce(function(x, y) {
+        full_join(x, y, by = id_column)
+    }, df_list)
+
+    # Optional: handle missing values if specified
     if (remove_any_missing) {
-      merged_df <- merged_df[complete.cases(merged_df), ]
+        merged_df <- merged_df[complete.cases(merged_df), ]
     }
+
     return(merged_df)
-  }
+}
+
   results <- lapply(sumstats_db[[1]], function(data) extract_data(data))
   trait_names <- names(results)
   z_scores <- merge_matrices(results, value_column = "z", ld_meta_file, id_column = "variants", remove_any_missing)
@@ -721,7 +703,7 @@ load_multitrait_R_sumstat <- function(susie_fit, sumstats_db, coverage = NULL, t
 
   return(out)
 }
-                  
+
 #' @export
 mash_rand_null_sample <- function(dat, n_random, n_null, exclude_condition, seed = NULL) {
   # Function to extract one data set
