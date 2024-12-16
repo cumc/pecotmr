@@ -614,8 +614,6 @@ load_multitrait_R_sumstat <- function(susie_fit, sumstats_db, coverage = NULL, t
           stop(paste("Required columns", id_column, "or", value_column, "not found in dataset", i))
         }
         df2 <- df[, c(id_column, value_column)]
-        print("df2")
-        print(head(df2))
         if (!is.null(ld_meta_file)) {
             # Step 2: Split 'variants' to extract chromosomal info
             cohort_variants_df <- parse_variant_id(df2[, c(id_column)])
@@ -665,8 +663,6 @@ load_multitrait_R_sumstat <- function(susie_fit, sumstats_db, coverage = NULL, t
 
     # Remove any NULL results from errors
     df_list <- df_list[!sapply(df_list, is.null)]
-    print("df_list")
-    print(str(df_list))
     if (length(df_list) == 0) {
       stop("No valid datasets after processing")
     }
@@ -676,27 +672,17 @@ load_multitrait_R_sumstat <- function(susie_fit, sumstats_db, coverage = NULL, t
       function(x, y) merge(x, y, by = id_column, all = TRUE),
       df_list
     )
-    print("merged_df")
-    print(str(merged_df))
     # Optionally, remove rows with any missing values
     if (remove_any_missing) {
       merged_df <- merged_df[complete.cases(merged_df), ]
     }
-    print("merged_df")
-    print(str(merged_df))
     return(merged_df)
   }
 
   results <- lapply(sumstats_db[[1]], function(data) extract_data(data))
   trait_names <- names(results)
-  print("results:")
-  print(str(results))
   z_scores <- merge_matrices(results, value_column = "z", ld_meta_file, id_column = "variants", remove_any_missing)
-  print("z_score")
-  print(z_scores)
   out <- list(z = z_scores)
-  print("out")
-  print(head(out))
   var_idx <- 1:nrow(out[[1]])
   if (!is.null(filter_file)) {
     variants <- out[[1]]$variants
