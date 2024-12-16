@@ -163,6 +163,14 @@ load_genotype_region <- function(genotype, region = NULL, keep_indel = TRUE, kee
   }
   if (!is.null(keep_variants_path)) {
      keep_variants <- fread(keep_variants_path)
+     if (!('chrom' %in% names(keep_variants)) | !('pos' %in% names(keep_variants))) {
+        keep_variants <- do.call(rbind, lapply(strsplit(format_variant_id(keep_variants[[1]]), ":", fixed = TRUE), function(x) {
+                   data.frame(chrom = x[1], 
+                   pos = as.integer(x[2]), 
+                   ref = x[3], 
+                   alt = x[4])
+        }))
+     }
      if (any(grepl("^chr", keep_variants$chrom))) {
         keep_variants <- keep_variants %>% mutate(chrom = gsub("^chr", "", chrom))
      }
