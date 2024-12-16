@@ -7,8 +7,6 @@ filter_invalid_summary_stat <- function(dat_list, bhat = NULL, sbhat = NULL, z =
   }
   # Function to process bhat, sbhat
   if (!is.null(bhat) && !is.null(sbhat) && all(c(bhat, sbhat) %in% names(dat_list))) {
-    print("process bhat")
-    print(names(dat_list))
     # If the element is a list with 'bhat' and 'sbhat'
     if (!is.null(dat_list[[bhat]]) && !is.null(dat_list[[sbhat]])) {
       dat_list[[bhat]] <- as.matrix(replace_values(dat_list[[bhat]], 0))
@@ -26,7 +24,6 @@ filter_invalid_summary_stat <- function(dat_list, bhat = NULL, sbhat = NULL, z =
   }
   # Function to filter strong signal using z score
   if (btoz) {
-    print("process btoz")
     if (any(grepl("\\.b$", bhat)) | any(grepl("\\.s$", sbhat))) {
       condition <- sub("\\.b$", "", bhat)
       if (!is.null(dat_list[[bhat]]) && !is.null(dat_list[[sbhat]])) {
@@ -54,7 +51,6 @@ filter_invalid_summary_stat <- function(dat_list, bhat = NULL, sbhat = NULL, z =
   }
   # Function to process z-scores and filter directly
   if (!is.null(z)) {
-    print("process z")
     process_z <- function(z_data) {
       z_data <- as.matrix(replace_values(z_data, 0))
     
