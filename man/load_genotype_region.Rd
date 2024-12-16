@@ -8,7 +8,7 @@ load_genotype_region(
   genotype,
   region = NULL,
   keep_indel = TRUE,
-  keep_variants = NULL
+  keep_variants_path = NULL
 )
 }
 \arguments{
