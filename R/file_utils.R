@@ -124,7 +124,7 @@ NoSNPsError <- function(message) {
 #' @importFrom magrittr %>%
 #' @importFrom snpStats read.plink
 #' @export
-load_genotype_region <- function(genotype, region = NULL, keep_indel = TRUE, keep_variants = NULL) {
+load_genotype_region <- function(genotype, region = NULL, keep_indel = TRUE, keep_variants_path = NULL) {
   if (!is.null(region)) {
     # Get SNP IDs from bim file
     parsed_region <- parse_region(region)
@@ -161,7 +161,8 @@ load_genotype_region <- function(genotype, region = NULL, keep_indel = TRUE, kee
     geno_bed <- geno$genotypes
     geno_map <- geno$map
   }
-  if (!is.null(keep_variants)) {
+  if (!is.null(keep_variants_path)) {
+     keep_variants <- fread(keep_variants_path)
      if (any(grepl("^chr", keep_variants$chrom))) {
         keep_variants <- keep_variants %>% mutate(chrom = gsub("^chr", "", chrom))
      }
@@ -256,7 +257,7 @@ filter_by_common_samples <- function(dat, common_samples) {
 #' @importFrom purrr map map2
 #' @importFrom magrittr %>%
 #' @noRd
-prepare_data_list <- function(geno_bed, phenotype, covariate, imiss_cutoff, maf_cutoff, mac_cutoff, xvar_cutoff, phenotype_header = 4, keep_samples = NULL, keep_variants = NULL) {
+prepare_data_list <- function(geno_bed, phenotype, covariate, imiss_cutoff, maf_cutoff, mac_cutoff, xvar_cutoff, phenotype_header = 4, keep_samples = NULL) {
   data_list <- tibble(
     covar = covariate,
     Y = lapply(phenotype, function(x) apply(x[-c(1:phenotype_header), , drop = F], c(1, 2), as.numeric))
@@ -432,14 +433,14 @@ load_regional_association_data <- function(genotype, # PLINK file
                                            scale_residuals = FALSE,
                                            tabix_header = TRUE) {
   ## Load genotype
-  geno <- load_genotype_region(genotype, association_window, keep_indel, keep_variants = keep_variants)
+  geno <- load_genotype_region(genotype, association_window, keep_indel, keep_variants_path = keep_variants)
   ## Load phenotype and covariates and perform some pre-processing
   covar <- load_covariate_data(covariate)
   pheno <- load_phenotype_data(phenotype, region, extract_region_name = extract_region_name, region_name_col = region_name_col, tabix_header = tabix_header)
   ### including Y ( cov ) and specific X and covar match, filter X variants based on the overlapped samples.
   data_list <- prepare_data_list(geno, pheno, covar, imiss_cutoff,
     maf_cutoff, mac_cutoff, xvar_cutoff,
-    phenotype_header = phenotype_header, keep_samples = keep_samples, keep_variants = keep_variants
+    phenotype_header = phenotype_header, keep_samples = keep_samples
   )
   maf_list <- setNames(lapply(data_list$X, function(x) apply(x, 2, compute_maf)), colnames(data_list$X))
   ## Get residue Y for each of condition and its mean and sd
