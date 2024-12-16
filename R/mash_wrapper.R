@@ -255,7 +255,7 @@ load_multitrait_tensorqtl_sumstat <- function(
   out$sbhat <- out$sbhat[var_idx, ]
 
   if (nan_remove) {
-    out <- filter_invalid_summary_stat(out, bhat = "beta", sbhat = "se", nan_remove)
+    out <- filter_invalid_summary_stat(out, z = "z")
   }
 
   rownames(out$bhat) <- rownames(out$sbhat) <- variants
@@ -534,17 +534,22 @@ load_multitrait_R_sumstat <- function(susie_fit, sumstats_db, coverage = NULL, t
               return(NULL)
             }
             
-            return(data.frame(
+            result = data.frame(
               variants = variant_names,
-              z = z_scores
-            ))
+              z = z_scores)
+            if (!all(grepl("^chr", result$variants))) {
+                result$variants <- gsub("^", "chr", result$variants)
+            }
+            return(result)
           }
           
           # If not found at this level, search deeper
           for (name in names(element)) {
             result <- find_nested(element[[name]], current_depth + 1)
             # make variants consistent to facilitate merging
-            result$variants <- gsub("^", "chr", result$variants)
+            if (!all(grepl("^chr", result$variants))) {
+                result$variants <- gsub("^", "chr", result$variants)
+            }
             if (!is.null(result)) {
               return(result)
             }
