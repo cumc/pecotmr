@@ -255,7 +255,7 @@ load_multitrait_tensorqtl_sumstat <- function(
   out$sbhat <- out$sbhat[var_idx, ]
 
   if (nan_remove) {
-    out <- filter_invalid_summary_stat(out, z = "z")
+    out <- filter_invalid_summary_stat(out, bhat = "beta", sbhat = "se", nan_remove)
   }
 
   rownames(out$bhat) <- rownames(out$sbhat) <- variants
