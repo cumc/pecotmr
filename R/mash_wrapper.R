@@ -462,7 +462,7 @@ merge_susie_cs <- function(susie_fit, coverage = "cs_coverage_0.95", complementa
 #' @importFrom data.table as.data.table setnames
 #' @export
 load_multitrait_R_sumstat <- function(susie_fit, sumstats_db, coverage = NULL, top_loci = FALSE, filter_file = NULL, exclude_condition = NULL, ld_meta_file = NULL, remove_any_missing = TRUE, max_rows_selected = 300, nan_remove = FALSE, condition_filter = FALSE) {
-    # Internal recursive filtering function
+  # Internal recursive filtering function
   filter_nested_list <- function(input_list, valid_conditions) {
     if (is.null(valid_conditions) || length(valid_conditions) == 0) {
       return(input_list)
@@ -508,10 +508,18 @@ load_multitrait_R_sumstat <- function(susie_fit, sumstats_db, coverage = NULL, t
     susie_fit <- filter_nested_list(susie_fit, condition_filter)
     sumstats_db <- filter_nested_list(sumstats_db, condition_filter)
   }
-    
-    extract_data <- function(sumstats_db) {
-      process_element <- function(element, path = character()) {
+
+    extract_data <- function(data, max_depth = 3) {
+      find_nested <- function(element, current_depth = 0) {
+        # Check depth limit
+        if (current_depth >= max_depth) {
+          message("Maximum search depth reached. Could not find 'variant_names' and 'sumstats' at the same time.")
+          return(NULL)
+        }
+        
+        # If element is a list, search through its contents
         if (is.list(element)) {
+          # Check if all required keys exist in the current element
           if (all(c("variant_names", "sumstats") %in% names(element))) {
             variant_names <- element$variant_names
             sumstats <- element$sumstats
@@ -522,36 +530,36 @@ load_multitrait_R_sumstat <- function(susie_fit, sumstats_db, coverage = NULL, t
             } else if ("z" %in% names(sumstats)) {
               z_scores <- sumstats$z
             } else {
-              return(NULL)  # If we can't find z-scores or calculate them, return NULL
+              message("Found 'variant_names' and 'sumstats', but could not calculate z-scores.")
+              return(NULL)
             }
             
             return(data.frame(
               variants = variant_names,
               z = z_scores
             ))
-          } else {
-            results <- list()
-            for (name in names(element)) {
-              result <- process_element(element[[name]], c(path, name))
-              if (!is.null(result)) {
-                # Use the original name as the list name
-                results[[name]] <- result
-              }
+          }
+          
+          # If not found at this level, search deeper
+          for (name in names(element)) {
+            result <- find_nested(element[[name]], current_depth + 1)
+            # make variants consistent to facilitate merging
+            result$variants <- gsub("^", "chr", result$variants)
+            if (!is.null(result)) {
+              return(result)
             }
-            return(results)
           }
         }
+        
         return(NULL)
       }
       
-      results <- process_element(sumstats_db)
-      
-      if (!is.null(results) && length(results) > 0) {
-        return(results)
-      } else {
-        return(list())
-      }
+      # Call the nested search function
+      results <- find_nested(data)
+      return(results)
     }
+    
+
 
   split_variants_and_match <- function(variant, filter_file, max_rows_selected) {
     if (!file.exists(filter_file)) {
@@ -606,7 +614,8 @@ load_multitrait_R_sumstat <- function(susie_fit, sumstats_db, coverage = NULL, t
           stop(paste("Required columns", id_column, "or", value_column, "not found in dataset", i))
         }
         df2 <- df[, c(id_column, value_column)]
-
+        print("df2")
+        print(head(df2))
         if (!is.null(ld_meta_file)) {
             # Step 2: Split 'variants' to extract chromosomal info
             cohort_variants_df <- parse_variant_id(df2[, c(id_column)])
@@ -656,7 +665,8 @@ load_multitrait_R_sumstat <- function(susie_fit, sumstats_db, coverage = NULL, t
 
     # Remove any NULL results from errors
     df_list <- df_list[!sapply(df_list, is.null)]
-
+    print("df_list")
+    print(str(df_list))
     if (length(df_list) == 0) {
       stop("No valid datasets after processing")
     }
@@ -666,19 +676,27 @@ load_multitrait_R_sumstat <- function(susie_fit, sumstats_db, coverage = NULL, t
       function(x, y) merge(x, y, by = id_column, all = TRUE),
       df_list
     )
-
+    print("merged_df")
+    print(str(merged_df))
     # Optionally, remove rows with any missing values
     if (remove_any_missing) {
       merged_df <- merged_df[complete.cases(merged_df), ]
     }
+    print("merged_df")
+    print(str(merged_df))
     return(merged_df)
   }
 
   results <- lapply(sumstats_db[[1]], function(data) extract_data(data))
   trait_names <- names(results)
+  print("results:")
+  print(str(results))
   z_scores <- merge_matrices(results, value_column = "z", ld_meta_file, id_column = "variants", remove_any_missing)
+  print("z_score")
+  print(z_scores)
   out <- list(z = z_scores)
-  
+  print("out")
+  print(head(out))
   var_idx <- 1:nrow(out[[1]])
   if (!is.null(filter_file)) {
     variants <- out[[1]]$variants
