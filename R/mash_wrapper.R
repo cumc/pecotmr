@@ -1,42 +1,91 @@
 #' @export
-filter_invalid_summary_stat <- function(dat_list, z = TRUE, sig_p_cutoff = 1E-6, filter_by_missing_rate = 0.2) {
+filter_invalid_summary_stat <- function(dat_list, bhat = NULL, sbhat = NULL, z = NULL, btoz = FALSE, sig_p_cutoff = 1E-6, filter_by_missing_rate = 0.2) {
   replace_values <- function(df, replace_with) {
     df <- df %>%
       mutate(across(everything(), as.numeric)) %>%
       mutate(across(everything(), ~ replace(., is.nan(.) | is.infinite(.) | is.na(.), replace_with)))
   }
-
-  # Function to process z-scores
-  process_z <- function(z_data) {
-    z_data <- as.matrix(replace_values(z_data, 0))
-    
-    if (!is.null(filter_by_missing_rate)) {
-      proportion_nonzero <- apply(z_data, 1, function(row) mean(row != 0))
-      z_data <- z_data[proportion_nonzero >= filter_by_missing_rate, , drop = FALSE]
+  # Function to process bhat, sbhat
+  if (all(c(bhat, sbhat) %in% names(dat_list))) {
+    print("process bhat")
+    print(names(dat_list))
+    # If the element is a list with 'bhat' and 'sbhat'
+    if (!is.null(dat_list[[bhat]]) && !is.null(dat_list[[sbhat]])) {
+      dat_list[[bhat]] <- as.matrix(replace_values(dat_list[[bhat]], 0))
+      dat_list[[sbhat]] <- as.matrix(replace_values(dat_list[[sbhat]], 1000))
+      if (("null.b" %in% names(dat_list)) || ("random.b" %in% names(dat_list))) {
+        if (!is.null(filter_by_missing_rate)) {
+          proportion_nonzero <- apply(dat_list[[bhat]], 1, function(row) {
+            mean(row != 0)
+          })
+          dat_list[[bhat]] <- dat_list[[bhat]][proportion_nonzero >= filter_by_missing_rate, ]
+          dat_list[[sbhat]] <- dat_list[[sbhat]][proportion_nonzero >= filter_by_missing_rate, ]
+        }
+      }
     }
+  }
+  # Function to filter strong signal using z score
+  if (btoz) {
+    print("process btoz")
+    if (any(grepl("\\.b$", bhat)) | any(grepl("\\.s$", sbhat))) {
+      condition <- sub("\\.b$", "", bhat)
+      if (!is.null(dat_list[[bhat]]) && !is.null(dat_list[[sbhat]])) {
+        dat_list[[paste0(condition, ".z")]] <- as.matrix(dat_list[[bhat]] / dat_list[[sbhat]])
+      } else {
+        dat_list[paste0(condition, ".z")] <- list(NULL)
+      }
+    } else {
+      if (!is.null(dat_list[[bhat]]) && !is.null(dat_list[[sbhat]])) {
+        dat_list[["z"]] <- as.matrix(dat_list[[bhat]] / dat_list[[sbhat]])
+      } else {
+        dat_list["z"] <- list(NULL)
+      }
+    }
+    if ("strong.z" %in% names(dat_list)) {
+      if (!is.null(sig_p_cutoff)) {
+        chi_square_stat <- qchisq(sig_p_cutoff, df = 1, lower.tail = FALSE)
+        z_score <- sqrt(chi_square_stat)
+        keep_index <- which(apply(dat_list$strong.z, 1, function(row) any(abs(row) >= z_score)))
+        dat_list[["strong.z"]] <- dat_list$strong.z[keep_index, ]
+        dat_list[["strong.b"]] <- dat_list$strong.b[keep_index, ]
+        dat_list[["strong.s"]] <- dat_list$strong.s[keep_index, ]
+      }
+    }
+  }
+  # Function to process z-scores and filter directly
+  if (z) {
+    print("process z")
+    process_z <- function(z_data) {
+      z_data <- as.matrix(replace_values(z_data, 0))
     
-    return(z_data)
-  }
+      if (!is.null(filter_by_missing_rate)) {
+        proportion_nonzero <- apply(z_data, 1, function(row) mean(row != 0))
+        z_data <- z_data[proportion_nonzero >= filter_by_missing_rate, , drop = FALSE]
+      }
+    
+      return(z_data)
+    }
 
-  # Process each component if it exists
-  if (!is.null(dat_list$strong) && !is.null(dat_list$strong$z)) {
-    dat_list$strong$z <- process_z(dat_list$strong$z)
-  }
+    # Process each component if it exists
+    if (!is.null(dat_list$strong) && !is.null(dat_list$strong$z)) {
+      dat_list$strong$z <- process_z(dat_list$strong$z)
+    }
   
-  if (!is.null(dat_list$random) && !is.null(dat_list$random$z)) {
-    dat_list$random$z <- process_z(dat_list$random$z)
-  }
+    if (!is.null(dat_list$random) && !is.null(dat_list$random$z)) {
+      dat_list$random$z <- process_z(dat_list$random$z)
+    }
   
-  if (!is.null(dat_list$null) && !is.null(dat_list$null$z)) {
-    dat_list$null$z <- process_z(dat_list$null$z)
-  }
+    if (!is.null(dat_list$null) && !is.null(dat_list$null$z)) {
+      dat_list$null$z <- process_z(dat_list$null$z)
+    }
 
-  # Apply significance cutoff to strong signals if applicable
-  if (!is.null(dat_list$strong) && !is.null(dat_list$strong$z) && !is.null(sig_p_cutoff)) {
-    chi_square_stat <- qchisq(sig_p_cutoff, df = 1, lower.tail = FALSE)
-    z_score <- sqrt(chi_square_stat)
-    keep_index <- which(apply(dat_list$strong$z, 1, function(row) any(abs(row) >= z_score)))
-    dat_list$strong$z <- dat_list$strong$z[keep_index, , drop = FALSE]
+    # Apply significance cutoff to strong signals if applicable
+    if (!is.null(dat_list$strong) && !is.null(dat_list$strong$z) && !is.null(sig_p_cutoff)) {
+      chi_square_stat <- qchisq(sig_p_cutoff, df = 1, lower.tail = FALSE)
+      z_score <- sqrt(chi_square_stat)
+      keep_index <- which(apply(dat_list$strong$z, 1, function(row) any(abs(row) >= z_score)))
+      dat_list$strong$z <- dat_list$strong$z[keep_index, , drop = FALSE]
+    }
   }
 
   return(dat_list)
