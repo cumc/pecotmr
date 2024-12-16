@@ -69,7 +69,7 @@ multigene_udr <- function(combined_susie_list, coverage, independent_variant_lis
       mash_input,
       bhat = paste0(cond, ".b"),
       sbhat = paste0(cond, ".s"),
-      z = TRUE,
+      btoz = TRUE,
       filter_by_missing_rate = NULL,
       sig_p_cutoff = NULL
     )

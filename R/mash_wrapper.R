@@ -6,7 +6,7 @@ filter_invalid_summary_stat <- function(dat_list, bhat = NULL, sbhat = NULL, z =
       mutate(across(everything(), ~ replace(., is.nan(.) | is.infinite(.) | is.na(.), replace_with)))
   }
   # Function to process bhat, sbhat
-  if (all(c(bhat, sbhat) %in% names(dat_list))) {
+  if (!is.null(bhat) && !is.null(sbhat) && all(c(bhat, sbhat) %in% names(dat_list))) {
     print("process bhat")
     print(names(dat_list))
     # If the element is a list with 'bhat' and 'sbhat'
@@ -53,7 +53,7 @@ filter_invalid_summary_stat <- function(dat_list, bhat = NULL, sbhat = NULL, z =
     }
   }
   # Function to process z-scores and filter directly
-  if (z) {
+  if (!is.null(z)) {
     print("process z")
     process_z <- function(z_data) {
       z_data <- as.matrix(replace_values(z_data, 0))
