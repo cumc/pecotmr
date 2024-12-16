@@ -682,7 +682,6 @@ load_multitrait_R_sumstat <- function(susie_fit, sumstats_db, coverage = NULL, t
   var_idx <- 1:nrow(out[[1]])
   if (!is.null(filter_file)) {
     variants <- out[[1]]$variants
-    print(paste("variants:", variants))
     var_idx <- split_variants_and_match(variants, filter_file, max_rows_selected)
   }
 
@@ -758,6 +757,8 @@ mash_rand_null_sample <- function(dat, n_random, n_null, exclude_condition, seed
     if (all(exclude_condition %in% colnames(dat$z))) {
       dat$z <- dat$z[, -exclude_condition, drop = FALSE]
     } else {
+      # Handle the case where exclude_condition names do not exist in column
+      # names of dat This could be an error
       stop(paste("Error: exclude_condition are not present in", dat$region))
     }
   }
