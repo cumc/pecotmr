@@ -783,21 +783,41 @@ mash_rand_null_sample <- function(dat, n_random, n_null, exclude_condition, seed
     if (is.null(dat)) {
       return(NULL)
     }
-    abs_z <- abs(dat$z)
+    
+    if ("z" %in% names(dat)) {
+      abs_z <- abs(dat$z)
+      z_data <- dat$z
+    } else {
+      abs_z <- abs(dat$bhat / dat$sbhat)
+      z_data <- NULL
+    }
+    
     sample_idx <- 1:nrow(abs_z)
     random_idx <- sample(sample_idx, min(n_random, length(sample_idx)), replace = FALSE)
-    random <- list(z = dat$z[random_idx, , drop = FALSE])
+    
+    if (!is.null(z_data)) {
+      random <- list(z = z_data[random_idx, , drop = FALSE])
+    } else {
+      random <- list(bhat = dat$bhat[random_idx, , drop = FALSE],
+                     sbhat = dat$sbhat[random_idx, , drop = FALSE])
+    }
+    
     null.id <- which(apply(abs_z, 1, max) < 2)
     if (length(null.id) == 0) {
       warning(paste("no variants are included in the null dataset because abs_z > 2 for all variants in", dat$region))
       null <- list()
     } else {
-      if (length(null.id) < ncol(dat$z)) {
+      if (length(null.id) < ncol(abs_z)) {
         warning(paste("not enough null data to estimate null correlation in", dat$region))
         null <- list()
       } else {
         null_idx <- sample(null.id, min(n_null, length(null.id)), replace = FALSE)
-        null <- list(z = dat$z[null_idx, , drop = FALSE])
+        if (!is.null(z_data)) {
+          null <- list(z = z_data[null_idx, , drop = FALSE])
+        } else {
+          null <- list(bhat = dat$bhat[null_idx, , drop = FALSE],
+                       sbhat = dat$sbhat[null_idx, , drop = FALSE])
+        }
       }
     }
     dat <- list(random = random, null = null)
@@ -807,15 +827,24 @@ mash_rand_null_sample <- function(dat, n_random, n_null, exclude_condition, seed
   if (!is.null(seed)) {
     set.seed(seed)
   }
+  
   if (length(exclude_condition) > 0) {
-    if (all(exclude_condition %in% colnames(dat$z))) {
-      dat$z <- dat$z[, -exclude_condition, drop = FALSE]
+    if ("z" %in% names(dat)) {
+      if (all(exclude_condition %in% colnames(dat$z))) {
+        dat$z <- dat$z[, -exclude_condition, drop = FALSE]
+      } else {
+        stop(paste("Error: exclude_condition are not present in", dat$region))
+      }
     } else {
-      # Handle the case where exclude_condition names do not exist in column
-      # names of dat This could be an error
-      stop(paste("Error: exclude_condition are not present in", dat$region))
+      if (all(exclude_condition %in% colnames(dat$bhat))) {
+        dat$bhat <- dat$bhat[, -exclude_condition, drop = FALSE]
+        dat$sbhat <- dat$sbhat[, -exclude_condition, drop = FALSE]
+      } else {
+        stop(paste("Error: exclude_condition are not present in", dat$region))
+      }
     }
   }
+  
   result <- extract_one_data(dat, n_random, n_null)
   return(result)
 }
