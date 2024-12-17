@@ -99,6 +99,9 @@ mock_weights_db <- function(seed = 1, region = "chr1:100-200", condition = "mono
       model_two_weights = runif(length(variant_names)),
       model_three_weights = runif(length(variant_names)),
       variant_names = variant_names
+    ),
+    twas_cv_result = list(
+      performance=data.frame(corr=0.5, rsq=0.2, adj_rsq=0.2, pval=8e-20, RMSE=0.4, MAE=0.3)
     )
   )
   weights_db <- list(random_gene = list(condition = weights_db_data))
@@ -138,7 +141,7 @@ setup_weight_db_vector <- function(seed = 1, n_rds = 2, n_cond = 4, condition = 
     cond <- if (same_condition) condition else gsub(", ", "", toString(sample(LETTERS, 3)))
     mock_weights_db(seed = i, condition = cond, same_gene = same_gene, var_row_lengths = var_row_lengths)
   })
-
+  
   weight_db_paths <- lapply(1:n_rds, function(i) {
     weight_db_path <- gsub("//", "/", tempfile(pattern = paste0("weights_db_", i), tmpdir = tempdir(), fileext = ".RDS"))
     saveRDS(weight_db_vector[[i]], weight_db_path)
@@ -157,7 +160,8 @@ test_that("load_twas_weights raises error if different regions specified", {
   weight_db <- setup_weight_db_vector(n_rds = 2, n_cond = 4, same_gene = FALSE)
   expect_true(
     inherits(
-      load_twas_weights(weight_db$weight_paths, conditions = NULL, variable_name_obj = c("preset_variants_result", "variant_names")),
+      load_twas_weights(weight_db$weight_paths, conditions = NULL, variable_name_obj = c("preset_variants_result", "variant_names"),
+                       susie_obj = c("preset_variants_result", "susie_result_trimmed"),twas_weights_table = "twas_weights"),
       "try-error"))
   cleanup_weight_db_vector(weight_db$weight_paths)
 })
@@ -167,7 +171,8 @@ test_that("load_twas_weights raises error if different number of conditions per 
   weight_db <- setup_weight_db_vector(n_rds = 2, n_cond = 4)
   expect_true(
     inherits(
-      load_twas_weights(weight_db$weight_paths, conditions = "not_found", variable_name_obj = c("preset_variants_result", "variant_names")),
+      load_twas_weights(weight_db$weight_paths, conditions = "not_found", variable_name_obj = c("preset_variants_result", "variant_names"),
+                       susie_obj = c("preset_variants_result", "susie_result_trimmed"),twas_weights_table = "twas_weights"),
       "try-error"))
   cleanup_weight_db_vector(weight_db$weight_paths)
 })
@@ -175,7 +180,8 @@ test_that("load_twas_weights raises error if different number of conditions per 
 # Test null conditions
 test_that("load_twas_weights works with null condition", {
   weight_db <- setup_weight_db_vector(n_rds = 2, n_cond = 4)
-  res <- load_twas_weights(weight_db$weight_paths, conditions = NULL, variable_name_obj = c("preset_variants_result", "variant_names"))
+  res <- load_twas_weights(weight_db$weight_paths, conditions = NULL, variable_name_obj = c("preset_variants_result", "variant_names"),
+                          susie_obj =c("preset_variants_result", "susie_result_trimmed"),twas_weights_table = "twas_weights")
   expect_true(all(c("susie_results", "weights") %in% names(res)))
   cleanup_weight_db_vector(weight_db$weight_paths)
 })
@@ -183,25 +189,29 @@ test_that("load_twas_weights works with null condition", {
 # Specify conditions
 test_that("load_twas_weights works with specified condition", {
   weight_db <- setup_weight_db_vector(n_rds = 2, n_cond = 4, same_condition = TRUE, condition = "cond_1_joe_eQTL")
-  res <- load_twas_weights(weight_db$weight_paths, conditions = "cond_1_joe_eQTL", variable_name_obj = c("preset_variants_result", "variant_names"))
+  res <- load_twas_weights(weight_db$weight_paths, conditions = "cond_1_joe_eQTL", variable_name_obj = c("preset_variants_result", "variant_names"),
+                          susie_obj =c("preset_variants_result", "susie_result_trimmed"),twas_weights_table = "twas_weights")
   expect_true(all(c("susie_results", "weights") %in% names(res)))
   cleanup_weight_db_vector(weight_db$weight_paths)
 })
 
-# Test null variable_name_obj
-test_that("load_twas_weights works with null variable_name_obj", {
-  weight_db <- setup_weight_db_vector(n_rds = 2, n_cond = 4)
-  res <- load_twas_weights(weight_db$weight_paths, conditions = NULL, variable_name_obj = NULL)
-  expect_true(all(c("susie_results", "weights") %in% names(res)))
-  cleanup_weight_db_vector(weight_db$weight_paths)
-})
+# # Test null variable_name_obj
+# variable_name_obj cannot be NULL
+# test_that("load_twas_weights works with null variable_name_obj", {
+#   weight_db <- setup_weight_db_vector(n_rds = 2, n_cond = 4)
+#   res <- load_twas_weights(weight_db$weight_paths, conditions = NULL, variable_name_obj = NULL)
+#   expect_true(all(c("susie_results", "weights") %in% names(res)))
+#   cleanup_weight_db_vector(weight_db$weight_paths)
+# })
 
 # Test different number of rows per condition
+# different number of variants from different context will not affect the loading
 test_that("load_twas_weights raises error with null variable_name_obj and variable row lengths", {
   weight_db <- setup_weight_db_vector(n_rds = 2, n_cond = 4, var_row_lengths = TRUE)
-  expect_true(
+  expect_false( # it should not return error 
     inherits(
-      load_twas_weights(weight_db$weight_paths, conditions = NULL, variable_name_obj = NULL),
+      load_twas_weights(weight_db$weight_paths, conditions = NULL, variable_name_obj = c("preset_variants_result", "variant_names"),
+                       susie_obj = c("preset_variants_result", "susie_result_trimmed"),twas_weights_table = "twas_weights"),
       "try-error"))
   cleanup_weight_db_vector(weight_db$weight_paths)
-})
+}) 
