@@ -103,8 +103,10 @@ test_that("twas_weights_cv is reproducible with seed", {
         glmnet_weights = function(X, y, ...) runif(ncol(X))
     )
     weight_methods_test <- list(susie_weights = c("init_prior_sd"), glmnet_weights = c("init_prior_sd"))
-    result_seed1 <- twas_weights_cv(X, y, fold = 2, weight_methods = weight_methods_test, seed = 123)
-    result_seed2 <- twas_weights_cv(X, y, fold = 2, weight_methods = weight_methods_test, seed = 123)
+    set.seed(1)
+    result_seed1 <- twas_weights_cv(X, y, fold = 2, weight_methods = weight_methods_test)
+    set.seed(1)
+    result_seed2 <- twas_weights_cv(X, y, fold = 2, weight_methods = weight_methods_test)
     expect_equal(result_seed1$sample_partition, result_seed2$sample_partition)
 })
 
@@ -134,8 +136,10 @@ test_that("twas_weights_cv handles parallel processing", {
     y = sim$Y
     weight_methods_test <- list(
         glmnet_weights = list(alpha = 0.5))
-    result_parallel <- twas_weights_cv(X, y, fold = 2, weight_methods = weight_methods_test, num_threads = 2, seed = 1)
-    result_single <- twas_weights_cv(X, y, fold = 2, weight_methods = weight_methods_test, num_threads = 1, seed = 1)
+    set.seed(1)
+    result_parallel <- twas_weights_cv(X, y, fold = 2, weight_methods = weight_methods_test, num_threads = 2)
+    set.seed(1)
+    result_single <- twas_weights_cv(X, y, fold = 2, weight_methods = weight_methods_test, num_threads = 1)
     expect_is(result_parallel, "list")
     expect_is(result_single, "list")
     expect_equal(result_parallel$sample_partition, result_single$sample_partition)
@@ -176,8 +180,10 @@ test_that("twas_weights handles parallel processing", {
     y = sim$Y
     weight_methods_test <- list(
         glmnet_weights = list(alpha = 0.5))
-    result_parallel <- twas_weights(X, y, weight_methods = weight_methods_test, num_threads = 2, seed = 1)
-    result_single <- twas_weights(X, y, weight_methods = weight_methods_test, num_threads = 1, seed = 1)
+    set.seed(1)
+    result_parallel <- twas_weights(X, y, weight_methods = weight_methods_test, num_threads = 2)
+    set.seed(1)
+    result_single <- twas_weights(X, y, weight_methods = weight_methods_test, num_threads = 1)
     expect_equal(result_parallel, result_single)
     RNGkind("default")
 })
