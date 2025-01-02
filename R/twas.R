@@ -456,7 +456,7 @@ twas_pipeline <- function(twas_weights_data,
             mr_rs_df <- as.data.frame(matrix(rep(NA, length(mr_cols)), nrow = 1))
             colnames(mr_rs_df) <- mr_cols
           } else {
-            mr_rs_df <- as.data.frame(mr_analysis(mr_formatted_input, cpip_cutoff = 0.5))
+            mr_rs_df <- as.data.frame(mr_analysis(mr_formatted_input, cpip_cutoff = 0.1))
           }
         } else {
           mr_rs_df <- as.data.frame(matrix(rep(NA, length(mr_cols)), nrow = 1))
@@ -464,6 +464,7 @@ twas_pipeline <- function(twas_weights_data,
         }
         mr_rs_df$context <- context
         mr_rs_df$gwas_study <- study
+        mr_rs_df$gene_name <- weight_db
         return(list(twas_rs_df = twas_rs_df, mr_rs_df = mr_rs_df))
       })
       twas_context_table <- do.call(rbind, lapply(study_results, function(x) x$twas_rs_df))
