@@ -393,7 +393,7 @@ twas_pipeline <- function(twas_weights_data,
     twas_data_qced_result <- harmonize_twas(twas_weights_data[[weight_db]], ld_meta_file_path, gwas_meta_file)
     twas_data_qced <- twas_data_qced_result$twas_data_qced
     if (is.null(twas_data_qced)) {
-      warning("No imputable context found. Returning NULL for all TWAS output")
+      warning(paste0("No data harmonized for ", weight_db, ". Returning NULL for TWAS result for this region."))
       return(NULL)
     }
     molecular_id <- names(twas_data_qced)
@@ -485,7 +485,7 @@ twas_pipeline <- function(twas_weights_data,
   snp_info <- do.call(c, lapply(twas_results_db, function(x) x$snp_info))
 
   # Step 2: Summarize and merge twas cv results and region information for all methods for all contexts for imputable genes.
-  twas_table <- do.call(rbind, lapply(names(twas_weights_data), function(molecular_id) {
+  twas_table <- do.call(rbind, lapply(names(twas_data), function(molecular_id) {
     contexts <- names(twas_weights_data[[molecular_id]]$weights)
     # merge twas_cv information for same gene across all weight db files, loop through each context for all methods
     gene_table <- do.call(rbind, lapply(contexts, function(context) {
