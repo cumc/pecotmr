@@ -2,6 +2,6 @@ FROM ghcr.io/prefix-dev/pixi:latest
 
 SHELL ["/bin/bash", "-c"]
 RUN apt-get update
-RUN apt-get install -y libgl1-mesa-glx ca-certificates
+RUN apt-get install -y libgl1 ca-certificates
 RUN pixi global install rattler-build git patch
 ENV PATH=/root/.pixi/bin:${PATH}
