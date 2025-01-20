@@ -50,6 +50,7 @@ requirements:
     - r-pgenlibr
     - r-r.utils
     - r-qgg
+    - r-quadprog
     - r-quantreg
     - r-purrr
     - r-r6
@@ -91,6 +92,7 @@ requirements:
     - r-pgenlibr
     - r-purrr
     - r-qgg
+    - r-quadprog
     - r-quantreg
     - r-r.utils
     - r-r6
