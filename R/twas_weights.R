@@ -74,15 +74,23 @@ twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_
   if (nrow(X) != nrow(Y)) {
     stop("The number of rows in X and Y must be the same.")
   }
-
-  # Check if X has row names and Y does not
-  if (!is.null(rownames(X)) && is.null(rownames(Y))) {
-    rownames(Y) <- rownames(X)
+  if (!is.null(rownames(X)) && !is.null(rownames(Y))) {
+    if (!identical(rownames(X), rownames(Y))) {
+      rownames(X) <- rownames(Y)
+    }
+    sample_names <- rownames(Y)
+  } else if (!is.null(rownames(Y))) {
+    sample_names <- rownames(Y)
+  } else if (!is.null(rownames(X))) {
+    sample_names <- rownames(X)
+  } else {
+    sample_names <- paste0("sample_", 1:nrow(X))
   }
-
-  # Check if Y has row names and X does not
-  if (!is.null(rownames(Y)) && is.null(rownames(X))) {
-    rownames(X) <- rownames(Y)
+  if (is.null(rownames(X))) {
+    rownames(X) <- sample_names
+  }
+  if (is.null(rownames(Y))) {
+    rownames(Y) <- sample_names
   }
 
   if (is.character(weight_methods)) {
@@ -91,15 +99,6 @@ twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_
 
   if (!exists(".Random.seed")) {
     message("! No seed has been set. Please set seed for reproducable result. ")
-  }
-
-  # Get sample names
-  if (!is.null(rownames(X))) {
-    sample_names <- rownames(X)
-  } else if (!is.null(rownames(Y))) {
-    sample_names <- rownames(Y)
-  } else {
-    sample_names <- 1:nrow(X)
   }
 
   # Select variants if necessary
