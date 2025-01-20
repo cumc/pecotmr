@@ -93,6 +93,13 @@ twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_
     rownames(Y) <- sample_names
   }
 
+  if (is.null(colnames(X))) {
+    colnames(X) <- paste0("variable_", 1:ncol(X))
+  }
+  if (is.null(colnames(Y))) {
+    colnames(Y) <- paste0("context_", 1:ncol(Y))
+  }
+
   if (is.character(weight_methods)) {
     weight_methods <- lapply(setNames(nm = weight_methods), function(x) list())
   }
