@@ -173,14 +173,14 @@ multicontext_ld_clumping <- function(X, qr_results, maf_list = NULL, ld_clump_r2
 
   # If no significant SNPs, return empty result
   if (length(sig_SNPs_names) == 0) {
-    return(list(final_SNPs = NULL, message = "No significant SNPs found"))
+    return(list(final_SNPs = NULL, clumped_SNPs = NULL, message = "No significant SNPs found"))
   }
 
   # Check if X only contains one SNP (one column)
   if (ncol(X) == 1) {
     print("Only one SNP in X. Skipping LD clumping.")
     final_SNPs <- colnames(X)
-    return(list(final_SNPs = final_SNPs, message = "Only one SNP, no LD clumping performed"))
+    return(list(final_SNPs = final_SNPs, clumped_SNPs = final_SNPs, message = "Only one SNP, no LD clumping performed"))
   }
 
   # Extract genotype matrix for significant SNPs
@@ -226,12 +226,13 @@ multicontext_ld_clumping <- function(X, qr_results, maf_list = NULL, ld_clump_r2
 
   # Step 2: Take the union of clumping results across all quantiles
   clumped_snp_union <- unique(unlist(clumped_snp_list)) # This is the SNP index, not the name
+  clumped_SNPs_name <- sig_SNPs_names[clumped_snp_union]
   print(paste("Number of SNPs after union of clumping:", length(clumped_snp_union)))
 
   if (length(clumped_snp_union) == 1) {
     message("Only one SNP found in the union. Skipping LD pruning and returning the single SNP directly.")
     final_SNPs <- sig_SNPs_names[clumped_snp_union]
-    return(list(final_SNPs = final_SNPs, clumped_SNPs = clumped_snp_union))
+    return(list(final_SNPs = final_SNPs, clumped_SNPs = clumped_SNPs_name))
   }
 
 
@@ -270,7 +271,7 @@ multicontext_ld_clumping <- function(X, qr_results, maf_list = NULL, ld_clump_r2
   final_SNPs <- sig_SNPs_names[clumped_snp_union][sorted_indices][final_clumped]
   print(paste("Number of final SNPs after MAF-based clumping (if applied):", length(final_SNPs)))
 
-  return(list(final_SNPs = final_SNPs, clumped_SNPs = clumped_snp_union))
+  return(list(final_SNPs = final_SNPs, clumped_SNPs = clumped_SNPs_name))
 }
 
 #' Perform Quantile Regression Analysis to get beta
@@ -697,17 +698,40 @@ calculate_coef_heterogeneity <- function(rq_coef_result) {
 #'
 #' @export
 quantile_twas_weight_pipeline <- function(X, Y, Z = NULL, maf = NULL, region_id = "",
-                                          ld_reference_meta_file = NULL, twas_maf_cutoff = 0.01,
+                                          ld_reference_meta_file = NULL, twas_maf_cutoff = 0.01, ld_pruning = FALSE,
                                           quantile_qtl_tau_list = seq(0.05, 0.95, by = 0.05),
                                           quantile_twas_tau_list = seq(0.01, 0.99, by = 0.01)) {
-  # Step 1: QR screen
+  # Step 1-1: Calculate vQTL rank scores
+  message("Step 0: Calculating vQTL rank scores for region ", region_id)
+  num_tau_levels <- length(quantile_qtl_tau_list) # Convert tau.list to numeric count
+  rank_score <- QUAIL_rank_score_pipeline(
+    phenotype = Y,
+    covariates = Z,
+    num_tau_levels = num_tau_levels,
+    method = "equal",
+    num_cores = 1
+  )
+  message("vQTL rank scores calculated.")
+
+  # Step 1-1: Run vQTL pipeline
+  message("Step 0.5: Running vQTL analysis for rank scores in region ", region_id)
+  vqtl_results <- QUAIL_pipeline(
+    genotype = X,
+    rank_score = rank_score,
+    covariates = Z
+  )
+  message("vQTL analysis completed. Proceeding to QR screen.")
+
+  # Step 1-2: QR screen
   message("Starting QR screen for region ", region_id)
   p.screen <- qr_screen(X = X, Y = Y, Z = Z, tau.list = quantile_qtl_tau_list, screen_threshold = 0.05, screen_method = "qvalue", top_count = 10, top_percent = 15)
   message(paste0("Number of SNPs after QR screening: ", length(p.screen$sig_SNP_threshold)))
   message("QR screen completed. Screening significant SNPs")
   # Initialize results list
-  results <- list(qr_screen_pvalue_df = p.screen$df_result)
-
+  results <- list(
+    qr_screen_pvalue_df = p.screen$df_result,
+    vqtl_results = vqtl_results # Include vQTL results
+  )
   if (length(p.screen$sig_SNP_threshold) == 0) {
     results$message <- paste0("No significant SNPs detected in region ", region_id)
     return(results)
@@ -718,7 +742,9 @@ quantile_twas_weight_pipeline <- function(X, Y, Z = NULL, maf = NULL, region_id 
   # Step 2: LD clumping and pruning from results of QR_screen (using original QR screen results)
   message("Performing LD clumping and pruning from QR screen results...")
   LD_SNPs <- multicontext_ld_clumping(X = X[, p.screen$sig_SNP_threshold, drop = FALSE], qr_results = p.screen, maf_list = NULL)
-  x_clumped <- X[, p.screen$sig_SNP_threshold, drop = FALSE][, LD_SNPs$final_SNPs, drop = FALSE]
+  selected_snps <- if(ld_pruning) LD_SNPs$final_SNPs else LD_SNPs$clumped_SNPs
+  x_clumped <- X[, p.screen$sig_SNP_threshold, drop = FALSE][, selected_snps, drop = FALSE]
+  #x_clumped <- X[, p.screen$sig_SNP_threshold, drop = FALSE][, LD_SNPs$final_SNPs, drop = FALSE]
 
   # Step 3: Only fit marginal QR to get beta with SNPs after LD pruning for quantile_qtl_tau_list values
   message("LD clumping and pruning completed. Fitting marginal QR for selected SNPs...")
