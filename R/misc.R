@@ -287,6 +287,17 @@ parse_variant_id <- function(region) {
   return(variants_df)
 }
 
+#' @export
+parse_snp_info <- function(snp) {
+  parts <- strsplit(snp, ":")[[1]]
+  list(
+    chr = as.numeric(gsub("chr", "", parts[1])),
+    pos = as.numeric(parts[2]),
+    ref = parts[3],
+    alt = parts[4]
+  )
+}
+
 # Retrieve a nested element from a list structure
 #' @export
 get_nested_element <- function(nested_list, name_vector) {
