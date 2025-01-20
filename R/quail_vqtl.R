@@ -127,25 +127,6 @@ run_linear_regression <- function(genotype, phenotype, covariates = NULL) {
   )
 }
 
-
-
-#' Main QUAIL pipeline
-#' QUAIL vQTL Analysis Pipeline
-#' @param genotype numeric matrix (n x p) of genotypes 
-#' @param rank_score numeric vector (n x 1) of rank scores from Step 1
-#' @param phenotype numeric vector (n x 1) of original phenotype values
-#' @param covariates numeric matrix of covariates (optional)
-#' @param dispersion logical whether to perform dispersion analysis
-#' @return list containing vQTL results and optional dispersion results
-#' @export
-#' @examples
-#' \dontrun{
-#' results <- QUAIL_pipeline(genotype, rank_score, phenotype, 
-#'                          covariates = covariates,
-#'                          dispersion = TRUE)
-#' }
-
-
 #' Main QUAIL pipeline
 #' QUAIL vQTL Analysis Pipeline
 #' 
