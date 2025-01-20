@@ -156,28 +156,30 @@ load_genotype_region <- function(genotype, region = NULL, keep_indel = TRUE, kee
   if (!keep_indel) {
     is_indel <- with(geno$map, grepl("[^ATCG]", allele.1) | grepl("[^ATCG]", allele.2) | nchar(allele.1) > 1 | nchar(allele.2) > 1)
     geno_bed <- geno$genotypes[, !is_indel]
-    geno_map <- geno$map[!is_indel,]
+    geno_map <- geno$map[!is_indel, ]
   } else {
     geno_bed <- geno$genotypes
     geno_map <- geno$map
   }
   if (!is.null(keep_variants_path)) {
-     keep_variants <- fread(keep_variants_path)
-     if (!('chrom' %in% names(keep_variants)) | !('pos' %in% names(keep_variants))) {
-        keep_variants <- do.call(rbind, lapply(strsplit(format_variant_id(keep_variants[[1]]), ":", fixed = TRUE), function(x) {
-                   data.frame(chrom = x[1], 
-                   pos = as.integer(x[2]), 
-                   ref = x[3], 
-                   alt = x[4])
-        }))
-     }
-     if (any(grepl("^chr", keep_variants$chrom))) {
-        keep_variants <- keep_variants %>% mutate(chrom = gsub("^chr", "", chrom))
-     }
-     keep_variants_index <- paste0(geno_map$chromosome, geno_map$position, sep = ":") %in% paste0(keep_variants$chrom, keep_variants$pos, sep = ":")
-     geno_bed <- geno_bed[,keep_variants_index]
+    keep_variants <- fread(keep_variants_path)
+    if (!("chrom" %in% names(keep_variants)) | !("pos" %in% names(keep_variants))) {
+      keep_variants <- do.call(rbind, lapply(strsplit(format_variant_id(keep_variants[[1]]), ":", fixed = TRUE), function(x) {
+        data.frame(
+          chrom = x[1],
+          pos = as.integer(x[2]),
+          ref = x[3],
+          alt = x[4]
+        )
+      }))
+    }
+    if (any(grepl("^chr", keep_variants$chrom))) {
+      keep_variants <- keep_variants %>% mutate(chrom = gsub("^chr", "", chrom))
+    }
+    keep_variants_index <- paste0(geno_map$chromosome, geno_map$position, sep = ":") %in% paste0(keep_variants$chrom, keep_variants$pos, sep = ":")
+    geno_bed <- geno_bed[, keep_variants_index]
   } else {
-     geno_bed <- geno_bed
+    geno_bed <- geno_bed
   }
   return(2 - as(geno_bed, "numeric"))
 }

@@ -10,7 +10,7 @@
 #' If NULL, 'sample_partitions' must be provided.
 #' @param sample_partitions An optional dataframe with predefined sample partitions,
 #' containing columns 'Sample' (sample names) and 'Fold' (fold number). If NULL, 'fold' must be provided.
-#' @param weight_methods A list of methods and their specific arguments, formatted as list(method1 = method1_args, method2 = method2_args).
+#' @param weight_methods A list of methods and their specific arguments, formatted as list(method1 = method1_args, method2 = method2_args), or alternatively a character vector of method names (eg, c("susie_weights", "enet_weights")) in which case default arguments will be used for all methods.
 #' methods in the list can be either univariate (applied to each column of Y) or multivariate (applied to the entire Y matrix).
 #' @param max_num_variants An optional integer to set the randomly selected maximum number of variants to use for CV purpose, to save computing time.
 #' @param variants_to_keep An optional integer to ensure that the listed variants are kept in the CV when there is a limit on the max_num_variants to use.
@@ -83,6 +83,10 @@ twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_
   # Check if Y has row names and X does not
   if (!is.null(rownames(Y)) && is.null(rownames(X))) {
     rownames(X) <- rownames(Y)
+  }
+
+  if (is.character(weight_methods)) {
+    weight_methods <- lapply(setNames(nm = weight_methods), function(x) list())
   }
 
   if (!exists(".Random.seed")) {
@@ -292,8 +296,8 @@ twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_
 #'
 #' @param X A matrix of samples by features, where each row represents a sample and each column a feature.
 #' @param Y A matrix (or vector, which will be converted to a matrix) of samples by outcomes, where each row corresponds to a sample.
-#' @param weight_methods A list of methods and their specific arguments, formatted as list(method1 = method1_args, method2 = method2_args).
-#' methods in the list are applied to the datasets X and Y.
+#' @param weight_methods A list of methods and their specific arguments, formatted as list(method1 = method1_args, method2 = method2_args), or alternatively a character vector of method names (eg, c("susie_weights", "enet_weights")) in which case default arguments will be used for all methods.
+#' methods in the list can be either univariate (applied to each column of Y) or multivariate (applied to the entire Y matrix).
 #' @param num_threads The number of threads to use for parallel processing.
 #'        If set to -1, the function uses all available cores.
 #'        If set to 0 or 1, no parallel processing is performed.
@@ -316,6 +320,10 @@ twas_weights <- function(X, Y, weight_methods, num_threads = 1) {
 
   if (nrow(X) != nrow(Y)) {
     stop("The number of rows in X and Y must be the same.")
+  }
+
+  if (is.character(weight_methods)) {
+    weight_methods <- lapply(setNames(nm = weight_methods), function(x) list())
   }
 
   # Determine number of cores to use

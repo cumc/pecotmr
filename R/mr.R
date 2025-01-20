@@ -59,20 +59,22 @@ mr_format <- function(susie_result, condition, gwas_sumstats_db, coverage = "cs_
       susie_pos <- sapply(susie_cs_result_formatted$variant, function(variant_id) strsplit(variant_id, "\\:")[[1]][2])
       gwas_pos <- sapply(gwas_sumstats_db$variant_id, function(variant_id) strsplit(variant_id, "\\:")[[1]][2])
       if (any(susie_pos %in% gwas_pos)) {
-        gwas_sumstats_db_extracted <- gwas_sumstats_db%>%filter(pos%in%susie_pos)%>%mutate(n_sample = n_case + n_control)
+        gwas_sumstats_db_extracted <- gwas_sumstats_db %>%
+          filter(pos %in% susie_pos) %>%
+          mutate(n_sample = n_case + n_control)
         mean_n_sample <- round(mean(gwas_sumstats_db_extracted$n_sample, na.rm = TRUE))
         # Impute `n_sample` and `maf`
         if (any(is.na(gwas_sumstats_db_extracted$effect_allele_frequency))) {
-            gwas_sumstats_db_extracted_imputed <- gwas_sumstats_db_extracted %>%
-                 left_join(ld_meta_df %>% select(pos, allele_freq), by = "pos") %>%
-                 mutate(effect_allele_frequency = ifelse(is.na(effect_allele_frequency), allele_freq, effect_allele_frequency)) %>%
-                 mutate(n_sample = ifelse(is.na(n_sample), mean_n_sample, n_sample)) %>%
-                 select(-allele_freq)
+          gwas_sumstats_db_extracted_imputed <- gwas_sumstats_db_extracted %>%
+            left_join(ld_meta_df %>% select(pos, allele_freq), by = "pos") %>%
+            mutate(effect_allele_frequency = ifelse(is.na(effect_allele_frequency), allele_freq, effect_allele_frequency)) %>%
+            mutate(n_sample = ifelse(is.na(n_sample), mean_n_sample, n_sample)) %>%
+            select(-allele_freq)
         } else {
-             gwas_sumstats_db_extracted_imputed <- gwas_sumstats_db_extracted
+          gwas_sumstats_db_extracted_imputed <- gwas_sumstats_db_extracted
         }
         gwas_sumstats_db_beta_se <- z_to_beta_se(gwas_sumstats_db_extracted_imputed$z, gwas_sumstats_db_extracted_imputed$effect_allele_frequency, gwas_sumstats_db_extracted_imputed$n_sample)
-        gwas_sumstats_db_extracted_imputed <- gwas_sumstats_db_extracted_imputed %>% mutate(beta = gwas_sumstats_db_beta_se$beta, se= gwas_sumstats_db_beta_se$se)
+        gwas_sumstats_db_extracted_imputed <- gwas_sumstats_db_extracted_imputed %>% mutate(beta = gwas_sumstats_db_beta_se$beta, se = gwas_sumstats_db_beta_se$se)
         if (allele_qc) {
           susie_cs_result_formatted <- allele_qc(susie_cs_result_formatted$variant, gwas_sumstats_db_extracted_imputed$variant_id,
             cbind(variant_id_to_df(susie_cs_result_formatted$variant), susie_cs_result_formatted), c("bhat_x", "sbhat_x"),

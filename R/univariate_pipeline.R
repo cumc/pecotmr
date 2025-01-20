@@ -26,7 +26,7 @@
 #' @param cv_folds The number of folds to use for cross-validation. Default is 5.
 #' @param cv_threads The number of threads to use for parallel computation in cross-validation. Default is 1.
 #' @param verbose Verbosity level. Default is 0.
-#' @param twas_use_X_orig TRUE/FALSE If set to TRUE, we use X that is not adjusted by covariates(0,1,2) for TWAS weight computation. 
+#' @param twas_use_X_orig TRUE/FALSE If set to TRUE, we use X that is not adjusted by covariates(0,1,2) for TWAS weight computation.
 #'
 #' @return A list containing the univariate analysis results.
 #' @importFrom susieR susie
@@ -35,7 +35,7 @@ univariate_analysis_pipeline <- function(
     # input data
     X,
     Y,
-    X_orig, 
+    X_orig,
     maf,
     X_scalar = 1,
     Y_scalar = 1,
@@ -127,9 +127,9 @@ univariate_analysis_pipeline <- function(
   res <- c(res, susie_result_trimmed)
   res$total_time_elapsed <- proc.time() - st
 
-  # if twas_use_X_orig is true, we use X that is unadjusted by covariates (0,1,2) for TWAS weight computation.  
-  if (twas_use_X_orig) X <- X_orig[rownames(X), colnames(X), drop=FALSE]
-  
+  # if twas_use_X_orig is true, we use X that is unadjusted by covariates (0,1,2) for TWAS weight computation.
+  if (twas_use_X_orig) X <- X_orig[rownames(X), colnames(X), drop = FALSE]
+
   # TWAS weights and cross-validation
   if (twas_weights) {
     res$twas_weights_result <- twas_weights_pipeline(

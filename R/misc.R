@@ -519,7 +519,7 @@ find_duplicate_variants <- function(z, LD, rThreshold) {
 
   return(list(filteredZ = filteredZ, filteredLD = filteredLD, dupBearer = dupBearer, corABS = corABS, sign = sign, minValue = minValue))
 }
-                                                                                 
+
 #' Convert Z-scores to Beta and Standard Error
 #'
 #' This function estimates the effect sizes (beta) and standard errors (SE) from
@@ -551,7 +551,7 @@ find_duplicate_variants <- function(z, LD, rThreshold) {
 #' print(result)
 #' test_data_with_results <- cbind(test_data, results)
 #' print(test_data_with_results)
-#' 
+#'
 #' @note
 #' This function assumes that the input z-scores are normally distributed and
 #' that the genetic model is additive. It may not be accurate for rare variants

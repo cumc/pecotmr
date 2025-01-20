@@ -53,12 +53,12 @@ filter_invalid_summary_stat <- function(dat_list, bhat = NULL, sbhat = NULL, z =
   if (!is.null(z)) {
     process_z <- function(z_data) {
       z_data <- as.matrix(replace_values(z_data, 0))
-    
+
       if (!is.null(filter_by_missing_rate)) {
         proportion_nonzero <- apply(z_data, 1, function(row) mean(row != 0))
         z_data <- z_data[proportion_nonzero >= filter_by_missing_rate, , drop = FALSE]
       }
-    
+
       return(z_data)
     }
 
@@ -66,11 +66,11 @@ filter_invalid_summary_stat <- function(dat_list, bhat = NULL, sbhat = NULL, z =
     if (!is.null(dat_list$strong) && !is.null(dat_list$strong$z)) {
       dat_list$strong$z <- process_z(dat_list$strong$z)
     }
-  
+
     if (!is.null(dat_list$random) && !is.null(dat_list$random$z)) {
       dat_list$random$z <- process_z(dat_list$random$z)
     }
-  
+
     if (!is.null(dat_list$null) && !is.null(dat_list$null$z)) {
       dat_list$null$z <- process_z(dat_list$null$z)
     }
@@ -512,9 +512,9 @@ load_multitrait_R_sumstat <- function(susie_fit, sumstats_db, coverage = NULL, t
     if (is.null(valid_conditions) || length(valid_conditions) == 0) {
       return(input_list)
     }
-    
+
     filtered_list <- list()
-    
+
     # Recursively process list
     for (name in names(input_list)) {
       # Check if current name matches any valid condition
@@ -530,7 +530,7 @@ load_multitrait_R_sumstat <- function(susie_fit, sumstats_db, coverage = NULL, t
         }
       }
     }
-    
+
     return(filtered_list)
   }
 
@@ -540,75 +540,76 @@ load_multitrait_R_sumstat <- function(susie_fit, sumstats_db, coverage = NULL, t
     if (!is.character(condition_filter)) {
       condition_filter <- as.character(condition_filter)
     }
-    
+
     # Split if comma-separated string
     if (length(condition_filter) == 1 && grepl(",", condition_filter)) {
       condition_filter <- strsplit(condition_filter, ",")[[1]]
     }
-    
+
     # Trim whitespace
     condition_filter <- trimws(condition_filter)
-    
+
     # Filter susie_fit and sumstats_db
     susie_fit <- filter_nested_list(susie_fit, condition_filter)
     sumstats_db <- filter_nested_list(sumstats_db, condition_filter)
   }
 
-    extract_data <- function(data, max_depth = 3) {
-      find_nested <- function(element, current_depth = 0) {
-        # Check depth limit
-        if (current_depth >= max_depth) {
-          message("Maximum search depth reached. Could not find 'variant_names' and 'sumstats' at the same time.")
-          return(NULL)
-        }
-        
-        # If element is a list, search through its contents
-        if (is.list(element)) {
-          # Check if all required keys exist in the current element
-          if (all(c("variant_names", "sumstats") %in% names(element))) {
-            variant_names <- element$variant_names
-            sumstats <- element$sumstats
-            
-            # Calculate z_scores
-            if (all(c("betahat", "sebetahat") %in% names(sumstats))) {
-              z_scores <- sumstats$betahat / sumstats$sebetahat
-            } else if ("z" %in% names(sumstats)) {
-              z_scores <- sumstats$z
-            } else {
-              message("Found 'variant_names' and 'sumstats', but could not calculate z-scores.")
-              return(NULL)
-            }
-            
-            result = data.frame(
-              variants = variant_names,
-              z = z_scores)
-            if (!all(grepl("^chr", result$variants))) {
-                result$variants <- gsub("^", "chr", result$variants)
-            }
-            return(result)
-          }
-          
-          # If not found at this level, search deeper
-          for (name in names(element)) {
-            result <- find_nested(element[[name]], current_depth + 1)
-            # make variants consistent to facilitate merging
-            if (!all(grepl("^chr", result$variants))) {
-                result$variants <- gsub("^", "chr", result$variants)
-            }
-            if (!is.null(result)) {
-              return(result)
-            }
-          }
-        }
-        
+  extract_data <- function(data, max_depth = 3) {
+    find_nested <- function(element, current_depth = 0) {
+      # Check depth limit
+      if (current_depth >= max_depth) {
+        message("Maximum search depth reached. Could not find 'variant_names' and 'sumstats' at the same time.")
         return(NULL)
       }
-      
-      # Call the nested search function
-      results <- find_nested(data)
-      return(results)
+
+      # If element is a list, search through its contents
+      if (is.list(element)) {
+        # Check if all required keys exist in the current element
+        if (all(c("variant_names", "sumstats") %in% names(element))) {
+          variant_names <- element$variant_names
+          sumstats <- element$sumstats
+
+          # Calculate z_scores
+          if (all(c("betahat", "sebetahat") %in% names(sumstats))) {
+            z_scores <- sumstats$betahat / sumstats$sebetahat
+          } else if ("z" %in% names(sumstats)) {
+            z_scores <- sumstats$z
+          } else {
+            message("Found 'variant_names' and 'sumstats', but could not calculate z-scores.")
+            return(NULL)
+          }
+
+          result <- data.frame(
+            variants = variant_names,
+            z = z_scores
+          )
+          if (!all(grepl("^chr", result$variants))) {
+            result$variants <- gsub("^", "chr", result$variants)
+          }
+          return(result)
+        }
+
+        # If not found at this level, search deeper
+        for (name in names(element)) {
+          result <- find_nested(element[[name]], current_depth + 1)
+          # make variants consistent to facilitate merging
+          if (!all(grepl("^chr", result$variants))) {
+            result$variants <- gsub("^", "chr", result$variants)
+          }
+          if (!is.null(result)) {
+            return(result)
+          }
+        }
+      }
+
+      return(NULL)
     }
-    
+
+    # Call the nested search function
+    results <- find_nested(data)
+    return(results)
+  }
+
 
 
   split_variants_and_match <- function(variant, filter_file, max_rows_selected) {
@@ -644,7 +645,7 @@ load_multitrait_R_sumstat <- function(susie_fit, sumstats_db, coverage = NULL, t
   }
 
   merge_matrices <- function(matrix_list, value_column, ld_meta_file, id_column = "variants",
-                               remove_any_missing = FALSE) {
+                             remove_any_missing = FALSE) {
     # Input validation
     if (!is.list(matrix_list) || length(matrix_list) == 0) {
       stop("matrix_list must be a non-empty list")
@@ -657,14 +658,15 @@ load_multitrait_R_sumstat <- function(susie_fit, sumstats_db, coverage = NULL, t
     }
 
     df_list <- lapply(seq_along(matrix_list), function(i) {
-      tryCatch({
-        # Step 1: Convert matrix to data frame and extract relevant columns
-        df <- as.data.frame(matrix_list[[i]])
-        if (!(id_column %in% colnames(df)) || !(value_column %in% colnames(df))) {
-          stop(paste("Required columns", id_column, "or", value_column, "not found in dataset", i))
-        }
-        df2 <- df[, c(id_column, value_column)]
-        if (!is.null(ld_meta_file)) {
+      tryCatch(
+        {
+          # Step 1: Convert matrix to data frame and extract relevant columns
+          df <- as.data.frame(matrix_list[[i]])
+          if (!(id_column %in% colnames(df)) || !(value_column %in% colnames(df))) {
+            stop(paste("Required columns", id_column, "or", value_column, "not found in dataset", i))
+          }
+          df2 <- df[, c(id_column, value_column)]
+          if (!is.null(ld_meta_file)) {
             # Step 2: Split 'variants' to extract chromosomal info
             cohort_variants_df <- parse_variant_id(df2[, c(id_column)])
             # Step 3: Combine extracted chromosomal info with value column
@@ -700,15 +702,17 @@ load_multitrait_R_sumstat <- function(susie_fit, sumstats_db, coverage = NULL, t
               rename("variants" = "variant_id")
             # Rename columns to avoid duplication
             colnames(final_df) <- c(id_column, paste0(value_column, "_", i))
-        } else {
-          final_df <- df2
-          colnames(final_df) <- c(id_column, paste0(value_column, "_", i))
+          } else {
+            final_df <- df2
+            colnames(final_df) <- c(id_column, paste0(value_column, "_", i))
+          }
+          return(final_df)
+        },
+        error = function(e) {
+          message(paste("Error processing dataset", i, ":", e$message))
+          return(NULL)
         }
-        return(final_df)
-      }, error = function(e) {
-        message(paste("Error processing dataset", i, ":", e$message))
-        return(NULL)
-      })
+      )
     })
 
     # Remove any NULL results from errors
@@ -783,7 +787,7 @@ mash_rand_null_sample <- function(dat, n_random, n_null, exclude_condition, seed
     if (is.null(dat)) {
       return(NULL)
     }
-    
+
     if ("z" %in% names(dat)) {
       abs_z <- abs(dat$z)
       z_data <- dat$z
@@ -791,17 +795,19 @@ mash_rand_null_sample <- function(dat, n_random, n_null, exclude_condition, seed
       abs_z <- abs(dat$bhat / dat$sbhat)
       z_data <- NULL
     }
-    
+
     sample_idx <- 1:nrow(abs_z)
     random_idx <- sample(sample_idx, min(n_random, length(sample_idx)), replace = FALSE)
-    
+
     if (!is.null(z_data)) {
       random <- list(z = z_data[random_idx, , drop = FALSE])
     } else {
-      random <- list(bhat = dat$bhat[random_idx, , drop = FALSE],
-                     sbhat = dat$sbhat[random_idx, , drop = FALSE])
+      random <- list(
+        bhat = dat$bhat[random_idx, , drop = FALSE],
+        sbhat = dat$sbhat[random_idx, , drop = FALSE]
+      )
     }
-    
+
     null.id <- which(apply(abs_z, 1, max) < 2)
     if (length(null.id) == 0) {
       warning(paste("no variants are included in the null dataset because abs_z > 2 for all variants in", dat$region))
@@ -815,8 +821,10 @@ mash_rand_null_sample <- function(dat, n_random, n_null, exclude_condition, seed
         if (!is.null(z_data)) {
           null <- list(z = z_data[null_idx, , drop = FALSE])
         } else {
-          null <- list(bhat = dat$bhat[null_idx, , drop = FALSE],
-                       sbhat = dat$sbhat[null_idx, , drop = FALSE])
+          null <- list(
+            bhat = dat$bhat[null_idx, , drop = FALSE],
+            sbhat = dat$sbhat[null_idx, , drop = FALSE]
+          )
         }
       }
     }
@@ -827,7 +835,7 @@ mash_rand_null_sample <- function(dat, n_random, n_null, exclude_condition, seed
   if (!is.null(seed)) {
     set.seed(seed)
   }
-  
+
   if (length(exclude_condition) > 0) {
     if ("z" %in% names(dat)) {
       if (all(exclude_condition %in% colnames(dat$z))) {
@@ -844,7 +852,7 @@ mash_rand_null_sample <- function(dat, n_random, n_null, exclude_condition, seed
       }
     }
   }
-  
+
   result <- extract_one_data(dat, n_random, n_null)
   return(result)
 }
