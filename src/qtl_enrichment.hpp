@@ -76,6 +76,42 @@ std::vector<std::string> impute_qtn(std::mt19937 &gen) const {
 }
 };
 
+std::vector<double> filter_outliers(
+    const std::vector<double>& estimates,
+    const std::vector<double>& variances,
+    double prior_variance,
+    double threshold = 3.0) 
+{
+    double mean = 0.0;
+    double sd = 0.0;
+    std::vector<double> shrinkage_ests;
+
+    // Calculate shrinkage estimates and mean
+    for(size_t i = 0; i < estimates.size(); ++i) {
+        double shrinkage = (estimates[i] * prior_variance) / 
+                          (prior_variance + variances[i]);
+        shrinkage_ests.push_back(shrinkage);
+        mean += shrinkage;
+    }
+    mean /= estimates.size();
+
+    // Calculate standard deviation
+    for(size_t i = 0; i < shrinkage_ests.size(); ++i) {
+        sd += pow(shrinkage_ests[i] - mean, 2);
+    }
+    sd = sqrt(sd / (shrinkage_ests.size() - 1));
+
+    // Filter outliers
+    std::vector<double> filtered;
+    for(size_t i = 0; i < estimates.size(); ++i) {
+        if(fabs(shrinkage_ests[i] - mean) <= threshold * sd) {
+            filtered.push_back(estimates[i]);
+        }
+    }
+
+    return filtered;
+}
+
 std::vector<double> run_EM(
 	const std::vector<double> &gwas_pip,
 	const std::vector<int> &   annotation_vector,
@@ -208,7 +244,6 @@ std::map<std::string, double> qtl_enrichment_workhorse(
 			}
 			total_qtl_count += variants.size();
 		}
-
 		// Calculate the proportion of missing variants
 		double missing_variant_proportion = static_cast<double>(missing_qtl_count) / total_qtl_count;
 		std::vector<double> rst = run_EM(gwas_pip, annotation_vector, pi_gwas, pi_qtl, total_snp);
@@ -225,32 +260,48 @@ std::map<std::string, double> qtl_enrichment_workhorse(
 
 	Rcpp::Rcout << "EM updates completed!" << std::endl;
 
+	// Apply outlier filtering if shrinkage is specified
+	std::vector<double> filtered_a1;
+	std::vector<double> filtered_v1;
+	if (shrinkage_lambda > 0) {
+		filtered_a1 = filter_outliers(a1_vec, v1_vec, 1.0/shrinkage_lambda);
+		filtered_v1.reserve(filtered_a1.size());
+		for(size_t i = 0; i < a1_vec.size(); ++i) {
+			if(std::find(filtered_a1.begin(), filtered_a1.end(), a1_vec[i]) != filtered_a1.end()) {
+				filtered_v1.push_back(v1_vec[i]);
+			}
+		}
+	} else {
+		filtered_a1 = a1_vec;
+		filtered_v1 = v1_vec;
+	}
+
 	double a0_est = 0;
 	double a1_est = 0;
 	double var0 = 0;
 	double var1 = 0;
-	for (int k = 0; k < ImpN; k++) {
+	for (size_t k = 0; k < filtered_a1.size(); k++) {
 		a0_est += a0_vec[k];
-		a1_est += a1_vec[k];
+		a1_est += filtered_a1[k];
 		var0 += v0_vec[k];
-		var1 += v1_vec[k];
+		var1 += filtered_v1[k];
 	}
-	a0_est /= ImpN;
-	a1_est /= ImpN;
+	a0_est /= filtered_a1.size();
+	a1_est /= filtered_a1.size();
 
 	double bv0 = 0;
 	double bv1 = 0;
-	for (int k = 0; k < ImpN; k++) {
+	for (size_t k = 0; k < filtered_a1.size(); k++) {
 		bv0 += pow(a0_vec[k] - a0_est, 2.0);
-		bv1 += pow(a1_vec[k] - a1_est, 2.0);
+		bv1 += pow(filtered_a1[k] - a1_est, 2.0);
 	}
-	bv0 /= (ImpN - 1);
-	bv1 /= (ImpN - 1);
-	var0 /= ImpN;
-	var1 /= ImpN;
+	bv0 /= (filtered_a1.size() - 1);
+	bv1 /= (filtered_a1.size() - 1);
+	var0 /= filtered_a1.size();
+	var1 /= filtered_a1.size();
 
-	double sd0 = sqrt(var0 + bv0 * (ImpN + 1) / ImpN);
-	double sd1 = sqrt(var1 + bv1 * (ImpN + 1) / ImpN);
+	double sd0 = sqrt(var0 + bv0 * (filtered_a1.size() + 1) / filtered_a1.size());
+	double sd1 = sqrt(var1 + bv1 * (filtered_a1.size() + 1) / filtered_a1.size());
 
 	double a1_est_ns = a1_est;
 	double sd1_ns = sd1;
@@ -282,6 +333,7 @@ std::map<std::string, double> qtl_enrichment_workhorse(
 	output_map["Alternative (coloc) p1"] = p1;
 	output_map["Alternative (coloc) p2"] = p2;
 	output_map["Alternative (coloc) p12"] = p12;
+	output_map["Effective MI rounds"] = static_cast<double>(filtered_a1.size());
 
 	return output_map;
 }
