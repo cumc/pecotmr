@@ -224,7 +224,7 @@ harmonize_twas <- function(twas_weights_data, ld_meta_file_path, gwas_meta_file)
             })
           }
           rownames(weights_matrix_subset) <- if (!grepl("^chr", rownames(weights_matrix_subset)[1])) paste0("chr", rownames(weights_matrix_subset)) else rownames(weights_matrix_subset)
-          results[[molecular_id]][["variant_names"]][[context]] <- rownames(weights_matrix_subset)
+          results[[molecular_id]][["variant_names"]][[context]][[study]] <- rownames(weights_matrix_subset)
 
           # Step 6: scale weights by variance
           variance_df <- query_variance(ld_variant_info, all_variants) %>%
@@ -234,7 +234,7 @@ harmonize_twas <- function(twas_weights_data, ld_meta_file_path, gwas_meta_file)
         }
         # Combine gwas sumstat across different context for a single context group based on all variants included in this molecular_id/gene/region
         gwas_data_sumstats$variant_id <- paste0("chr", gwas_data_sumstats$variant_id)
-        gwas_data_sumstats <- gwas_data_sumstats[gwas_data_sumstats$variant_id %in% unique(unlist(results[[molecular_id]][["variant_names"]])), , drop = FALSE]
+        gwas_data_sumstats <- gwas_data_sumstats[gwas_data_sumstats$variant_id %in% unique(find_data(results[[molecular_id]][["variant_names"]], c(2, study))), , drop = FALSE]
         results[[molecular_id]][["gwas_qced"]][[study]] <- rbind(results[[molecular_id]][["gwas_qced"]][[study]], gwas_data_sumstats)
         results[[molecular_id]][["gwas_qced"]][[study]] <- results[[molecular_id]][["gwas_qced"]][[study]][!duplicated(results[[molecular_id]][["gwas_qced"]][[study]][, c("variant_id", "z")]), ]
       }
@@ -434,10 +434,12 @@ twas_pipeline <- function(twas_weights_data,
     # Nested lapply for contexts and gwas studies
     twas_gene_results <- lapply(contexts, function(context) {
       study_results <- lapply(gwas_studies, function(study) {
+        twas_variants <- intersect(rownames(twas_data_qced[[molecular_id]][["weights_qced"]][[context]][["weights"]]), 
+                            twas_data_qced[[molecular_id]][["variant_names"]][[context]][[study]])
         # twas analysis
         twas_rs <- twas_analysis(
           twas_data_qced[[molecular_id]][["weights_qced"]][[context]][["weights"]], twas_data_qced[[molecular_id]][["gwas_qced"]][[study]],
-          twas_data_qced[[molecular_id]][["LD"]], rownames(twas_data_qced[[molecular_id]][["weights_qced"]][[context]][["weights"]])
+          twas_data_qced[[molecular_id]][["LD"]], twas_variants
         )
         twas_rs_df <- data.frame(
           gwas_study = study, method = sub("_[^_]+$", "", names(twas_rs)), twas_z = find_data(twas_rs, c(2, "z")),
@@ -675,6 +677,8 @@ twas_analysis <- function(weights_matrix, gwas_sumstats_db, LD_matrix, extract_v
   valid_variants_objs <- extract_variants_objs[valid_indices]
   # Extract LD_matrix subset using valid indices
   LD_matrix_subset <- LD_matrix[valid_variants_objs, valid_variants_objs]
+  # Extract weight matrix subset using valid indices
+  weights_matrix <- weights_matrix[valid_variants_objs, ,drop=FALSE]
   # Caculate the z score and pvalue of each gene
   twas_z_pval <- apply(
     as.matrix(weights_matrix), 2,
