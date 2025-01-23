@@ -27,7 +27,7 @@ If NULL, 'sample_partitions' must be provided.}
 \item{sample_partitions}{An optional dataframe with predefined sample partitions,
 containing columns 'Sample' (sample names) and 'Fold' (fold number). If NULL, 'fold' must be provided.}
 
-\item{weight_methods}{A list of methods and their specific arguments, formatted as list(method1 = method1_args, method2 = method2_args).
+\item{weight_methods}{A list of methods and their specific arguments, formatted as list(method1 = method1_args, method2 = method2_args), or alternatively a character vector of method names (eg, c("susie_weights", "enet_weights")) in which case default arguments will be used for all methods.
 methods in the list can be either univariate (applied to each column of Y) or multivariate (applied to the entire Y matrix).}
 
 \item{max_num_variants}{An optional integer to set the randomly selected maximum number of variants to use for CV purpose, to save computing time.}

@@ -11,8 +11,8 @@ twas_weights(X, Y, weight_methods, num_threads = 1)
 
 \item{Y}{A matrix (or vector, which will be converted to a matrix) of samples by outcomes, where each row corresponds to a sample.}
 
-\item{weight_methods}{A list of methods and their specific arguments, formatted as list(method1 = method1_args, method2 = method2_args).
-methods in the list are applied to the datasets X and Y.}
+\item{weight_methods}{A list of methods and their specific arguments, formatted as list(method1 = method1_args, method2 = method2_args), or alternatively a character vector of method names (eg, c("susie_weights", "enet_weights")) in which case default arguments will be used for all methods.
+methods in the list can be either univariate (applied to each column of Y) or multivariate (applied to the entire Y matrix).}
 
 \item{num_threads}{The number of threads to use for parallel processing.
 If set to -1, the function uses all available cores.
