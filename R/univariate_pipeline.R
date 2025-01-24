@@ -11,7 +11,7 @@
 #' @param X_variance Optional variance of X. Default is NULL.
 #' @param other_quantities A list of other quantities to be passed to susie_post_processor. Default is an empty list.
 #' @param imiss_cutoff Individual missingness cutoff. Default is 1.0.
-#' @param maf_cutoff Minor allele frequency cutoff. Default is 0.01.
+#' @param maf_cutoff Minor allele frequency cutoff. Default is NULL.
 #' @param xvar_cutoff Variance cutoff for X. Default is 0.05.
 #' @param ld_reference_meta_file An optional path to a file containing linkage disequilibrium reference data. Default is NULL.
 #' @param pip_cutoff_to_skip Cutoff value for skipping analysis based on PIP values. Default is 0.
