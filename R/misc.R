@@ -168,11 +168,11 @@ filter_X <- function(X, missing_rate_thresh, maf_thresh, var_thresh = 0, maf = N
       all(x %in% c(0,1,2))
     }))
     
-    if (valid_genotypes) {
+    if (valid_genotypes || !is.null(maf)) {
       rm_col <- if (!is.null(maf)) which(maf <= maf_thresh) else which(apply(X, 2, compute_maf) <= maf_thresh)
       if (length(rm_col)) X <- X[, -rm_col, drop=F]
     } else {
-      message("Skipping MAF filtering as X does not appear to be 0/1/2 matrix")
+      message("Skipping MAF filtering as X does not appear to be 0/1/2 matrix, and no external MAF information is provided")
     }
   }
   
