@@ -158,18 +158,30 @@ filter_X <- function(X, missing_rate_thresh, maf_thresh, var_thresh = 0, maf = N
   tol_variants <- ncol(X)
   if (!is.null(missing_rate_thresh) && missing_rate_thresh < 1.0) {
     rm_col <- which(apply(X, 2, compute_missing) > missing_rate_thresh)
-    if (length(rm_col)) X <- X[, -rm_col]
+    if (length(rm_col)) X <- X[, -rm_col, drop=F]
   }
+  
+  # Check if non-NA values are valid genotypes before MAF filtering
   if (!is.null(maf_thresh) && maf_thresh > 0.0) {
-    rm_col <- if (!is.null(maf)) which(maf <= maf_thresh) else which(apply(X, 2, compute_maf) <= maf_thresh)
-    if (length(rm_col)) X <- X[, -rm_col]
+    valid_genotypes <- all(sapply(1:ncol(X), function(i) {
+      x <- X[!is.na(X[,i]), i]
+      all(x %in% c(0,1,2))
+    }))
+    
+    if (valid_genotypes) {
+      rm_col <- if (!is.null(maf)) which(maf <= maf_thresh) else which(apply(X, 2, compute_maf) <= maf_thresh)
+      if (length(rm_col)) X <- X[, -rm_col, drop=F]
+    } else {
+      message("Skipping MAF filtering as X does not appear to be 0/1/2 matrix")
+    }
   }
+  
   rm_col <- which(apply(X, 2, is_zero_variance))
-  if (length(rm_col)) X <- X[, -rm_col]
+  if (length(rm_col)) X <- X[, -rm_col, drop=F]
   X <- mean_impute(X)
   if (var_thresh > 0) {
     rm_col <- if (!is.null(X_variance)) which(X_variance < var_thresh) else which(colVars(X) < var_thresh)
-    if (length(rm_col)) X <- X[, -rm_col]
+    if (length(rm_col)) X <- X[, -rm_col, drop=F]
   }
   message(paste0(tol_variants - ncol(X), " out of ", tol_variants, " total variants dropped due to quality control on X matrix."))
   return(X)
