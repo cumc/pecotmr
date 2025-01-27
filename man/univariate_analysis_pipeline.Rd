@@ -7,7 +7,6 @@
 univariate_analysis_pipeline(
   X,
   Y,
-  X_orig,
   maf,
   X_scalar = 1,
   Y_scalar = 1,
@@ -28,8 +27,7 @@ univariate_analysis_pipeline(
   max_cv_variants = -1,
   cv_folds = 5,
   cv_threads = 1,
-  verbose = 0,
-  twas_use_X_orig = TRUE
+  verbose = 0
 )
 }
 \arguments{
@@ -49,7 +47,7 @@ univariate_analysis_pipeline(
 
 \item{imiss_cutoff}{Individual missingness cutoff. Default is 1.0.}
 
-\item{maf_cutoff}{Minor allele frequency cutoff. Default is 0.01.}
+\item{maf_cutoff}{Minor allele frequency cutoff. Default is NULL.}
 
 \item{xvar_cutoff}{Variance cutoff for X. Default is 0.05.}
 
@@ -78,8 +76,6 @@ univariate_analysis_pipeline(
 \item{cv_threads}{The number of threads to use for parallel computation in cross-validation. Default is 1.}
 
 \item{verbose}{Verbosity level. Default is 0.}
-
-\item{twas_use_X_orig}{TRUE/FALSE If set to TRUE, we use X that is not adjusted by covariates(0,1,2) for TWAS weight computation.}
 }
 \value{
 A list containing the univariate analysis results.
