@@ -113,16 +113,16 @@ run_linear_regression <- function(genotype, phenotype, covariates = NULL) {
   snp_info <- lapply(colnames(genotype), parse_snp_info)
 
   data.frame(
-    CHR = sapply(snp_info, function(x) x$chr),
-    BP = sapply(snp_info, function(x) x$pos),
-    SNP = colnames(genotype),
-    A1 = sapply(snp_info, function(x) x$alt),
-    A2 = sapply(snp_info, function(x) x$ref),
-    BETA = reg_results$betahat,
-    SE = reg_results$sebetahat,
-    Z = reg_results$z_scores,
-    P = reg_results$p_values,
-    Q = reg_results$q_values,
+    chr = sapply(snp_info, function(x) x$chr),
+    pos = sapply(snp_info, function(x) x$pos),
+    variant_id = colnames(genotype),
+    alt = sapply(snp_info, function(x) x$alt),
+    ref = sapply(snp_info, function(x) x$ref),
+    beta = reg_results$betahat,
+    se = reg_results$sebetahat,
+    z = reg_results$z_scores,
+    p = reg_results$p_values,
+    q = reg_results$q_values,
     N = nrow(genotype)
   )
 }
