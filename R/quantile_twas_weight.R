@@ -700,7 +700,8 @@ calculate_coef_heterogeneity <- function(rq_coef_result) {
 quantile_twas_weight_pipeline <- function(X, Y, Z = NULL, maf = NULL, region_id = "",
                                           ld_reference_meta_file = NULL, twas_maf_cutoff = 0.01, ld_pruning = FALSE,
                                           quantile_qtl_tau_list = seq(0.05, 0.95, by = 0.05),
-                                          quantile_twas_tau_list = seq(0.01, 0.99, by = 0.01)) {
+                                          quantile_twas_tau_list = seq(0.01, 0.99, by = 0.01),
+                                          screen_threshold = 0.05) {
   # Step 1-1: Calculate vQTL rank scores
   message("Step 0: Calculating vQTL rank scores for region ", region_id)
   num_tau_levels <- length(quantile_qtl_tau_list) # Convert tau.list to numeric count
@@ -724,7 +725,7 @@ quantile_twas_weight_pipeline <- function(X, Y, Z = NULL, maf = NULL, region_id 
 
   # Step 1-2: QR screen
   message("Starting QR screen for region ", region_id)
-  p.screen <- qr_screen(X = X, Y = Y, Z = Z, tau.list = quantile_qtl_tau_list, screen_threshold = 0.05, screen_method = "qvalue", top_count = 10, top_percent = 15)
+  p.screen <- qr_screen(X = X, Y = Y, Z = Z, tau.list = quantile_qtl_tau_list, screen_threshold = screen_threshold, screen_method = "qvalue", top_count = 10, top_percent = 15)
   message(paste0("Number of SNPs after QR screening: ", length(p.screen$sig_SNP_threshold)))
   message("QR screen completed. Screening significant SNPs")
   # Initialize results list
