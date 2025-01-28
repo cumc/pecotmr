@@ -416,7 +416,7 @@ check_remove_highcorr_snp <- function(X = X, C = C, strategy = c("correlation", 
   # Combine the design matrix with X (SNPs) and C (covariates), keeping C without column names
   X_design <- cbind(1, X, C) # Add an intercept column (1)
   colnames_X_design <- c("Intercept", colnames(X)) # Assign column names only to X (SNPs) part
-
+  
   # Assign column names only to the X part, leaving C without names
   colnames(X_design)[1:(length(colnames_X_design))] <- colnames_X_design
 
@@ -424,46 +424,82 @@ check_remove_highcorr_snp <- function(X = X, C = C, strategy = c("correlation", 
   matrix_rank <- qr(X_design)$rank
   message("Initial rank of the design matrix: ", matrix_rank, " / ", ncol(X_design), " columns.")
 
-  iteration <- 0
-  while (matrix_rank < ncol(X_design) && iteration < max_iterations) {
-    message("Design matrix is not full rank, identifying problematic columns...")
-
+  # Skip remove_highcorr_snp if removing all problematic columns doesn't achieve full rank
+  skip_remove_highcorr <- FALSE
+  
+  # First check: Try removing all problematic columns at once
+  if (matrix_rank < ncol(X_design)) {
+    message("Design matrix is not full rank, identifying all problematic columns...")
+    
     # QR decomposition to identify linearly dependent columns
     qr_decomp <- qr(X_design)
     R <- qr_decomp$rank
     Q <- qr_decomp$pivot
-
-    # Get the problematic columns by indexing from the pivot
+    
+    # Get all problematic columns
     problematic_cols <- Q[(R + 1):ncol(X_design)]
-    problematic_colnames <- colnames(X_design)[problematic_cols] # Map the indices to column names
-
-    # Limit the columns to be removed to SNPs only, not covariates
+    problematic_colnames <- colnames(X_design)[problematic_cols]
     problematic_colnames <- problematic_colnames[problematic_colnames %in% colnames(X)]
-
-    if (length(problematic_colnames) == 0) {
-      message("No more problematic SNP columns found in X. Breaking the loop.")
-      break
+    
+    if (length(problematic_colnames) > 0) {
+      message("Attempting to remove all problematic columns at once: ", paste(problematic_colnames, collapse = ", "))
+      
+      # Remove all problematic columns at once
+      X_temp <- X[, !(colnames(X) %in% problematic_colnames), drop = FALSE]
+      X_design_temp <- cbind(1, X_temp, C)
+      colnames_X_design_temp <- c("Intercept", colnames(X_temp))
+      colnames(X_design_temp)[1:length(colnames_X_design_temp)] <- colnames_X_design_temp
+      
+      # Check if removing all problematic columns achieves full rank
+      matrix_rank_temp <- qr(X_design_temp)$rank
+      
+      if (matrix_rank_temp == ncol(X_design_temp)) {
+        message("Achieved full rank by removing all problematic columns at once. Proceeding with original logic...")
+      } else {
+        message("Removing all problematic columns did not achieve full rank. Skipping to corr_filter...")
+        skip_remove_highcorr <- TRUE
+      }
     }
-    # Print the problematic column names for debugging purposes
-    message("Problematic SNP columns identified: ", paste(problematic_colnames, collapse = ", "))
-
-    # Remove problematic columns affecting the rank based on the chosen strategy
-    X <- remove_highcorr_snp(X, problematic_colnames, strategy = strategy, response = response)
-
-    # Rebuild the design matrix with cleaned X, leaving C unnamed
-    X_design <- cbind(1, X, C)
-    colnames_X_design <- c("Intercept", colnames(X)) # Reassign column names to X part only
-
-    # Only assign names to X part, leaving C unnamed
-    colnames(X_design)[1:length(colnames_X_design)] <- colnames_X_design
-
-    # Recheck the rank of the design matrix
-    matrix_rank <- qr(X_design)$rank
-    message("New rank of the design matrix: ", matrix_rank, " / ", ncol(X_design), " columns.")
-    iteration <- iteration + 1
   }
 
-  if (matrix_rank < ncol(X_design)) {
+  # Only proceed with remove_highcorr_snp if not skipping
+  if (!skip_remove_highcorr) {
+    iteration <- 0
+    while (matrix_rank < ncol(X_design) && iteration < max_iterations) {
+      message("Design matrix is not full rank, identifying problematic columns...")
+
+      qr_decomp <- qr(X_design)
+      R <- qr_decomp$rank
+      Q <- qr_decomp$pivot
+      problematic_cols <- Q[(R + 1):ncol(X_design)]
+      problematic_colnames <- colnames(X_design)[problematic_cols]
+      problematic_colnames <- problematic_colnames[problematic_colnames %in% colnames(X)]
+
+      if (length(problematic_colnames) == 0) {
+        message("No more problematic SNP columns found in X. Breaking the loop.")
+        break
+      }
+      
+      message("Problematic SNP columns identified: ", paste(problematic_colnames, collapse = ", "))
+      X <- remove_highcorr_snp(X, problematic_colnames, strategy = strategy, response = response)
+
+      X_design <- cbind(1, X, C)
+      colnames_X_design <- c("Intercept", colnames(X))
+      colnames(X_design)[1:length(colnames_X_design)] <- colnames_X_design
+
+      matrix_rank <- qr(X_design)$rank
+      message("New rank of the design matrix: ", matrix_rank, " / ", ncol(X_design), " columns.")
+      iteration <- iteration + 1
+    }
+
+    if (iteration == max_iterations) {
+      warning("Maximum iterations reached. The design matrix may still not be full rank.")
+    }
+  }
+
+  # Final check and corr_filter if needed
+  matrix_rank <- qr(cbind(1, X, C))$rank
+  if (matrix_rank < ncol(cbind(1, X, C))) {
     message("Applying corr_filter to ensure the design matrix is full rank...")
     for (threshold in corr_thresholds) {
       filter_result <- corr_filter(X, cor_thres = threshold)
@@ -480,13 +516,18 @@ check_remove_highcorr_snp <- function(X = X, C = C, strategy = c("correlation", 
     }
   }
 
+
+  if (iteration == max_iterations) {
+    warning("Maximum iterations reached. The design matrix may still not be full rank.")
+  }
+  
   if (iteration == max_iterations) {
     warning("Maximum iterations reached. The design matrix may still not be full rank.")
   }
   if (ncol(X) == 1 && initial_ncol == 1) {
     colnames(X) <- original_colnames
   }
-  return(X = X) # Return the cleaned X matrix
+  return(X)
 }
 
 #' Remove Problematic Columns Based on a Given Strategy
