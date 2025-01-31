@@ -17,6 +17,9 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
+      matrix:
+        variant: ["r43", "r44"]
+
     env:
       ANACONDA_API_KEY: ${{ secrets.ANACONDA_API_TOKEN }}
       ANACONDA_OWNER: ${{ vars.ANACONDA_OWNER }}
@@ -37,6 +40,7 @@ jobs:
         run: |
           mkdir /tmp/recipe
           cp .github/recipe/recipe.yaml /tmp/recipe/recipe.yaml
+          cp .github/recipe/variant_${{ matrix.variant}}.yaml /tmp/recipe/variants.yaml
           version=${{ github.event.inputs.version }}
           build=${{ github.event.inputs.build }}
           wget https://github.com/cumc/pecotmr/archive/${version}.tar.gz
@@ -70,6 +74,8 @@ jobs:
     runs-on: macos-13
     strategy:
       fail-fast: false
+      matrix:
+        variant: ["r43", "r44"]
     env:
       ANACONDA_API_KEY: ${{ secrets.ANACONDA_API_TOKEN }}
       ANACONDA_OWNER: ${{ vars.ANACONDA_OWNER }}
@@ -90,6 +96,7 @@ jobs:
         run: |
           mkdir /tmp/recipe
           cp .github/recipe/recipe.yaml /tmp/recipe/recipe.yaml
+          cp .github/recipe/variant_${{ matrix.variant}}.yaml /tmp/recipe/variants.yaml
           version=${{ github.event.inputs.version }}
           build=${{ github.event.inputs.build }}
           wget https://github.com/cumc/pecotmr/archive/${version}.tar.gz
@@ -111,6 +118,8 @@ jobs:
     runs-on: macos-14
     strategy:
       fail-fast: false
+      matrix:
+        variant: ["r43", "r44"]
     env:
       ANACONDA_API_KEY: ${{ secrets.ANACONDA_API_TOKEN }}
       ANACONDA_OWNER: ${{ vars.ANACONDA_OWNER }}
@@ -131,6 +140,7 @@ jobs:
         run: |
           mkdir /tmp/recipe
           cp .github/recipe/recipe.yaml /tmp/recipe/recipe.yaml
+          cp .github/recipe/variant_${{ matrix.variant}}.yaml /tmp/recipe/variants.yaml
           version=${{ github.event.inputs.version }}
           build=${{ github.event.inputs.build }}
           wget https://github.com/cumc/pecotmr/archive/${version}.tar.gz

@@ -9,9 +9,14 @@ on:
 
 jobs:
   ci_linux-64:
+    name: linux-64 CI
     runs-on: ubuntu-latest
     env:
       CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+    strategy:
+      fail-fast: false
+      matrix:
+        environment: ["r43", "r44"]
     
     steps:
       - name: Checkout pull request branch
@@ -26,10 +31,10 @@ jobs:
         uses: prefix-dev/setup-pixi@v0.8.1
 
       - name: Run unit tests
-        run: pixi run devtools_test
+        run: pixi run --environment ${{ matrix.environment }} devtools_test
 
       - name: Check unit test code coverage
-        run: pixi run codecov
+        run: pixi run --environment ${{ matrix.environment }} codecov
 
       #- name: Run R CMD CHECK
         #run: pixi run rcmdcheck
@@ -41,7 +46,12 @@ jobs:
         #run: pixi run bioccheck
         
   ci_osx-64:
+    name: osx-64 CI
     runs-on: macos-13
+    strategy:
+      fail-fast: false
+      matrix:
+        environment: ["r43", "r44"]
     
     steps:
       - name: Checkout pull request branch
@@ -56,7 +66,7 @@ jobs:
         uses: prefix-dev/setup-pixi@v0.8.1
 
       - name: Run unit tests
-        run: pixi run devtools_test
+        run: pixi run --environment ${{ matrix.environment }} devtools_test
 
       #- name: Run R CMD CHECK
         #run: pixi run rcmdcheck
@@ -68,7 +78,12 @@ jobs:
         #run: pixi run bioccheck
   
   ci_osx-arm64:
+    name: osx-arm64 CI
     runs-on: macos-14
+    strategy:
+      fail-fast: false
+      matrix:
+        environment: ["r43", "r44"]
     
     steps:
       - name: Checkout pull request branch
@@ -83,7 +98,7 @@ jobs:
         uses: prefix-dev/setup-pixi@v0.8.1
 
       - name: Run unit tests
-        run: pixi run devtools_test
+        run: pixi run --environment ${{ matrix.environment }} devtools_test
 
       #- name: Run R CMD CHECK
         #run: pixi run rcmdcheck
