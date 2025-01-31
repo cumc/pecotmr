@@ -37,6 +37,7 @@ jobs:
         run: |
           mkdir /tmp/recipe
           cp .github/recipe/recipe.yaml /tmp/recipe/recipe.yaml
+          cp .github/recipe/variants.yaml /tmp/recipe/variants.yaml
           version=${{ github.event.inputs.version }}
           build=${{ github.event.inputs.build }}
           wget https://github.com/cumc/pecotmr/archive/${version}.tar.gz
@@ -90,6 +91,7 @@ jobs:
         run: |
           mkdir /tmp/recipe
           cp .github/recipe/recipe.yaml /tmp/recipe/recipe.yaml
+          cp .github/recipe/variants.yaml /tmp/recipe/variants.yaml
           version=${{ github.event.inputs.version }}
           build=${{ github.event.inputs.build }}
           wget https://github.com/cumc/pecotmr/archive/${version}.tar.gz
@@ -131,6 +133,7 @@ jobs:
         run: |
           mkdir /tmp/recipe
           cp .github/recipe/recipe.yaml /tmp/recipe/recipe.yaml
+          cp .github/recipe/variants.yaml /tmp/recipe/variants.yaml
           version=${{ github.event.inputs.version }}
           build=${{ github.event.inputs.build }}
           wget https://github.com/cumc/pecotmr/archive/${version}.tar.gz

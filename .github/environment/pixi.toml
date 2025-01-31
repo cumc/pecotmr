@@ -14,6 +14,16 @@ rcmdcheck = "R -e 'rcmdcheck::rcmdcheck()'"
 bioccheck_git_clone = "R -e 'BiocCheck::BiocCheckGitClone()'"
 bioccheck = "R -e 'BiocCheck::BiocCheck()'"
 
+[feature.r43]
+dependencies = {"r-base" = "4.3.*"}
+
+[feature.r44]
+dependencies = {"r-base" = "4.4.*"}
+
+[environments]
+r43 = {features = ["r43"]}
+r44 = {features = ["r44"]}
+
 [dependencies]
 "gsl" = "*"
 "bioconductor-bioccheck" = "*"
