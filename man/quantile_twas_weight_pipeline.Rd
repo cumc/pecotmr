@@ -14,7 +14,8 @@ quantile_twas_weight_pipeline(
   twas_maf_cutoff = 0.01,
   ld_pruning = FALSE,
   quantile_qtl_tau_list = seq(0.05, 0.95, by = 0.05),
-  quantile_twas_tau_list = seq(0.01, 0.99, by = 0.01)
+  quantile_twas_tau_list = seq(0.01, 0.99, by = 0.01),
+  screen_threshold = 0.05
 )
 }
 \arguments{
