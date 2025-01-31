@@ -24,9 +24,8 @@ requirements:
   host:
     - bioconductor-iranges
     - bioconductor-qvalue
-    - bioconductor-s4vectors
     - bioconductor-snpstats
-    - r-base 4.3.*
+    - r-base
     - r-bigsnpr
     - r-bigstatsr
     - r-coloc
@@ -48,26 +47,23 @@ requirements:
     - r-mr.mash.alpha
     - r-mvsusier
     - r-pgenlibr
-    - r-r.utils
+    - r-purrr
     - r-qgg
     - r-quantreg
-    - r-purrr
+    - r-r.utils
     - r-r6
     - r-rcpp
     - r-readr
     - r-rfast
-    - r-rlab
     - r-stringr
     - r-susier
     - r-tidyr
-    - r-udr
     - r-vctrs
   run:
     - bioconductor-iranges
     - bioconductor-qvalue
-    - bioconductor-s4vectors
     - bioconductor-snpstats
-    - r-base 4.3.*
+    - r-base
     - r-bigsnpr
     - r-bigstatsr
     - r-coloc
@@ -97,11 +93,9 @@ requirements:
     - r-rcpp
     - r-readr
     - r-rfast
-    - r-rlab
     - r-stringr
     - r-susier
     - r-tidyr
-    - r-udr
     - r-vctrs
 
 tests:
