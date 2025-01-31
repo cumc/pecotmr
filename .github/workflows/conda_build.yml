@@ -61,7 +61,11 @@ jobs:
 
       - name: Build conda packages
         run: |
-          docker run --rm --volume /tmp:/tmp --volume $(pwd) --workdir $(pwd) rattler-build \
+          docker run --rm --volume /tmp:/tmp  \
+            --volume /etc/passwd:/etc/passwd:ro \
+            --volume /etc/group:/etc/group:ro \
+            --volume $(pwd) --workdir $(pwd) \
+            --user $(id -u) rattler-build \
             rattler-build build -c dnachun -c conda-forge -c bioconda \
             --output-dir /tmp/rattler-build --recipe-dir /tmp/recipe
 
