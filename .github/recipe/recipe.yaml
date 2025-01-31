@@ -58,6 +58,7 @@ requirements:
     - r-stringr
     - r-susier
     - r-tidyr
+    - r-udr
     - r-vctrs
   run:
     - bioconductor-iranges
