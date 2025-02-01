@@ -61,7 +61,7 @@ mr_format <- function(susie_result, condition, gwas_sumstats_db, coverage = "cs_
       if (any(susie_pos %in% gwas_pos)) {
         gwas_sumstats_db_extracted <- gwas_sumstats_db %>%
           filter(pos %in% susie_pos) %>%
-          mutate(n_sample = n_case + n_control)
+          mutate(n_sample = if ("n_sample" %in% colnames(.)) n_sample else (n_case + n_control))
         mean_n_sample <- round(mean(gwas_sumstats_db_extracted$n_sample, na.rm = TRUE))
         # Impute `n_sample` and `maf`
         if (any(is.na(gwas_sumstats_db_extracted$effect_allele_frequency))) {
