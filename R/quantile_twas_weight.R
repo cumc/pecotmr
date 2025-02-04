@@ -413,6 +413,7 @@ check_remove_highcorr_snp <- function(X = X, C = C, strategy = c("correlation", 
   strategy <- match.arg(strategy)
   original_colnames <- colnames(X)
   initial_ncol <- ncol(X) # Store the initial number of columns in X
+  iteration <- 0
   # Combine the design matrix with X (SNPs) and C (covariates), keeping C without column names
   X_design <- cbind(1, X, C) # Add an intercept column (1)
   colnames_X_design <- c("Intercept", colnames(X)) # Assign column names only to X (SNPs) part
@@ -464,7 +465,6 @@ check_remove_highcorr_snp <- function(X = X, C = C, strategy = c("correlation", 
 
   # Only proceed with remove_highcorr_snp if not skipping
   if (!skip_remove_highcorr) {
-    iteration <- 0
     while (matrix_rank < ncol(X_design) && iteration < max_iterations) {
       message("Design matrix is not full rank, identifying problematic columns...")
 
@@ -521,9 +521,6 @@ check_remove_highcorr_snp <- function(X = X, C = C, strategy = c("correlation", 
     warning("Maximum iterations reached. The design matrix may still not be full rank.")
   }
   
-  if (iteration == max_iterations) {
-    warning("Maximum iterations reached. The design matrix may still not be full rank.")
-  }
   if (ncol(X) == 1 && initial_ncol == 1) {
     colnames(X) <- original_colnames
   }
