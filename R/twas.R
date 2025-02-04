@@ -451,8 +451,11 @@ twas_pipeline <- function(twas_weights_data,
         # MR analysis
         if (!is.null(twas_weights_data[[weight_db]]$susie_results) &&
           any(na.omit(twas_rs_df$twas_pval) < mr_pval_cutoff) &&
-          "top_loci" %in% names(twas_weights_data[[weight_db]]$susie_results[[context]]) &&
-          "effect_allele_frequency" %in% colnames(twas_data_qced[[molecular_id]][["gwas_qced"]][[study]])) {
+          "top_loci" %in% names(twas_weights_data[[weight_db]]$susie_results[[context]])) {
+          if (!"effect_allele_frequency" %in% colnames(twas_data_qced[[molecular_id]][["gwas_qced"]][[study]])){
+            warning(paste0("skip MR for ", weight_db, " for ", study, ", the effect_allele_frequency information is not available."))
+            return(list(twas_rs_df = twas_rs_df, mr_rs_df = data.frame()))
+          }
           combined_ld_meta_df <- bind_rows(twas_data_qced_result$snp_info)
           mr_formatted_input <- mr_format(twas_weights_data[[weight_db]], context, twas_data_qced[[molecular_id]][["gwas_qced"]][[study]],
             coverage = mr_coverage_column, allele_qc = TRUE, molecular_name_obj = c("molecular_id"), ld_meta_df = combined_ld_meta_df
