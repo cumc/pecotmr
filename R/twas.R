@@ -168,8 +168,8 @@ harmonize_twas <- function(twas_weights_data, ld_meta_file_path, gwas_meta_file)
         gwas_file <- gwas_files[study]
         gwas_sumstats <- as.data.frame(tabix_region(gwas_file, query_region)) # extension for yml file for column name mapping
         if (nrow(gwas_sumstats) == 0) {
-          warning(paste("No GWAS summary statistics are found in the region of interest", query_region))
-          return(list(twas_data_qced = NULL, snp_info = NULL))
+          warning(paste("No GWAS summary statistics found in the region of interest ", query_region, " for ", study, ". "))
+          next
         }
         if (colnames(gwas_sumstats)[1] == "#chrom") colnames(gwas_sumstats)[1] <- "chrom" # colname update for tabix
         gwas_sumstats$chrom <- as.integer(gwas_sumstats$chrom)
@@ -333,7 +333,9 @@ twas_pipeline <- function(twas_weights_data,
       z_snp <- list()
       for (study in studies) {
         z_gene_list[[study]] <- twas_table[twas_table$gwas_study == study, , drop = FALSE]
-        z_snp[[study]] <- do.call(rbind, lapply(post_qc_twas_data, function(x) find_data(x, c(1, "gwas_qced", study), docall = rbind)))
+        z_snp[[study]] <- do.call(rbind, lapply(post_qc_twas_data, function(x) {
+          if (study %in% names(x$gwas_qced)) return(x$gwas_qced[[study]])
+        }))
         colnames(z_snp[[study]])[which(colnames(z_snp[[study]]) == "variant_id")] <- "id"
         z_snp[[study]] <- z_snp[[study]][, c("id", "A1", "A2", "z")]
         z_snp[[study]] <- z_snp[[study]][!duplicated(z_snp[[study]]$id), , drop = FALSE]
@@ -436,6 +438,7 @@ twas_pipeline <- function(twas_weights_data,
       study_results <- lapply(gwas_studies, function(study) {
         twas_variants <- intersect(rownames(twas_data_qced[[molecular_id]][["weights_qced"]][[context]][["weights"]]), 
                             twas_data_qced[[molecular_id]][["variant_names"]][[context]][[study]])
+        if (length(twas_variants)==0) return (list(twas_rs_df = data.frame(), mr_rs_df = data.frame()))
         # twas analysis
         twas_rs <- twas_analysis(
           twas_data_qced[[molecular_id]][["weights_qced"]][[context]][["weights"]], twas_data_qced[[molecular_id]][["gwas_qced"]][[study]],
@@ -448,7 +451,8 @@ twas_pipeline <- function(twas_weights_data,
         # MR analysis
         if (!is.null(twas_weights_data[[weight_db]]$susie_results) &&
           any(na.omit(twas_rs_df$twas_pval) < mr_pval_cutoff) &&
-          "top_loci" %in% names(twas_weights_data[[weight_db]]$susie_results[[context]])) {
+          "top_loci" %in% names(twas_weights_data[[weight_db]]$susie_results[[context]]) &&
+          "effect_allele_frequency" %in% colnames(twas_data_qced[[molecular_id]][["gwas_qced"]][[study]])) {
           combined_ld_meta_df <- bind_rows(twas_data_qced_result$snp_info)
           mr_formatted_input <- mr_format(twas_weights_data[[weight_db]], context, twas_data_qced[[molecular_id]][["gwas_qced"]][[study]],
             coverage = mr_coverage_column, allele_qc = TRUE, molecular_name_obj = c("molecular_id"), ld_meta_df = combined_ld_meta_df
