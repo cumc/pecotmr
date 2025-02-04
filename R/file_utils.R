@@ -762,6 +762,7 @@ load_twas_weights <- function(weight_db_files, conditions = NULL,
 #' @param region The region where tabix use to subset the input dataset.
 #' @param target User-specified gene/phenotype name used to further subset the phenotype data.
 #' @param target_column_index Filter this specific column for the target.
+#' @param no_comment whether to consider all content after '#' as comment in the column_mapping file.
 #' @return A list of rss_input, including the column-name-formatted summary statistics,
 #' sample size (n), and var_y.
 #'
@@ -769,10 +770,21 @@ load_twas_weights <- function(weight_db_files, conditions = NULL,
 #' @importFrom magrittr %>%
 #' @importFrom data.table fread
 #' @export
-load_rss_data <- function(sumstat_path, column_file_path, subset = TRUE, n_sample = 0, n_case = 0, n_control = 0, target = "", region = "", target_column_index = "") {
+load_rss_data <- function(sumstat_path, column_file_path, subset = TRUE, n_sample = 0, n_case = 0, n_control = 0, target = "",
+                          region = "", target_column_index = "", no_comment = FALSE) {
   # Read and preprocess column mapping
-  column_data <- read.table(column_file_path, header = FALSE, sep = ":", stringsAsFactors = FALSE) %>%
-    rename(standard = V1, original = V2)
+  if(no_comment) {
+    column_data <- read.table(column_file_path, 
+                              header = FALSE, sep = ":", 
+                              comment.char = "",  # This tells R not to treat any character as comment
+                              stringsAsFactors = FALSE) %>%
+      rename(standard = V1, original = V2)
+  } else {
+    column_data <- read.table(column_file_path, 
+                              header = FALSE, sep = ":", 
+                              stringsAsFactors = FALSE) %>%
+      rename(standard = V1, original = V2)
+  }
 
   # Initialize sumstats variable
   sumstats <- NULL
