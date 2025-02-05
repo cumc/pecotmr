@@ -317,10 +317,10 @@ get_cs_info <- function(susie_output_sets_cs, top_variants_idx) {
 #' @noRd
 get_cs_and_corr <- function(susie_output, coverage, data_x, mode = c("susie", "susie_rss", "mvsusie"), min_abs_corr = NULL, median_abs_corr = NULL) {
   if (mode %in% c("susie", "mvsusie")) {
-    susie_output_secondary <- list(sets = susie_get_cs(susie_output, X = data_x, coverage = coverage, min_abs_corr = min_abs_corr), pip = susie_output$pip)
+    susie_output_secondary <- list(sets = susie_get_cs(susie_output, X = data_x, coverage = coverage, min_abs_corr = min_abs_corr, median_abs_corr = median_abs_corr), pip = susie_output$pip)
     susie_output_secondary$cs_corr <- get_cs_correlation(susie_output_secondary, X = data_x)
   } else {
-    susie_output_secondary <- list(sets = susie_get_cs(susie_output, Xcorr = data_x, coverage = coverage, min_abs_corr = min_abs_corr), pip = susie_output$pip)
+    susie_output_secondary <- list(sets = susie_get_cs(susie_output, Xcorr = data_x, coverage = coverage, min_abs_corr = min_abs_corr, median_abs_corr = median_abs_corr), pip = susie_output$pip)
     susie_output_secondary$cs_corr <- get_cs_correlation(susie_output_secondary, Xcorr = data_x)
   }
   susie_output_secondary
@@ -403,7 +403,7 @@ susie_post_processor <- function(susie_output, data_x, data_y, X_scalar, y_scala
     sets_secondary <- list()
     if (!is.null(secondary_coverage) && length(secondary_coverage)) {
       for (sec_cov in secondary_coverage) {
-        sets_secondary[[paste0("coverage_", sec_cov)]] <- get_cs_and_corr(susie_output, sec_cov, data_x, mode, min_abs_corr, median_abs_corr)
+        sets_secondary[[paste0("coverage_", sec_cov)]] <- get_cs_and_corr(susie_output, sec_cov, data_x, mode, min_abs_corr, median_abs_corr=median_abs_corr)
         top_variants_idx_sec <- get_top_variants_idx(sets_secondary[[paste0("coverage_", sec_cov)]], signal_cutoff)
         cs_sec <- get_cs_info(sets_secondary[[paste0("coverage_", sec_cov)]]$sets$cs, top_variants_idx_sec)
         top_loci_list[[paste0("coverage_", sec_cov)]] <- data.frame(variant_idx = top_variants_idx_sec, cs_idx = cs_sec, stringsAsFactors = FALSE)
