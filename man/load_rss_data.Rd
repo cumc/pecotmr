@@ -14,7 +14,7 @@ load_rss_data(
   target = "",
   region = "",
   target_column_index = "",
-  no_comment = FALSE
+  comment_string = "#"
 )
 }
 \arguments{
@@ -34,7 +34,7 @@ load_rss_data(
 
 \item{target_column_index}{Filter this specific column for the target.}
 
-\item{no_comment}{whether to consider all content after '#' as comment in the column_mapping file.}
+\item{comment_string}{comment sign in the column_mapping file, default is #}
 }
 \value{
 A list of rss_input, including the column-name-formatted summary statistics,
