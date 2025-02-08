@@ -104,9 +104,9 @@ adjust_susie_weights <- function(twas_weights_results, keep_variants, allele_qc 
 
 #' @importFrom susieR susie
 #' @export
-susie_wrapper <- function(X, y, init_L = 5, max_L = 30, l_step = 5, ...) {
+susie_wrapper <- function(X, y, init_L = 5, max_L = 30, l_step = 5, estimate_prior_method = NULL, ...) {
   if (init_L == max_L) {
-    return(susie(X, y, L = init_L, median_abs_corr = 0.8, ...))
+    return(susie(X, y, L = init_L, median_abs_corr = 0.8, estimate_prior_method =estimate_prior_method, ...))
   }
   L <- init_L
   # Perform SuSiE by dynamically increasing L
@@ -115,7 +115,7 @@ susie_wrapper <- function(X, y, init_L = 5, max_L = 30, l_step = 5, ...) {
     st <- proc.time()
     res <- susie(X, y,
       L = L,
-      median_abs_corr = 0.8, ...
+      median_abs_corr = 0.8, estimate_prior_method =estimate_prior_method, ...
     )
     res$time_elapsed <- proc.time() - st
     if (!is.null(res$sets$cs)) {

@@ -26,6 +26,7 @@
 #' @param cv_folds The number of folds to use for cross-validation. Default is 5.
 #' @param cv_threads The number of threads to use for parallel computation in cross-validation. Default is 1.
 #' @param verbose Verbosity level. Default is 0.
+#' @para estimate_prior_method Estimate_prior_method that will be passed to susie_wrapper and then to susie(). Default is NULL.
 #'
 #' @return A list containing the univariate analysis results.
 #' @importFrom susieR susie
@@ -58,7 +59,8 @@ univariate_analysis_pipeline <- function(
     max_cv_variants = -1,
     cv_folds = 5,
     cv_threads = 1,
-    verbose = 0) {
+    verbose = 0,
+    estimate_prior_method = NULL) {
   # Input validation
   if (!is.matrix(X) || !is.numeric(X)) stop("X must be a numeric matrix")
   if (!is.vector(Y) && !(is.matrix(Y) && ncol(Y) == 1) || !is.numeric(Y)) stop("Y must be a numeric vector or a single column matrix")
@@ -111,7 +113,7 @@ univariate_analysis_pipeline <- function(
   message("Fitting SuSiE model on input data with L optimization...")
   res$susie_fitted <- susie_wrapper(X, Y,
     init_L = init_L, max_L = max_L, l_step = l_step,
-    refine = TRUE, coverage = coverage[1]
+    refine = TRUE, coverage = coverage[1], estimate_prior_method = estimate_prior_method
   )
 
   # Process SuSiE results
