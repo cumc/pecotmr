@@ -27,7 +27,8 @@ univariate_analysis_pipeline(
   max_cv_variants = -1,
   cv_folds = 5,
   cv_threads = 1,
-  verbose = 0
+  verbose = 0,
+  estimate_prior_method = NULL
 )
 }
 \arguments{
