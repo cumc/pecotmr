@@ -773,7 +773,7 @@ load_twas_weights <- function(weight_db_files, conditions = NULL,
 load_rss_data <- function(sumstat_path, column_file_path, subset = TRUE, n_sample = 0, n_case = 0, n_control = 0, target = "",
                           region = "", target_column_index = "", comment_string = "#") {
   # Read and preprocess column mapping
-  if (is.null(comment_string)) {
+  if (comment_string == "NULL")) {
     column_data <- read.table(column_file_path, 
                               header = FALSE, sep = ":", 
                               comment.char = "",  # This tells R not to treat any character as comment
