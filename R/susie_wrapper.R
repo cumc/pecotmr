@@ -151,7 +151,7 @@ susie_wrapper <- function(X, y, init_L = 5, max_L = 30, l_step = 5, ...) {
 #' @importFrom susieR susie_rss
 #' @export
 susie_rss_wrapper <- function(z, R, n = NULL, var_y = NULL, L = 10, max_L = 30, l_step = 5,
-                              zR_discrepancy_correction = FALSE, coverage = 0.95, ...) {
+                              zR_discrepancy_correction = FALSE, coverage = 0.95, median_abs_corr = NULL, ...) {
   if (L == 1) {
     return(susie_rss(
       z = z, R = R, var_y = var_y, n = n,
@@ -403,7 +403,7 @@ susie_post_processor <- function(susie_output, data_x, data_y, X_scalar, y_scala
     sets_secondary <- list()
     if (!is.null(secondary_coverage) && length(secondary_coverage)) {
       for (sec_cov in secondary_coverage) {
-        sets_secondary[[paste0("coverage_", sec_cov)]] <- get_cs_and_corr(susie_output, sec_cov, data_x, mode, min_abs_corr, median_abs_corr)
+        sets_secondary[[paste0("coverage_", sec_cov)]] <- get_cs_and_corr(susie_output, sec_cov, data_x, mode, min_abs_corr, median_abs_corr=median_abs_corr)
         top_variants_idx_sec <- get_top_variants_idx(sets_secondary[[paste0("coverage_", sec_cov)]], signal_cutoff)
         cs_sec <- get_cs_info(sets_secondary[[paste0("coverage_", sec_cov)]]$sets$cs, top_variants_idx_sec)
         top_loci_list[[paste0("coverage_", sec_cov)]] <- data.frame(variant_idx = top_variants_idx_sec, cs_idx = cs_sec, stringsAsFactors = FALSE)

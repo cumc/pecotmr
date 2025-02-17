@@ -168,11 +168,13 @@ harmonize_twas <- function(twas_weights_data, ld_meta_file_path, gwas_meta_file)
         gwas_file <- gwas_files[study]
         gwas_sumstats <- as.data.frame(tabix_region(gwas_file, query_region)) # extension for yml file for column name mapping
         if (nrow(gwas_sumstats) == 0) {
-          warning(paste("No GWAS summary statistics are found in the region of interest", query_region))
-          return(list(twas_data_qced = NULL, snp_info = NULL))
+          warning(paste("No GWAS summary statistics found in the region of interest ", query_region, " for ", study, ". "))
+          next
         }
         if (colnames(gwas_sumstats)[1] == "#chrom") colnames(gwas_sumstats)[1] <- "chrom" # colname update for tabix
         gwas_sumstats$chrom <- as.integer(gwas_sumstats$chrom)
+        # check for overlapping variants
+        if (! any(gwas_sumstats$pos  %in%  gsub("\\:.*$", "", sub("^.*?\\:", "", LD_list$combined_LD_variants)))) next 
         gwas_allele_flip <- allele_qc(gwas_sumstats[, c("chrom", "pos", "A1", "A2")], LD_list$combined_LD_variants, gwas_sumstats, c("beta", "z"),
           match_min_prop = 0
         )
@@ -198,6 +200,7 @@ harmonize_twas <- function(twas_weights_data, ld_meta_file_path, gwas_meta_file)
           # intersect post-qc gwas and post-qc weight variants
           gwas_LD_variants <- intersect(gwas_data_sumstats$variant_id, LD_list$combined_LD_variants)
           weights_matrix_subset <- weights_matrix_subset[rownames(weights_matrix_subset) %in% gwas_LD_variants, , drop = FALSE]
+          if (nrow(weights_matrix_subset) == 0) next
           postqc_weight_variants <- rownames(weights_matrix_subset)
 
           # Step 5: adjust SuSiE weights based on available variants
@@ -210,7 +213,7 @@ harmonize_twas <- function(twas_weights_data, ld_meta_file_path, gwas_meta_file)
             )
             weights_matrix_subset <- cbind(
               susie_weights = setNames(adjusted_susie_weights$adjusted_susie_weights, adjusted_susie_weights$remained_variants_ids),
-              weights_matrix_subset[gsub("chr", "", adjusted_susie_weights$remained_variants_ids), !colnames(weights_matrix_subset) %in% "susie_weights"]
+              weights_matrix_subset[gsub("chr", "", adjusted_susie_weights$remained_variants_ids), !colnames(weights_matrix_subset) %in% "susie_weights", drop=FALSE]
             )
             results[[molecular_id]][["susie_weights_intermediate_qced"]][[context]] <- twas_weights_data$susie_results[[context]][c("pip", "cs_variants", "cs_purity")]
             names(results[[molecular_id]][["susie_weights_intermediate_qced"]][[context]][["pip"]]) <- rownames(weights_matrix) # original variants that is not qced yet
@@ -241,9 +244,14 @@ harmonize_twas <- function(twas_weights_data, ld_meta_file_path, gwas_meta_file)
     }
     # extract LD matrix for variants intersect with gwas and twas weights at molecular_id level
     all_molecular_variants <- unique(find_data(results[[molecular_id]][["gwas_qced"]], c(2, "variant_id")))
-    var_indx <- match(all_molecular_variants, paste0("chr", LD_list$combined_LD_variants))
-    results[[molecular_id]][["LD"]] <- as.matrix(LD_list$combined_LD_matrix[var_indx, var_indx])
-    rownames(results[[molecular_id]][["LD"]]) <- colnames(results[[molecular_id]][["LD"]]) <- paste0("chr", colnames(results[[molecular_id]][["LD"]]))
+    if (is.null(all_molecular_variants)) {
+        results[[molecular_id]] <- NULL
+    } else {
+        var_indx <- match(all_molecular_variants, paste0("chr", LD_list$combined_LD_variants))
+        results[[molecular_id]][["LD"]] <- as.matrix(LD_list$combined_LD_matrix[var_indx, var_indx])
+        rownames(results[[molecular_id]][["LD"]]) <- colnames(results[[molecular_id]][["LD"]]) <- paste0("chr", colnames(results[[molecular_id]][["LD"]]))
+    }
+
   }
   # return results
   return(list(twas_data_qced = results, snp_info = snp_info))
@@ -333,7 +341,9 @@ twas_pipeline <- function(twas_weights_data,
       z_snp <- list()
       for (study in studies) {
         z_gene_list[[study]] <- twas_table[twas_table$gwas_study == study, , drop = FALSE]
-        z_snp[[study]] <- do.call(rbind, lapply(post_qc_twas_data, function(x) find_data(x, c(1, "gwas_qced", study), docall = rbind)))
+        z_snp[[study]] <- do.call(rbind, lapply(post_qc_twas_data, function(x) {
+          if (study %in% names(x$gwas_qced)) return(x$gwas_qced[[study]])
+        }))
         colnames(z_snp[[study]])[which(colnames(z_snp[[study]]) == "variant_id")] <- "id"
         z_snp[[study]] <- z_snp[[study]][, c("id", "A1", "A2", "z")]
         z_snp[[study]] <- z_snp[[study]][!duplicated(z_snp[[study]]$id), , drop = FALSE]
@@ -392,7 +402,7 @@ twas_pipeline <- function(twas_weights_data,
     twas_weights_data[[weight_db]][["molecular_id"]] <- weight_db
     twas_data_qced_result <- harmonize_twas(twas_weights_data[[weight_db]], ld_meta_file_path, gwas_meta_file)
     twas_data_qced <- twas_data_qced_result$twas_data_qced
-    if (is.null(twas_data_qced)) {
+    if (length(twas_data_qced)==0 | is.null(twas_data_qced)) {
       warning(paste0("No data harmonized for ", weight_db, ". Returning NULL for TWAS result for this region."))
       return(NULL)
     }
@@ -436,6 +446,7 @@ twas_pipeline <- function(twas_weights_data,
       study_results <- lapply(gwas_studies, function(study) {
         twas_variants <- intersect(rownames(twas_data_qced[[molecular_id]][["weights_qced"]][[context]][["weights"]]), 
                             twas_data_qced[[molecular_id]][["variant_names"]][[context]][[study]])
+        if (length(twas_variants)==0) return (list(twas_rs_df = data.frame(), mr_rs_df = data.frame()))
         # twas analysis
         twas_rs <- twas_analysis(
           twas_data_qced[[molecular_id]][["weights_qced"]][[context]][["weights"]], twas_data_qced[[molecular_id]][["gwas_qced"]][[study]],
@@ -449,6 +460,10 @@ twas_pipeline <- function(twas_weights_data,
         if (!is.null(twas_weights_data[[weight_db]]$susie_results) &&
           any(na.omit(twas_rs_df$twas_pval) < mr_pval_cutoff) &&
           "top_loci" %in% names(twas_weights_data[[weight_db]]$susie_results[[context]])) {
+          if (!"effect_allele_frequency" %in% colnames(twas_data_qced[[molecular_id]][["gwas_qced"]][[study]])){
+            warning(paste0("skip MR for ", weight_db, " for ", study, ", the effect_allele_frequency information is not available."))
+            return(list(twas_rs_df = twas_rs_df, mr_rs_df = data.frame()))
+          }
           combined_ld_meta_df <- bind_rows(twas_data_qced_result$snp_info)
           mr_formatted_input <- mr_format(twas_weights_data[[weight_db]], context, twas_data_qced[[molecular_id]][["gwas_qced"]][[study]],
             coverage = mr_coverage_column, allele_qc = TRUE, molecular_name_obj = c("molecular_id"), ld_meta_df = combined_ld_meta_df
