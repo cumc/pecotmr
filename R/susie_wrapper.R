@@ -106,17 +106,14 @@ adjust_susie_weights <- function(twas_weights_results, keep_variants, allele_qc 
 #' @export
 susie_wrapper <- function(X, y, init_L = 5, max_L = 30, l_step = 5, ...) {
   if (init_L == max_L) {
-    return(susie(X, y, L = init_L, median_abs_corr = 0.8, ...))
+    return(susie(X, y, L = init_L, ...))
   }
   L <- init_L
   # Perform SuSiE by dynamically increasing L
   gst <- proc.time()
   while (TRUE) {
     st <- proc.time()
-    res <- susie(X, y,
-      L = L,
-      median_abs_corr = 0.8, ...
-    )
+    res <- susie(X, y, L = L, ...)
     res$time_elapsed <- proc.time() - st
     if (!is.null(res$sets$cs)) {
       if (length(res$sets$cs) >= L && L <= max_L) {
@@ -151,23 +148,23 @@ susie_wrapper <- function(X, y, init_L = 5, max_L = 30, l_step = 5, ...) {
 #' @importFrom susieR susie_rss
 #' @export
 susie_rss_wrapper <- function(z, R, n = NULL, var_y = NULL, L = 10, max_L = 30, l_step = 5,
-                              zR_discrepancy_correction = FALSE, coverage = 0.95, median_abs_corr = NULL, ...) {
+                              zR_discrepancy_correction = FALSE, coverage = 0.95, ...) {
   if (L == 1) {
     return(susie_rss(
       z = z, R = R, var_y = var_y, n = n,
-      L = 1, max_iter = 1, median_abs_corr = 0.8, correct_zR_discrepancy = FALSE, coverage = coverage, ...
+      L = 1, max_iter = 1, correct_zR_discrepancy = FALSE, coverage = coverage, ...
     ))
   }
   if (L == max_L) {
     return(susie_rss(
-      z = z, R = R, var_y = var_y, n = n, L = L, median_abs_corr = 0.8,
+      z = z, R = R, var_y = var_y, n = n, L = L, 
       correct_zR_discrepancy = zR_discrepancy_correction, coverage = coverage, ...
     ))
   }
   while (TRUE) {
     st <- proc.time()
     susie_rss_result <- susie_rss(
-      z = z, R = R, var_y = var_y, n = n, L = L, median_abs_corr = 0.8,
+      z = z, R = R, var_y = var_y, n = n, L = L,
       correct_zR_discrepancy = zR_discrepancy_correction, coverage = coverage, ...
     )
     susie_rss_result$time_elapsed <- proc.time() - st
@@ -314,13 +311,14 @@ get_cs_info <- function(susie_output_sets_cs, top_variants_idx) {
   cs_info_pri <- map_int(top_variants_idx, ~ get_cs_index(.x, susie_output_sets_cs))
   ifelse(is.na(cs_info_pri), 0, as.numeric(str_replace(names(susie_output_sets_cs)[cs_info_pri], "L", "")))
 }
+
 #' @noRd
-get_cs_and_corr <- function(susie_output, coverage, data_x, mode = c("susie", "susie_rss", "mvsusie"), min_abs_corr = NULL, median_abs_corr = NULL) {
+get_cs_and_corr <- function(susie_output, coverage, data_x, mode = c("susie", "susie_rss", "mvsusie"), min_abs_corr = NULL) {
   if (mode %in% c("susie", "mvsusie")) {
-    susie_output_secondary <- list(sets = susie_get_cs(susie_output, X = data_x, coverage = coverage, min_abs_corr = min_abs_corr, median_abs_corr = median_abs_corr), pip = susie_output$pip)
+    susie_output_secondary <- list(sets = susie_get_cs(susie_output, X = data_x, coverage = coverage, min_abs_corr = min_abs_corr), pip = susie_output$pip)
     susie_output_secondary$cs_corr <- get_cs_correlation(susie_output_secondary, X = data_x)
   } else {
-    susie_output_secondary <- list(sets = susie_get_cs(susie_output, Xcorr = data_x, coverage = coverage, min_abs_corr = min_abs_corr, median_abs_corr = median_abs_corr), pip = susie_output$pip)
+    susie_output_secondary <- list(sets = susie_get_cs(susie_output, Xcorr = data_x, coverage = coverage, min_abs_corr = min_abs_corr), pip = susie_output$pip)
     susie_output_secondary$cs_corr <- get_cs_correlation(susie_output_secondary, Xcorr = data_x)
   }
   susie_output_secondary
@@ -356,8 +354,7 @@ get_cs_and_corr <- function(susie_output, coverage, data_x, mode = c("susie", "s
 #' @export
 susie_post_processor <- function(susie_output, data_x, data_y, X_scalar, y_scalar, maf = NULL,
                                  secondary_coverage = c(0.5, 0.7), signal_cutoff = 0.1,
-                                 other_quantities = NULL, prior_eff_tol = 1e-9, min_abs_corr = 0.5,
-                                 median_abs_corr = 0.8,
+                                 other_quantities = NULL, prior_eff_tol = 1e-9, min_abs_corr = 0.8,
                                  mode = c("susie", "susie_rss", "mvsusie")) {
   mode <- match.arg(mode)
   # Initialize result list
@@ -392,6 +389,14 @@ susie_post_processor <- function(susie_output, data_x, data_y, X_scalar, y_scala
   } else {
     eff_idx <- 1:max_L
   }
+
+  # modify primary CS purity from the default 0.5
+  if (mode %in% c("susie", "mvsusie")) {
+    susie_output$sets <- susie_get_cs(susie_output, X = data_x, coverage = susie_output$sets$requested_coverage, min_abs_corr = min_abs_corr)
+  } else {
+    susie_output$sets <- susie_get_cs(susie_output, Xcorr = data_x, coverage = susie_output$sets$requested_coverage, min_abs_corr = min_abs_corr)
+  }
+
   if (length(eff_idx) > 0) {
     # Prepare for top loci table
     top_variants_idx_pri <- get_top_variants_idx(susie_output, signal_cutoff)
@@ -403,7 +408,7 @@ susie_post_processor <- function(susie_output, data_x, data_y, X_scalar, y_scala
     sets_secondary <- list()
     if (!is.null(secondary_coverage) && length(secondary_coverage)) {
       for (sec_cov in secondary_coverage) {
-        sets_secondary[[paste0("coverage_", sec_cov)]] <- get_cs_and_corr(susie_output, sec_cov, data_x, mode, min_abs_corr, median_abs_corr=median_abs_corr)
+        sets_secondary[[paste0("coverage_", sec_cov)]] <- get_cs_and_corr(susie_output, sec_cov, data_x, mode, min_abs_corr)
         top_variants_idx_sec <- get_top_variants_idx(sets_secondary[[paste0("coverage_", sec_cov)]], signal_cutoff)
         cs_sec <- get_cs_info(sets_secondary[[paste0("coverage_", sec_cov)]]$sets$cs, top_variants_idx_sec)
         top_loci_list[[paste0("coverage_", sec_cov)]] <- data.frame(variant_idx = top_variants_idx_sec, cs_idx = cs_sec, stringsAsFactors = FALSE)

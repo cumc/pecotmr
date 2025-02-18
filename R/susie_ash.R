@@ -104,13 +104,6 @@
 #'   correlation of 0.25, which is a commonly used threshold for
 #'   genotype data in genetic studies.
 #'
-#' @param median_abs_corr An alternative "purity" threshold for the CS. Median
-#'   correlation between pairs of variables in a CS less than this
-#'   threshold will be filtered out and not reported. When both min_abs_corr
-#'   and median_abs_corr are set, a CS will only be removed if it fails both
-#'   filters. Default set to NULL to be compatible with Wang et al (2020) JRSS-B
-#'   but it is recommended to set it to 0.8 in practice.
-#'
 #' @param compute_univariate_zscore If \code{compute_univariate_zscore
 #'   = TRUE}, the univariate regression z-scores are outputted for each
 #'   variable.
@@ -225,7 +218,6 @@ susie_ash <- function(X, y, L = min(10, ncol(X)),
                       s_init = NULL,
                       coverage = 0.95,
                       min_abs_corr = 0.5,
-                      median_abs_corr = NULL,
                       compute_univariate_zscore = FALSE,
                       na.rm = FALSE,
                       max_iter = 100,
@@ -469,7 +461,6 @@ susie_ash <- function(X, y, L = min(10, ncol(X)),
     s$sets <- susieR::susie_get_cs(s,
       coverage = coverage, X = X,
       min_abs_corr = min_abs_corr,
-      # median_abs_corr = median_abs_corr, ## muted
       n_purity = n_purity
     )
     s$pip <- susieR::susie_get_pip(s, prune_by_cs = FALSE, prior_tol = prior_tol)
@@ -543,7 +534,6 @@ susie_ash <- function(X, y, L = min(10, ncol(X)),
           prior_tol = prior_tol, coverage = coverage,
           residual_variance_upperbound = residual_variance_upperbound,
           min_abs_corr = min_abs_corr,
-          median_abs_corr = median_abs_corr,
           compute_univariate_zscore = compute_univariate_zscore,
           na.rm = na.rm, max_iter = max_iter, tol = tol, verbose = FALSE,
           track_fit = FALSE, residual_variance_lowerbound = var(drop(y)) / 1e4,
@@ -563,7 +553,6 @@ susie_ash <- function(X, y, L = min(10, ncol(X)),
           prior_tol = prior_tol, coverage = coverage,
           residual_variance_upperbound = residual_variance_upperbound,
           min_abs_corr = min_abs_corr,
-          median_abs_corr = median_abs_corr,
           compute_univariate_zscore = compute_univariate_zscore,
           na.rm = na.rm, max_iter = max_iter, tol = tol, verbose = FALSE,
           track_fit = FALSE, residual_variance_lowerbound = var(drop(y)) / 1e4,

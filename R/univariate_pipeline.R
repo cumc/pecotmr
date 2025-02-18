@@ -52,6 +52,7 @@ univariate_analysis_pipeline <- function(
     # fine-mapping results summary
     signal_cutoff = 0.025,
     coverage = c(0.95, 0.7, 0.5),
+    finemapping_extra_opts = list(refine=TRUE),
     # TWAS weights and CV for TWAS weights
     twas_weights = TRUE,
     sample_partition = NULL,
@@ -109,10 +110,9 @@ univariate_analysis_pipeline <- function(
 
   # SuSiE analysis with optimization
   message("Fitting SuSiE model on input data with L optimization...")
-  res$susie_fitted <- susie_wrapper(X, Y,
-    init_L = init_L, max_L = max_L, l_step = l_step,
-    refine = TRUE, coverage = coverage[1]
-  )
+  base_susie_args <- list(X=X, y=Y, init_L = init_L, max_L = max_L, l_step = l_step, coverage = coverage[1])
+  susie_args <- modifyList(finemapping_extra_opts, base_susie_args)  # base args takes precedence
+  res$susie_fitted <- do.call(susie_wrapper, susie_args)
 
   # Process SuSiE results
   susie_result_trimmed <- susie_post_processor(
