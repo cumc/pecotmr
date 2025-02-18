@@ -134,7 +134,7 @@ calculate_purity <- function(variants, ext_ld, squared) {
 #' 3. We aggregate variants and cumulatively sum their PPH4 values to form a credible set until the threshold, default as 0.95.
 #' 4. The cs's purity is computed with the `get_purity` function from the `gaow/susieR` package, and the same purity criteria are employed to filter the credibility set.
 #' @noRd
-process_coloc_results <- function(coloc_result, LD_meta_file_path, analysis_region, PPH4_thres = 0.8, coloc_pip_thres = 0.95, squared = FALSE, min_abs_corr = 0.5, null_index = 0, coloc_index = "PP.H4.abf", median_abs_corr = NULL) {
+process_coloc_results <- function(coloc_result, LD_meta_file_path, analysis_region, PPH4_thres = 0.8, coloc_pip_thres = 0.95, squared = FALSE, min_abs_corr = 0.5, null_index = 0, coloc_index = "PP.H4.abf") {
   # Extract PIP values from coloc_result summary
   coloc_summary <- as.data.frame(coloc_result$summary)
   coloc_pip <- coloc_summary[, grepl("PP", colnames(coloc_summary))]
@@ -185,12 +185,7 @@ process_coloc_results <- function(coloc_result, LD_meta_file_path, analysis_regi
       colnames(purity) <- c("min.abs.corr", "mean.abs.corr", "median.abs.corr")
     }
 
-    if (is.null(median_abs_corr)) {
-      is_pure <- which(purity[, 1] >= min_abs_corr)
-    } else {
-      is_pure <- which(purity[, 1] >= min_abs_corr | purity[, 3] >= median_abs_corr)
-    }
-
+    is_pure <- which(purity[, 1] >= min_abs_corr)
 
     # Finalize the result
     if (length(is_pure) > 0) {
