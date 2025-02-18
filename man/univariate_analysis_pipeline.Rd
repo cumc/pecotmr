@@ -22,6 +22,7 @@ univariate_analysis_pipeline(
   l_step = 5,
   signal_cutoff = 0.025,
   coverage = c(0.95, 0.7, 0.5),
+  finemapping_extra_opts = list(refine = TRUE),
   twas_weights = TRUE,
   sample_partition = NULL,
   max_cv_variants = -1,
