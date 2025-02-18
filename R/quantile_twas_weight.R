@@ -799,13 +799,21 @@ quantile_twas_weight_pipeline <- function(X, Y, Z = NULL, maf = NULL, region_id 
   # Step 5: Optional LD panel filtering and MAF filtering from results of QR_screen
   if (!is.null(ld_reference_meta_file)) {
     message("Starting LD panel filtering...")
+  ld_result <- tryCatch({
     variants_kept <- filter_variants_by_ld_reference(colnames(X_filtered), ld_reference_meta_file)
-
-    # Check if any SNPs are left after LD filtering
     if (length(variants_kept$data) == 0) {
       results$message <- paste0("No SNPs left after LD filtering in region ", region_id)
-      return(results)
+      return(NULL) 
     }
+    return(variants_kept)
+  }, error = function(e) {
+    results$message <- paste0("Error in LD filtering for region ", region_id, ": ", e$message)
+    return(NULL) 
+  })
+  
+  if (is.null(ld_result)) {
+    return(results)
+  }
 
     X_filtered <- X_filtered[, variants_kept$data, drop = FALSE]
     message(paste0("Number of SNPs after LD filtering: ", ncol(X_filtered)))

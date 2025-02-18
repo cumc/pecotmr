@@ -259,7 +259,7 @@ extract_phenotype_coordinates <- function(phenotype_list) {
 #' @importFrom magrittr %>%
 #' @noRd
 filter_by_common_samples <- function(dat, common_samples) {
-  dat[common_samples, , drop = FALSE] %>% .[order(rownames(.)), ]
+  dat[common_samples, , drop = FALSE] %>% .[order(rownames(.)), , drop = FALSE]
 }
 
 #' @importFrom tibble tibble
