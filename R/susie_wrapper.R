@@ -311,6 +311,7 @@ get_cs_info <- function(susie_output_sets_cs, top_variants_idx) {
   cs_info_pri <- map_int(top_variants_idx, ~ get_cs_index(.x, susie_output_sets_cs))
   ifelse(is.na(cs_info_pri), 0, as.numeric(str_replace(names(susie_output_sets_cs)[cs_info_pri], "L", "")))
 }
+
 #' @noRd
 get_cs_and_corr <- function(susie_output, coverage, data_x, mode = c("susie", "susie_rss", "mvsusie"), min_abs_corr = NULL) {
   if (mode %in% c("susie", "mvsusie")) {
@@ -388,6 +389,14 @@ susie_post_processor <- function(susie_output, data_x, data_y, X_scalar, y_scala
   } else {
     eff_idx <- 1:max_L
   }
+
+  # modify primary CS purity from the default 0.5
+  if (mode %in% c("susie", "mvsusie")) {
+    susie_output$sets <- susie_get_cs(susie_output, X = data_x, coverage = susie_output$sets$requested_coverage, min_abs_corr = min_abs_corr)
+  } else {
+    susie_output$sets <- susie_get_cs(susie_output, Xcorr = data_x, coverage = susie_output$sets$requested_coverage, min_abs_corr = min_abs_corr)
+  }
+
   if (length(eff_idx) > 0) {
     # Prepare for top loci table
     top_variants_idx_pri <- get_top_variants_idx(susie_output, signal_cutoff)
