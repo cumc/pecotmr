@@ -23,7 +23,6 @@ susie_ash(
   s_init = NULL,
   coverage = 0.95,
   min_abs_corr = 0.5,
-  median_abs_corr = NULL,
   compute_univariate_zscore = FALSE,
   na.rm = FALSE,
   max_iter = 100,
@@ -129,13 +128,6 @@ residual variance. It is only relevant when
 credible set. The default, 0.5, corresponds to a squared
 correlation of 0.25, which is a commonly used threshold for
 genotype data in genetic studies.}
-
-\item{median_abs_corr}{An alternative "purity" threshold for the CS. Median
-correlation between pairs of variables in a CS less than this
-threshold will be filtered out and not reported. When both min_abs_corr
-and median_abs_corr are set, a CS will only be removed if it fails both
-filters. Default set to NULL to be compatible with Wang et al (2020) JRSS-B
-but it is recommended to set it to 0.8 in practice.}
 
 \item{compute_univariate_zscore}{If \code{compute_univariate_zscore
 = TRUE}, the univariate regression z-scores are outputted for each
