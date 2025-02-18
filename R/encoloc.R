@@ -121,7 +121,7 @@ load_and_extract_ld_matrix <- function(ld_meta_file_path, analysis_region, varia
 
 #' Function to calculate purity
 #' @noRd
-calculate_purity <- function(variants, ext_ld, squared) {
+calculate_purity <- function(variants, ext_ld, squared=FALSE) {
   # This is a placeholder for calculating purity, adjust as per your actual function
   purity <- matrix(susieR:::get_purity(variants, Xcorr = ext_ld, squared), 1, 3)
   purity
@@ -130,11 +130,11 @@ calculate_purity <- function(variants, ext_ld, squared) {
 #' Main processing function
 #' This function is designed to summarize coloc results based on the following criteria:
 #' 1. Among the colocalized variant pairs, PPH4 has the highest value compared to PPH0-PPH3.
-#' 2. PPH4 exceeds threshold, default as 0.8.
+#' 2. PPH4 exceeds threshold, default as 0 since we advocate not using PPH4 concept but rather use CoS
 #' 3. We aggregate variants and cumulatively sum their PPH4 values to form a credible set until the threshold, default as 0.95.
 #' 4. The cs's purity is computed with the `get_purity` function from the `gaow/susieR` package, and the same purity criteria are employed to filter the credibility set.
 #' @noRd
-process_coloc_results <- function(coloc_result, LD_meta_file_path, analysis_region, PPH4_thres = 0.8, coloc_pip_thres = 0.95, squared = FALSE, min_abs_corr = 0.5, null_index = 0, coloc_index = "PP.H4.abf") {
+process_coloc_results <- function(coloc_result, LD_meta_file_path, analysis_region, PPH4_thres = 0, coverage = 0.95, min_abs_corr = 0.8, null_index = 0, coloc_index = "PP.H4.abf") {
   # Extract PIP values from coloc_result summary
   coloc_summary <- as.data.frame(coloc_result$summary)
   coloc_pip <- coloc_summary[, grepl("PP", colnames(coloc_summary))]
@@ -162,7 +162,7 @@ process_coloc_results <- function(coloc_result, LD_meta_file_path, analysis_regi
     for (n in 1:length(ordered_results)) {
       tmp_coloc_results_fil <- ordered_results[[n]]
       tmp_coloc_results_fil_csm <- calculate_cumsum(tmp_coloc_results_fil)
-      cs[[n]] <- tmp_coloc_results_fil[, 1][1:(which(tmp_coloc_results_fil_csm > coloc_pip_thres) %>% min())]
+      cs[[n]] <- tmp_coloc_results_fil[, 1][1:(which(tmp_coloc_results_fil_csm > coverage) %>% min())]
       variants <- cs[[n]] %>% gsub("chr", "", .)
 
       # Load and extract LD matrix
@@ -172,19 +172,14 @@ process_coloc_results <- function(coloc_result, LD_meta_file_path, analysis_regi
       if (null_index > 0 && null_index %in% variants) {
         purity <- rbind(purity, c(-9, -9, -9))
       } else {
-        current_purity <- calculate_purity(variants, ext_ld, squared)
+        current_purity <- calculate_purity(variants, ext_ld)
         purity <- rbind(purity, current_purity)
       }
     }
 
     # Process purity data
     purity <- as.data.frame(purity)
-    if (squared) {
-      colnames(purity) <- c("min.sq.corr", "mean.sq.corr", "median.sq.corr")
-    } else {
-      colnames(purity) <- c("min.abs.corr", "mean.abs.corr", "median.abs.corr")
-    }
-
+    colnames(purity) <- c("min.abs.corr", "mean.abs.corr", "median.abs.corr")
     is_pure <- which(purity[, 1] >= min_abs_corr)
 
     # Finalize the result
@@ -201,7 +196,6 @@ process_coloc_results <- function(coloc_result, LD_meta_file_path, analysis_regi
 
   return(coloc_res)
 }
-
 
 #' Colocalization Analysis Wrapper
 #'
