@@ -89,7 +89,7 @@ trim_ctwas_variants <- function(region_data, twas_weight_cutoff = 1e-5, cs_min_c
 
   weights <- setNames(lapply(names(region_data$weights), function(group) {
     for (study in names(region_data$weights[[group]])){
-      region_data$weights[[group]][[study]]$wgt <- region_data$weights[[group]][[study]]$wgt[abs(region_data$weights[[group]][[study]]$wgt[, 1]) > twas_weight_cutoff, , drop = FALSE]
+      region_data$weights[[group]][[study]]$wgt <- region_data$weights[[group]][[study]]$wgt[abs(region_data$weights[[group]][[study]]$wgt[, 1]) >= twas_weight_cutoff, , drop = FALSE]
       if (nrow(region_data$weights[[group]][[study]]$wgt) < 1) {
         region_data$weights[[group]][[study]] <- NULL
         next
