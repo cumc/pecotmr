@@ -35,10 +35,6 @@ requirements:
     - r-fsusier
     - r-furrr
     - r-gbj
-    - r-ggplot2
-    - r-ggnewscale
-    - r-ggrepel
-    - r-ggvenn
     - r-glmnet
     - r-harmonicmeanp
     - r-magrittr
@@ -51,7 +47,6 @@ requirements:
     - r-qgg
     - r-quadprog
     - r-quantreg
-    - r-r.utils
     - r-r6
     - r-rcpp
     - r-readr
@@ -59,7 +54,6 @@ requirements:
     - r-stringr
     - r-susier
     - r-tidyr
-    - r-udr
     - r-vctrs
   run:
     - bioconductor-iranges
@@ -75,10 +69,6 @@ requirements:
     - r-fsusier
     - r-furrr
     - r-gbj
-    - r-ggplot2
-    - r-ggnewscale
-    - r-ggrepel
-    - r-ggvenn
     - r-glmnet
     - r-harmonicmeanp
     - r-magrittr
@@ -91,7 +81,6 @@ requirements:
     - r-qgg
     - r-quadprog
     - r-quantreg
-    - r-r.utils
     - r-r6
     - r-rcpp
     - r-readr
@@ -99,7 +88,6 @@ requirements:
     - r-stringr
     - r-susier
     - r-tidyr
-    - r-udr
     - r-vctrs
 
 tests:
