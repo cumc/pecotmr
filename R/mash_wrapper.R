@@ -1,3 +1,4 @@
+#' @import vroom vroom
 #' @export
 filter_invalid_summary_stat <- function(dat_list, bhat = NULL, sbhat = NULL, z = NULL, btoz = FALSE, sig_p_cutoff = 1E-6, filter_by_missing_rate = 0.2) {
   replace_values <- function(df, replace_with) {
@@ -681,7 +682,7 @@ load_multitrait_R_sumstat <- function(susie_fit, sumstats_db, coverage = NULL, t
             process_group <- function(data) {
               # Construct file path
               bim_file_path <- unique(data$bim_path)
-              ld_bim_file <- fread(bim_file_path)
+              ld_bim_file <- vroom(bim_file_path)
 
               # Perform allele quality control
               flipped_data <- allele_qc(data[, 1:4], ld_bim_file$V2, data,
@@ -910,10 +911,14 @@ merge_mash_data <- function(res_data, one_data) {
   }
 }
 
-#' @importFrom udr ud_init ud_fit
-#' @importFrom mashr mash_set_data cov_canonical estimate_null_correlation_simple
 #' @export
 mash_pipeline <- function(mash_input, alpha, residual_correlation = NULL, unconstrained.update = "ted", set_seed = 999) {
+  if (! requireNamespace("mashr", quietly = TRUE)) {
+    stop("To use this function, please install mashr: https://cran.r-project.org/web/packages/mashr/index.html")
+  }
+  if (! requireNamespace("flashier", quietly = TRUE)) {
+    stop("To use this function, please install flashier: https://github.com/willwerscheid/flashier")
+  }
   set.seed(set_seed)
   if (length(mash_input$null.b) == 0 && length(mash_input$null.s) == 0) {
     if (!is.null(residual_correlation)) {
@@ -923,22 +928,23 @@ mash_pipeline <- function(mash_input, alpha, residual_correlation = NULL, uncons
       vhat <- diag(rep(1, condition_num))
     }
   } else {
-    vhat <- estimate_null_correlation_simple(mash_set_data(mash_input$null.b,
+    vhat <- mashr::estimate_null_correlation_simple(mashr::mash_set_data(mash_input$null.b,
       Shat = mash_input$null.s,
       alpha, zero_Bhat_Shat_reset = 1000
     ))
   }
 
   # mash data Fit mixture model using udr package
-  mash_data <- mash_set_data(mash_input$strong.b,
+  mash_data <- mashr::mash_set_data(mash_input$strong.b,
     Shat = mash_input$strong.s, V = vhat,
     alpha, zero_Bhat_Shat_reset = 1000
   )
   # Canonical matrices
-  U.can <- cov_canonical(mash_data)
+  U.can <- mashr::cov_canonical(mash_data)
 
   # Penalty strength
   lambda <- ncol(mash_input$strong.z)
+  # FIXME: Please change this to use flashier + ED instead of UDR
   # Initialize udr
   fit0 <- ud_init(mash_data, n_unconstrained = 50, U_scaled = U.can)
   # Fit udr and use penalty as default as suggested by Yunqi penalty is

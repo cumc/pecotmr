@@ -116,12 +116,15 @@ fsusie_get_cs <- function(fSuSiE.obj, X, requested_coverage = 0.95) {
 #' @param ... Additional arguments passed to the fsusie function.
 #' @return A modified fsusie object with the susie sets list, correlations for cs, alpha as df like susie,
 #'         and without the dummy cs that do not meet the minimum purity requirement.
-#' @importFrom fsusieR cal_cor_cs susiF
 #' @export
 
 fsusie_wrapper <- function(X, Y, pos, L, prior, max_SNP_EM, cov_lev, min.purity, max_scale, ...) {
+  # Make sure fsusieR installed
+  if (! requireNamespace("fsusieR", quietly = TRUE)) {
+    stop("To use this function, please install fsusieR: https://github.com/stephenslab/fsusieR")
+  }
   # Run fsusie
-  fSuSiE.obj <- susiF(
+  fSuSiE.obj <- fsusieR::susiF(
     X = X, Y = Y, pos = pos, L = L, prior = prior,
     max_SNP_EM = max_SNP_EM, cov_lev = cov_lev,
     min.purity = min.purity, max_scale = max_scale, ...
@@ -135,7 +138,7 @@ fsusie_wrapper <- function(X, Y, pos, L, prior, max_SNP_EM, cov_lev, min.purity,
   } else {
     # Create sets and add correlation for CS if purity criteria are met
     fSuSiE.obj$sets <- fsusie_get_cs(fSuSiE.obj, X, requested_coverage = cov_lev)
-    fSuSiE.obj$cs_corr <- cal_cor_cs(fSuSiE.obj, X)
+    fSuSiE.obj$cs_corr <- fsusieR::cal_cor_cs(fSuSiE.obj, X)
   }
   # Put alpha into df
   fSuSiE.obj$alpha <- do.call(rbind, lapply(fSuSiE.obj$alpha, function(x) as.data.frame(t(x))))

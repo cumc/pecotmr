@@ -3,17 +3,20 @@
 #' @param covariates matrix/data.frame of covariates
 #' @param tau quantile level
 #' @return vector of rank scores
-#' @import quantreg
 #' @importFrom stats rnorm
 #' @noRd
 calculate_rank_score <- function(pheno, covariates, tau, seed = 123) {
+  # Make sure quantreg is installed
+  if (! requireNamespace("quantreg", quietly = TRUE)) {
+    stop("To use this function, please install quantreg: https://cran.r-project.org/web/packages/quantreg/index.html")
+  }
   set.seed(seed) 
   # Add random variable to covariates
   covar_data <- data.frame(covariates)
   covar_data$d_rv <- rnorm(nrow(covar_data))
   
   # Fit quantile regression
-  Qreg <- suppressWarnings(rq(pheno ~ ., data = covar_data, tau = tau, method = "fn"))
+  Qreg <- suppressWarnings(quantreg::rq(pheno ~ ., data = covar_data, tau = tau, method = "fn"))
   
   # Get rank score
   coeff <- summary(Qreg, se = "ker")$coefficients
@@ -50,11 +53,13 @@ fit_rank_scores <- function(pheno, covariates, num_tau_levels, num_cores = 1) {
 #' @param method character "equal" or "ivw"
 #' @param num_tau_levels integer number of quantile levels
 #' @return vector of integrated rank scores
-#' @importFrom quadprog solve.QP
 #' @importFrom stats cov
 #' @noRd
 ### calculate_integrated_score considering odds and even number tau
 calculate_integrated_score <- function(rank_scores, method = "equal", num_tau_levels) {
+  if (! requireNamespace("quadprog", quietly = TRUE)) {
+    stop("To use this function, please install quadprog: https://cran.r-project.org/web/packages/quadprog/index.html")
+  }
   if (num_tau_levels %% 2 == 0) {  # even
     mid_point <- num_tau_levels / 2
     lower_half <- 1:mid_point
@@ -100,7 +105,7 @@ calculate_integrated_score <- function(rank_scores, method = "equal", num_tau_le
     Amat <- cbind(rep(1, n_pairs), diag(n_pairs))
     bvec <- c(1, rep(0, n_pairs))
     
-    qp <- solve.QP(Dmat, dvec, t(Amat), bvec, meq = 1)
+    qp <- quadprog::solve.QP(Dmat, dvec, t(Amat), bvec, meq = 1)
     weights_vec <- qp$solution
     
     int_rank_score <- 0

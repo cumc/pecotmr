@@ -22,13 +22,16 @@
 #' @param top_count Number of top SNPs to select
 #' @param top_percent Percentage of top SNPs to select
 #' @return A list containing various results from the QR screen
-#' @importFrom quantreg rq rq.fit.br
 #' @importFrom tidyr separate
 #' @importFrom dplyr %>% mutate select
 #' @export
 qr_screen <- function(
     X, Y, Z = NULL, tau.list = seq(0.05, 0.95, by = 0.05),
     screen_threshold = 0.05, screen_method = "qvalue", top_count = 10, top_percent = 15) {
+  # Make sure quantreg is installed
+  if (! requireNamespace("quantreg", quietly = TRUE)) {
+    stop("To use this function, please install quantreg: https://cran.r-project.org/web/packages/quantreg/index.html")
+  }
   p <- ncol(X)
   pvec <- rep(NA, p)
   ltau <- length(tau.list)
@@ -43,7 +46,7 @@ qr_screen <- function(
   }
 
   ranks_list <- lapply(tau.list, function(tau) {
-    suppressWarnings(rq.fit.br(zz, y, tau = tau)$dual - (1 - tau))
+    suppressWarnings(quantreg::rq.fit.br(zz, y, tau = tau)$dual - (1 - tau))
   })
 
   for (ip in 1:p) {
@@ -280,11 +283,14 @@ multicontext_ld_clumping <- function(X, qr_results, maf_list = NULL, ld_clump_r2
 #' @param Z Matrix of covariates (optional)
 #' @param tau_values Vector of quantiles to be analyzed
 #' @return A data frame with QR coefficients for each quantile
-#' @importFrom quantreg rq rq.fit.br
 #' @importFrom tidyr pivot_wider separate
 #' @importFrom dplyr %>% mutate select
 #' @export
 perform_qr_analysis <- function(X, Y, Z = NULL, tau_values = seq(0.05, 0.95, by = 0.05)) {
+  # Make sure quantreg is installed
+  if (! requireNamespace("quantreg", quietly = TRUE)) {
+    stop("To use this function, please install quantreg: https://cran.r-project.org/web/packages/quantreg/index.html")
+  }
   # Convert Y and X to matrices if they aren't already
   pheno.mat <- as.matrix(Y)
   geno.mat <- as.matrix(X)
@@ -317,7 +323,7 @@ perform_qr_analysis <- function(X, Y, Z = NULL, tau_values = seq(0.05, 0.95, by 
       }
 
       # Fit the quantile regression model using rq.fit.br
-      mod <- suppressWarnings(rq.fit.br(X_design, response, tau = tau))
+      mod <- suppressWarnings(quantreg::rq.fit.br(X_design, response, tau = tau))
 
       # Extract the coefficient for the predictor (second coefficient)
       predictor_coef <- mod$coefficients[2] # Coefficient for predictor
@@ -357,7 +363,6 @@ perform_qr_analysis <- function(X, Y, Z = NULL, tau_values = seq(0.05, 0.95, by 
 #' @param X Matrix of genotypes
 #' @param cor_thres Correlation threshold for filtering
 #' @return A list containing filtered X matrix and filter IDs
-#' @importFrom Rfast cora
 corr_filter <- function(X, cor_thres = 0.8) {
   p <- ncol(X)
 
@@ -609,9 +614,12 @@ remove_highcorr_snp <- function(X, problematic_cols, strategy = c("correlation",
 #' @param tau.list Vector of quantiles to be analyzed
 #' @param strategy The strategy for removing problematic columns ("variance", "correlation", or "response_correlation")
 #' @return A list containing the cleaned X matrix, beta matrix as twas weight, and pseudo R-squared values
-#' @importFrom quantreg rq rq.fit.br
 #' @noRd
 calculate_qr_and_pseudo_R2 <- function(AssocData, tau.list, strategy = c("correlation", "variance", "response_correlation")) {
+  # Make sure quantreg is installed
+  if (! requireNamespace("quantreg", quietly = TRUE)) {
+    stop("To use this function, please install quantreg: https://cran.r-project.org/web/packages/quantreg/index.html")
+  }
   strategy <- match.arg(strategy)
   # Check and handle problematic columns affecting the full rank of the design matrix
   AssocData$X.filter <- check_remove_highcorr_snp(X = AssocData$X.filter, C = AssocData$C, strategy = strategy, response = AssocData$Y)
@@ -620,9 +628,9 @@ calculate_qr_and_pseudo_R2 <- function(AssocData, tau.list, strategy = c("correl
 
   # Fit the models for all tau values
   message("Start fitting full model for all taus...")
-  fit_full <- suppressWarnings(rq(Y ~ X.filter + C, tau = tau.list, data = AssocData))
+  fit_full <- suppressWarnings(quantreg::rq(Y ~ X.filter + C, tau = tau.list, data = AssocData))
   message("Finished fitting full model. Start fitting intercept-only model for all taus...")
-  fit_intercept <- suppressWarnings(rq(AssocData$Y ~ 1, tau = tau.list, data = AssocData))
+  fit_intercept <- suppressWarnings(quantreg::rq(AssocData$Y ~ 1, tau = tau.list, data = AssocData))
   message("Finished fitting intercept-only model.")
   # Define the rho function for pseudo R² calculation
   rho <- function(u, tau) {

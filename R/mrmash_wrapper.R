@@ -75,10 +75,8 @@
 #'   prior_grid = prior_grid
 #' )
 #'
-#' @importFrom mr.mash.alpha compute_canonical_covs mr.mash expand_covs compute_univariate_sumstats
 #' @importFrom doFuture registerDoFuture
 #' @importFrom future plan multicore
-#' @importFrom glmnet cv.glmnet
 #' @export
 mrmash_wrapper <- function(X,
                            Y,
@@ -97,6 +95,15 @@ mrmash_wrapper <- function(X,
                            max_iter = 5000,
                            tol = 0.01,
                            verbose = FALSE, ...) {
+
+  # Make sure glmnet is installed
+  if (! requireNamespace("glmnet", quietly = TRUE)) {
+    stop("To use this function, please install glmnet: https://cran.r-project.org/web/packages/glmnet/index.html")
+  }
+  # Make sure mr.mash.alpha is installed
+  if (! requireNamespace("mr.mash.alpha", quietly = TRUE)) {
+    stop("To use this function, please install mr.mash.alpha: https://github.com/stephenslab/mr.mash.alpha")
+  }
   # Check input data
   if (!exists(".Random.seed")) {
     message("! No seed has been set. Please set seed for reproducable result. ")
@@ -125,7 +132,7 @@ mrmash_wrapper <- function(X,
 
   # Compute summary statistics and prior_grids
   if (is.null(sumstats)) {
-    sumstats <- compute_univariate_sumstats(X, Y,
+    sumstats <- mr.mash.alpha::compute_univariate_sumstats(X, Y,
       standardize = standardize,
       standardize.response = FALSE, mc.cores = nthreads
     )
@@ -135,7 +142,7 @@ mrmash_wrapper <- function(X,
 
   # Compute canonical matrices, if requested
   if (isTRUE(canonical_prior_matrices)) {
-    canonical_prior_matrices <- compute_canonical_covs(ncol(Y),
+    canonical_prior_matrices <- mr.mash.alpha::compute_canonical_covs(ncol(Y),
       singletons = TRUE,
       hetgrid = c(0, 0.25, 0.5, 0.75, 1)
     )
@@ -149,7 +156,7 @@ mrmash_wrapper <- function(X,
   }
 
   # Compute prior covariance
-  S0 <- expand_covs(S0_raw, prior_grid, zeromat = TRUE)
+  S0 <- mr.mash.alpha::expand_covs(S0_raw, prior_grid, zeromat = TRUE)
   time1 <- proc.time()
 
   if (B_init_method == "glasso") {
@@ -186,7 +193,7 @@ mrmash_wrapper <- function(X,
   }
 
   # Fit mr.mash
-  fit_mrmash <- mr.mash(
+  fit_mrmash <- mr.mash.alpha::mr.mash(
     X = X, Y = Y, V = V, S0 = S0, w0 = w0, update_w0 = update_w0, tol = tol,
     max_iter = max_iter, convergence_criterion = "ELBO", compute_ELBO = TRUE,
     standardize = standardize, verbose = verbose, update_V = update_V,
@@ -209,7 +216,7 @@ compute_coefficients_glasso <- function(X, Y, standardize, nthreads, Xnew = NULL
   condition_names <- colnames(Y)
 
   # Fit group-lasso
-  cvfit_glmnet <- cv.glmnet(
+  cvfit_glmnet <- glmnet::cv.glmnet(
     x = X, y = Y, family = "mgaussian", alpha = 1,
     standardize = standardize, parallel = FALSE
   )
@@ -242,7 +249,7 @@ compute_coefficients_univ_glmnet <- function(X, Y, alpha, standardize, nthreads,
     Ynomiss <- Y[samples_kept, i, drop = FALSE]
     Xnomiss <- X[samples_kept, , drop = FALSE]
 
-    cvfit <- cv.glmnet(
+    cvfit <- glmnet::cv.glmnet(
       x = Xnomiss, y = Ynomiss, family = "gaussian", alpha = alpha,
       standardize = standardize, parallel = FALSE
     )

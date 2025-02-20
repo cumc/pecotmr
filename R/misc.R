@@ -23,8 +23,11 @@ pval_acat <- function(pvals) {
   return(pcauchy(stat / length(pvals), lower.tail = FALSE))
 }
 
-#' @importFrom harmonicmeanp pLandau
 pval_hmp <- function(pvals) {
+  # Make sure harmonicmeanp is installed
+  if (! requireNamespace("harmonicmeanp", quietly = TRUE)) {
+    stop("To use this function, please install harmonicmeanp: https://cran.r-project.org/web/packages/harmonicmeanp/index.html")
+  }
   # https://search.r-project.org/CRAN/refmans/harmonicmeanp/html/pLandau.html
   pvalues <- unique(pvals)
   L <- length(pvalues)
@@ -33,7 +36,7 @@ pval_hmp <- function(pvals) {
   LOC_L1 <- 0.874367040387922
   SCALE <- 1.5707963267949
 
-  return(pLandau(1 / HMP, mu = log(L) + LOC_L1, sigma = SCALE, lower.tail = FALSE))
+  return(harmonicmeanp::pLandau(1 / HMP, mu = log(L) + LOC_L1, sigma = SCALE, lower.tail = FALSE))
 }
 
 pval_global <- function(pvals, comb_method = "HMP", naive = FALSE) {
@@ -47,19 +50,22 @@ pval_global <- function(pvals, comb_method = "HMP", naive = FALSE) {
   return(if (naive) naive_pval else global_pval) # global_pval and naive_pval
 }
 
-#' @importFrom qvalue qvalue
 compute_qvalues <- function(pvalues) {
+  # Make sure qvalue is installed
+  if (! requireNamespace("qvalue", quietly = TRUE)) {
+    stop("To use this function, please install qvalue: https://www.bioconductor.org/packages/release/bioc/html/qvalue.html")
+  }
   tryCatch(
     {
       if (length(pvalues) < 2) {
         return(pvalues)
       } else {
-        return(qvalue(pvalues)$qvalues)
+        return(qvalue::qvalue(pvalues)$qvalues)
       }
     },
     error = function(e) {
       message("Too few p-values to calculate qvalue, fall back to BH")
-      qvalue(pvalues, pi0 = 1)$qvalues
+      qvalue::qvalue(pvalues, pi0 = 1)$qvalues
     }
   )
 }
@@ -403,7 +409,6 @@ find_data <- function(x, depth_obj, show_path = FALSE, rm_null = TRUE, rm_dup = 
 
 #' Utility function to convert LD region_ids to `region of interest` dataframe
 #' @param ld_region_id A string of region in the format of chrom_start_end.
-#' @importFrom data.table fread
 #' @export
 region_to_df <- function(ld_region_id, colnames = c("chrom", "start", "end")) {
   region_of_interest <- as.data.frame(do.call(rbind, lapply(strsplit(ld_region_id, "[_:-]"), function(x) as.integer(sub("chr", "", x)))))

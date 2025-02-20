@@ -59,7 +59,6 @@
 #'   cv_threads = 2,
 #'   data_driven_prior_weights_cutoff = 1e-4
 #' )
-#' @importFrom mvsusieR mvsusie create_mixture_prior
 #' @export
 multivariate_analysis_pipeline <- function(
     # input data
@@ -92,6 +91,10 @@ multivariate_analysis_pipeline <- function(
     cv_folds = 5,
     cv_threads = 1,
     verbose = 0) {
+  # Make sure mvsusieR is installed
+  if (! requireNamespace("mvsusieR", quietly = TRUE)) {
+    stop("To use this function, please install mvsusieR: https://github.com/stephenslab/mvsusieR")
+  }
   # Skip conditions based on univariate PIP values
   skip_conditions <- function(X, Y, pip_cutoff_to_skip) {
     if (length(pip_cutoff_to_skip) == 1 && is.numeric(pip_cutoff_to_skip)) {
@@ -143,9 +146,9 @@ multivariate_analysis_pipeline <- function(
       data_driven_prior_matrices$w <- prior_weights
       data_driven_prior_matrices$U <- data_driven_prior_matrices$U[names(prior_weights)]
       data_driven_prior_matrices <- list(matrices = data_driven_prior_matrices$U, weights = data_driven_prior_matrices$w)
-      data_driven_prior_matrices <- create_mixture_prior(mixture_prior = data_driven_prior_matrices, weights_tol = data_driven_prior_weights_cutoff, include_indices = condition_names)
+      data_driven_prior_matrices <- mvsusieR::create_mixture_prior(mixture_prior = data_driven_prior_matrices, weights_tol = data_driven_prior_weights_cutoff, include_indices = condition_names)
     } else {
-      data_driven_prior_matrices <- create_mixture_prior(R = length(condition_names), include_indices = condition_names)
+      data_driven_prior_matrices <- mvsusieR::create_mixture_prior(R = length(condition_names), include_indices = condition_names)
     }
 
     if (!is.null(data_driven_prior_matrices_cv)) {
@@ -154,7 +157,7 @@ multivariate_analysis_pipeline <- function(
         function(x) {
           x$U <- x$U[names(prior_weights)]
           x <- list(matrices = x$U, weights = prior_weights)
-          create_mixture_prior(mixture_prior = x, weights_tol = data_driven_prior_weights_cutoff, include_indices = condition_names)
+          mvsusieR::create_mixture_prior(mixture_prior = x, weights_tol = data_driven_prior_weights_cutoff, include_indices = condition_names)
         }
       )
     } else {
@@ -278,7 +281,7 @@ multivariate_analysis_pipeline <- function(
 
   # Fit mvSuSiE
   message("Fitting mvSuSiE model on input data ...")
-  res$mvsusie_fitted <- mvsusie(X, Y,
+  res$mvsusie_fitted <- mvsusieR::mvsusie(X, Y,
     L = max_L, prior_variance = mvsusie_reweighted_mixture_prior$data_driven_prior_matrices,
     residual_variance = resid_Y, precompute_covariances = FALSE, compute_objective = TRUE,
     estimate_residual_variance = FALSE, estimate_prior_variance = TRUE, estimate_prior_method = "EM",
