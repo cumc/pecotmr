@@ -138,7 +138,7 @@ fsusie_wrapper <- function(X, Y, pos, L, prior, max_SNP_EM, cov_lev, min.purity,
   } else {
     # Create sets and add correlation for CS if purity criteria are met
     fSuSiE.obj$sets <- fsusie_get_cs(fSuSiE.obj, X, requested_coverage = cov_lev)
-    fSuSiE.obj$cs_corr <- cal_cor_cs(fSuSiE.obj, X)
+    fSuSiE.obj$cs_corr <- fsusieR::cal_cor_cs(fSuSiE.obj, X)
   }
   # Put alpha into df
   fSuSiE.obj$alpha <- do.call(rbind, lapply(fSuSiE.obj$alpha, function(x) as.data.frame(t(x))))

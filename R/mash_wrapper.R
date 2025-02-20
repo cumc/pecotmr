@@ -928,7 +928,7 @@ mash_pipeline <- function(mash_input, alpha, residual_correlation = NULL, uncons
       vhat <- diag(rep(1, condition_num))
     }
   } else {
-    vhat <- mashr::estimate_null_correlation_simple(mash_set_data(mash_input$null.b,
+    vhat <- mashr::estimate_null_correlation_simple(mashr::mash_set_data(mash_input$null.b,
       Shat = mash_input$null.s,
       alpha, zero_Bhat_Shat_reset = 1000
     ))
