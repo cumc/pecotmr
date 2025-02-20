@@ -12,7 +12,7 @@ from GitHub, use [BiocManager][BiocManager]:
 
 ```R
 install.packages(c("BiocManager", "remotes"))
-BiocManager::install("cumc/pecotmr")
+BiocManager::install("StatFunGen/pecotmr")
 ```
 
 If you have cloned the repository locally, you can install the package

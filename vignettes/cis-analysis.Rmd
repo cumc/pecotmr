@@ -50,7 +50,7 @@ dim(eqtl$X)
 
 ## Fine-mapping using SuSiE
 
-In FunGen-xQTL we have a [simple pipeline](https://github.com/cumc/xqtl-pipeline/blob/main/code/fine_mapping/SuSiE/SuSiE.ipynb) for this.
+In FunGen-xQTL we have a [simple pipeline](https://github.com/StatFunGen/xqtl-pipeline/blob/main/code/fine_mapping/SuSiE/SuSiE.ipynb) for this.
 
 ```{r}
 library(susieR)

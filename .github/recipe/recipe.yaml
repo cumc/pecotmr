@@ -6,7 +6,7 @@ package:
   version: ${{ version }}
 
 source:
-  url: https://github.com/cumc/pecotmr/archive/${{ version }}.tar.gz
+  url: https://github.com/StatFunGen/pecotmr/archive/${{ version }}.tar.gz
   sha256: SHA256SUM_PLACEHOLDER
 
 build:
@@ -110,7 +110,7 @@ about:
   license: GPL-3.0-or-later
   license_file: LICENSE
   summary: pecotmr implements pair-wise enrichment, colocalization, TWAS and Mendelian Randomization to integrate QTL and GWAS analysis based on a fine-mapped single effects model.
-  homepage: https://github.com/cumc/pecotmr
+  homepage: https://github.com/StatFunGen/pecotmr
 
 extra:
   recipe-maintainers:
