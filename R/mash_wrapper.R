@@ -944,7 +944,7 @@ mash_pipeline <- function(mash_input, alpha, residual_correlation = NULL, uncons
 
   # Penalty strength
   lambda <- ncol(mash_input$strong.z)
-  # NOTE: Please change this to use flashier + ED instead of UDR
+  # FIXME: Please change this to use flashier + ED instead of UDR
   # Initialize udr
   fit0 <- ud_init(mash_data, n_unconstrained = 50, U_scaled = U.can)
   # Fit udr and use penalty as default as suggested by Yunqi penalty is
