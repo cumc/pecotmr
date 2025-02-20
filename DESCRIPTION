@@ -13,12 +13,9 @@ Authors@R: c(person("Gao Wang",role = c("cre","aut"),
                   email = "dnachun@stanford.edu"))
 License: MIT + file LICENSE
 Imports:
-    GBJ,
     IRanges,
-    R.utils,
     R6,
     Rcpp,
-    Rfast,
     S4Vectors,
     bigsnpr,
     bigstatsr,
@@ -26,35 +23,37 @@ Imports:
     data.table,
     doFuture,
     dplyr,
-    fsusieR,
     furrr,
     future,
-    glmnet,
-    harmonicmeanp,
     magrittr,
-    mashr,
     matrixStats,
-    mr.ash.alpha,
-    mr.mash.alpha,
-    mvsusieR,
-    pgenlibr,
     purrr,
-    qgg,
-    quantreg,
-    qvalue,
     readr,
     rlang,
-    snpStats,
     stringr,
     susieR,
     tibble,
     tidyr,
-    udr,
     vctrs,
-    quadprog
+    vroom
 Suggests:
+    GBJ,
+    Rfast,
+    fsusieR,
+    glmnet,
+    harmonicmeanp,
     knitr,
+    mashr,
+    mr.ash.alpha,
+    mr.mash.alpha,
+    mvsusieR,
+    pgenlibr,
+    qgg,
+    quadprog,
+    quantreg,
+    qvalue,
     rmarkdown,
+    snpStats,
     testthat
 LinkingTo: 
     Rcpp,
@@ -63,9 +62,3 @@ LinkingTo:
 NeedsCompilation: yes
 VignetteBuilder: knitr
 RoxygenNote: 7.3.2
-Remotes:
-    stephenslab/fsusieR,
-    stephenslab/mr.ash.alpha,
-    stephenslab/mr.mash.alpha,
-    stephenslab/mvsusieR,
-    stephenslab/udr

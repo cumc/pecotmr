@@ -416,14 +416,17 @@ init_prior_sd <- function(X, y, n = 30) {
   seq(0, smax, length.out = n)
 }
 
-#' @importFrom glmnet cv.glmnet
 #' @importFrom stats coef
 #' @export
 glmnet_weights <- function(X, y, alpha) {
+  # Check if glmnet is installed
+  if (! requireNamespace("glmnet", quietly = TRUE)) {
+    stop("To use this function, please install glmnet: https://cran.r-project.org/web/packages/glmnet/index.html")
+  }
   eff.wgt <- matrix(0, ncol = 1, nrow = ncol(X))
   sds <- apply(X, 2, sd)
   keep <- sds != 0 & !is.na(sds)
-  enet <- cv.glmnet(x = X[, keep], y = y, alpha = alpha, nfold = 5, intercept = T, standardize = F)
+  enet <- glmnet::cv.glmnet(x = X[, keep], y = y, alpha = alpha, nfold = 5, intercept = T, standardize = F)
   eff.wgt[keep] <- coef(enet, s = "lambda.min")[2:(sum(keep) + 1)]
   return(eff.wgt)
 }
@@ -436,7 +439,6 @@ lasso_weights <- function(X, y) glmnet_weights(X, y, 1)
 
 #' @examples
 #' wgt.mr.ash <- mrash_weights(eqtl$X, eqtl$y_res, beta.init = lasso_weights(X, y))
-#' @importFrom mr.ash.alpha mr.ash
 #' @importFrom stats predict
 #' @export
 mrash_weights <- function(X, y, init_prior_sd = TRUE, ...) {
@@ -444,7 +446,7 @@ mrash_weights <- function(X, y, init_prior_sd = TRUE, ...) {
   if (!"beta.init" %in% names(args_list)) {
     args_list$beta.init <- lasso_weights(X, y)
   }
-  fit.mr.ash <- do.call("mr.ash", c(list(X = X, y = y, sa2 = if (init_prior_sd) init_prior_sd(X, y)^2 else NULL), args_list))
+  fit.mr.ash <- do.call("mr.ash.alpha::mr.ash", c(list(X = X, y = y, sa2 = if (init_prior_sd) init_prior_sd(X, y)^2 else NULL), args_list))
   predict(fit.mr.ash, type = "coefficients")[-1]
 }
 #' Extract Coefficients From Bayesian Linear Regression
@@ -471,9 +473,12 @@ mrash_weights <- function(X, y, init_prior_sd = TRUE, ...) {
 #' y <- g + e
 #' bayes_l_weights(y = y, X = X, Z = Z)
 #' bayes_r_weights(y = y, X = X, Z = Z)
-#' @importFrom qgg gbayes
 #' @export
 bayes_alphabet_weights <- function(X, y, method, Z = NULL, nit = 5000, nburn = 1000, nthin = 5, ...) {
+  # Make sure qgg is installed
+  if (! requireNamespace("qgg", quietly = TRUE)) {
+    stop("To use this function, please install qgg: https://cran.r-project.org/web/packages/qgg/index.html")
+  }
   # check for identical row lengths of response and genotype
   if (!(length(y) == nrow(X))) {
     stop("All objects must have the same number of rows")
@@ -485,7 +490,7 @@ bayes_alphabet_weights <- function(X, y, method, Z = NULL, nit = 5000, nburn = 1
     }
   }
 
-  model <- gbayes(
+  model <- qgg::gbayes(
     y = y,
     W = X,
     X = Z,
@@ -603,14 +608,17 @@ bayes_r_weights <- function(X, y, Z = NULL, ...) {
 #' \item{ve}{mean residual variance}
 #' \item{vg}{mean genomic variance}
 #'
-#' @import qgg Rcpp
-#'
 #' @export
 gbayes_rss <- function(sumstats = NULL, LD = NULL, variant_ids = NULL, nit = 100, nburn = 0, nthin = 4, method = "bayesR",
                        vg = NULL, vb = NULL, ve = NULL, ssg_prior = NULL, ssb_prior = NULL, sse_prior = NULL,
                        lambda = NULL, h2 = NULL, pi = 0.001, updateB = TRUE, updateG = TRUE, updateE = TRUE,
                        updatePi = TRUE, adjustE = TRUE, nug = 4, nub = 4, nue = 4, mask = NULL, ve_prior = NULL,
                        vg_prior = NULL, algorithm = "mcmc", tol = 0.001, nit_local = NULL, nit_global = NULL) {
+
+  # Make sure qgg is installed
+  if (! requireNamespace("qgg", quietly = TRUE)) {
+    stop("To use this function, please install qgg: https://cran.r-project.org/web/packages/qgg/index.html")
+  }
   # Check methods
   methods <- c("bayesN", "bayesA", "bayesL", "bayesC", "bayesR")
   method <- match(method, methods)

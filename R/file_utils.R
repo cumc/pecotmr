@@ -1,6 +1,3 @@
-# This needs pgenlibr package
-# devtools::install_github("chrchang/plink-ng", subdir="/2.0/pgenlibr")
-
 # read PLINK files
 #' @importFrom dplyr rename
 #' @importFrom data.table fread
@@ -12,55 +9,64 @@ read_pvar <- function(pgen) {
     "chrom" = "#CHROM", "pos" = "POS",
     "alt" = "ALT", "ref" = "REF", "id" = "ID"
   )
-  pvardt <- pvardt[, c("chrom", "id", "pos", "alt", "ref")]
+  pvardt <- select(pvardt, chrom, id, pos, alt, ref)
   return(pvardt)
 }
 
-#' @importFrom data.table fread
+#' @importFrom vroom vroom
 #' @importFrom tools file_path_sans_ext
 read_bim <- function(bed) {
   bimf <- paste0(file_path_sans_ext(bed), ".bim")
-  bim <- fread(bimf)
+  bim <- vroom(bimf, col_names = FALSE)
   colnames(bim) <- c("chrom", "id", "gpos", "pos", "a1", "a0")
   return(bim)
 }
 
-#' @importFrom data.table fread
+#' @importFrom vroom vroom
 #' @importFrom tools file_path_sans_ext
 read_psam <- function(pgen) {
   psamf <- paste0(file_path_sans_ext(pgen), ".psam")
-  psam <- fread(psamf, header = T)
+  psam <- vroom(psamf)
   colnames(psam)[1:2] <- c("FID", "IID")
   return(psam)
 }
 
-#' @importFrom data.table fread
+#' @importFrom vroom vroom
 #' @importFrom tools file_path_sans_ext
 read_fam <- function(bed) {
   famf <- paste0(file_path_sans_ext(bed), ".fam")
-  return(fread(famf, header = F))
+  return(vroom(famf, col_names = FALSE))
 }
 
 # open pgen/pvar PLINK 2 data format
-#' @importFrom pgenlibr NewPgen
 open_pgen <- function(pgenf) {
-  return(NewPgen(pgenf))
+  # Make sure pgenlibr is installed
+  if (! requireNamespace("pgenlibr", quietly = TRUE)) {
+    stop("To use this function, please install pgenlibr: https://cran.r-project.org/web/packages/pgenlibr/index.html")
+  }
+  return(pgenlibr::NewPgen(pgenf))
 }
 
 # open bed/bim/fam: A PLINK 1 .bed is a valid .pgen
-#' @importFrom pgenlibr NewPgen
 open_bed <- function(bed) {
+  # Make sure pgenlibr is installed
+  if (! requireNamespace("pgenlibr", quietly = TRUE)) {
+    stop("To use this function, please install pgenlibr: https://cran.r-project.org/web/packages/pgenlibr/index.html")
+  }
   raw_s_ct <- nrow(read_fam(bed))
-  return(NewPgen(bed, raw_sample_ct = raw_s_ct))
+  return(pgenlibr::NewPgen(bed, raw_sample_ct = raw_s_ct))
 }
 
-#' @importFrom pgenlibr GetVariantCt ReadList
 read_pgen <- function(pgen, variantidx = NULL, meanimpute = F) {
+  # Make sure pgenlibr is installed
+  if (! requireNamespace("pgenlibr", quietly = TRUE)) {
+    stop("To use this function, please install pgenlibr: https://cran.r-project.org/web/packages/pgenlibr/index.html")
+  }
   if (is.null(variantidx)) {
-    variantidx <- 1:GetVariantCt(pgen)
+    variantidx <- 1:pgenlibr::GetVariantCt(pgen)
   }
 
-  ReadList(pgen,
+  pgenlibr::ReadList(pgen,
     variant_subset = variantidx,
     meanimpute = meanimpute
   )
@@ -107,7 +113,7 @@ NoSNPsError <- function(message) {
   structure(list(message = message), class = c("NoSNPsError", "error", "condition"))
 }
 
-#' Load genotype data for a specific region using data.table for efficiency
+#' Load genotype data for a specific region using vroom for efficiency
 #'
 #' By default, plink usage dosage of the *major* allele, since "effect allele" A1 is
 #' usually the minor allele and the code "1" refers to the "other allele" A2,
@@ -120,11 +126,14 @@ NoSNPsError <- function(message) {
 #' @param keep_indel Whether to keep indel SNPs.
 #' @return A vector of SNP IDs in the specified region.
 #'
-#' @importFrom data.table fread
+#' @importFrom vroom vroom
 #' @importFrom magrittr %>%
-#' @importFrom snpStats read.plink
 #' @export
 load_genotype_region <- function(genotype, region = NULL, keep_indel = TRUE, keep_variants_path = NULL) {
+  # Make sure snpStats is installed
+  if (! requireNamespace("snpStats", quietly = TRUE)) {
+    stop("To use this function, please install snpStats: https://bioconductor.org/packages/release/bioc/html/snpStats.html")
+  }
   if (!is.null(region)) {
     # Get SNP IDs from bim file
     parsed_region <- parse_region(region)
@@ -132,16 +141,16 @@ load_genotype_region <- function(genotype, region = NULL, keep_indel = TRUE, kee
     start <- parsed_region$start
     end <- parsed_region$end
     # 6 columns for bim file
-    col_types <- c("character", "character", "NULL", "integer", "NULL", "NULL")
+    col_types <- list(col_character(), col_character(), col_guess(), col_character(), col_guess(), col_guess())
     # Read a few lines of the bim file to check for 'chr' prefix
-    bim_sample <- fread(paste0(genotype, ".bim"), nrows = 5, header = FALSE, colClasses = col_types)
-    chr_prefix_present <- any(grepl("^chr", bim_sample$V1))
+    bim_sample <- vroom(paste0(genotype, ".bim"), n_max = 5, col_names = FALSE, col_types = col_types)
+    chr_prefix_present <- any(grepl("^chr", bim_sample$X1))
     # Read the bim file and remove 'chr' prefix if present
-    bim_data <- fread(paste0(genotype, ".bim"), header = FALSE, colClasses = col_types)
+    bim_data <- vroom(paste0(genotype, ".bim"), col_names = FALSE, col_types = col_types)
     if (chr_prefix_present) {
-      bim_data[, V1 := gsub("^chr", "", V1)]
+      bim_data$X1 <- gsub("^chr", "", bim_data$X1)
     }
-    snp_ids <- bim_data[V1 == chrom & start <= V4 & V4 <= end, V2]
+    snp_ids <- filter(bim_data, X1 == chrom & start <= X4 & X4 <= end) %>% pull(X2)
     if (length(snp_ids) == 0) {
       stop(NoSNPsError(paste("No SNPs found in the specified region", region)))
     }
@@ -149,7 +158,7 @@ load_genotype_region <- function(genotype, region = NULL, keep_indel = TRUE, kee
     snp_ids <- NULL
   }
   # Read genotype data using snpStats read.plink
-  geno <- read.plink(genotype, select.snps = snp_ids)
+  geno <- snpStats::read.plink(genotype, select.snps = snp_ids)
 
   # Remove indels if specified
   # Remove indels if specified
@@ -162,7 +171,7 @@ load_genotype_region <- function(genotype, region = NULL, keep_indel = TRUE, kee
     geno_map <- geno$map
   }
   if (!is.null(keep_variants_path)) {
-    keep_variants <- fread(keep_variants_path)
+    keep_variants <- vroom(keep_variants_path)
     if (!("chrom" %in% names(keep_variants)) | !("pos" %in% names(keep_variants))) {
       keep_variants <- do.call(rbind, lapply(strsplit(format_variant_id(keep_variants[[1]]), ":", fixed = TRUE), function(x) {
         data.frame(
@@ -447,6 +456,7 @@ load_regional_association_data <- function(genotype, # PLINK file
   ## Load phenotype and covariates and perform some pre-processing
   covar <- load_covariate_data(covariate)
   pheno <- load_phenotype_data(phenotype, region, extract_region_name = extract_region_name, region_name_col = region_name_col, tabix_header = tabix_header)
+    print(pheno)
   ### including Y ( cov ) and specific X and covar match, filter X variants based on the overlapped samples.
   data_list <- prepare_data_list(geno, pheno, covar, imiss_cutoff,
     maf_cutoff, mac_cutoff, xvar_cutoff,
@@ -768,7 +778,6 @@ load_twas_weights <- function(weight_db_files, conditions = NULL,
 #'
 #' @importFrom dplyr mutate group_by summarise
 #' @importFrom magrittr %>%
-#' @importFrom data.table fread
 #' @export
 load_rss_data <- function(sumstat_path, column_file_path, subset = TRUE, n_sample = 0, n_case = 0, n_control = 0, target = "",
                           region = "", target_column_index = "", comment_string = "#") {
@@ -854,6 +863,7 @@ load_rss_data <- function(sumstat_path, column_file_path, subset = TRUE, n_sampl
 #' @return A dataframe of the subsetted summary statistics,
 #'
 #' @importFrom data.table fread
+#' @importFrom vroom vroom
 #' @export
 
 load_tsv_region <- function(sumstat_path, region = "", target = "", target_column_index = "") {
@@ -889,12 +899,12 @@ load_tsv_region <- function(sumstat_path, region = "", target = "", target_colum
     warning("Not a tabixed gz file, loading the whole data.")
     if (target != "" && target_column_index != "") {
       # target specified
-      sumstats <- fread(sumstat_path)
+      sumstats <- vroom(sumstat_path)
       keep_index <- which(str_detect(sumstats[[target_column_index]], target))
       sumstats <- sumstats[keep_index, ]
     } else {
       # target not specified, the whole dataset
-      sumstats <- fread(sumstat_path)
+      sumstats <- vroom(sumstat_path)
     }
   }
 

@@ -21,7 +21,7 @@
 #' columns are aligned in the order of "chrom", "variants", "GD", "pos", "A1", "A2", "variance", "allele_freq", "n_nomiss".
 #' @return A list of list for harmonized weights and dataframe of gwas summary statistics that is add to the original input of
 #' twas_weights_data under each context.
-#' @importFrom data.table fread
+#' @importFrom vroom vroom
 #' @importFrom readr parse_number
 #' @importFrom S4Vectors queryHits subjectHits
 #' @importFrom IRanges IRanges findOverlaps start end reduce
@@ -97,7 +97,7 @@ harmonize_twas <- function(twas_weights_data, ld_meta_file_path, gwas_meta_file)
   # function to load bim file variants
   load_bim_file_info <- function(ld_meta_file_path, region_of_interest) {
     bim_file_path <- get_regional_ld_meta(ld_meta_file_path, region_of_interest)$intersections$bim_file_paths
-    bim_data <- lapply(bim_file_path, function(bim_file) fread(bim_file, header = FALSE, data.table = FALSE))
+    bim_data <- lapply(bim_file_path, function(bim_file) vroom(bim_file, col_names = FALSE))
     return(bim_data)
   }
   # function to extract LD variance for the query region
@@ -112,7 +112,7 @@ harmonize_twas <- function(twas_weights_data, ld_meta_file_path, gwas_meta_file)
   # Step 1: load TWAS weights data
   molecular_ids <- names(twas_weights_data)
   chrom <- as.integer(parse_number(gsub(":.*$", "", rownames(twas_weights_data[[1]]$weights[[1]])[1])))
-  gwas_meta_df <- fread(gwas_meta_file, header = TRUE, sep = "\t", data.table = FALSE)
+  gwas_meta_df <- vroom(gwas_meta_file)
   gwas_files <- unique(gwas_meta_df$file_path[gwas_meta_df$chrom == chrom])
   names(gwas_files) <- unique(gwas_meta_df$study_id[gwas_meta_df$chrom == chrom])
   results <- list()
@@ -585,7 +585,6 @@ twas_pipeline <- function(twas_weights_data,
 #'   \item pval: The corresponding p-value.
 #' }
 #'
-#' @importFrom Rfast cora
 #' @importFrom stats cor pchisq
 #'
 #' @export
@@ -621,11 +620,13 @@ twas_z <- function(weights, z, R = NULL, X = NULL) {
 #'   \item GBJ: The result of the GBJ test.
 #' }
 #'
-#' @importFrom GBJ GBJ
 #' @importFrom stats cor pnorm
-#'
 #' @export
 twas_joint_z <- function(weights, z, R = NULL, X = NULL) {
+  # Make sure GBJ is installed
+  if (! requireNamespace("GBJ", quietly = TRUE)) {
+    stop("To use this function, please install GBJ: https://cran.r-project.org/web/packages/GBJ/index.html")
+  }
   # Check that weights and z-scores have the same number of rows
   if (nrow(weights) != length(z)) {
     stop("Number of rows in weights must match the length of z-scores.")
@@ -662,7 +663,7 @@ twas_joint_z <- function(weights, z, R = NULL, X = NULL) {
     lam[p, ] <- la
   }
   sig <- tcrossprod((lam %*% D), lam)
-  gbj <- GBJ(test_stats = z_matrix[, 1], cor_mat = sig)
+  gbj <- GBJ::GBJ(test_stats = z_matrix[, 1], cor_mat = sig)
 
   rs <- list("Z" = z_matrix, "GBJ" = gbj)
   return(rs)

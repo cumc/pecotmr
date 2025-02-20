@@ -195,7 +195,6 @@
 #'
 #' @importFrom stats var
 #' @importFrom utils modifyList
-#' @importFrom mr.ash.alpha mr.ash coef.mr.ash
 #' @importFrom susieR susie_get_cs susie_get_pip susie_get_objective
 #'
 #' @export
@@ -228,6 +227,12 @@ susie_ash <- function(X, y, L = min(10, ncol(X)),
                       refine = FALSE,
                       n_purity = 100,
                       warm_start = 2) {
+
+  # Make sure mr.ash is installed
+  if (! requireNamespace("mr.ash.alpha", quietly = TRUE)) {
+    stop("To use this function, please install mr.ash.alpha: https://github.com/stephenslab/mr.ash.alpha")
+  }
+
   # Process input estimate_prior_method.
   estimate_prior_method <- match.arg(estimate_prior_method)
 

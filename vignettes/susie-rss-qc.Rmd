@@ -27,8 +27,8 @@ library(pecotmr)
 For given region of interest, we load the LD matrix and corresponding summary statistics data, where the summary statistics data should be a data frame with the columns "chrom" and "pos":
 
 ```{r AD_GWAS sumstats}
-library(data.table)
 library(dplyr)
+library(vroom)
 #### Load LD_meta_file
 LD_meta_file = data.frame(chrom = c("chr8","chr8"), start = c(25007602,26225312), end = c(26225312, 27515963), 
 path = c(paste0("/home/aw3600/MR_KMT_analysis/test/chr8_25007602_26225312.cor.xz",",","/home/aw3600/MR_KMT_analysis/test/chr8_25007602_26225312.cor.xz.bim",sep=""),
@@ -37,7 +37,7 @@ path = c(paste0("/home/aw3600/MR_KMT_analysis/test/chr8_25007602_26225312.cor.xz
 region  = data.frame(chrom = 8,start = 26220000,end = 26225400)
 #### Load GWAS summary statistics
 AD_GWAS_path = "/mnt/vast/hpc/csg/xqtl_workflow_testing/ADGWAS/data_intergration/ADGWAS2022/ADGWAS_Bellenguez_2022.8/ADGWAS2022.chr8.sumstat.tsv"
-sumstats = fread(AD_GWAS_path) %>%
+sumstats = vroom(AD_GWAS_path) %>%
     rename("pos"="position") %>%
     rename("chrom"="chromosome") %>%
     mutate(z=beta/se) %>%

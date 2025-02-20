@@ -6,10 +6,10 @@ ctwas_ld_loader <- function(ld_matrix_file_path) {
   ld_loaded <- ld_loaded$LD_matrix
   return(ld_loaded)
 }
-#' @importFrom data.table fread
+#' @importFrom vroom vroom
 #' @export
 ctwas_bimfile_loader <- function(bim_file_path) {
-  snp_info <- fread(bim_file_path)
+  snp_info <- vroom(bim_file_path)
   if (ncol(snp_info) == 9) {
     colnames(snp_info) <- c("chrom", "id", "GD", "pos", "alt", "ref", "variance", "allele_freq", "n_nomiss")
   } else {
@@ -20,10 +20,10 @@ ctwas_bimfile_loader <- function(bim_file_path) {
 }
 
 #' Utility function to format meta data dataframe for cTWAS analyses
-#' @importFrom data.table fread
+#' @importFrom vroom vroom
 #' @export
 get_ctwas_meta_data <- function(ld_meta_data_file, subset_region_ids = NULL) {
-  LD_info <- fread(ld_meta_data_file, header = TRUE, data.table = FALSE)
+  LD_info <- vroom(ld_meta_data_file)
   colnames(LD_info)[1] <- "chrom"
   LD_info$region_id <- gsub("chr", "", paste(LD_info$chrom, LD_info$start, LD_info$end, sep = "_"))
   LD_info$LD_file <- paste0(dirname(ld_meta_data_file), "/", gsub(",.*$", "", LD_info$path))

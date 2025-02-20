@@ -2,7 +2,7 @@
 % Please edit documentation in R/file_utils.R
 \name{load_genotype_region}
 \alias{load_genotype_region}
-\title{Load genotype data for a specific region using data.table for efficiency}
+\title{Load genotype data for a specific region using vroom for efficiency}
 \usage{
 load_genotype_region(
   genotype,
