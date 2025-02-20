@@ -1,5 +1,5 @@
 ## How to tag new releases with the "Upload new release" GitHub Action
-When we are ready to tag a new release, we use this action to create in the repository and upload the source archive as release available on the [Releases](https://github.com/cumc/pecotmr/releases) page.
+When we are ready to tag a new release, we use this action to create in the repository and upload the source archive as release available on the [Releases](https://github.com/StatFunGen/pecotmr/releases) page.
 1. Make a pull request to update the version in the DESCRIPTION file.  Do **not** include any dashes in the version number! Do **not** manually tag a release for this version as it will be done later automatically by the workflow itself. 
 2. Go to "Actions" at the top of the repository page.
 3. Go to the "Upload new release" action on the side bar.
