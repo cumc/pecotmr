@@ -39,6 +39,7 @@ Imports:
 Suggests:
     GBJ,
     Rfast,
+    flashier,
     fsusieR,
     glmnet,
     harmonicmeanp,
