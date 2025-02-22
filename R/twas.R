@@ -97,7 +97,7 @@ harmonize_twas <- function(twas_weights_data, ld_meta_file_path, gwas_meta_file)
   # function to load bim file variants
   load_bim_file_info <- function(ld_meta_file_path, region_of_interest) {
     bim_file_path <- get_regional_ld_meta(ld_meta_file_path, region_of_interest)$intersections$bim_file_paths
-    bim_data <- lapply(bim_file_path, function(bim_file) vroom(bim_file, col_names = FALSE))
+    bim_data <- lapply(bim_file_path, function(bim_file) as.data.frame(vroom(bim_file, col_names = FALSE)))
     return(bim_data)
   }
   # function to extract LD variance for the query region
@@ -112,7 +112,7 @@ harmonize_twas <- function(twas_weights_data, ld_meta_file_path, gwas_meta_file)
   # Step 1: load TWAS weights data
   molecular_ids <- names(twas_weights_data)
   chrom <- as.integer(parse_number(gsub(":.*$", "", rownames(twas_weights_data[[1]]$weights[[1]])[1])))
-  gwas_meta_df <- vroom(gwas_meta_file)
+  gwas_meta_df <- as.data.frame(vroom(gwas_meta_file))
   gwas_files <- unique(gwas_meta_df$file_path[gwas_meta_df$chrom == chrom])
   names(gwas_files) <- unique(gwas_meta_df$study_id[gwas_meta_df$chrom == chrom])
   results <- list()
