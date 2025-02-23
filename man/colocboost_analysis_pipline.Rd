@@ -9,6 +9,14 @@ colocboost_analysis_pipline(
   target_trait = NULL,
   keep_PR = TRUE,
   rm_IN = TRUE,
+  maf_cutoff = 5e-04,
+  pip_cutoff_to_skip_ind = 0,
+  skip_region = NULL,
+  remove_indels = FALSE,
+  pip_cutoff_to_skip_sumstat = 0,
+  qc_method = c("rss_qc", "dentist", "slalom"),
+  impute = TRUE,
+  impute_opts = list(rcond = 0.01, R2_threshold = 0.6, minimum_ld = 5, lamb = 0.01),
   ...
 )
 }

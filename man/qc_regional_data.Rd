@@ -2,7 +2,7 @@
 % Please edit documentation in R/colocboost_pipline.R
 \name{qc_regional_data}
 \alias{qc_regional_data}
-\title{QUESTION: INPUT `region_data` or `X, Y, MAF, sumstats, LD`?}
+\title{The following functions will go to colocboost_pipline.R}
 \usage{
 qc_regional_data(
   region_data,
