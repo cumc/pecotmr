@@ -4,7 +4,13 @@
 \alias{colocboost_analysis_pipline}
 \title{QUESTION: INPUT `region_data` or `X, Y, MAF, sumstats, LD`?}
 \usage{
-colocboost_analysis_pipline(region_data, target_trait = NULL, ...)
+colocboost_analysis_pipline(
+  region_data,
+  target_trait = NULL,
+  keep_PR = TRUE,
+  rm_IN = TRUE,
+  ...
+)
 }
 \description{
 QUESTION: INPUT `region_data` or `X, Y, MAF, sumstats, LD`?
