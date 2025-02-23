@@ -6,7 +6,7 @@ package:
   version: ${{ version }}
 
 source:
-  url: https://github.com/StatFunGen/pecotmr/archive/${{ version }}.tar.gz
+  path: pecotmr-${{ version }}.tar.gz
   sha256: SHA256SUM_PLACEHOLDER
 
 build:
