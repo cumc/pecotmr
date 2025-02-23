@@ -868,6 +868,11 @@ load_rss_data <- function(sumstat_path, column_file_path, subset = TRUE, n_sampl
 load_tsv_region <- function(sumstat_path, region = "", target = "", target_column_index = "") {
   sumstats <- NULL
   cmd <- NULL
+  if(!is.null(region)){
+      if (grepl("^chr", region)) {
+          region <- sub("^chr", "", region)
+        }
+  }
   if (grepl(".gz$", sumstat_path)) {
     if (is.null(sumstats) || nrow(sumstats) == 0) {
       if (target != "" && region != "" && target_column_index != "") {
