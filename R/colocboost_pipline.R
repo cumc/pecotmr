@@ -540,8 +540,9 @@ sumstat_qc <- function(sumstat_data,
 #' QUESTION: INPUT `region_data` or `X, Y, MAF, sumstats, LD`?           
 colocboost_analysis_pipline <- function(region_data, 
                                         target_trait = NULL,
+                                        keep_PR = TRUE, 
+                                        rm_IN = TRUE,
                                         ...){
-    
     
     # - individual level 
     individual_data <- region_data$individual_data
@@ -559,9 +560,29 @@ colocboost_analysis_pipline <- function(region_data,
             Y <- NULL
         }
         if (!is.null(Y)){
-            Y <- unlist(lapply(Y, function(y) lapply(seq_len(ncol(y)), function(j) y[, j, drop=FALSE])), recursive = FALSE)
-            names(Y) <- unlist(lapply(individual_data$Y, colnames))
-            dict_YX <- cbind(seq_along(Y), rep(seq_along(individual_data$Y), sapply(individual_data$Y, ncol)))
+            Y <- lapply(1:length(Y), function(i){
+                y <- Y[[i]]
+                events <- colnames(y)
+                condition <- names(Y)[i]
+                if (all(grepl("sQTL", events))){
+                    events_keep <- filter_sQTL_events(events, keep_PR = keep_PR, rm_IN = rm_IN)
+                    if (length(events_keep)==length(events)){
+                        message(paste("All sQTL events in", condition, "inclued in following analysis"))
+                    } else if (length(events_keep)==0){
+                        message(paste("No sQTL events in", condition, "pass the filtering based on keep_PR =", keep_PR,
+                                      "and rm_IN", rm_IN, "."))
+                        return(NULL)
+                    } else {
+                        exclude_events <- paste0(setdiff(events, events_keep), collapse = ";")
+                        message(paste("Some sQTL events,", exclude_events, "in", condition, "are removed based on keep_PR =", keep_PR,
+                                      "and rm_IN =", rm_IN, "."))
+                        y <- y[,events_keep,drop=FALSE]
+                    }
+                }
+                lapply(seq_len(ncol(y)), function(j) y[, j, drop=FALSE])
+            })
+            dict_YX <- cbind(seq_along(Reduce("c", Y)), rep(seq_along(Y), sapply(Y, length)))
+            Y <- Reduce("c", Y)
         }
         
     } else {X <- Y <- dict_YX <- NULL}
@@ -603,5 +624,25 @@ colocboost_analysis_pipline <- function(region_data,
                          traits_names = traits, target_idx = target_idx, ...)
                                                      
     return(res_cb)                        
+
+}
+                                                     
+                                                     
+# sQTL filtering: for sQTL, we keep two strategy before analyzing: i) keep the clusters including PR. ii) remove the clusters including IN.
+filter_sQTL_events <- function(events, keep_PR = TRUE, rm_IN = TRUE){
+    
+    # function to extract cluster number and type
+    extract_clu <- function(x) { strsplit(x, ":")[[1]][4] }
+    extract_type <- function(x) { strsplit(x, ":")[[1]][5] }
+    
+    df <- data.frame(events, clu_types = sapply(events, extract_clu), types = sapply(events, extract_type))
+    df_summary <- df %>% group_by(clu_types) %>% 
+            summarize(cluster_types = paste(sort(unique(types)), collapse = ","),
+                      include_IN = ("IN"%in%types),
+                      include_PR = ("PR"%in%types))
+    df <- df %>% inner_join(df_summary, by = "clu_types")
+    df_filter <- df %>% rowwise() %>%
+            filter(ifelse(rm_IN, !include_IN, TRUE)&ifelse(keep_PR, include_PR, TRUE))
+    return(df_filter$events)
 
 }
