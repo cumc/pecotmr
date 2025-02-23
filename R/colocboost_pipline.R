@@ -1,17 +1,17 @@
 
 
-#' Load regional data
+#' Load colocboost regional data: this function will go to file_utils.R
 #' 
 #' This function loads a mixture data sets for a specific region, including individual-level data (genotype, phenotype, covariate data) 
 #' or summary statistics (sumstats, LD). Run \code{load_regional_univariate_data} and \code{load_rss_data} multiple times for different datasets
 #' 
 #' @section Loading individual level data from multiple corhorts
 #' @param region A string of chr:start-end for the phenotype region.
-#' @param genotype_multiple a vector of PLINK bed file containing genotype data.
-#' @param phenotype_multiple A vector of phenotype file names.
-#' @param covariate_multiple A vector of covariate file names corresponding to the phenotype file vector.
-#' @param conditions_individual A vector of strings representing different conditions or groups.
-#' @param multiple_match_geno_pheno A vector of index of phentoypes matched to genotype if mulitple genotype PLINK files
+#' @param genotype_list a vector of PLINK bed file containing genotype data.
+#' @param phenotype_list A vector of phenotype file names.
+#' @param covariate_list A vector of covariate file names corresponding to the phenotype file vector.
+#' @param conditions_list_individual A vector of strings representing different conditions or groups.
+#' @param match_geno_pheno A vector of index of phentoypes matched to genotype if mulitple genotype PLINK files
 #' @param maf_cutoff Minimum minor allele frequency (MAF) cutoff. Default is 0.
 #' @param mac_cutoff Minimum minor allele count (MAC) cutoff. Default is 0.
 #' @param xvar_cutoff Minimum variance cutoff. Default is 0.
@@ -26,12 +26,12 @@
 #' @param tabix_header Logical indicating whether the tabix file has a header. Default is TRUE.
 #' 
 #' @section Loading summary statistics from multiple corhorts or data set
-#' @param sumstat_path_multiple A vector of file path to the summary statistics.
-#' @param column_file_path_multiple A vector of file path to the column file for mapping.
-#' @param LD_meta_file_path_multiple A vector of path of LD_metadata, LD_metadata is a data frame specifying LD blocks with columns "chrom", "start", "end", and "path". "start" and "end" denote the positions of LD blocks. "path" is the path of each LD block, optionally including bim file paths.
-#' @param multiple_match_LD_sumstat A vector of index of sumstat matched to LD if mulitple sumstat files
-#' @param conditions_sumstat A vector of strings representing different sumstats.
-#' @param conditions_LD A vector of strings representing different LD reference for different sumstat
+#' @param sumstat_path_list A vector of file path to the summary statistics.
+#' @param column_file_path_list A vector of file path to the column file for mapping.
+#' @param LD_meta_file_path_list A vector of path of LD_metadata, LD_metadata is a data frame specifying LD blocks with columns "chrom", "start", "end", and "path". "start" and "end" denote the positions of LD blocks. "path" is the path of each LD block, optionally including bim file paths.
+#' @param match_LD_sumstat A vector of index of sumstat matched to LD if mulitple sumstat files
+#' @param conditions_list_sumstat A vector of strings representing different sumstats.
+#' @param conditions_list_LD A vector of strings representing different LD reference for different sumstat
 #' @param n_sample User-specified sample size. If unknown, set as 0 to retrieve from the sumstat file.
 #' @param n_case User-specified number of cases.
 #' @param n_control User-specified number of controls.
@@ -67,68 +67,68 @@
 #' }
 #'
 #' @export
-load_regional_data <- function(region, # a string of chr:start-end for phenotype region
-                               genotype_multiple = NULL, # PLINK file
-                               phenotype_multiple = NULL, # a vector of phenotype file names
-                               covariate_multiple = NULL, # a vector of covariate file names corresponding to the phenotype file vector
-                               conditions_individual = NULL, # a vector of strings
-                               multiple_match_geno_pheno = NULL, # a vector of index of phentoypes matched to genotype if mulitple genotype files
-                               maf_cutoff = 0,
-                               mac_cutoff = 0,
-                               xvar_cutoff = 0,
-                               imiss_cutoff = 0,
-                               association_window = NULL,
-                               extract_region_name = NULL,
-                               region_name_col = NULL,
-                               keep_indel = TRUE,
-                               keep_samples = NULL,
-                               keep_variants = NULL,
-                               phenotype_header = 4, # skip first 4 rows of transposed phenotype for chr, start, end and ID
-                               scale_residuals = FALSE,
-                               tabix_header = TRUE,
-                               
-                               # sumstat if need
-                               sumstat_path_multiple = NULL, 
-                               column_file_path_multiple = NULL, 
-                               LD_meta_file_path_multiple = NULL,
-                               multiple_match_LD_sumstat = NULL, # a vector of index of sumstat matched to LD if mulitple sumstat files
-                               conditions_sumstat = NULL,
-                               conditions_LD = NULL,
-                               subset = TRUE, 
-                               n_sample = 0, 
-                               n_case = 0, 
-                               n_control = 0, 
-                               target = "",
-                               target_column_index = "", 
-                               comment_string = "#",
-                               extract_coordinates = NULL
-                               ) {
+load_colocboost_regional_data <-  function(region, # a string of chr:start-end for phenotype region
+                                           genotype_list = NULL, # PLINK file
+                                           phenotype_list = NULL, # a vector of phenotype file names
+                                           covariate_list = NULL, # a vector of covariate file names corresponding to the phenotype file vector
+                                           conditions_list_individual = NULL, # a vector of strings
+                                           match_geno_pheno = NULL, # a vector of index of phentoypes matched to genotype if mulitple genotype files
+                                           maf_cutoff = 0,
+                                           mac_cutoff = 0,
+                                           xvar_cutoff = 0,
+                                           imiss_cutoff = 0,
+                                           association_window = NULL,
+                                           extract_region_name = NULL,
+                                           region_name_col = NULL,
+                                           keep_indel = TRUE,
+                                           keep_samples = NULL,
+                                           keep_variants = NULL,
+                                           phenotype_header = 4, # skip first 4 rows of transposed phenotype for chr, start, end and ID
+                                           scale_residuals = FALSE,
+                                           tabix_header = TRUE,
+
+                                           # sumstat if need
+                                           sumstat_path_list = NULL, 
+                                           column_file_path_list = NULL, 
+                                           LD_meta_file_path_list = NULL,
+                                           match_LD_sumstat = NULL, # a vector of index of sumstat matched to LD if mulitple sumstat files
+                                           conditions_list_sumstat = NULL,
+                                           conditions_list_LD = NULL,
+                                           subset = TRUE, 
+                                           n_sample = 0, 
+                                           n_case = 0, 
+                                           n_control = 0, 
+                                           target = "",
+                                           target_column_index = "", 
+                                           comment_string = "#",
+                                           extract_coordinates = NULL
+                                           ) {
     
     
-    if (is.null(genotype_multiple)&is.null(sumstat_path_multiple)){
-        stop("Data load error. Please make sure at least one data set (sumstat_path_multiple or genotype_multiple) exists.")
+    if (is.null(genotype_list)&is.null(sumstat_path_list)){
+        stop("Data load error. Please make sure at least one data set (sumstat_path_list or genotype_list) exists.")
     }
     
     # - if exist individual level data
     individual_data <- NULL
-    if (!is.null(genotype_multiple)){
+    if (!is.null(genotype_list)){
         
-        if (length(genotype_multiple)!=1 & is.null(multiple_match_geno_pheno)){
-            stop("Data load error. Please make sure 'multiple_match_geno_pheno' exists if you load data from multiple individual-level data.")
-        } else if (length(genotype_multiple)==1 & is.null(multiple_match_geno_pheno)){
-            multiple_match_geno_pheno <- rep(1, length(phenotype_multiple))
+        if (length(genotype_list)!=1 & is.null(match_geno_pheno)){
+            stop("Data load error. Please make sure 'match_geno_pheno' exists if you load data from multiple individual-level data.")
+        } else if (length(genotype_list)==1 & is.null(match_geno_pheno)){
+            match_geno_pheno <- rep(1, length(phenotype_list))
         }
 
         # - load individual data from multiple datasets
-        n_dataset <- unique(multiple_match_geno_pheno)
+        n_dataset <- unique(match_geno_pheno)
         for (i_data in 1:n_dataset){
             # extract genotype file name
-            genotype <- genotype_multiple[i_data]
+            genotype <- genotype_list[i_data]
             # extract phenotype and covariate file names
-            pos <- which(multiple_match_geno_pheno == i_data)
-            phenotype <- phenotype_multiple[pos]
-            covariate <- covariate_multiple[pos]
-            conditions <- conditions_individual[pos]
+            pos <- which(match_geno_pheno == i_data)
+            phenotype <- phenotype_list[pos]
+            covariate <- covariate_list[pos]
+            conditions <- conditions_list_individual[pos]
             dat <- load_regional_univariate_data(genotype = genotype, phenotype = phenotype,
                                                  covariate = covariate, region = region, 
                                                  association_window = association_window,
@@ -155,32 +155,32 @@ load_regional_data <- function(region, # a string of chr:start-end for phenotype
     
     # - if exist summstat data
     sumstat_data <- NULL
-    if (!is.null(sumstat_path_multiple)){
+    if (!is.null(sumstat_path_list)){
         
-        if (length(LD_meta_file_path_multiple)!=1 & is.null(multiple_match_LD_sumstat)){
-            stop("Data load error. Please make sure 'multiple_match_LD_sumstat' exists if you load data from multiple sumstats.")
-        } else if (length(LD_meta_file_path_multiple)==1 & is.null(multiple_match_LD_sumstat)){
-            multiple_match_LD_sumstat <- rep(1, length(sumstat_path_multiple))
+        if (length(LD_meta_file_path_list)!=1 & is.null(match_LD_sumstat)){
+            stop("Data load error. Please make sure 'match_LD_sumstat' exists if you load data from multiple sumstats.")
+        } else if (length(LD_meta_file_path_list)==1 & is.null(match_LD_sumstat)){
+            match_LD_sumstat <- rep(1, length(sumstat_path_list))
         }
-        if (length(sumstat_path_multiple)==1&is.null(conditions_sumstat)) {conditions_sumstat = "LD_sumstat"}
-        if (length(LD_meta_file_path_multiple)==1&is.null(conditions_LD)) {conditions_LD = "LD"}
+        if (length(sumstat_path_list)==1&is.null(conditions_list_sumstat)) {conditions_list_sumstat = "LD_sumstat"}
+        if (length(LD_meta_file_path_list)==1&is.null(conditions_list_LD)) {conditions_list_LD = "LD"}
         
         
         # - load sumstat data from multiple datasets
-        n_LD <- unique(multiple_match_LD_sumstat)
+        n_LD <- unique(match_LD_sumstat)
         for (i_ld in 1:n_LD){
             
             # extract LD meta file path name
-            LD_meta_file_path <- LD_meta_file_path_multiple[i_ld]
+            LD_meta_file_path <- LD_meta_file_path_list[i_ld]
             LD_info <- load_LD_matrix(LD_meta_file_path, 
                                       region = association_window, 
                                       extract_coordinates = extract_coordinates)
             # extract sumstat information
-            pos <- which(multiple_match_LD_sumstat == i_ld)
-            conditions <- conditions_sumstat[pos]
+            pos <- which(match_LD_sumstat == i_ld)
+            conditions <- conditions_list_sumstat[pos]
             sumstats <- lapply(pos, function(ii){
-                sumstat_path <- sumstat_path_multiple[ii]
-                column_file_path <- column_file_path_multiple[ii]
+                sumstat_path <- sumstat_path_list[ii]
+                column_file_path <- column_file_path_list[ii]
                 tmp <- load_rss_data(
                     sumstat_path = sumstat_path, column_file_path = column_file_path,
                     n_sample = n_sample, n_case = n_case, n_control = n_control, target = target, region = association_window,
@@ -194,7 +194,7 @@ load_regional_data <- function(region, # a string of chr:start-end for phenotype
             sumstat_data$sumstats <- c(sumstat_data$sumstats, list(sumstats))
             sumstat_data$LD_info <- c(sumstat_data$LD_info, list(LD_info))
         }
-        names(sumstat_data$sumstats) <- names(sumstat_data$LD_info) <- conditions_LD
+        names(sumstat_data$sumstats) <- names(sumstat_data$LD_info) <- conditions_list_LD
     }
     
     return(list(individual_data = individual_data, 
@@ -204,7 +204,7 @@ load_regional_data <- function(region, # a string of chr:start-end for phenotype
 
 
 
-#' QUESTION: INPUT `region_data` or `X, Y, MAF, sumstats, LD`?
+#' The following functions will go to colocboost_pipline.R
 #' 
 #' 
 #' Initial QC for the region data loading from \code{load_regional_data}
@@ -339,15 +339,15 @@ filter_resY_pip <- function(res_X, res_Y, pip_cutoff_to_skip = 0, context = NULL
         check_model_pip <- sapply( top_model_pip, function(pip) any(pip > pip_cutoff_to_skip) )
         include_idx <- which(check_model_pip)
         if (length(include_idx)==0){
-            message(paste("Skipping follow-up analysis for context", context,  
+            message(paste("Skipping follow-up analysis for individual-context", context,  
                           ". No signals above PIP threshold", pip_cutoff_to_skip, "in initial model screening."))
             return(list())
         } else if (length(include_idx) == ncol(res_Y)) {
-            message(paste("Keep all phenotypes in context", context,  "."))
+            message(paste("Keep all individual-phenotypes in context", context,  "."))
         } else {
             exclude_idx <- setdiff(1:ncol(res_Y), include_idx)
             exclude_pheno <- paste(colnames(res_Y)[exclude_idx], collapse = ";")
-            message(paste("Skipping follow-up analysis for phenotypes", exclude_pheno, "in context", context,  
+            message(paste("Skipping follow-up analysis for individual-phenotypes", exclude_pheno, "in context", context,  
                           ". No signals above PIP threshold", pip_cutoff_to_skip, "in initial model screening."))
             res_Y <- res_Y[, include_idx, drop = FALSE] %>% .[, order(colnames(.)), drop = FALSE]
         }
@@ -542,7 +542,26 @@ colocboost_analysis_pipline <- function(region_data,
                                         target_trait = NULL,
                                         keep_PR = TRUE, 
                                         rm_IN = TRUE,
+                                        # - individual QC
+                                        maf_cutoff = 0.0005, 
+                                        pip_cutoff_to_skip_ind = 0,
+                                        # - sumstat QC
+                                        skip_region = NULL,
+                                        remove_indels = FALSE,
+                                        pip_cutoff_to_skip_sumstat = 0,
+                                        qc_method = c("rss_qc", "dentist", "slalom"),
+                                        impute = TRUE, 
+                                        impute_opts = list(rcond = 0.01, R2_threshold = 0.6, minimum_ld = 5, lamb = 0.01),
                                         ...){
+    # - QC for the region_data
+    region_data <- qc_regional_data(region_data, maf_cutoff = maf_cutoff, 
+                                    pip_cutoff_to_skip_ind = pip_cutoff_to_skip_ind,
+                                    skip_region = skip_region,
+                                    remove_indels = remove_indels,
+                                    pip_cutoff_to_skip_sumstat = pip_cutoff_to_skip_sumstat,
+                                    qc_method =qc_method,
+                                    impute = impute, 
+                                    impute_opts = impute_opts)
     
     # - individual level 
     individual_data <- region_data$individual_data
@@ -567,7 +586,7 @@ colocboost_analysis_pipline <- function(region_data,
                 if (all(grepl("sQTL", events))){
                     events_keep <- filter_sQTL_events(events, keep_PR = keep_PR, rm_IN = rm_IN)
                     if (length(events_keep)==length(events)){
-                        message(paste("All sQTL events in", condition, "inclued in following analysis"))
+                        message(paste("All sQTL events in", condition, "inclued in following analysis based on keep_PR and rm_IN filtering."))
                     } else if (length(events_keep)==0){
                         message(paste("No sQTL events in", condition, "pass the filtering based on keep_PR =", keep_PR,
                                       "and rm_IN", rm_IN, "."))
@@ -579,7 +598,7 @@ colocboost_analysis_pipline <- function(region_data,
                         y <- y[,events_keep,drop=FALSE]
                     }
                 }
-                lapply(seq_len(ncol(y)), function(j) y[, j, drop=FALSE])
+                lapply(seq_len(ncol(y)), function(j) y[, j, drop=FALSE])%>%setNames(condition)
             })
             dict_YX <- cbind(seq_along(Reduce("c", Y)), rep(seq_along(Y), sapply(Y, length)))
             Y <- Reduce("c", Y)
