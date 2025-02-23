@@ -5,46 +5,111 @@ on:
     inputs:
       tag:
         description: Version to use for release tag
+        default: auto
         required: true
       commit:
         description: Commit to use for tag
-        required: false
+        default: auto
+        required: true
+      increment_major_version:
+        description: Increment major version
+        default: false
+        required: true
+      increment_minor_version:
+        description: Increment minor version
+        default: false
+        required: true
+      increment_patch_version:
+        description: Increment patch version
+        default: true
+        required: true
 
 jobs:
-  release:
+  update_version:
+    outputs:
+      commit: ${{ steps.commit-changes.outputs.commit_long_sha }}
+    runs-on: ubuntu-latest
+    if: ${{ github.event.inputs.commit }} == "auto"
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.CI_TOKEN }}
+          fetch-depth: 0
+          repository: ${{ github.repository }}
+          ref: main
+
+      - name: Create TOML from recipe
+        run: .github/workflows/create_toml_from_yaml.sh ${GITHUB_WORKSPACE}
+
+      - name: Setup pixi
+        uses: prefix-dev/setup-pixi@v0.8.3
+
+      - name: Update version
+        run: |
+          if [[ ${{ github.event.inputs.tag }} != "auto" ]]; then
+            sed -i 's/Version: .*$/Version: ${{ github.event.inputs.tag }}/' DESCRIPTION
+          elif [[ ${{ github.event.inputs.increment_major_version }} == "true" ]]; then
+            pixi run use_major_version
+          elif [[ ${{ github.event.inputs.increment_minor_version }} == "true" ]]; then
+            pixi run use_minor_version
+          elif [[ ${{ github.event.inputs.increment_patch_version }} == "true" ]]; then
+            pixi run use_patch_version
+          fi
+
+      - name: Commit changes to version
+        id: commit-changes
+        uses: EndBug/add-and-commit@v9
+        with:
+          push: true
+          message: Update version
+
+  create_release:
+    needs: update_version
     runs-on: ubuntu-latest
     permissions:
       contents: write
     env:
       INPUT_COMMIT: ${{ github.event.inputs.commit }}
-
     steps:
-      - name: Checkout HEAD
-        uses: actions/checkout@v4
-
       - name: Determine commit
         id: determine-commit
         run: |
-          if [[ ${INPUT_COMMIT} != '' ]]; then
+          if [[ ${INPUT_COMMIT} != 'auto' ]]; then
             echo "commit=${{ github.event.inputs.commit }}" >> "$GITHUB_OUTPUT"
           else
-            echo "commit=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+            echo "commit=${{ needs.update_version.outputs.commit }}" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Checkout HEAD
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.determine-commit.outputs.commit }}
+
+      - name: Set tag
+        id: set-tag
+        run: |
+          if [[ ${{ github.event.inputs.tag }} != auto ]]; then
+            tag=${{ github.event.inputs.tag }}
+          else
+            tag=$(grep "Version:" < DESCRIPTION | cut -d ' ' -f 2)
+          fi
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+
       - name: Create new tag
-        id: tag_version
+        id: tag-version
         uses: mathieudutour/github-tag-action@v6.2
         with:
           default_bump: false
           default_prerelease_bump: false
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          custom_tag: ${{ github.event.inputs.tag }}
-          commit_sha: ${{ needs.determine-commit.outputs.commit }}
+          custom_tag: ${{ steps.set-tag.outputs.tag }}
+          commit_sha: ${{ steps.determine-commit.outputs.commit }}
           tag_prefix: ""
 
       - name: Create a GitHub release
         uses: ncipollo/release-action@v1
         with:
-          tag: ${{ steps.tag_version.outputs.new_tag }}
-          name: Release ${{ steps.tag_version.outputs.new_tag }}
-          body: ${{ steps.tag_version.outputs.changelog }}
+          tag: ${{ steps.tag-version.outputs.new_tag }}
+          name: Release ${{ steps.tag-version.outputs.new_tag }}
+          body: ${{ steps.tag-version.outputs.changelog }}

@@ -6,6 +6,7 @@ on:
       version:
         description: Version to package
         required: true
+        default: 'latest'
       build:
         description: "Build revision of package (default: 0)"
         required: false
@@ -30,21 +31,46 @@ jobs:
         with:
           fetch-depth: 0
 
+      - id: latest-version
+        name: Get latest version
+        if: ${{ github.event.inputs.version }} == "latest"
+        uses: pozetroninc/github-action-get-latest-release@v0.8.0
+        with:
+          repository: ${{ github.repository }}
+          token: ${{ secrets.CI_TOKEN }}
+
+      - name: Set version
+        id: set-version
+        run: |
+          if [[ ${{ github.event.inputs.version }} != "latest" ]]; then
+            version=${{ github.event.inputs.version }}
+          else
+            version=${{ steps.latest-version.outputs.release }}
+          fi
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+      - name: Download release
+        uses: robinraju/release-downloader@v1
+        with:
+          tag: ${{ steps.set-version.outputs.version }}
+          token: ${{ secrets.CI_TOKEN }}
+          out-file-path: /tmp/recipe
+          tarBall: true
+
       - name: Setup pixi
-        uses: prefix-dev/setup-pixi@v0.8.2
+        uses: prefix-dev/setup-pixi@v0.8.3
         with:
           run-install: false
 
       - name: Create recipe from template
         shell: pixi exec --spec sed --spec coreutils --spec wget -- bash -e {0}
         run: |
-          mkdir /tmp/recipe
           cp .github/recipe/recipe.yaml /tmp/recipe/recipe.yaml
           cp .github/recipe/variant_${{ matrix.variant}}.yaml /tmp/recipe/variants.yaml
-          version=${{ github.event.inputs.version }}
+          repository=${{ github.repository }}
           build=${{ github.event.inputs.build }}
-          wget https://github.com/StatFunGen/pecotmr/archive/${version}.tar.gz
-          sha256sum=$(sha256sum ${version}.tar.gz | cut -d ' ' -f 1)
+          version=${{ steps.set-version.outputs.version }}
+          sha256sum=$(sha256sum /tmp/recipe/${repository//*\//}-${version}.tar.gz | cut -d ' ' -f 1)
           sed -i "s/VERSION_PLACEHOLDER/${version}/g" /tmp/recipe/recipe.yaml
           sed -i "s/SHA256SUM_PLACEHOLDER/${sha256sum}/g" /tmp/recipe/recipe.yaml
           sed -i "s/BUILD_PLACEHOLDER/${build}/g" /tmp/recipe/recipe.yaml
@@ -90,21 +116,46 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Get latest version
+        id: latest-version
+        if: ${{ github.event.inputs.version }} == "latest"
+        uses: pozetroninc/github-action-get-latest-release@v0.8.0
+        with:
+          repository: ${{ github.repository }}
+          token: ${{ secrets.CI_TOKEN }}
+
+      - name: Set version
+        id: set-version
+        run: |
+          if [[ ${{ github.event.inputs.version }} != "latest" ]]; then
+            version=${{ github.event.inputs.version }}
+          else
+            version=${{ steps.latest-version.outputs.release }}
+          fi
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+      - name: Download release
+        uses: robinraju/release-downloader@v1
+        with:
+          tag: ${{ steps.set-version.outputs.version }}
+          token: ${{ secrets.CI_TOKEN }}
+          out-file-path: /tmp/recipe
+          tarBall: true
+
       - name: Setup pixi
-        uses: prefix-dev/setup-pixi@v0.8.2
+        uses: prefix-dev/setup-pixi@v0.8.3
         with:
           run-install: false
 
       - name: Create recipe from template
         shell: pixi exec --spec sed --spec coreutils --spec wget -- bash -e {0}
         run: |
-          mkdir /tmp/recipe
           cp .github/recipe/recipe.yaml /tmp/recipe/recipe.yaml
           cp .github/recipe/variant_${{ matrix.variant}}.yaml /tmp/recipe/variants.yaml
-          version=${{ github.event.inputs.version }}
+          repository=${{ github.repository }}
           build=${{ github.event.inputs.build }}
-          wget https://github.com/StatFunGen/pecotmr/archive/${version}.tar.gz
-          sha256sum=$(sha256sum ${version}.tar.gz | cut -d ' ' -f 1)
+          version=${{ steps.set-version.outputs.version }}
+          sha256sum=$(sha256sum /tmp/recipe/${repository//*\//}-${version}.tar.gz | cut -d ' ' -f 1)
           sed -i "s/VERSION_PLACEHOLDER/${version}/g" /tmp/recipe/recipe.yaml
           sed -i "s/SHA256SUM_PLACEHOLDER/${sha256sum}/g" /tmp/recipe/recipe.yaml
           sed -i "s/BUILD_PLACEHOLDER/${build}/g" /tmp/recipe/recipe.yaml
@@ -134,21 +185,46 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Get latest version
+        id: latest-version
+        if: ${{ github.event.inputs.version }} == "latest"
+        uses: pozetroninc/github-action-get-latest-release@v0.8.0
+        with:
+          repository: ${{ github.repository }}
+          token: ${{ secrets.CI_TOKEN }}
+
+      - name: Set version
+        id: set-version
+        run: |
+          if [[ ${{ github.event.inputs.version }} != "latest" ]]; then
+            version=${{ github.event.inputs.version }}
+          else
+            version=${{ steps.latest-version.outputs.release }}
+          fi
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+      - name: Download release
+        uses: robinraju/release-downloader@v1
+        with:
+          tag: ${{ steps.set-version.outputs.version }}
+          token: ${{ secrets.CI_TOKEN }}
+          out-file-path: /tmp/recipe
+          tarBall: true
+
       - name: Setup pixi
-        uses: prefix-dev/setup-pixi@v0.8.2
+        uses: prefix-dev/setup-pixi@v0.8.3
         with:
           run-install: false
 
       - name: Create recipe from template
         shell: pixi exec --spec sed --spec coreutils --spec wget -- bash -e {0}
         run: |
-          mkdir /tmp/recipe
           cp .github/recipe/recipe.yaml /tmp/recipe/recipe.yaml
           cp .github/recipe/variant_${{ matrix.variant}}.yaml /tmp/recipe/variants.yaml
-          version=${{ github.event.inputs.version }}
+          repository=${{ github.repository }}
           build=${{ github.event.inputs.build }}
-          wget https://github.com/StatFunGen/pecotmr/archive/${version}.tar.gz
-          sha256sum=$(sha256sum ${version}.tar.gz | cut -d ' ' -f 1)
+          version=${{ steps.set-version.outputs.version }}
+          sha256sum=$(sha256sum /tmp/recipe/${repository//*\//}-${version}.tar.gz | cut -d ' ' -f 1)
           sed -i "s/VERSION_PLACEHOLDER/${version}/g" /tmp/recipe/recipe.yaml
           sed -i "s/SHA256SUM_PLACEHOLDER/${sha256sum}/g" /tmp/recipe/recipe.yaml
           sed -i "s/BUILD_PLACEHOLDER/${build}/g" /tmp/recipe/recipe.yaml
