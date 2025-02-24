@@ -1,6 +1,6 @@
 
 
-#' Load colocboost regional data: this function will go to file_utils.R
+#' Load multitask regional data: this function will go to file_utils.R
 #' 
 #' This function loads a mixture data sets for a specific region, including individual-level data (genotype, phenotype, covariate data) 
 #' or summary statistics (sumstats, LD). Run \code{load_regional_univariate_data} and \code{load_rss_data} multiple times for different datasets
@@ -67,7 +67,7 @@
 #' }
 #'
 #' @export
-load_colocboost_regional_data <-  function(region, # a string of chr:start-end for phenotype region
+load_multitask_regional_data <-  function(region, # a string of chr:start-end for phenotype region
                                            genotype_list = NULL, # PLINK file
                                            phenotype_list = NULL, # a vector of phenotype file names
                                            covariate_list = NULL, # a vector of covariate file names corresponding to the phenotype file vector
@@ -203,16 +203,17 @@ load_colocboost_regional_data <-  function(region, # a string of chr:start-end f
 }
 
 
+     
 
-#' The following functions will go to colocboost_pipline.R
+#' Multi-trait colocalization analysis pipline
 #' 
+#' This function perform a multi-trait colocalization using ColocBoost
 #' 
-#' Initial QC for the region data loading from \code{load_regional_data}
-#' 
-#' This function do the initial QC including: check PIP; check maf for individual_data; check QC and impute for sumstat_data
-#' 
-#' @section Loading individual level data from multiple corhorts
 #' @param region_data A region data loaded from \code{load_regional_data}.
+#' @param target_trait Name of trait if perform targeted ColocBoost
+#' @param sqtl_pattern A regex for sQTL context name pattern. Default is "clu_(\\d+_[+-?]):"
+#' @param include_context A regex for including sQTL events "clu_(\\d+_[+-?]):PR:"
+#' @param exclude_context A regex for excluding sQTL events "clu_(\\d+_[+-?]):IN:"
 #' @param maf_cutoff A scalar to remove variants with maf < maf_cutoff, dafault is 0.005.
 #' @param pip_cutoff_to_skip_ind A vector of cutoff values for skipping analysis based on PIP values for each context. Default is 0.
 #' @param skip_region A character vector specifying regions to be skipped in the analysis (optional).
@@ -226,19 +227,8 @@ load_colocboost_regional_data <-  function(region, # a string of chr:start-end f
 #' @return A list containing the individual_data and sumstat_data after QC:
 #' individual_data contains the following components if exist
 #' \itemize{
-#'   \item residual_Y: A list of residualized phenotype values (either a vector or a matrix).
-#'   \item residual_X: A list of residualized genotype matrices for each condition.
-#'   \item residual_Y_scalar: Scaling factor for residualized phenotype values.
-#'   \item residual_X_scalar: Scaling factor for residualized genotype values.
-#'   \item dropped_sample: A list of dropped samples for X, Y, and covariates.
-#'   \item covar: Covariate data.
-#'   \item Y: Original phenotype data.
-#'   \item X_data: Original genotype data.
-#'   \item X: Filtered genotype matrix.
-#'   \item maf: Minor allele frequency (MAF) for each variant.
-#'   \item chrom: Chromosome of the region.
-#'   \item grange: Genomic range of the region (start and end positions).
-#'   \item Y_coordinates: Phenotype coordinates if a region is specified.
+#'   \item Y: A list of residualized phenotype values for all tasks.
+#'   \item X: A list of residualized genotype matrices all tasks.
 #' }
 #' sumstat_data contains the following components if exist
 #' \itemize{
@@ -246,302 +236,12 @@ load_colocboost_regional_data <-  function(region, # a string of chr:start-end f
 #'   \item LD_info: A list of LD information, each sublist contains combined_LD_variants, combined_LD_matrix, ref_panel  \code{load_LD_matrix}.
 #' }
 #'
-#' @export
-qc_regional_data <- function(region_data,
-                             # - individual
-                             maf_cutoff = 0.0005, 
-                             pip_cutoff_to_skip_ind = 0,
-                             # - sumstat
-                             skip_region = NULL,
-                             remove_indels = FALSE,
-                             pip_cutoff_to_skip_sumstat = 0,
-                             qc_method = c("rss_qc", "dentist", "slalom"),
-                             impute = TRUE, 
-                             impute_opts = list(rcond = 0.01, R2_threshold = 0.6, minimum_ld = 5, lamb = 0.01)){
-    
-    # - individual level data QC
-    individual_data <- region_data$individual_data
-    if (!is.null(individual_data)){
-        X <- individual_data$residual_X
-        Y <- individual_data$residual_Y
-        MAF <- individual_data$maf
-        # 1. remove maf < maf_cutoff
-        # 2. initial check PIP
-        individual_data <- data_initial_screen_individual(X = X, Y = Y, MAF = MAF, 
-                                                          maf_cutoff = maf_cutoff, 
-                                                          pip_cutoff_to_skip = pip_cutoff_to_skip_ind )
-    }
-    
-    # - summary statistics QC
-    sumstat_data = region_data$sumstat_data
-    if (!is.null(sumstat_data)){
-        # - 1. initial check PIP
-        sumstat_data <- data_initial_screen_sumstat(sumstat_data, skip_region = skip_region,
-                                                    remove_indels = remove_indels, 
-                                                    pip_cutoff_to_skip = pip_cutoff_to_skip_sumstat)
-        
-        # - qc or impute
-        sumstat_data <- sumstat_qc(sumstat_data, qc_method = qc_method,
-                                   impute = impute, impute_opts = impute_opts)
-        
-    }
-    return(list(individual_data = individual_data, 
-                sumstat_data = sumstat_data))
-
-}
-
-
-
-
-
-############# Individual - level data
-#' Add context names to colname of Y if missing
-#' @return A list of residual Y
-#' @noRd
-add_context_to_Y <- function(res_Y){
-    res <- lapply(1:length(res_Y), function(iy){
-        y <- res_Y[[iy]]
-        if (is.null(colnames(y))){ 
-            colnames(y) <- names(res_Y)[iy] 
-        } else {
-            colnames(y) <- paste0(names(res_Y)[iy], "_", colnames(y))
-        }
-        return(y)
-    })
-    names(res) <- names(res_Y)
-    return(res)
-}
-
-#' Remove variants with maf < maf_cutoff
-#' @return A list of residual X and maf
-#' @export
-filter_resX_maf <- function(res_X, maf, maf_cutoff = 0.0005){
-    pos <- which(maf < maf_cutoff)
-    if (length(pos)!=0){
-        res_X <- res_X[, -pos, drop = FALSE] %>% .[, order(colnames(.)), drop = FALSE]
-        maf <- maf[-pos]
-    }
-    return(list(res_X = res_X, maf = maf))
-}
-
-#' Initial PIP check for individual level data
-#' @return A list of residual Y
-#' @export
-filter_resY_pip <- function(res_X, res_Y, pip_cutoff_to_skip = 0, context = NULL){
-    
-    # Initial PIP check
-    if (pip_cutoff_to_skip != 0){
-        if (pip_cutoff_to_skip < 0){
-            # automatically determine the cutoff to use
-            pip_cutoff_to_skip <- 3 * 1 / ncol(res_X)
-        }
-        top_model_pip <- lapply(1:ncol(res_Y), function(i) susieR::susie(res_X, res_Y[,i], L = 1)$pip)
-        check_model_pip <- sapply( top_model_pip, function(pip) any(pip > pip_cutoff_to_skip) )
-        include_idx <- which(check_model_pip)
-        if (length(include_idx)==0){
-            message(paste("Skipping follow-up analysis for individual-context", context,  
-                          ". No signals above PIP threshold", pip_cutoff_to_skip, "in initial model screening."))
-            return(list())
-        } else if (length(include_idx) == ncol(res_Y)) {
-            message(paste("Keep all individual-phenotypes in context", context,  "."))
-        } else {
-            exclude_idx <- setdiff(1:ncol(res_Y), include_idx)
-            exclude_pheno <- paste(colnames(res_Y)[exclude_idx], collapse = ";")
-            message(paste("Skipping follow-up analysis for individual-phenotypes", exclude_pheno, "in context", context,  
-                          ". No signals above PIP threshold", pip_cutoff_to_skip, "in initial model screening."))
-            res_Y <- res_Y[, include_idx, drop = FALSE] %>% .[, order(colnames(.)), drop = FALSE]
-        }
-    }
-    return(res_Y)
-    
-}
-
-#' Initial check for all contexts with individual-level data
-#' @return A list of individual_data after initial checking and QC:
-#' \itemize{
-#'   \item X: A list of residual X and ready to do analysis.
-#'   \item Y: A list of residual Y and ready to do analysis.
-#'   \item MAF: A list of MAF for the remaining genotype.
-#' }
-#' @export
-data_initial_screen_individual <- function(
-    X,
-    Y,
-    MAF,
-    maf_cutoff = 0.0005,
-    pip_cutoff_to_skip = 0 ){
-    
-    # - add context to colname of Y
-    Y <- add_context_to_Y(Y)
-    n_context <- length(X)
-    residual_X <- residual_Y <- list()
-    keep_contexts <- c()
-    for (i_context in 1:n_context){
-        resX <- X[[i_context]]
-        resY <- Y[[i_context]]
-        maf <- MAF[[i_context]]
-        context <- names(Y)[i_context]
-        # - remove variants with maf < maf_cutoff
-        tmp <- filter_resX_maf(resX, maf, maf_cutoff = maf_cutoff)
-        resX <- tmp$res_X
-        MAF[[i_context]] <- tmp$maf
-        # Initial PIP check
-        resY <- filter_resY_pip(resX, resY, pip_cutoff_to_skip = pip_cutoff_to_skip[i_context], context = context)
-        if (!is.null(resY)){
-            residual_X <- c(residual_X, list(resX))
-            residual_Y <- c(residual_Y, list(resY))
-            keep_contexts <- c(keep_contexts, context)
-        }
-    }
-    if (length(keep_contexts)==0){
-        message(paste("Skipping follow-up analysis for all contexts."))
-        return(list())
-    } else {
-        message(paste("Region includes the following contexts after inital screening:", paste(keep_contexts, collapse = ";"),  "."))
-        names(residual_X) <- names(residual_Y) <- keep_contexts
-        return(list(
-            X = residual_X,
-            Y = residual_Y,
-            MAF = MAF
-        ))
-    }
-    
-}
-                                  
-################# summary statistics
-#' Initial PIP check for summary statistics
-#' @return A list of sumstat including sumstat and LD passing PIP check.
-#' @export            
-data_initial_screen_sumstat <- function(
-    sumstat_data,
-    skip_region = NULL,
-    remove_indels = FALSE,
-    pip_cutoff_to_skip = 0){
-    
-    n_LD <- length(sumstat_data$LD_info)
-    conditions_sumstat <- names(pip_cutoff_to_skip_sumstat)
-    for (i in 1:n_LD){
-        LD_data <- sumstat_data$LD_info[[i]]
-        sumstats <- sumstat_data$sumstats[[i]]
-        # Initial PIP check
-        if (all(pip_cutoff_to_skip != 0)){
-            ld_condition <- names(sumstat_data$LD_info)[i]
-            pos <- grepl(ld_condition, conditions_sumstat)
-            pip_cutoff_to_skip_ld <- pip_cutoff_to_skip[pos]
-
-            check_model_pip <- sapply(1:length(sumstats), function(ii){
-                sumstat <- sumstats[[ii]]
-                n <- sumstat$n
-                var_y = sumstat$var_y
-                preprocess_results <- rss_basic_qc(sumstat$sumstats, LD_data, skip_region = skip_region, remove_indels = remove_indels)
-                sumstat <- preprocess_results$sumstats
-                LD_mat <- preprocess_results$LD_mat   
-                pip <- susie_rss_wrapper(z = sumstat$z, R = LD_mat, L = 1,
-                                         n = n, var_y = var_y)$pip
-                if (pip_cutoff_to_skip_ld[ii] < 0){
-                    # automatically determine the cutoff to use
-                    pip_cutoff_to_skip_ld[ii] <- 3 * 1 / length(LD_data$combined_LD_variants)
-                }
-                any(pip > pip_cutoff_to_skip_ld[ii])
-            })
-            include_idx <- which(check_model_pip)
-            if (length(include_idx)==0){
-                message(paste("Skipping follow-up analysis for all summary statistic based on LD -", ld_condition,  
-                              ". No signals above PIP threshold", paste0(pip_cutoff_to_skip_ld,";"), "in initial model screening."))
-                sumstat_data$sumstats[i] <- list(NULL)
-            } else if (length(include_idx) == length(sumstats)) {
-                message(paste("Keep all summary statistics based on LD -", ld_condition,  "."))
-            } else {
-                exclude_idx <- setdiff(1:length(sumstats), include_idx)
-                exclude_pheno <- paste(names(sumstats)[exclude_idx], collapse = ";")
-                message(paste("Skipping follow-up analysis for summary statistics", exclude_pheno, "based on LD -", ld_condition,  
-                              ". No signals above PIP threshold", paste0(pip_cutoff_to_skip_ld[exclude_idx],";"), "in initial model screening."))
-                sumstat_data$sumstats[[i]] <- sumstats[include_idx]
-            }
-        }
-    }
-    return(sumstat_data)
-    
-}
-                                      
-                           
-#' sumstat_data QC, imputation using raiss
-#' @return A list of sumstat_data after initial checking and QC:
-#' \itemize{
-#'   \item sumstats: A list of summary statistics and ready to do analysis.
-#'   \item LD_mat: A list of LD matrix and ready to do analysis.
-#'   \item LD_match: A vector of strings to indicating sumstats and LD matching (save space since multiple sumstats may link to the same LD matrix).
-#' }
-#' @export     
-sumstat_qc <- function(sumstat_data,
-                       qc_method = c("rss_qc", "dentist", "slalom"),
-                       impute = TRUE, impute_opts = list(rcond = 0.01, R2_threshold = 0.6, minimum_ld = 5, lamb = 0.01)){
-
-    n_LD <- length(sumstat_data$LD_info)
-    conditions_sumstat <- names(pip_cutoff_to_skip_sumstat)
-    final_sumstats <- final_LD <- list()
-    LD_match <- c()
-    for (i in 1:n_LD){
-        LD_data <- sumstat_data$LD_info[[i]]
-        sumstats <- sumstat_data$sumstats[[i]]
-        ld_condition <- names(sumstat_data$LD_info)[i]
-        pos <- grepl(ld_condition, conditions_sumstat)
-        conditions_sumstat_ld <- conditions_sumstat[pos]
-        for (ii in 1:length(sumstats)){
-            sumstat <- sumstats[[ii]]
-            n <- sumstat$n
-            var_y = sumstat$var_y
-            
-            # Perform quality control
-            if (!is.null(qc_method)) {
-                qc_results <- summary_stats_qc(sumstat$sumstats, LD_data, n = n, var_y = var_y, method = qc_method)
-                sumstat$sumstats <- qc_results$sumstats
-                LD_mat <- qc_results$LD_mat
-            }
-            # Perform imputation
-            if (impute) {
-                impute_results <- raiss(LD_data$ref_panel, 
-                                        sumstat$sumstats, 
-                                        LD_data$combined_LD_matrix, 
-                                        rcond = impute_opts$rcond, 
-                                        R2_threshold = impute_opts$R2_threshold, 
-                                        minimum_ld = impute_opts$minimum_ld, 
-                                        lamb = impute_opts$lamb)
-                sumstat$sumstats <- impute_results$result_filter
-                LD_mat <- impute_results$LD_mat
-            }
-            
-            # - check if LD exist
-            variants <- colnames(LD_mat)
-            if (length(final_LD)==0){
-                final_LD <- c(final_LD, list(LD_mat)%>%setNames(conditions_sumstat_ld[ii]))
-                final_sumstats <- c(final_sumstats, list(sumstat)%>%setNames(conditions_sumstat_ld[ii]))
-                LD_match <- c(LD_match, conditions_sumstat_ld[ii])
-            } else {
-                final_sumstats <- c(final_sumstats, list(sumstat)%>%setNames(conditions_sumstat_ld[ii]))
-                exist_variants <- lapply(final_LD, colnames)
-                if_exist <- sapply(exist_variants, function(v) all(variants==v) )
-                pos <- which(if_exist)
-                if (length(pos)==0){
-                   final_LD <- c(final_LD, list(LD_mat)%>%setNames(conditions_sumstat_ld[ii]))
-                   LD_match <- c(LD_match, conditions_sumstat_ld[ii])
-                } else {
-                   LD_match <- c(LD_match, LD_match[pos[1]])
-                }
-            }
-        }
-    }
-    return(list(sumstats = final_sumstats, LD_mat = final_LD, LD_match = LD_match))
-    
-}
-
-                                  
-
-#' QUESTION: INPUT `region_data` or `X, Y, MAF, sumstats, LD`?           
+#' @export         
 colocboost_analysis_pipline <- function(region_data, 
                                         target_trait = NULL,
-                                        keep_PR = TRUE, 
-                                        rm_IN = TRUE,
+                                        sqtl_pattern = "clu_(\\d+_[+-?]):",
+                                        include_context = "clu_(\\d+_[+-?]):PR:",
+                                        exclude_context = "clu_(\\d+_[+-?]):IN:",
                                         # - individual QC
                                         maf_cutoff = 0.0005, 
                                         pip_cutoff_to_skip_ind = 0,
@@ -583,25 +283,26 @@ colocboost_analysis_pipline <- function(region_data,
                 y <- Y[[i]]
                 events <- colnames(y)
                 condition <- names(Y)[i]
-                if (all(grepl("sQTL", events))){
-                    events_keep <- filter_sQTL_events(events, keep_PR = keep_PR, rm_IN = rm_IN)
+                if (all(grepl(sqtl_pattern, events))){
+                    excludes <- events[grepl(exclude_context, events)]
+                    includes_clu <- unique(gsub(".*clu_(\\d+_[+-]):.*", "clu_\\1", events[grepl(include_context, events)]))
+                    includes <- events[grepl(paste(includes_clu, collapse = "|"), events)]
+                    events_keep <- events[(events%in%includes)&!(events%in%excludes)]
                     if (length(events_keep)==length(events)){
-                        message(paste("All sQTL events in", condition, "inclued in following analysis based on keep_PR and rm_IN filtering."))
+                        message(paste("All sQTL events in", condition, "inclued in following analysis ."))
                     } else if (length(events_keep)==0){
-                        message(paste("No sQTL events in", condition, "pass the filtering based on keep_PR =", keep_PR,
-                                      "and rm_IN", rm_IN, "."))
+                        message(paste("No sQTL events in", condition, "pass the filtering."))
                         return(NULL)
                     } else {
                         exclude_events <- paste0(setdiff(events, events_keep), collapse = ";")
-                        message(paste("Some sQTL events,", exclude_events, "in", condition, "are removed based on keep_PR =", keep_PR,
-                                      "and rm_IN =", rm_IN, "."))
-                        y <- y[,events_keep,drop=FALSE]
+                        message(paste("Some sQTL events,", exclude_events, "in", condition, "are removed."))
+                        y <- y[,events_keep,drop=FALSE] 
                     }
                 }
-                lapply(seq_len(ncol(y)), function(j) y[, j, drop=FALSE])%>%setNames(condition)
+                lapply(seq_len(ncol(y)), function(j) y[, j, drop=FALSE] %>% setNames(colnames(y)[j]) )
             })
             dict_YX <- cbind(seq_along(Reduce("c", Y)), rep(seq_along(Y), sapply(Y, length)))
-            Y <- Reduce("c", Y)
+            Y <- Reduce("c", Y); Y <- Y %>% setNames(sapply(Y, colnames))
         }
         
     } else {X <- Y <- dict_YX <- NULL}
@@ -645,23 +346,294 @@ colocboost_analysis_pipline <- function(region_data,
     return(res_cb)                        
 
 }
-                                                     
-                                                     
-# sQTL filtering: for sQTL, we keep two strategy before analyzing: i) keep the clusters including PR. ii) remove the clusters including IN.
-filter_sQTL_events <- function(events, keep_PR = TRUE, rm_IN = TRUE){
+
+
+#' The following functions will go to colocboost_pipline.R
+#' 
+#' Initial QC for the region data loading from \code{load_regional_data}
+#' 
+#' This function do the initial QC including: check PIP; check maf for individual_data; check QC and impute for sumstat_data
+#' 
+#' @section Loading individual level data from multiple corhorts
+#' @param region_data A region data loaded from \code{load_regional_data}.
+#' @param maf_cutoff A scalar to remove variants with maf < maf_cutoff, dafault is 0.005.
+#' @param pip_cutoff_to_skip_ind A vector of cutoff values for skipping analysis based on PIP values for each context. Default is 0.
+#' @param skip_region A character vector specifying regions to be skipped in the analysis (optional).
+#'                    Each region should be in the format "chrom:start-end" (e.g., "1:1000000-2000000").
+#' @param pip_cutoff_to_skip_sumstat A vector of cutoff values for skipping analysis based on PIP values for each sumstat Default is 0.
+#' @param qc_method Quality control method to use. Options are "rss_qc", "dentist", or "slalom" (default: "rss_qc").
+#' @param impute Logical; if TRUE, performs imputation for outliers identified in the analysis (default: TRUE).
+#' @param impute_opts A list of imputation options including rcond, R2_threshold, and minimum_ld (default: list(rcond = 0.01, R2_threshold = 0.6, minimum_ld = 5)).
+#'
+#'
+#' @return A list containing the individual_data and sumstat_data after QC:
+#' individual_data contains the following components if exist
+#' \itemize{
+#'   \item Y: A list of residualized phenotype values for all tasks.
+#'   \item X: A list of residualized genotype matrices all tasks.
+#' }
+#' sumstat_data contains the following components if exist
+#' \itemize{
+#'   \item sumstats: A list of summary statistics for the matched LD_info, each sublist contains sumstats, n, var_y from \code{load_rss_data}.
+#'   \item LD_info: A list of LD information, each sublist contains combined_LD_variants, combined_LD_matrix, ref_panel  \code{load_LD_matrix}.
+#' }
+#'
+#' @noRd
+qc_regional_data <- function(region_data,
+                             # - individual
+                             maf_cutoff = 0.0005, 
+                             pip_cutoff_to_skip_ind = 0,
+                             # - sumstat
+                             skip_region = NULL,
+                             remove_indels = FALSE,
+                             pip_cutoff_to_skip_sumstat = 0,
+                             qc_method = c("rss_qc", "dentist", "slalom"),
+                             impute = TRUE, 
+                             impute_opts = list(rcond = 0.01, R2_threshold = 0.6, minimum_ld = 5, lamb = 0.01)){
     
-    # function to extract cluster number and type
-    extract_clu <- function(x) { strsplit(x, ":")[[1]][4] }
-    extract_type <- function(x) { strsplit(x, ":")[[1]][5] }
     
-    df <- data.frame(events, clu_types = sapply(events, extract_clu), types = sapply(events, extract_type))
-    df_summary <- df %>% group_by(clu_types) %>% 
-            summarize(cluster_types = paste(sort(unique(types)), collapse = ","),
-                      include_IN = ("IN"%in%types),
-                      include_PR = ("PR"%in%types))
-    df <- df %>% inner_join(df_summary, by = "clu_types")
-    df_filter <- df %>% rowwise() %>%
-            filter(ifelse(rm_IN, !include_IN, TRUE)&ifelse(keep_PR, include_PR, TRUE))
-    return(df_filter$events)
+    #### related internal functions
+    # Add context names to colname of Y if missing
+    add_context_to_Y <- function(res_Y){
+        res <- lapply(1:length(res_Y), function(iy){
+            y <- res_Y[[iy]]
+            if (is.null(colnames(y))){ 
+                colnames(y) <- names(res_Y)[iy] 
+            } else {
+                colnames(y) <- paste0(names(res_Y)[iy], "_", colnames(y))
+            }
+            return(y)
+        })
+        names(res) <- names(res_Y)
+        return(res)
+    }
+
+    # Initial PIP check for individual level data
+    filter_resY_pip <- function(res_X, res_Y, pip_cutoff_to_skip = 0, context = NULL){
+
+        # Initial PIP check
+        if (pip_cutoff_to_skip != 0){
+            if (pip_cutoff_to_skip < 0){
+                # automatically determine the cutoff to use
+                pip_cutoff_to_skip <- 3 * 1 / ncol(res_X)
+            }
+            top_model_pip <- lapply(1:ncol(res_Y), function(i) susieR::susie(res_X, res_Y[,i], L = 1)$pip)
+            check_model_pip <- sapply( top_model_pip, function(pip) any(pip > pip_cutoff_to_skip) )
+            include_idx <- which(check_model_pip)
+            if (length(include_idx)==0){
+                message(paste("Skipping follow-up analysis for individual-context", context,  
+                              ". No signals above PIP threshold", pip_cutoff_to_skip, "in initial model screening."))
+                return(list())
+            } else if (length(include_idx) == ncol(res_Y)) {
+                message(paste("Keep all individual-phenotypes in context", context,  "."))
+            } else {
+                exclude_idx <- setdiff(1:ncol(res_Y), include_idx)
+                exclude_pheno <- paste(colnames(res_Y)[exclude_idx], collapse = ";")
+                message(paste("Skipping follow-up analysis for individual-phenotypes", exclude_pheno, "in context", context,  
+                              ". No signals above PIP threshold", pip_cutoff_to_skip, "in initial model screening."))
+                res_Y <- res_Y[, include_idx, drop = FALSE] %>% .[, order(colnames(.)), drop = FALSE]
+            }
+        }
+        return(res_Y)
+
+    }
+    
+    # Initial check for all contexts with individual-level data
+    data_initial_screen_individual <- function(
+        X,
+        Y,
+        MAF,
+        maf_cutoff = 0.0005,
+        pip_cutoff_to_skip = 0 ){
+        
+        # - add context to colname of Y
+        Y <- add_context_to_Y(Y)
+        n_context <- length(X)
+        residual_X <- residual_Y <- list()
+        keep_contexts <- c()
+        for (i_context in 1:n_context){
+            resX <- X[[i_context]]
+            resY <- Y[[i_context]]
+            maf <- MAF[[i_context]]
+            context <- names(Y)[i_context]
+            # - remove variants with maf < maf_cutoff
+            # tmp <- filter_resX_maf(resX, maf, maf_cutoff = maf_cutoff)
+            resX <- filter_X(resX, missing_rate_thresh=NULL, maf_thresh=maf_cutoff, maf=maf)
+            # Initial PIP check
+            resY <- filter_resY_pip(resX, resY, pip_cutoff_to_skip = pip_cutoff_to_skip[i_context], context = context)
+            if (!is.null(resY)){
+                residual_X <- c(residual_X, list(resX))
+                residual_Y <- c(residual_Y, list(resY))
+                keep_contexts <- c(keep_contexts, context)
+            }
+        }
+        if (length(keep_contexts)==0){
+            message(paste("Skipping follow-up analysis for all contexts."))
+            return(list())
+        } else {
+            message(paste("Region includes the following contexts after inital screening:", paste(keep_contexts, collapse = ";"),  "."))
+            names(residual_X) <- names(residual_Y) <- keep_contexts
+            return(list(
+                X = residual_X,
+                Y = residual_Y
+            ))
+        }
+
+    }
+    
+    # - individual level data QC
+    individual_data <- region_data$individual_data
+    if (!is.null(individual_data)){
+        X <- individual_data$residual_X
+        Y <- individual_data$residual_Y
+        MAF <- individual_data$maf
+        # 1. remove maf < maf_cutoff
+        # 2. initial check PIP
+        individual_data <- data_initial_screen_individual(X = X, Y = Y, MAF = MAF, 
+                                                          maf_cutoff = maf_cutoff, 
+                                                          pip_cutoff_to_skip = pip_cutoff_to_skip_ind )
+    }
+    
+                                      
+    # Initial PIP check for summary statistics         
+    data_initial_screen_sumstat <- function(
+        sumstat_data,
+        skip_region = NULL,
+        remove_indels = FALSE,
+        pip_cutoff_to_skip = 0){
+
+
+        n_LD <- length(sumstat_data$LD_info)
+        conditions_sumstat <- names(pip_cutoff_to_skip_sumstat)
+        for (i in 1:n_LD){
+            LD_data <- sumstat_data$LD_info[[i]]
+            sumstats <- sumstat_data$sumstats[[i]]
+            # Initial PIP check
+            if (all(pip_cutoff_to_skip != 0)){
+                ld_condition <- names(sumstat_data$LD_info)[i]
+                pos <- grepl(ld_condition, conditions_sumstat)
+                pip_cutoff_to_skip_ld <- pip_cutoff_to_skip[pos]
+
+                check_model_pip <- sapply(1:length(sumstats), function(ii){
+                    sumstat <- sumstats[[ii]]
+                    n <- sumstat$n
+                    var_y = sumstat$var_y
+                    preprocess_results <- rss_basic_qc(sumstat$sumstats, LD_data, skip_region = skip_region, remove_indels = remove_indels)
+                    sumstat <- preprocess_results$sumstats
+                    LD_mat <- preprocess_results$LD_mat   
+                    pip <- susie_rss_wrapper(z = sumstat$z, R = LD_mat, L = 1,
+                                             n = n, var_y = var_y)$pip
+                    if (pip_cutoff_to_skip_ld[ii] < 0){
+                        # automatically determine the cutoff to use
+                        pip_cutoff_to_skip_ld[ii] <- 3 * 1 / length(LD_data$combined_LD_variants)
+                    }
+                    any(pip > pip_cutoff_to_skip_ld[ii])
+                })
+                include_idx <- which(check_model_pip)
+                if (length(include_idx)==0){
+                    message(paste("Skipping follow-up analysis for all summary statistic based on LD -", ld_condition,  
+                                  ". No signals above PIP threshold", paste0(pip_cutoff_to_skip_ld,";"), "in initial model screening."))
+                    sumstat_data$sumstats[i] <- list(NULL)
+                } else if (length(include_idx) == length(sumstats)) {
+                    message(paste("Keep all summary statistics based on LD -", ld_condition,  "."))
+                } else {
+                    exclude_idx <- setdiff(1:length(sumstats), include_idx)
+                    exclude_pheno <- paste(names(sumstats)[exclude_idx], collapse = ";")
+                    message(paste("Skipping follow-up analysis for summary statistics", exclude_pheno, "based on LD -", ld_condition,  
+                                  ". No signals above PIP threshold", paste0(pip_cutoff_to_skip_ld[exclude_idx],";"), "in initial model screening."))
+                    sumstat_data$sumstats[[i]] <- sumstats[include_idx]
+                }
+            }
+        }
+        return(sumstat_data)
+
+    }
+    
+    # sumstat_data QC, imputation using raiss
+    # return A list of sumstat_data after initial checking and QC:
+    # \itemize{
+    #   \item sumstats: A list of summary statistics and ready to do analysis.
+    #   \item LD_mat: A list of LD matrix and ready to do analysis.
+    #   \item LD_match: A vector of strings to indicating sumstats and LD matching (save space since multiple sumstats may link to the same LD matrix).
+    # } 
+    summary_stats_qc_multitask <- function(sumstat_data,
+                                           qc_method = c("rss_qc", "dentist", "slalom"),
+                                           impute = TRUE, 
+                                           impute_opts = list(rcond = 0.01, R2_threshold = 0.6, minimum_ld = 5, lamb = 0.01)){
+
+        n_LD <- length(sumstat_data$LD_info)
+        conditions_sumstat <- names(pip_cutoff_to_skip_sumstat)
+        final_sumstats <- final_LD <- list()
+        LD_match <- c()
+        for (i in 1:n_LD){
+            LD_data <- sumstat_data$LD_info[[i]]
+            sumstats <- sumstat_data$sumstats[[i]]
+            ld_condition <- names(sumstat_data$LD_info)[i]
+            pos <- grepl(ld_condition, conditions_sumstat)
+            conditions_sumstat_ld <- conditions_sumstat[pos]
+            for (ii in 1:length(sumstats)){
+                sumstat <- sumstats[[ii]]
+                n <- sumstat$n
+                var_y = sumstat$var_y
+
+                # Perform quality control
+                if (!is.null(qc_method)) {
+                    qc_results <- summary_stats_qc(sumstat$sumstats, LD_data, n = n, var_y = var_y, method = qc_method)
+                    sumstat$sumstats <- qc_results$sumstats
+                    LD_mat <- qc_results$LD_mat
+                }
+                # Perform imputation
+                if (impute) {
+                    impute_results <- raiss(LD_data$ref_panel, 
+                                            sumstat$sumstats, 
+                                            LD_data$combined_LD_matrix, 
+                                            rcond = impute_opts$rcond, 
+                                            R2_threshold = impute_opts$R2_threshold, 
+                                            minimum_ld = impute_opts$minimum_ld, 
+                                            lamb = impute_opts$lamb)
+                    sumstat$sumstats <- impute_results$result_filter
+                    LD_mat <- impute_results$LD_mat
+                }
+
+                # - check if LD exist
+                variants <- colnames(LD_mat)
+                if (length(final_LD)==0){
+                    final_LD <- c(final_LD, list(LD_mat)%>%setNames(conditions_sumstat_ld[ii]))
+                    final_sumstats <- c(final_sumstats, list(sumstat)%>%setNames(conditions_sumstat_ld[ii]))
+                    LD_match <- c(LD_match, conditions_sumstat_ld[ii])
+                } else {
+                    final_sumstats <- c(final_sumstats, list(sumstat)%>%setNames(conditions_sumstat_ld[ii]))
+                    exist_variants <- lapply(final_LD, colnames)
+                    if_exist <- sapply(exist_variants, function(v) all(variants==v) )
+                    pos <- which(if_exist)
+                    if (length(pos)==0){
+                       final_LD <- c(final_LD, list(LD_mat)%>%setNames(conditions_sumstat_ld[ii]))
+                       LD_match <- c(LD_match, conditions_sumstat_ld[ii])
+                    } else {
+                       LD_match <- c(LD_match, LD_match[pos[1]])
+                    }
+                }
+            }
+        }
+        return(list(sumstats = final_sumstats, LD_mat = final_LD, LD_match = LD_match))
+
+    }
+
+                                      
+    # - summary statistics QC
+    sumstat_data = region_data$sumstat_data
+    if (!is.null(sumstat_data)){
+        # - 1. initial check PIP
+        sumstat_data <- data_initial_screen_sumstat(sumstat_data, skip_region = skip_region,
+                                                    remove_indels = remove_indels, 
+                                                    pip_cutoff_to_skip = pip_cutoff_to_skip_sumstat)
+        
+        # - qc or impute
+        sumstat_data <- summary_stats_qc_multitask(sumstat_data, qc_method = qc_method,
+                                                   impute = impute, impute_opts = impute_opts)
+        
+    }
+    return(list(individual_data = individual_data, 
+                sumstat_data = sumstat_data))
 
 }
