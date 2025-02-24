@@ -211,7 +211,7 @@ load_multitask_regional_data <-  function(region, # a string of chr:start-end fo
 #' 
 #' @param region_data A region data loaded from \code{load_regional_data}.
 #' @param target_trait Name of trait if perform targeted ColocBoost
-#' @param event_filters A list of pattern for filtering events based on context names. Example: for sQTL, list(type_pattern = ".*clu_(\\d+_[+-]).*",valid_pattern = "clu_(\\d+_[+-?]):PR:",exclude_pattern = "clu_(\\d+_[+-?]):IN:")
+#' @param event_filters A list of pattern for filtering events based on context names. Example: for sQTL, list(type_pattern = ".*clu_(\\d+_[+-?]).*",valid_pattern = "clu_(\\d+_[+-?]):PR:",exclude_pattern = "clu_(\\d+_[+-?]):IN:")
 #' @param maf_cutoff A scalar to remove variants with maf < maf_cutoff, dafault is 0.005.
 #' @param pip_cutoff_to_skip_ind A vector of cutoff values for skipping analysis based on PIP values for each context. Default is 0.
 #' @param skip_region A character vector specifying regions to be skipped in the analysis (optional).
@@ -286,7 +286,7 @@ colocboost_analysis_pipline <- function(region_data,
             }
             if (length(type_events) == length(events)) {
                 message(paste("All events matching", filter$type_pattern, "in", condition, "included in following analysis."))
-            } else if (length(events_keep) == 0) {
+            } else if (length(type_events) == 0) {
                 message(paste("No events matching", filter$type_pattern, "in", condition, "pass the filtering."))
                 return(NULL)
             } else {
