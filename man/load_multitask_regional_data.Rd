@@ -2,7 +2,8 @@
 % Please edit documentation in R/colocboost_pipline.R
 \name{load_multitask_regional_data}
 \alias{load_multitask_regional_data}
-\title{Load multitask regional data: this function will go to file_utils.R}
+\title{This function loads a mixture data sets for a specific region, including individual-level data (genotype, phenotype, covariate data) 
+or summary statistics (sumstats, LD). Run \code{load_regional_univariate_data} and \code{load_rss_data} multiple times for different datasets}
 \usage{
 load_multitask_regional_data(
   region,
