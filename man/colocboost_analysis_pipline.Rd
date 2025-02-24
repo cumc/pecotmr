@@ -7,9 +7,7 @@
 colocboost_analysis_pipline(
   region_data,
   target_trait = NULL,
-  sqtl_pattern = "clu_(\\\\d+_[+-?]):",
-  include_context = "clu_(\\\\d+_[+-?]):PR:",
-  exclude_context = "clu_(\\\\d+_[+-?]):IN:",
+  event_filters = NULL,
   maf_cutoff = 5e-04,
   pip_cutoff_to_skip_ind = 0,
   skip_region = NULL,
@@ -26,11 +24,8 @@ colocboost_analysis_pipline(
 
 \item{target_trait}{Name of trait if perform targeted ColocBoost}
 
-\item{sqtl_pattern}{A regex for sQTL context name pattern. Default is "clu_(\\d+_[+-?]):"}
-
-\item{include_context}{A regex for including sQTL events "clu_(\\d+_[+-?]):PR:"}
-
-\item{exclude_context}{A regex for excluding sQTL events "clu_(\\d+_[+-?]):IN:"}
+\item{event_filters}{A list of pattern for filtering events based on context names. 
+Example: for sQTL, list(list(type_pattern = "clu_(\\d+_[+-?]):",valid_pattern = ":PR:",exclude_pattern = ":IN:"))}
 
 \item{maf_cutoff}{A scalar to remove variants with maf < maf_cutoff, dafault is 0.005.}
 
