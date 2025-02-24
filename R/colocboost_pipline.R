@@ -1,7 +1,6 @@
 
 
-#' Load multitask regional data: this function will go to file_utils.R
-#' 
+
 #' This function loads a mixture data sets for a specific region, including individual-level data (genotype, phenotype, covariate data) 
 #' or summary statistics (sumstats, LD). Run \code{load_regional_univariate_data} and \code{load_rss_data} multiple times for different datasets
 #' 
@@ -386,8 +385,6 @@ colocboost_analysis_pipline <- function(region_data,
 }
 
 
-#' The following functions will go to colocboost_pipline.R
-#' 
 #' Initial QC for the region data loading from \code{load_regional_data}
 #' 
 #' This function do the initial QC including: check PIP; check maf for individual_data; check QC and impute for sumstat_data
