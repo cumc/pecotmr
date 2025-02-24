@@ -24,7 +24,7 @@ colocboost_analysis_pipline(
 
 \item{target_trait}{Name of trait if perform targeted ColocBoost}
 
-\item{event_filters}{A list of pattern for filtering events based on context names. Example: for sQTL, list(type_pattern = ".*clu_(\\d+_[+-]).*",valid_pattern = "clu_(\\d+_[+-?]):PR:",exclude_pattern = "clu_(\\d+_[+-?]):IN:")}
+\item{event_filters}{A list of pattern for filtering events based on context names. Example: for sQTL, list(type_pattern = ".*clu_(\\d+_[+-?]).*",valid_pattern = "clu_(\\d+_[+-?]):PR:",exclude_pattern = "clu_(\\d+_[+-?]):IN:")}
 
 \item{maf_cutoff}{A scalar to remove variants with maf < maf_cutoff, dafault is 0.005.}
 
