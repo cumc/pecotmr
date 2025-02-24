@@ -211,9 +211,8 @@ load_multitask_regional_data <-  function(region, # a string of chr:start-end fo
 #' 
 #' @param region_data A region data loaded from \code{load_regional_data}.
 #' @param target_trait Name of trait if perform targeted ColocBoost
-#' @param sqtl_pattern A regex for sQTL context name pattern. Default is "clu_(\\d+_[+-?]):"
-#' @param include_context A regex for including sQTL events "clu_(\\d+_[+-?]):PR:"
-#' @param exclude_context A regex for excluding sQTL events "clu_(\\d+_[+-?]):IN:"
+#' @param event_filters A list of pattern for filtering events based on context names. 
+#'                      Example: for sQTL, list(list(type_pattern = "clu_(\\d+_[+-?]):",valid_pattern = ":PR:",exclude_pattern = ":IN:"))
 #' @param maf_cutoff A scalar to remove variants with maf < maf_cutoff, dafault is 0.005.
 #' @param pip_cutoff_to_skip_ind A vector of cutoff values for skipping analysis based on PIP values for each context. Default is 0.
 #' @param skip_region A character vector specifying regions to be skipped in the analysis (optional).
@@ -239,9 +238,7 @@ load_multitask_regional_data <-  function(region, # a string of chr:start-end fo
 #' @export         
 colocboost_analysis_pipline <- function(region_data, 
                                         target_trait = NULL,
-                                        sqtl_pattern = "clu_(\\d+_[+-?]):",
-                                        include_context = "clu_(\\d+_[+-?]):PR:",
-                                        exclude_context = "clu_(\\d+_[+-?]):IN:",
+                                        event_filters = NULL,
                                         # - individual QC
                                         maf_cutoff = 0.0005, 
                                         pip_cutoff_to_skip_ind = 0,
@@ -253,6 +250,48 @@ colocboost_analysis_pipline <- function(region_data,
                                         impute = TRUE, 
                                         impute_opts = list(rcond = 0.01, R2_threshold = 0.6, minimum_ld = 5, lamb = 0.01),
                                         ...){
+    
+    
+    # - internel function by filtering events based on event_filters
+    filter_events <- function(events, filters) {
+        # filters is a list of filter specifications
+        # Each filter spec must have:
+        #   type_pattern: pattern to identify event type
+        #   And at least ONE of:
+        #   valid_pattern: pattern that must exist in group
+        #   exclude_pattern: pattern to exclude
+
+        filtered_events <- events
+        for(filter in filters) {
+            if(is.null(filter$type_pattern) || 
+               (is.null(filter$valid_pattern) && is.null(filter$exclude_pattern))) {
+                stop("Each filter must specify type_pattern and at least one of valid_pattern or exclude_pattern")
+            }
+            # Get events of this type
+            type_events <- filtered_events[grepl(filter$type_pattern, filtered_events)]
+
+            if(length(type_events) == 0) next
+            # Apply valid pattern if specified
+            if(!is.null(filter$valid_pattern)) {
+                valid_groups <- unique(gsub(filter$type_pattern, "\\1", 
+                                          type_events[grepl(filter$valid_pattern, type_events)]))
+                type_events <- type_events[grepl(paste(valid_groups, collapse="|"), type_events)]
+            }
+            # Apply exclusions if specified
+            if(!is.null(filter$exclude_pattern)) {
+                type_events <- type_events[!grepl(filter$exclude_pattern, type_events)]
+            }
+            # Update events list
+            filtered_events <- unique(c(
+                filtered_events[!grepl(filter$type_pattern, filtered_events)],
+                type_events
+            ))
+        }
+
+        return(filtered_events)
+    }
+    
+    
     # - QC for the region_data
     region_data <- qc_regional_data(region_data, maf_cutoff = maf_cutoff, 
                                     pip_cutoff_to_skip_ind = pip_cutoff_to_skip_ind,
@@ -265,47 +304,58 @@ colocboost_analysis_pipline <- function(region_data,
     
     # - individual level 
     individual_data <- region_data$individual_data
-    if (!is.null(individual_data)){
+    if (!is.null(individual_data)) {
         X <- individual_data$X
         Y <- individual_data$Y
         null_Y <- which(sapply(Y, is.null))
-        if (length(null_Y)!=0&length(null_Y)!=length(Y)){
+        if (length(null_Y) != 0 & length(null_Y) != length(Y)) {
             message(paste("Skipping follow-up analysis for individual traits", paste(names(Y)[null_Y], collapse = ";"), "."))
             X <- X[-null_Y]
             Y <- Y[-null_Y]
-        } else if (length(null_Y)==length(Y)){
+        } else if (length(null_Y) == length(Y)) {
             message(paste("Skipping follow-up analysis for all individual traits", paste(names(Y)[null_Y], collapse = ";"), "."))
             X <- NULL
             Y <- NULL
         }
-        if (!is.null(Y)){
-            Y <- lapply(1:length(Y), function(i){
+        if (!is.null(Y)) {
+            Y <- lapply(1:length(Y), function(i) {
                 y <- Y[[i]]
                 events <- colnames(y)
                 condition <- names(Y)[i]
-                if (all(grepl(sqtl_pattern, events))){
-                    excludes <- events[grepl(exclude_context, events)]
-                    includes_clu <- unique(gsub(".*clu_(\\d+_[+-]):.*", "clu_\\1", events[grepl(include_context, events)]))
-                    includes <- events[grepl(paste(includes_clu, collapse = "|"), events)]
-                    events_keep <- events[(events%in%includes)&!(events%in%excludes)]
-                    if (length(events_keep)==length(events)){
-                        message(paste("All sQTL events in", condition, "inclued in following analysis ."))
-                    } else if (length(events_keep)==0){
-                        message(paste("No sQTL events in", condition, "pass the filtering."))
-                        return(NULL)
-                    } else {
-                        exclude_events <- paste0(setdiff(events, events_keep), collapse = ";")
-                        message(paste("Some sQTL events,", exclude_events, "in", condition, "are removed."))
-                        y <- y[,events_keep,drop=FALSE] 
+                for (filter in event_filters) {
+                    if (all(grepl(filter$type_pattern, events))) {
+                        events_keep <- events
+                        if (!is.null(filter$valid_pattern)) {
+                            valid_groups <- unique(gsub(filter$type_pattern, "\\1", 
+                                                      events[grepl(filter$valid_pattern, events)]))
+                            if (length(valid_groups) > 0) {
+                                events_keep <- events[grepl(paste(valid_groups, collapse = "|"), events)]
+                            } else {
+                                events_keep <- character(0)
+                            }
+                        }
+                        if (!is.null(filter$exclude_pattern)) {
+                            events_keep <- events_keep[!grepl(filter$exclude_pattern, events_keep)]
+                        }
+                        if (length(events_keep) == length(events)) {
+                            message(paste("All events matching", filter$type_pattern, "in", condition, "included in following analysis."))
+                        } else if (length(events_keep) == 0) {
+                            message(paste("No events matching", filter$type_pattern, "in", condition, "pass the filtering."))
+                            return(NULL)
+                        } else {
+                            exclude_events <- paste0(setdiff(events, events_keep), collapse = ";")
+                            message(paste("Some events,", exclude_events, "in", condition, "are removed."))
+                            events <- events_keep
+                        }
                     }
                 }
-                lapply(seq_len(ncol(y)), function(j) y[, j, drop=FALSE] %>% setNames(colnames(y)[j]) )
+                y <- y[, events, drop = FALSE]
+                lapply(seq_len(ncol(y)), function(j) y[, j, drop = FALSE] %>% setNames(colnames(y)[j]))
             })
             dict_YX <- cbind(seq_along(Reduce("c", Y)), rep(seq_along(Y), sapply(Y, length)))
             Y <- Reduce("c", Y); Y <- Y %>% setNames(sapply(Y, colnames))
         }
-        
-    } else {X <- Y <- dict_YX <- NULL}
+    } else {X <- Y <- dict_YX <- NULL }
     
     # - summary statistics
     sumstat_data = region_data$sumstat_data
