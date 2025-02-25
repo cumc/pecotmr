@@ -264,8 +264,8 @@ test_that("Test prepare_data_list multiple pheno",{
     colnames(dummy_covar_data) <- c("covar_1", "covar_2", "covar_3")
     # Set parameters
     imiss_cutoff <- 0.70
-    maf_cutoff <- 0.1
-    mac_cutoff <- 1.8
+    maf_cutoff <- 0.025
+    mac_cutoff <- 1.0
     xvar_cutoff <- 0.3
     keep_samples <- c("Sample_1", "Sample_2", "Sample_3")
     res <- prepare_data_list(
@@ -279,8 +279,8 @@ test_that("Test prepare_data_list multiple pheno",{
     expect_equal(ncol(res$X[[1]]), 2)
     # Check that Covar, X, and Y have the same samples
     expect_equal(rownames(res$covar[[1]]), rownames(res$X[[1]]))
-    expect_equal(rownames(res$covar[[1]]), names(res$Y[[1]]))
-    expect_equal(rownames(res$X[[1]]), names(res$Y[[1]]))
+    expect_equal(rownames(res$covar[[1]]), rownames(res$Y[[1]]))
+    expect_equal(rownames(res$X[[1]]), rownames(res$Y[[1]]))
 })
 
 test_that("Test prepare_data_list",{
@@ -427,7 +427,7 @@ test_that("Test load_regional_association_data complete overlap",{
     expect_equal(res$X[order(as.numeric(gsub("Sample_", "", rownames(res$X)))), , drop = FALSE], geno_data)
     expect_equal(length(res$Y[[1]]), 10)
     expect_equal(
-        as.vector(res$Y[[1]][order(as.numeric(gsub("Sample_", "", names(res$Y[[1]]))))]),
+        as.vector(res$Y[[1]][order(as.numeric(gsub("Sample_", "", rownames(res$Y[[1]]))))]),
         as.numeric(as.vector(asplit(pheno_data[[1]], 2)[[1]])[4:13]))
     expect_equal(nrow(res$covar[[1]]), 10)
     expect_equal(ncol(res$covar[[1]]), 5)
@@ -467,7 +467,8 @@ test_that("Test load_regional_association_data fewer covar samples",{
         geno_data[3:10,-6])
     expect_equal(length(res$Y[[1]]), 8)
     expect_equal(
-        res$Y[[1]][order(as.numeric(gsub("Sample_", "", names(res$Y[[1]]))))],
+        setNames(res$Y[[1]][order(as.numeric(gsub("Sample_", "", rownames(res$Y[[1]]))))],
+rownames(res$Y[[1]])[order(as.numeric(gsub("Sample_", "", rownames(res$Y[[1]]))))]),
         setNames(
             as.numeric(pheno_data[[1]][6:13,]),
             names(pheno_data[[1]][6:13,])))
@@ -511,7 +512,8 @@ test_that("Test load_regional_association_data slight overlap across geno, pheno
         geno_data[7:10,c(2,4,7)])
     expect_equal(length(res$Y[[1]]), 4)
     expect_equal(
-        res$Y[[1]][order(as.numeric(gsub("Sample_", "", names(res$Y[[1]]))))],
+        setNames(res$Y[[1]][order(as.numeric(gsub("Sample_", "", rownames(res$Y[[1]]))))],
+rownames(res$Y[[1]])[order(as.numeric(gsub("Sample_", "", rownames(res$Y[[1]]))))]),
         setNames(
             as.numeric(pheno_data[[1]][4:7,]),
             names(pheno_data[[1]][4:7,])))
@@ -582,7 +584,8 @@ test_that("Test load_regional_association_data unordered samples",{
     expect_equal(res$X[order(as.numeric(gsub("Sample_", "", rownames(res$X)))), , drop = FALSE], geno_data)
     expect_equal(length(res$Y[[1]]), 10)
     expect_equal(
-        res$Y[[1]][order(as.numeric(gsub("Sample_", "", names(res$Y[[1]]))))],
+        setNames(res$Y[[1]][order(as.numeric(gsub("Sample_", "", rownames(res$Y[[1]]))))],
+rownames(res$Y[[1]])[order(as.numeric(gsub("Sample_", "", rownames(res$Y[[1]]))))]),
         setNames(
             as.numeric(pheno_data[[1]][4:13,]),
             names(pheno_data[[1]][4:13,])))
@@ -654,7 +657,8 @@ test_that("Test load_regional_regression_data",{
     expect_equal(res$X_data[[1]][order(as.numeric(gsub("Sample_", "", rownames(res$X_data[[1]])))), , drop = FALSE], geno_data)
     expect_equal(length(res$Y[[1]]), 10)
     expect_equal(
-        res$Y[[1]][order(as.numeric(gsub("Sample_", "", names(res$Y[[1]]))))],
+        setNames(res$Y[[1]][order(as.numeric(gsub("Sample_", "", rownames(res$Y[[1]]))))],
+rownames(res$Y[[1]])[order(as.numeric(gsub("Sample_", "", rownames(res$Y[[1]]))))]),
         setNames(
             as.numeric(pheno_data[[1]][4:13,]),
             names(pheno_data[[1]][4:13,])))
