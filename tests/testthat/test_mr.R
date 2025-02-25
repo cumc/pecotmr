@@ -35,8 +35,14 @@ susie_result_mock <- list(
 gwas_sumstats_db_mock <- data.frame(
   variant_id = paste0("chr1:", 1:num_variants, ":", generate_ref_alt(num_variants)),
   beta = rnorm(num_variants),
-  se = runif(num_variants, 0.05, 0.1)
-)
+  se = runif(num_variants, 0.05, 0.1),
+  pos = 1:num_variants,  # Genomic position
+  effect_allele_frequency = runif(num_variants, 0.05, 0.95),  # Always assigned, no missing values
+  n_case = sample(500:5000, num_variants, replace = TRUE),  # Random case counts
+  n_control = sample(500:5000, num_variants, replace = TRUE) # Random control counts
+  )%>%
+  mutate(n_sample = n_case + n_control,  # Total sample size
+         z = beta / se)
 return(
         list(
             susie_result = susie_result_mock,

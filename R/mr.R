@@ -77,7 +77,7 @@ mr_format <- function(susie_result, condition, gwas_sumstats_db, coverage = "cs_
         gwas_sumstats_db_extracted_imputed <- gwas_sumstats_db_extracted_imputed %>% mutate(beta = gwas_sumstats_db_beta_se$beta, se = gwas_sumstats_db_beta_se$se)
         if (allele_qc) {
           susie_cs_result_formatted <- allele_qc(susie_cs_result_formatted$variant, gwas_sumstats_db_extracted_imputed$variant_id,
-            cbind(variant_id_to_df(susie_cs_result_formatted$variant), susie_cs_result_formatted), c("bhat_x", "sbhat_x"),
+            cbind(variant_id_to_df(susie_cs_result_formatted$variant), susie_cs_result_formatted), c("bhat_x"),
             match_min_prop = 0
           )
           susie_cs_result_formatted <- susie_cs_result_formatted$target_data_qced[, c("gene_name", "variant_id", "bhat_x", "sbhat_x", "cs", "pip")]
