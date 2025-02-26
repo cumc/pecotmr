@@ -628,7 +628,8 @@ qc_regional_data <- function(region_data,
     }
     
                                       
-    # Initial PIP check for summary statistics         
+    # Initial PIP check for summary statistics    
+    ##### FIXME later: i would like to combine initial screen and sumstat qc!
     data_initial_screen_sumstat <- function(
         sumstat_data,
         remove_indels = FALSE,
@@ -689,6 +690,7 @@ qc_regional_data <- function(region_data,
     #   \item LD_match: A vector of strings to indicating sumstats and LD matching (save space since multiple sumstats may link to the same LD matrix).
     # } 
     summary_stats_qc_multitask <- function(sumstat_data,
+                                           remove_indels = FALSE,
                                            qc_method = c("rss_qc", "dentist", "slalom"),
                                            impute = TRUE, 
                                            impute_opts = list(rcond = 0.01, R2_threshold = 0.6, minimum_ld = 5, lamb = 0.01)){
