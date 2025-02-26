@@ -50,7 +50,10 @@ generate_mock_data <- function(seed=1, num_snps=100, empty_sets = F, gwas_mismat
   LD_matrix <- matrix(runif(num_snps^2), nrow = num_snps, ncol = num_snps)
   colnames(LD_matrix) <- rownames(LD_matrix) <- variants_id_all <- paste(
     gwas_sumstats_db$chr, gwas_sumstats_db$pos, gwas_sumstats_db$A1.sumstats, gwas_sumstats_db$A2.sumstats, sep = ":")
-
+  
+  # Ensure row names of weights_all_matrix match variant IDs
+  rownames(weights_all_matrix) <- variants_id_all
+   
   extract_variants_objs <- variants_id_all
 
   gwas_sumstats_db$variant_id <- if (!gwas_mismatch) variants_id_all else paste(
