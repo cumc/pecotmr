@@ -634,7 +634,7 @@ qc_regional_data <- function(region_data,
             LD_data <- sumstat_data$LD_info[[i]]
             sumstats <- sumstat_data$sumstats[[i]]
             # Initial PIP check
-            if (all(pip_cutoff_to_skip != 0)){
+            if (any(pip_cutoff_to_skip != 0)){
                 ld_condition <- names(sumstat_data$LD_info)[i]
                 pos <- grepl(ld_condition, conditions_sumstat)
                 pip_cutoff_to_skip_ld <- pip_cutoff_to_skip[pos]
