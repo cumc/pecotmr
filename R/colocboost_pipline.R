@@ -317,12 +317,12 @@ colocboost_analysis_pipline <- function(region_data,
             # - inital setup
             phenotypes <- list("individual_contexts" = NULL, "sumstat_studies" = NULL)
             if (!is.null(individual_data)){
-                phenotypes$individual_contexts <- names(individual_data$Y)
+                phenotypes$individual_contexts <- names(individual_data$residual_Y)
             } else {
                 message("No individual data in this region!")
             }
             if (!is.null(sumstat_data)){
-                phenotypes$sumstat_studies <- names(sumstat_data$sumstats)
+                phenotypes$sumstat_studies <- sapply(sumstat_data$sumstats, function(ss) names(ss)) %>% unlist() %>% as.vector()
             } else {
                 message("No sumstat data in this region!")
             }
