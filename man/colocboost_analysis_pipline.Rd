@@ -8,9 +8,11 @@ colocboost_analysis_pipline(
   region_data,
   target_trait = NULL,
   event_filters = NULL,
+  xqtl_coloc = TRUE,
+  joint_gwas = FALSE,
+  separate_gwas = FALSE,
   maf_cutoff = 5e-04,
   pip_cutoff_to_skip_ind = 0,
-  skip_region = NULL,
   remove_indels = FALSE,
   pip_cutoff_to_skip_sumstat = 0,
   qc_method = c("rss_qc", "dentist", "slalom"),
@@ -29,9 +31,6 @@ colocboost_analysis_pipline(
 \item{maf_cutoff}{A scalar to remove variants with maf < maf_cutoff, dafault is 0.005.}
 
 \item{pip_cutoff_to_skip_ind}{A vector of cutoff values for skipping analysis based on PIP values for each context. Default is 0.}
-
-\item{skip_region}{A character vector specifying regions to be skipped in the analysis (optional).
-Each region should be in the format "chrom:start-end" (e.g., "1:1000000-2000000").}
 
 \item{pip_cutoff_to_skip_sumstat}{A vector of cutoff values for skipping analysis based on PIP values for each sumstat Default is 0.}
 
