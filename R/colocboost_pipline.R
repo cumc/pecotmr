@@ -237,6 +237,10 @@ load_multitask_regional_data <-  function(region, # a string of chr:start-end fo
 colocboost_analysis_pipline <- function(region_data, 
                                         target_trait = NULL,
                                         event_filters = NULL,
+                                        # - analysis
+                                        xqtl_coloc = TRUE,
+                                        joint_gwas = FALSE,
+                                        separate_gwas = FALSE,
                                         # - individual QC
                                         maf_cutoff = 0.0005, 
                                         pip_cutoff_to_skip_ind = 0,
@@ -302,11 +306,15 @@ colocboost_analysis_pipline <- function(region_data,
         return(filtered_events)
     }
     
+    if (!xqtl_coloc & !joint_gwas & !separate_gwas){
+        message("No colocalization has been performed!")
+        return(list("xqtl_coloc" = NULL, "joint_gwas" = NULL, "separate_gwas" = NULL))
+    }
+    # FIXME: extract all analysis sumstat names
     
     # - QC for the region_data
     region_data <- qc_regional_data(region_data, maf_cutoff = maf_cutoff, 
                                     pip_cutoff_to_skip_ind = pip_cutoff_to_skip_ind,
-                                    skip_region = skip_region,
                                     remove_indels = remove_indels,
                                     pip_cutoff_to_skip_sumstat = pip_cutoff_to_skip_sumstat,
                                     qc_method =qc_method,
@@ -362,25 +370,57 @@ colocboost_analysis_pipline <- function(region_data,
         dict_sumstatLD <- cbind(seq_along(sumstats), match(LD_match, names(sumstat_data$LD_mat)))
     } else {sumstats <- LD_mat <- dict_sumstatLD <- NULL}
                                                      
-    if (is.null(X)&is.null(sumstats)){
-        stop("No data in this region!")
-    }
     
-    traits <- c(names(Y), names(sumstats))
-    if (!is.null(target_trait)){
-        if (!(target_trait%in%traits)){
-            stop(paste("Trying to run target version for target trait", target_trait, 
-                       ". But this target trait is not in analysis traits", paste0(traits, collapse = ";"), "."))
-        } else {
-            target_idx <- which(traits == target_trait)
+    ### streamline three types of analyses
+    analysis_results <- list("xqtl_coloc" = NULL, "joint_gwas" = NULL, "separate_gwas" = NULL)
+    if (is.null(X)&is.null(sumstats)){ 
+        message("No data in this region!")
+        #### change analysis results is still an empty list with the same strucure
+        return(analysis_results)
+    } else if (!is.null(X)&is.null(sumstats)) {
+        message("No sumstat data in this region!")
+    } else if (is.null(X)&!is.null(sumstats)){
+        message("No individual data in this region!")
+    }
+    # - run xQTL-only version of ColocBoost
+    if (xqtl_coloc&!is.null(X)){
+        message(paste("====== Performing xQTL-only ColocBoost on", length(Y), "contexts. ====="))
+        traits <- names(Y)
+        target_idx <- NULL
+        if (!is.null(target_trait)){
+            if (target_trait %in% traits){
+                target_idx <- which(traits == target_trait)
+            }
         }
-    } else { target_idx = NULL }
+        res_xqtl <- colocboost(X = X, Y = Y, dict_YX = dict_YX, 
+                               outcome_names = traits, target_idx = target_idx, ...)
+        analysis_results$xqtl_coloc <- res_xqtl
+    }
+    # - run joint GWAS no targeted version of ColocBoost
+    if (joint_gwas&!is.null(sumstats)){
+        message(paste("====== Performing non-targeted version GWAS-xQTL ColocBoost on", length(Y), "contexts and", length(sumstats), "GWAS. ====="))
+        traits <- c(names(Y), names(sumstats))
+        res_gwas <- colocboost(X = X, Y = Y, sumstat = sumstats, LD = LD_mat,
+                               dict_YX = dict_YX, dict_sumstatLD = dict_sumstatLD, 
+                               outcome_names = traits, target_idx = NULL, ...)
+        analysis_results$joint_gwas <- res_gwas
+    }          
+    # - run targeted version of ColocBoost for each GWAS
+    if (separate_gwas&!is.null(sumstats)){
+        res_gwas_separate <- vector("list", length = length(sumstats))
+        for (i_gwas in 1:nrow(dict_sumstatLD)){
+            message(paste("====== Performing targeted version GWAS-xQTL ColocBoost on", length(Y), "contexts and ", names(sumstats)[i_gwas], "GWAS. ====="))
+            dict <- dict_sumstatLD[i_gwas,]
+            traits <- c(names(Y), names(sumstats)[i_gwas])
+            res_gwas_separate[[i_gwas]] <- colocboost(X = X, Y = Y, sumstat = sumstats[dict[1]], 
+                                                      LD = LD_mat[dict[2]], dict_YX = dict_YX, 
+                                                      outcome_names = traits, target_idx = length(traits), ...)
+        }
+        names(res_gwas_separate) <- names(sumstats)
+        analysis_results$separate_gwas <- res_gwas_separate
+    }                     
                                                      
-    res_cb <- colocboost(X = X, Y = Y, sumstat = sumstats, LD = LD_mat,
-                         dict_YX = dict_YX, dict_sumstatLD = dict_sumstatLD, 
-                         traits_names = traits, target_idx = target_idx, ...)
-                                                     
-    return(res_cb)                        
+    return(analysis_results)                        
 
 }
 
@@ -393,8 +433,6 @@ colocboost_analysis_pipline <- function(region_data,
 #' @param region_data A region data loaded from \code{load_regional_data}.
 #' @param maf_cutoff A scalar to remove variants with maf < maf_cutoff, dafault is 0.005.
 #' @param pip_cutoff_to_skip_ind A vector of cutoff values for skipping analysis based on PIP values for each context. Default is 0.
-#' @param skip_region A character vector specifying regions to be skipped in the analysis (optional).
-#'                    Each region should be in the format "chrom:start-end" (e.g., "1:1000000-2000000").
 #' @param pip_cutoff_to_skip_sumstat A vector of cutoff values for skipping analysis based on PIP values for each sumstat Default is 0.
 #' @param qc_method Quality control method to use. Options are "rss_qc", "dentist", or "slalom" (default: "rss_qc").
 #' @param impute Logical; if TRUE, performs imputation for outliers identified in the analysis (default: TRUE).
@@ -419,7 +457,6 @@ qc_regional_data <- function(region_data,
                              maf_cutoff = 0.0005, 
                              pip_cutoff_to_skip_ind = 0,
                              # - sumstat
-                             skip_region = NULL,
                              remove_indels = FALSE,
                              pip_cutoff_to_skip_sumstat = 0,
                              qc_method = c("rss_qc", "dentist", "slalom"),
@@ -611,7 +648,7 @@ qc_regional_data <- function(region_data,
                 n <- sumstat$n
                 var_y = sumstat$var_y
 
-                # Perform quality control
+                # Perform quality control - remove
                 if (!is.null(qc_method)) {
                     qc_results <- summary_stats_qc(sumstat$sumstats, LD_data, n = n, var_y = var_y, method = qc_method)
                     sumstat$sumstats <- qc_results$sumstats
