@@ -213,8 +213,6 @@ load_multitask_regional_data <-  function(region, # a string of chr:start-end fo
 #' @param event_filters A list of pattern for filtering events based on context names. Example: for sQTL, list(type_pattern = ".*clu_(\\d+_[+-?]).*",valid_pattern = "clu_(\\d+_[+-?]):PR:",exclude_pattern = "clu_(\\d+_[+-?]):IN:")
 #' @param maf_cutoff A scalar to remove variants with maf < maf_cutoff, dafault is 0.005.
 #' @param pip_cutoff_to_skip_ind A vector of cutoff values for skipping analysis based on PIP values for each context. Default is 0.
-#' @param skip_region A character vector specifying regions to be skipped in the analysis (optional).
-#'                    Each region should be in the format "chrom:start-end" (e.g., "1:1000000-2000000").
 #' @param pip_cutoff_to_skip_sumstat A vector of cutoff values for skipping analysis based on PIP values for each sumstat Default is 0.
 #' @param qc_method Quality control method to use. Options are "rss_qc", "dentist", or "slalom" (default: "rss_qc").
 #' @param impute Logical; if TRUE, performs imputation for outliers identified in the analysis (default: TRUE).
@@ -245,7 +243,6 @@ colocboost_analysis_pipline <- function(region_data,
                                         maf_cutoff = 0.0005, 
                                         pip_cutoff_to_skip_ind = 0,
                                         # - sumstat QC
-                                        skip_region = NULL,
                                         remove_indels = FALSE,
                                         pip_cutoff_to_skip_sumstat = 0,
                                         qc_method = c("rss_qc", "dentist", "slalom"),
@@ -627,13 +624,12 @@ qc_regional_data <- function(region_data,
     # Initial PIP check for summary statistics         
     data_initial_screen_sumstat <- function(
         sumstat_data,
-        skip_region = NULL,
         remove_indels = FALSE,
         pip_cutoff_to_skip = 0){
 
 
         n_LD <- length(sumstat_data$LD_info)
-        conditions_sumstat <- names(pip_cutoff_to_skip_sumstat)
+        conditions_sumstat <- names(pip_cutoff_to_skip)
         for (i in 1:n_LD){
             LD_data <- sumstat_data$LD_info[[i]]
             sumstats <- sumstat_data$sumstats[[i]]
@@ -647,7 +643,7 @@ qc_regional_data <- function(region_data,
                     sumstat <- sumstats[[ii]]
                     n <- sumstat$n
                     var_y = sumstat$var_y
-                    preprocess_results <- rss_basic_qc(sumstat$sumstats, LD_data, skip_region = skip_region, remove_indels = remove_indels)
+                    preprocess_results <- rss_basic_qc(sumstat$sumstats, LD_data, remove_indels = remove_indels)
                     sumstat <- preprocess_results$sumstats
                     LD_mat <- preprocess_results$LD_mat   
                     pip <- susie_rss_wrapper(z = sumstat$z, R = LD_mat, L = 1,
@@ -691,7 +687,7 @@ qc_regional_data <- function(region_data,
                                            impute_opts = list(rcond = 0.01, R2_threshold = 0.6, minimum_ld = 5, lamb = 0.01)){
 
         n_LD <- length(sumstat_data$LD_info)
-        conditions_sumstat <- names(pip_cutoff_to_skip_sumstat)
+        conditions_sumstat <- sapply(sumstat_data$sumstats, function(ss) names(ss)) %>% unlist() %>% as.vector()
         final_sumstats <- final_LD <- list()
         LD_match <- c()
         for (i in 1:n_LD){
@@ -753,7 +749,7 @@ qc_regional_data <- function(region_data,
     sumstat_data = region_data$sumstat_data
     if (!is.null(sumstat_data)){
         # - 1. initial check PIP
-        sumstat_data <- data_initial_screen_sumstat(sumstat_data, skip_region = skip_region,
+        sumstat_data <- data_initial_screen_sumstat(sumstat_data, 
                                                     remove_indels = remove_indels, 
                                                     pip_cutoff_to_skip = pip_cutoff_to_skip_sumstat)
         
