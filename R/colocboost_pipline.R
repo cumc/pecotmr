@@ -94,9 +94,9 @@ load_multitask_regional_data <-  function(region, # a string of chr:start-end fo
                                            conditions_list_sumstat = NULL,
                                            conditions_list_LD = NULL,
                                            subset = TRUE, 
-                                           n_sample = 0, 
-                                           n_case = 0, 
-                                           n_control = 0, 
+                                           n_samples = 0, 
+                                           n_cases = 0, 
+                                           n_controls = 0, 
                                            target = "",
                                            target_column_index = "", 
                                            comment_string = "#",
@@ -180,9 +180,10 @@ load_multitask_regional_data <-  function(region, # a string of chr:start-end fo
             sumstats <- lapply(pos, function(ii){
                 sumstat_path <- sumstat_path_list[ii]
                 column_file_path <- column_file_path_list[ii]
+                # FIXME later: when consider multiple LD reference
                 tmp <- load_rss_data(
                     sumstat_path = sumstat_path, column_file_path = column_file_path,
-                    n_sample = n_sample, n_case = n_case, n_control = n_control, target = target, region = association_window,
+                    n_sample = n_samples[ii], n_case = n_cases[ii], n_control = n_controls[ii], target = target, region = association_window,
                     target_column_index = target_column_index, comment_string = comment_string)
                 if (!("variant_id" %in% colnames(tmp$sumstats))){
                     tmp$sumstats <- tmp$sumstats %>% rowwise() %>% mutate(variant_id = paste0(c(chrom,pos,A1,A2), collapse = ":"))
