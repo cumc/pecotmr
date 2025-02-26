@@ -377,7 +377,13 @@ colocboost_analysis_pipline <- function(region_data,
     }
     if (!is.null(phenotypes_init$sumstat_studies)){
         analysis_results$joint_gwas <- list(NULL)
-        analysis_results$separate_gwas <- vector("list", length=length(phenotypes_init$sumstat_studies)) %>% setNames(phenotypes_init$sumstat_studies)
+        analysis_results$joint_gwas <- list(NULL)
+        if (length(phenotypes_init$sumstat_studies)>1){
+            analysis_results$separate_gwas <- vector("list", length(phenotypes_init$sumstat_studies)) %>% setNames(phenotypes_init$sumstat_studies)
+        } else {
+            analysis_results$separate_gwas[[1]] <- list(NULL)
+            names(analysis_results$separate_gwas) <- phenotypes_init$sumstat_studies
+        }
     }
 
     ####### ========= QC for the region_data ======== ########
