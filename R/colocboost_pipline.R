@@ -306,13 +306,83 @@ colocboost_analysis_pipline <- function(region_data,
         return(filtered_events)
     }
     
+    # - extract contexts and studies from region data
+    extract_contexts_studies <- function(region_data, phenotypes_init=NULL){
+        
+        individual_data <- region_data$individual_data
+        sumstat_data = region_data$sumstat_data
+        
+        if (is.null(phenotypes_init)){
+            
+            # - inital setup
+            phenotypes <- list("individual_contexts" = NULL, "sumstat_studies" = NULL)
+            if (!is.null(individual_data)){
+                phenotypes$individual_contexts <- names(individual_data$Y)
+            } else {
+                message("No individual data in this region!")
+            }
+            if (!is.null(sumstat_data)){
+                phenotypes$sumstat_studies <- names(sumstat_data$sumstats)
+            } else {
+                message("No sumstat data in this region!")
+            }
+            
+        } else {
+        
+            # - after QC
+            phenotypes <- list("individual_contexts" = NULL, "sumstat_studies" = NULL)
+            if (!is.null(individual_data)){
+                null_Y <- which(sapply(individual_data$Y, is.null))
+                if (length(null_Y) == 0){
+                    message("All individual data pass QC steps.")
+                    phenotypes$individual_contexts <- names(individual_data$Y)
+                } else if (length(null_Y) != length(individual_data$Y)) {
+                    message(paste("Skipping follow-up analysis for individual traits", 
+                                  paste(names(individual_data$Y)[null_Y], collapse = ";"), "after QC."))
+                    phenotypes$individual_contexts <- names(individual_data$Y)[-null_Y]
+                } else if (length(null_Y) == length(individual_data$Y)) {
+                    message("No individual data pass QC.")
+                }
+            } else {
+                message("No individual data pass QC.")
+            }
+            if (!is.null(sumstat_data)){
+                phenotypes$sumstat_studies <- names(sumstat_data$sumstats)
+                sumstat_studies_init <- phenotypes_init$sumstat_studies
+                if (length(sumstat_studies_init)==length(phenotypes$sumstat_studies)){
+                    message("All sumstat studies pass QC steps.")
+                } else {
+                    message(paste("Skipping follow-up analysis for sumstat studies", 
+                                  paste(setdiff(sumstat_studies_init, phenotypes$sumstat_studies), collapse = ";"), "after QC."))
+                }
+            } else {
+                message("No sumstat data pass QC.")
+            }
+        
+        }
+        return(phenotypes)
+        
+    }
+    
+    ####### ========= initial output results before QC ======== #######
+    analysis_results <- list("xqtl_coloc" = NULL, "joint_gwas" = NULL, "separate_gwas" = NULL)
     if (!xqtl_coloc & !joint_gwas & !separate_gwas){
         message("No colocalization has been performed!")
-        return(list("xqtl_coloc" = NULL, "joint_gwas" = NULL, "separate_gwas" = NULL))
+        return(analysis_results)
     }
-    # FIXME: extract all analysis sumstat names
-    
-    # - QC for the region_data
+    phenotypes_init <- extract_contexts_studies(region_data)
+    if (is.null(phenotypes_init$individual_contexts)&is.null(phenotypes_init$sumstat_studies)){ 
+        return(analysis_results)
+    }
+    if (!is.null(phenotypes_init$individual_contexts)){
+        analysis_results$xqtl_coloc <- list(NULL)
+    }
+    if (!is.null(phenotypes_init$sumstat_studies)){
+        analysis_results$joint_gwas <- list(NULL)
+        analysis_results$separate_gwas <- vector("list", length=length(phenotypes_init$sumstat_studies)) %>% setNames(phenotypes_init$sumstat_studies)
+    }
+
+    ####### ========= QC for the region_data ======== ########
     region_data <- qc_regional_data(region_data, maf_cutoff = maf_cutoff, 
                                     pip_cutoff_to_skip_ind = pip_cutoff_to_skip_ind,
                                     remove_indels = remove_indels,
@@ -320,21 +390,18 @@ colocboost_analysis_pipline <- function(region_data,
                                     qc_method =qc_method,
                                     impute = impute, 
                                     impute_opts = impute_opts)
+    phenotypes_QC <- extract_contexts_studies(region_data, phenotypes_init = phenotypes_init)
     
-    # - individual level 
+    ####### ========= organize individual level data ======== ########
     individual_data <- region_data$individual_data
     if (!is.null(individual_data)) {
         X <- individual_data$X
         Y <- individual_data$Y
         null_Y <- which(sapply(Y, is.null))
         if (length(null_Y) != 0 & length(null_Y) != length(Y)) {
-            message(paste("Skipping follow-up analysis for individual traits", paste(names(Y)[null_Y], collapse = ";"), "."))
-            X <- X[-null_Y]
-            Y <- Y[-null_Y]
+            X <- X[-null_Y]; Y <- Y[-null_Y]
         } else if (length(null_Y) == length(Y)) {
-            message(paste("Skipping follow-up analysis for all individual traits", paste(names(Y)[null_Y], collapse = ";"), "."))
-            X <- NULL
-            Y <- NULL
+            X <- NULL; Y <- NULL
         }
         if (!is.null(Y)) {
             Y <- lapply(1:length(Y), function(i) {
@@ -350,9 +417,9 @@ colocboost_analysis_pipline <- function(region_data,
             dict_YX <- cbind(seq_along(Reduce("c", Y)), rep(seq_along(Y), sapply(Y, length)))
             Y <- Reduce("c", Y); Y <- Y %>% setNames(sapply(Y, colnames))
         }
-    } else {X <- Y <- dict_YX <- NULL }
+    } else { X <- Y <- dict_YX <- NULL }
     
-    # - summary statistics
+    ####### ========= organize summary statistics ======== ########
     sumstat_data = region_data$sumstat_data
     if (!is.null(sumstat_data)){
         sumstats <- lapply(sumstat_data$sumstats, function(ss){
@@ -368,20 +435,10 @@ colocboost_analysis_pipline <- function(region_data,
         })
         LD_match <- sumstat_data$LD_match
         dict_sumstatLD <- cbind(seq_along(sumstats), match(LD_match, names(sumstat_data$LD_mat)))
-    } else {sumstats <- LD_mat <- dict_sumstatLD <- NULL}
+    } else { sumstats <- LD_mat <- dict_sumstatLD <- NULL }
                                                      
     
-    ### streamline three types of analyses
-    analysis_results <- list("xqtl_coloc" = NULL, "joint_gwas" = NULL, "separate_gwas" = NULL)
-    if (is.null(X)&is.null(sumstats)){ 
-        message("No data in this region!")
-        #### change analysis results is still an empty list with the same strucure
-        return(analysis_results)
-    } else if (!is.null(X)&is.null(sumstats)) {
-        message("No sumstat data in this region!")
-    } else if (is.null(X)&!is.null(sumstats)){
-        message("No individual data in this region!")
-    }
+    ####### ========= streamline three types of analyses ======== ########
     # - run xQTL-only version of ColocBoost
     if (xqtl_coloc&!is.null(X)){
         message(paste("====== Performing xQTL-only ColocBoost on", length(Y), "contexts. ====="))
@@ -407,16 +464,16 @@ colocboost_analysis_pipline <- function(region_data,
     }          
     # - run targeted version of ColocBoost for each GWAS
     if (separate_gwas&!is.null(sumstats)){
-        res_gwas_separate <- vector("list", length = length(sumstats))
+        res_gwas_separate <- analysis_results$separate_gwas
         for (i_gwas in 1:nrow(dict_sumstatLD)){
-            message(paste("====== Performing targeted version GWAS-xQTL ColocBoost on", length(Y), "contexts and ", names(sumstats)[i_gwas], "GWAS. ====="))
+            current_study <- names(sumstats)[i_gwas] 
+            message(paste("====== Performing targeted version GWAS-xQTL ColocBoost on", length(Y), "contexts and ", current_study, "GWAS. ====="))
             dict <- dict_sumstatLD[i_gwas,]
-            traits <- c(names(Y), names(sumstats)[i_gwas])
-            res_gwas_separate[[i_gwas]] <- colocboost(X = X, Y = Y, sumstat = sumstats[dict[1]], 
-                                                      LD = LD_mat[dict[2]], dict_YX = dict_YX, 
-                                                      outcome_names = traits, target_idx = length(traits), ...)
+            traits <- c(names(Y), current_study)
+            res_gwas_separate[[current_study]] <- colocboost(X = X, Y = Y, sumstat = sumstats[dict[1]], 
+                                                             LD = LD_mat[dict[2]], dict_YX = dict_YX, 
+                                                             outcome_names = traits, target_idx = length(traits), ...)
         }
-        names(res_gwas_separate) <- names(sumstats)
         analysis_results$separate_gwas <- res_gwas_separate
     }                     
                                                      
