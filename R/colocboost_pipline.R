@@ -707,7 +707,10 @@ qc_regional_data <- function(region_data,
                 sumstat <- sumstats[[ii]]
                 n <- sumstat$n
                 var_y = sumstat$var_y
-
+                
+                preprocess_results <- rss_basic_qc(sumstat$sumstats, LD_data, remove_indels = remove_indels)
+                sumstat$sumstats <- preprocess_results$sumstats
+                LD_mat <- preprocess_results$LD_mat   
                 # Perform quality control - remove
                 if (!is.null(qc_method)) {
                     qc_results <- summary_stats_qc(sumstat$sumstats, LD_data, n = n, var_y = var_y, method = qc_method)
