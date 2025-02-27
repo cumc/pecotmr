@@ -390,7 +390,7 @@ colocboost_analysis_pipline <- function(region_data,
             filtered_events <- filter_events(events, event_filters, condition)
             if (is.null(filtered_events)){ return(list(NULL)) }
             y[, filtered_events, drop = FALSE]
-        })
+        })  %>% setNames(names(region_data$individual_data$residual_Y))
         region_data$individual_data$residual_Y <- Y
     }                                        
                                                      
@@ -445,6 +445,10 @@ colocboost_analysis_pipline <- function(region_data,
                                                      
     
     ####### ========= streamline three types of analyses ======== ########
+    if (is.null(X)&is.null(sumstats)){
+        message("No data pass QC and will not perform analyses.")
+        return(analysis_results)   
+    }
     # - run xQTL-only version of ColocBoost
     if (xqtl_coloc&!is.null(X)){
         message(paste("====== Performing xQTL-only ColocBoost on", length(Y), "contexts. ====="))
@@ -558,7 +562,7 @@ qc_regional_data <- function(region_data,
             if (length(include_idx)==0){
                 message(paste("Skipping follow-up analysis for individual-context", context,  
                               ". No signals above PIP threshold", pip_cutoff_to_skip, "in initial model screening."))
-                return(list(NULL))
+                return(NULL)
             } else if (length(include_idx) == ncol(res_Y)) {
                 message(paste("Keep all individual-phenotypes in context", context,  "."))
             } else {
@@ -604,7 +608,7 @@ qc_regional_data <- function(region_data,
         }
         if (length(keep_contexts)==0){
             message(paste("Skipping follow-up analysis for all contexts."))
-            return(list())
+            return(NULL)
         } else {
             message(paste("Region includes the following contexts after inital screening:", paste(keep_contexts, collapse = ";"),  "."))
             names(residual_X) <- names(residual_Y) <- keep_contexts
