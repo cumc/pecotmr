@@ -30,7 +30,6 @@ load_multitask_regional_data(
   LD_meta_file_path_list = NULL,
   match_LD_sumstat = NULL,
   conditions_list_sumstat = NULL,
-  conditions_list_LD = NULL,
   subset = TRUE,
   n_samples = 0,
   n_cases = 0,
@@ -87,8 +86,6 @@ load_multitask_regional_data(
 \item{match_LD_sumstat}{A vector of index of sumstat matched to LD if mulitple sumstat files}
 
 \item{conditions_list_sumstat}{A vector of strings representing different sumstats.}
-
-\item{conditions_list_LD}{A vector of strings representing different LD reference for different sumstat}
 
 \item{target}{User-specified gene/phenotype name used to further subset the phenotype data.}
 
