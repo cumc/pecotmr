@@ -358,6 +358,7 @@ colocboost_analysis_pipline <- function(region_data,
     
     ####### ========= initial output results before QC ======== #######
     analysis_results <- list("xqtl_coloc" = NULL, "joint_gwas" = NULL, "separate_gwas" = NULL)
+    analysis_results$computing_time <- list("QC" = NULL, "Analysis" = list("xqtl_coloc" = NULL, "joint_gwas" = NULL, "separate_gwas" = NULL))
     if (!xqtl_coloc & !joint_gwas & !separate_gwas){
         message("No colocalization has been performed!")
         return(analysis_results)
@@ -395,6 +396,7 @@ colocboost_analysis_pipline <- function(region_data,
     }                                        
                                                      
     ####### ========= QC for the region_data ======== ########
+    t01 <- Sys.time()
     region_data <- qc_regional_data(region_data, maf_cutoff = maf_cutoff, 
                                     pip_cutoff_to_skip_ind = pip_cutoff_to_skip_ind,
                                     remove_indels = remove_indels,
@@ -403,6 +405,8 @@ colocboost_analysis_pipline <- function(region_data,
                                     impute = impute, 
                                     impute_opts = impute_opts)
     phenotypes_QC <- extract_contexts_studies(region_data, phenotypes_init = phenotypes_init)
+    t02 <- Sys.time()
+    analysis_results$computing_time$QC <- t02 - t01
     
     ####### ========= organize individual level data ======== ########
     individual_data <- region_data$individual_data
@@ -452,6 +456,7 @@ colocboost_analysis_pipline <- function(region_data,
     # - run xQTL-only version of ColocBoost
     if (xqtl_coloc&!is.null(X)){
         message(paste("====== Performing xQTL-only ColocBoost on", length(Y), "contexts. ====="))
+        t11 <- Sys.time()
         traits <- names(Y)
         target_idx <- NULL
         if (!is.null(target_trait)){
@@ -461,19 +466,25 @@ colocboost_analysis_pipline <- function(region_data,
         }
         res_xqtl <- colocboost(X = X, Y = Y, dict_YX = dict_YX, 
                                outcome_names = traits, target_idx = target_idx, ...)
+        t12 <- Sys.time()
         analysis_results$xqtl_coloc <- res_xqtl
+        analysis_results$computing_time$Analysis$xqtl_coloc = t12 - t11
     }
     # - run joint GWAS no targeted version of ColocBoost
     if (joint_gwas&!is.null(sumstats)){
         message(paste("====== Performing non-targeted version GWAS-xQTL ColocBoost on", length(Y), "contexts and", length(sumstats), "GWAS. ====="))
+        t21 <- Sys.time()
         traits <- c(names(Y), names(sumstats))
         res_gwas <- colocboost(X = X, Y = Y, sumstat = sumstats, LD = LD_mat,
                                dict_YX = dict_YX, dict_sumstatLD = dict_sumstatLD, 
                                outcome_names = traits, target_idx = NULL, ...)
+        t22 <- Sys.time()
         analysis_results$joint_gwas <- res_gwas
+        analysis_results$computing_time$Analysis$joint_gwas = t22 - t21
     }          
     # - run targeted version of ColocBoost for each GWAS
     if (separate_gwas&!is.null(sumstats)){
+        t31 <- Sys.time()
         res_gwas_separate <- analysis_results$separate_gwas
         for (i_gwas in 1:nrow(dict_sumstatLD)){
             current_study <- names(sumstats)[i_gwas] 
@@ -484,7 +495,9 @@ colocboost_analysis_pipline <- function(region_data,
                                                              LD = LD_mat[dict[2]], dict_YX = dict_YX, 
                                                              outcome_names = traits, target_idx = length(traits), ...)
         }
+        t32 <- Sys.time()
         analysis_results$separate_gwas <- res_gwas_separate
+        analysis_results$computing_time$Analysis$separate_gwas = list("total" = t32 - t31, "n_studies" = nrow(dict_sumstatLD), "average" = (t32-t31)/nrow(dict_sumstatLD))
     }                     
                                                      
     return(analysis_results)                        
