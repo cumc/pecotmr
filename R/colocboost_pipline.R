@@ -30,7 +30,6 @@
 #' @param LD_meta_file_path_list A vector of path of LD_metadata, LD_metadata is a data frame specifying LD blocks with columns "chrom", "start", "end", and "path". "start" and "end" denote the positions of LD blocks. "path" is the path of each LD block, optionally including bim file paths.
 #' @param match_LD_sumstat A vector of index of sumstat matched to LD if mulitple sumstat files
 #' @param conditions_list_sumstat A vector of strings representing different sumstats.
-#' @param conditions_list_LD A vector of strings representing different LD reference for different sumstat
 #' @param n_sample User-specified sample size. If unknown, set as 0 to retrieve from the sumstat file.
 #' @param n_case User-specified number of cases.
 #' @param n_control User-specified number of controls.
@@ -92,7 +91,6 @@ load_multitask_regional_data <-  function(region, # a string of chr:start-end fo
                                            LD_meta_file_path_list = NULL,
                                            match_LD_sumstat = NULL, # a vector of index of sumstat matched to LD if mulitple sumstat files
                                            conditions_list_sumstat = NULL,
-                                           conditions_list_LD = NULL,
                                            subset = TRUE, 
                                            n_samples = 0, 
                                            n_cases = 0, 
@@ -112,6 +110,7 @@ load_multitask_regional_data <-  function(region, # a string of chr:start-end fo
     individual_data <- NULL
     if (!is.null(genotype_list)){
         
+        #### FIXME: later if we have mulitple genotype list
         if (length(genotype_list)!=1 & is.null(match_geno_pheno)){
             stop("Data load error. Please make sure 'match_geno_pheno' exists if you load data from multiple individual-level data.")
         } else if (length(genotype_list)==1 & is.null(match_geno_pheno)){
@@ -119,7 +118,7 @@ load_multitask_regional_data <-  function(region, # a string of chr:start-end fo
         }
 
         # - load individual data from multiple datasets
-        n_dataset <- unique(match_geno_pheno)
+        n_dataset <- unique(match_geno_pheno) ### FIXME
         for (i_data in 1:n_dataset){
             # extract genotype file name
             genotype <- genotype_list[i_data]
@@ -156,17 +155,12 @@ load_multitask_regional_data <-  function(region, # a string of chr:start-end fo
     sumstat_data <- NULL
     if (!is.null(sumstat_path_list)){
         
-        if (length(LD_meta_file_path_list)!=1 & is.null(match_LD_sumstat)){
-            stop("Data load error. Please make sure 'match_LD_sumstat' exists if you load data from multiple sumstats.")
-        } else if (length(LD_meta_file_path_list)==1 & is.null(match_LD_sumstat)){
-            match_LD_sumstat <- rep(1, length(sumstat_path_list))
+        if (length(match_LD_sumstat)==0){ match_LD_sumstat[[1]] <- conditions_list_sumstat }
+        if (length(match_LD_sumstat)!=length(LD_meta_file_path_list)){
+            stop("Please make sure 'match_LD_sumstat' matched 'LD_meta_file_path_list' if you load data from multiple sumstats.")
         }
-        if (length(sumstat_path_list)==1&is.null(conditions_list_sumstat)) {conditions_list_sumstat = "LD_sumstat"}
-        if (length(LD_meta_file_path_list)==1&is.null(conditions_list_LD)) {conditions_list_LD = "LD"}
-        
-        
         # - load sumstat data from multiple datasets
-        n_LD <- unique(match_LD_sumstat)
+        n_LD <- length(match_LD_sumstat)
         for (i_ld in 1:n_LD){
             
             # extract LD meta file path name
@@ -175,8 +169,8 @@ load_multitask_regional_data <-  function(region, # a string of chr:start-end fo
                                       region = association_window, 
                                       extract_coordinates = extract_coordinates)
             # extract sumstat information
-            pos <- which(match_LD_sumstat == i_ld)
-            conditions <- conditions_list_sumstat[pos]
+            conditions <- match_LD_sumstat[[i_ld]]
+            pos <- match(conditions, conditions_list_sumstat)
             sumstats <- lapply(pos, function(ii){
                 sumstat_path <- sumstat_path_list[ii]
                 column_file_path <- column_file_path_list[ii]
@@ -194,7 +188,7 @@ load_multitask_regional_data <-  function(region, # a string of chr:start-end fo
             sumstat_data$sumstats <- c(sumstat_data$sumstats, list(sumstats))
             sumstat_data$LD_info <- c(sumstat_data$LD_info, list(LD_info))
         }
-        names(sumstat_data$sumstats) <- names(sumstat_data$LD_info) <- conditions_list_LD
+        names(sumstat_data$sumstats) <- names(sumstat_data$LD_info) <- names(match_LD_sumstat)
     }
     
     return(list(individual_data = individual_data, 
@@ -377,9 +371,29 @@ colocboost_analysis_pipline <- function(region_data,
     }
     if (!is.null(phenotypes_init$sumstat_studies)){
         analysis_results$joint_gwas <- list(NULL)
-        analysis_results$separate_gwas <- vector("list", length=length(phenotypes_init$sumstat_studies)) %>% setNames(phenotypes_init$sumstat_studies)
+        analysis_results$joint_gwas <- list(NULL)
+        if (length(phenotypes_init$sumstat_studies)>1){
+            analysis_results$separate_gwas <- vector("list", length(phenotypes_init$sumstat_studies)) %>% setNames(phenotypes_init$sumstat_studies)
+        } else {
+            analysis_results$separate_gwas[[1]] <- list(NULL)
+            names(analysis_results$separate_gwas) <- phenotypes_init$sumstat_studies
+        }
     }
-
+                                                     
+    ####### ========= Filtering events before QC =========== #########
+    if (!is.null(event_filters)&!is.null(region_data$individual_data)){
+        Y <- region_data$individual_data$residual_Y
+        Y <- lapply(1:length(Y), function(i) {
+            y <- Y[[i]]
+            events <- colnames(y)
+            condition <- names(Y)[i]
+            filtered_events <- filter_events(events, event_filters, condition)
+            if (is.null(filtered_events)){ return(list(NULL)) }
+            y[, filtered_events, drop = FALSE]
+        })
+        region_data$individual_data$residual_Y <- Y
+    }                                        
+                                                     
     ####### ========= QC for the region_data ======== ########
     region_data <- qc_regional_data(region_data, maf_cutoff = maf_cutoff, 
                                     pip_cutoff_to_skip_ind = pip_cutoff_to_skip_ind,
@@ -404,12 +418,6 @@ colocboost_analysis_pipline <- function(region_data,
         if (!is.null(Y)) {
             Y <- lapply(1:length(Y), function(i) {
                 y <- Y[[i]]
-                events <- colnames(y)
-                condition <- names(Y)[i]
-                if (!is.null(event_filters)){
-                    filtered_events <- filter_events(events, event_filters, condition)
-                    y <- y[, filtered_events, drop = FALSE]
-                } 
                 lapply(seq_len(ncol(y)), function(j) y[, j, drop = FALSE] %>% setNames(colnames(y)[j]))
             })
             dict_YX <- cbind(seq_along(Reduce("c", Y)), rep(seq_along(Y), sapply(Y, length)))
@@ -550,7 +558,7 @@ qc_regional_data <- function(region_data,
             if (length(include_idx)==0){
                 message(paste("Skipping follow-up analysis for individual-context", context,  
                               ". No signals above PIP threshold", pip_cutoff_to_skip, "in initial model screening."))
-                return(list())
+                return(list(NULL))
             } else if (length(include_idx) == ncol(res_Y)) {
                 message(paste("Keep all individual-phenotypes in context", context,  "."))
             } else {
@@ -622,7 +630,8 @@ qc_regional_data <- function(region_data,
     }
     
                                       
-    # Initial PIP check for summary statistics         
+    # Initial PIP check for summary statistics    
+    ##### FIXME later: i would like to combine initial screen and sumstat qc!
     data_initial_screen_sumstat <- function(
         sumstat_data,
         remove_indels = FALSE,
@@ -636,8 +645,7 @@ qc_regional_data <- function(region_data,
             sumstats <- sumstat_data$sumstats[[i]]
             # Initial PIP check
             if (any(pip_cutoff_to_skip != 0)){
-                ld_condition <- names(sumstat_data$LD_info)[i]
-                pos <- grepl(ld_condition, conditions_sumstat)
+                pos <- match(names(sumstats), conditions_sumstat)
                 pip_cutoff_to_skip_ld <- pip_cutoff_to_skip[pos]
 
                 check_model_pip <- sapply(1:length(sumstats), function(ii){
@@ -656,16 +664,17 @@ qc_regional_data <- function(region_data,
                     any(pip > pip_cutoff_to_skip_ld[ii])
                 })
                 include_idx <- which(check_model_pip)
+                ld_condition <- names(sumstat_data$LD_info)[i]
                 if (length(include_idx)==0){
-                    message(paste("Skipping follow-up analysis for all summary statistic based on LD -", ld_condition,  
+                    message(paste("Skipping follow-up analysis for all summary statistic based on LD", ld_condition,  
                                   ". No signals above PIP threshold", paste0(pip_cutoff_to_skip_ld,";"), "in initial model screening."))
                     sumstat_data$sumstats[i] <- list(NULL)
                 } else if (length(include_idx) == length(sumstats)) {
-                    message(paste("Keep all summary statistics based on LD -", ld_condition,  "."))
+                    message(paste("Keep all summary statistics based on LD", ld_condition,  "."))
                 } else {
                     exclude_idx <- setdiff(1:length(sumstats), include_idx)
                     exclude_pheno <- paste(names(sumstats)[exclude_idx], collapse = ";")
-                    message(paste("Skipping follow-up analysis for summary statistics", exclude_pheno, "based on LD -", ld_condition,  
+                    message(paste("Skipping follow-up analysis for summary statistics", exclude_pheno, "based on LD", ld_condition,  
                                   ". No signals above PIP threshold", paste0(pip_cutoff_to_skip_ld[exclude_idx],";"), "in initial model screening."))
                     sumstat_data$sumstats[[i]] <- sumstats[include_idx]
                 }
@@ -683,6 +692,7 @@ qc_regional_data <- function(region_data,
     #   \item LD_match: A vector of strings to indicating sumstats and LD matching (save space since multiple sumstats may link to the same LD matrix).
     # } 
     summary_stats_qc_multitask <- function(sumstat_data,
+                                           remove_indels = FALSE,
                                            qc_method = c("rss_qc", "dentist", "slalom"),
                                            impute = TRUE, 
                                            impute_opts = list(rcond = 0.01, R2_threshold = 0.6, minimum_ld = 5, lamb = 0.01)){
@@ -694,14 +704,20 @@ qc_regional_data <- function(region_data,
         for (i in 1:n_LD){
             LD_data <- sumstat_data$LD_info[[i]]
             sumstats <- sumstat_data$sumstats[[i]]
-            ld_condition <- names(sumstat_data$LD_info)[i]
-            pos <- grepl(ld_condition, conditions_sumstat)
-            conditions_sumstat_ld <- conditions_sumstat[pos]
+            if (length(sumstats)==0) next
+            if (is.null(names(sumstat_data$LD_info))){
+                conditions_sumstat_ld <- conditions_sumstat
+            } else {
+                conditions_sumstat_ld <- names(sumstats)
+            }
             for (ii in 1:length(sumstats)){
                 sumstat <- sumstats[[ii]]
                 n <- sumstat$n
                 var_y = sumstat$var_y
-
+                
+                preprocess_results <- rss_basic_qc(sumstat$sumstats, LD_data, remove_indels = remove_indels)
+                sumstat$sumstats <- preprocess_results$sumstats
+                LD_mat <- preprocess_results$LD_mat   
                 # Perform quality control - remove
                 if (!is.null(qc_method)) {
                     qc_results <- summary_stats_qc(sumstat$sumstats, LD_data, n = n, var_y = var_y, method = qc_method)
