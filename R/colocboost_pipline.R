@@ -389,7 +389,7 @@ colocboost_analysis_pipline <- function(region_data,
             events <- colnames(y)
             condition <- names(Y)[i]
             filtered_events <- filter_events(events, event_filters, condition)
-            if (is.null(filtered_events)){ return(list(NULL)) }
+            if (is.null(filtered_events)){ return(NULL) }
             y[, filtered_events, drop = FALSE]
         })  %>% setNames(names(region_data$individual_data$residual_Y))
         region_data$individual_data$residual_Y <- Y
@@ -549,6 +549,7 @@ qc_regional_data <- function(region_data,
     add_context_to_Y <- function(res_Y){
         res <- lapply(1:length(res_Y), function(iy){
             y <- res_Y[[iy]]
+            if (is.null(y)) return(NULL)
             if (is.null(colnames(y))){ 
                 colnames(y) <- names(res_Y)[iy] 
             } else {
@@ -608,6 +609,7 @@ qc_regional_data <- function(region_data,
             resY <- Y[[i_context]]
             maf <- MAF[[i_context]]
             context <- names(Y)[i_context]
+            if (is.null(resY)) next
             # - remove variants with maf < maf_cutoff
             # tmp <- filter_resX_maf(resX, maf, maf_cutoff = maf_cutoff)
             resX <- filter_X(resX, missing_rate_thresh=NULL, maf_thresh=maf_cutoff, maf=maf)
