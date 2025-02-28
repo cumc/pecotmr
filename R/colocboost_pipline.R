@@ -358,6 +358,7 @@ colocboost_analysis_pipline <- function(region_data,
     
     ####### ========= initial output results before QC ======== #######
     analysis_results <- list("xqtl_coloc" = NULL, "joint_gwas" = NULL, "separate_gwas" = NULL)
+    analysis_results$computing_time <- list("QC" = NULL, "Analysis" = list("xqtl_coloc" = NULL, "joint_gwas" = NULL, "separate_gwas" = NULL))
     if (!xqtl_coloc & !joint_gwas & !separate_gwas){
         message("No colocalization has been performed!")
         return(analysis_results)
@@ -388,13 +389,14 @@ colocboost_analysis_pipline <- function(region_data,
             events <- colnames(y)
             condition <- names(Y)[i]
             filtered_events <- filter_events(events, event_filters, condition)
-            if (is.null(filtered_events)){ return(list(NULL)) }
+            if (is.null(filtered_events)){ return(NULL) }
             y[, filtered_events, drop = FALSE]
-        })
+        })  %>% setNames(names(region_data$individual_data$residual_Y))
         region_data$individual_data$residual_Y <- Y
     }                                        
                                                      
     ####### ========= QC for the region_data ======== ########
+    t01 <- Sys.time()
     region_data <- qc_regional_data(region_data, maf_cutoff = maf_cutoff, 
                                     pip_cutoff_to_skip_ind = pip_cutoff_to_skip_ind,
                                     remove_indels = remove_indels,
@@ -403,6 +405,8 @@ colocboost_analysis_pipline <- function(region_data,
                                     impute = impute, 
                                     impute_opts = impute_opts)
     phenotypes_QC <- extract_contexts_studies(region_data, phenotypes_init = phenotypes_init)
+    t02 <- Sys.time()
+    analysis_results$computing_time$QC <- t02 - t01
     
     ####### ========= organize individual level data ======== ########
     individual_data <- region_data$individual_data
@@ -445,9 +449,14 @@ colocboost_analysis_pipline <- function(region_data,
                                                      
     
     ####### ========= streamline three types of analyses ======== ########
+    if (is.null(X)&is.null(sumstats)){
+        message("No data pass QC and will not perform analyses.")
+        return(analysis_results)   
+    }
     # - run xQTL-only version of ColocBoost
     if (xqtl_coloc&!is.null(X)){
         message(paste("====== Performing xQTL-only ColocBoost on", length(Y), "contexts. ====="))
+        t11 <- Sys.time()
         traits <- names(Y)
         target_idx <- NULL
         if (!is.null(target_trait)){
@@ -457,19 +466,25 @@ colocboost_analysis_pipline <- function(region_data,
         }
         res_xqtl <- colocboost(X = X, Y = Y, dict_YX = dict_YX, 
                                outcome_names = traits, target_idx = target_idx, ...)
+        t12 <- Sys.time()
         analysis_results$xqtl_coloc <- res_xqtl
+        analysis_results$computing_time$Analysis$xqtl_coloc = t12 - t11
     }
     # - run joint GWAS no targeted version of ColocBoost
     if (joint_gwas&!is.null(sumstats)){
         message(paste("====== Performing non-targeted version GWAS-xQTL ColocBoost on", length(Y), "contexts and", length(sumstats), "GWAS. ====="))
+        t21 <- Sys.time()
         traits <- c(names(Y), names(sumstats))
         res_gwas <- colocboost(X = X, Y = Y, sumstat = sumstats, LD = LD_mat,
                                dict_YX = dict_YX, dict_sumstatLD = dict_sumstatLD, 
                                outcome_names = traits, target_idx = NULL, ...)
+        t22 <- Sys.time()
         analysis_results$joint_gwas <- res_gwas
+        analysis_results$computing_time$Analysis$joint_gwas = t22 - t21
     }          
     # - run targeted version of ColocBoost for each GWAS
     if (separate_gwas&!is.null(sumstats)){
+        t31 <- Sys.time()
         res_gwas_separate <- analysis_results$separate_gwas
         for (i_gwas in 1:nrow(dict_sumstatLD)){
             current_study <- names(sumstats)[i_gwas] 
@@ -480,7 +495,9 @@ colocboost_analysis_pipline <- function(region_data,
                                                              LD = LD_mat[dict[2]], dict_YX = dict_YX, 
                                                              outcome_names = traits, target_idx = length(traits), ...)
         }
+        t32 <- Sys.time()
         analysis_results$separate_gwas <- res_gwas_separate
+        analysis_results$computing_time$Analysis$separate_gwas = list("total" = t32 - t31, "n_studies" = nrow(dict_sumstatLD), "average" = (t32-t31)/nrow(dict_sumstatLD))
     }                     
                                                      
     return(analysis_results)                        
@@ -532,6 +549,7 @@ qc_regional_data <- function(region_data,
     add_context_to_Y <- function(res_Y){
         res <- lapply(1:length(res_Y), function(iy){
             y <- res_Y[[iy]]
+            if (is.null(y)) return(NULL)
             if (is.null(colnames(y))){ 
                 colnames(y) <- names(res_Y)[iy] 
             } else {
@@ -558,7 +576,7 @@ qc_regional_data <- function(region_data,
             if (length(include_idx)==0){
                 message(paste("Skipping follow-up analysis for individual-context", context,  
                               ". No signals above PIP threshold", pip_cutoff_to_skip, "in initial model screening."))
-                return(list(NULL))
+                return(NULL)
             } else if (length(include_idx) == ncol(res_Y)) {
                 message(paste("Keep all individual-phenotypes in context", context,  "."))
             } else {
@@ -591,6 +609,7 @@ qc_regional_data <- function(region_data,
             resY <- Y[[i_context]]
             maf <- MAF[[i_context]]
             context <- names(Y)[i_context]
+            if (is.null(resY)) next
             # - remove variants with maf < maf_cutoff
             # tmp <- filter_resX_maf(resX, maf, maf_cutoff = maf_cutoff)
             resX <- filter_X(resX, missing_rate_thresh=NULL, maf_thresh=maf_cutoff, maf=maf)
@@ -604,7 +623,7 @@ qc_regional_data <- function(region_data,
         }
         if (length(keep_contexts)==0){
             message(paste("Skipping follow-up analysis for all contexts."))
-            return(list())
+            return(NULL)
         } else {
             message(paste("Region includes the following contexts after inital screening:", paste(keep_contexts, collapse = ";"),  "."))
             names(residual_X) <- names(residual_Y) <- keep_contexts
