@@ -431,7 +431,7 @@ colocboost_analysis_pipline <- function(region_data,
     
     ####### ========= organize summary statistics ======== ########
     sumstat_data = region_data$sumstat_data
-    if (!is.null(sumstat_data)){
+    if (!is.null(sumstat_data)|(length(sumstat_data)==0)){
         sumstats <- lapply(sumstat_data$sumstats, function(ss){
             z <- ss$sumstats$z
             variant <- paste0("chr", ss$sumstats$variant_id)
@@ -449,12 +449,12 @@ colocboost_analysis_pipline <- function(region_data,
                                                      
     
     ####### ========= streamline three types of analyses ======== ########
-    if (is.null(X)&is.null(sumstats)){
+    if ((length(X)==0)&(length(sumstats)==0)){
         message("No data pass QC and will not perform analyses.")
         return(analysis_results)   
     }
     # - run xQTL-only version of ColocBoost
-    if (xqtl_coloc&!is.null(X)){
+    if (xqtl_coloc&(length(X)==0)){
         message(paste("====== Performing xQTL-only ColocBoost on", length(Y), "contexts. ====="))
         t11 <- Sys.time()
         traits <- names(Y)
@@ -471,7 +471,7 @@ colocboost_analysis_pipline <- function(region_data,
         analysis_results$computing_time$Analysis$xqtl_coloc = t12 - t11
     }
     # - run joint GWAS no targeted version of ColocBoost
-    if (joint_gwas&!is.null(sumstats)){
+    if (joint_gwas&(length(sumstats)==0)){
         message(paste("====== Performing non-targeted version GWAS-xQTL ColocBoost on", length(Y), "contexts and", length(sumstats), "GWAS. ====="))
         t21 <- Sys.time()
         traits <- c(names(Y), names(sumstats))
@@ -483,7 +483,7 @@ colocboost_analysis_pipline <- function(region_data,
         analysis_results$computing_time$Analysis$joint_gwas = t22 - t21
     }          
     # - run targeted version of ColocBoost for each GWAS
-    if (separate_gwas&!is.null(sumstats)){
+    if (separate_gwas&!(length(sumstats)==0)){
         t31 <- Sys.time()
         res_gwas_separate <- analysis_results$separate_gwas
         for (i_gwas in 1:nrow(dict_sumstatLD)){
@@ -687,7 +687,7 @@ qc_regional_data <- function(region_data,
                 if (length(include_idx)==0){
                     message(paste("Skipping follow-up analysis for all summary statistic based on LD", ld_condition,  
                                   ". No signals above PIP threshold", paste0(pip_cutoff_to_skip_ld,";"), "in initial model screening."))
-                    sumstat_data$sumstats[i] <- NULL
+                    sumstat_data$sumstats[i] <- list(NULL)
                 } else if (length(include_idx) == length(sumstats)) {
                     message(paste("Keep all summary statistics based on LD", ld_condition,  "."))
                 } else {
@@ -718,7 +718,7 @@ qc_regional_data <- function(region_data,
 
         n_LD <- length(sumstat_data$LD_info)
         conditions_sumstat <- sapply(sumstat_data$sumstats, function(ss) names(ss)) %>% unlist() %>% as.vector()
-        final_sumstats <- final_LD <- list()
+        final_sumstats <- final_LD <- NULL
         LD_match <- c()
         for (i in 1:n_LD){
             LD_data <- sumstat_data$LD_info[[i]]
@@ -735,8 +735,9 @@ qc_regional_data <- function(region_data,
                 var_y = sumstat$var_y
                 
                 preprocess_results <- rss_basic_qc(sumstat$sumstats, LD_data, remove_indels = remove_indels)
+                if (is.null(preprocess_results$sumstats)) next
                 sumstat$sumstats <- preprocess_results$sumstats
-                LD_mat <- preprocess_results$LD_mat   
+                LD_mat <- preprocess_results$LD_mat  
                 # Perform quality control - remove
                 if (!is.null(qc_method)) {
                     qc_results <- summary_stats_qc(sumstat$sumstats, LD_data, n = n, var_y = var_y, method = qc_method)
