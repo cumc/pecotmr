@@ -687,7 +687,7 @@ qc_regional_data <- function(region_data,
                 if (length(include_idx)==0){
                     message(paste("Skipping follow-up analysis for all summary statistic based on LD", ld_condition,  
                                   ". No signals above PIP threshold", paste0(pip_cutoff_to_skip_ld,";"), "in initial model screening."))
-                    sumstat_data$sumstats[i] <- list(NULL)
+                    sumstat_data$sumstats[i] <- NULL
                 } else if (length(include_idx) == length(sumstats)) {
                     message(paste("Keep all summary statistics based on LD", ld_condition,  "."))
                 } else {
