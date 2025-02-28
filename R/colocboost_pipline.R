@@ -454,7 +454,7 @@ colocboost_analysis_pipline <- function(region_data,
         return(analysis_results)   
     }
     # - run xQTL-only version of ColocBoost
-    if (xqtl_coloc&(length(X)==0)){
+    if (xqtl_coloc&(length(X)!=0)){
         message(paste("====== Performing xQTL-only ColocBoost on", length(Y), "contexts. ====="))
         t11 <- Sys.time()
         traits <- names(Y)
@@ -471,7 +471,7 @@ colocboost_analysis_pipline <- function(region_data,
         analysis_results$computing_time$Analysis$xqtl_coloc = t12 - t11
     }
     # - run joint GWAS no targeted version of ColocBoost
-    if (joint_gwas&(length(sumstats)==0)){
+    if (joint_gwas&(length(sumstats)!=0)){
         message(paste("====== Performing non-targeted version GWAS-xQTL ColocBoost on", length(Y), "contexts and", length(sumstats), "GWAS. ====="))
         t21 <- Sys.time()
         traits <- c(names(Y), names(sumstats))
@@ -483,7 +483,7 @@ colocboost_analysis_pipline <- function(region_data,
         analysis_results$computing_time$Analysis$joint_gwas = t22 - t21
     }          
     # - run targeted version of ColocBoost for each GWAS
-    if (separate_gwas&!(length(sumstats)==0)){
+    if (separate_gwas&!(length(sumstats)!=0)){
         t31 <- Sys.time()
         res_gwas_separate <- analysis_results$separate_gwas
         for (i_gwas in 1:nrow(dict_sumstatLD)){
