@@ -483,7 +483,7 @@ colocboost_analysis_pipline <- function(region_data,
         analysis_results$computing_time$Analysis$joint_gwas = t22 - t21
     }          
     # - run targeted version of ColocBoost for each GWAS
-    if (separate_gwas&!){
+    if (separate_gwas&!is.null(sumstats)){
         t31 <- Sys.time()
         res_gwas_separate <- analysis_results$separate_gwas
         for (i_gwas in 1:nrow(dict_sumstatLD)){
