@@ -199,7 +199,7 @@ load_multitask_regional_data <-  function(region, # a string of chr:start-end fo
 
      
 
-#' Multi-trait colocalization analysis pipline
+#' Multi-trait colocalization analysis pipeline
 #' 
 #' This function perform a multi-trait colocalization using ColocBoost
 #' 
@@ -227,7 +227,7 @@ load_multitask_regional_data <-  function(region, # a string of chr:start-end fo
 #' }
 #'
 #' @export         
-colocboost_analysis_pipline <- function(region_data, 
+colocboost_analysis_pipeline <- function(region_data, 
                                         target_trait = NULL,
                                         event_filters = NULL,
                                         # - analysis
@@ -431,7 +431,7 @@ colocboost_analysis_pipline <- function(region_data,
     
     ####### ========= organize summary statistics ======== ########
     sumstat_data = region_data$sumstat_data
-    if (!is.null(sumstat_data)){
+    if (!is.null(sumstat_data$sumstats)){
         sumstats <- lapply(sumstat_data$sumstats, function(ss){
             z <- ss$sumstats$z
             variant <- paste0("chr", ss$sumstats$variant_id)
@@ -562,20 +562,20 @@ qc_regional_data <- function(region_data,
     }
 
     # Initial PIP check for individual level data
-    filter_resY_pip <- function(res_X, res_Y, pip_cutoff_to_skip = 0, context = NULL){
+    filter_resY_pip <- function(res_X, res_Y, pip_cutoff= 0, context = NULL){
 
         # Initial PIP check
-        if (pip_cutoff_to_skip != 0){
-            if (pip_cutoff_to_skip < 0){
+        if (pip_cutoff != 0){
+            if (pip_cutoff < 0){
                 # automatically determine the cutoff to use
-                pip_cutoff_to_skip <- 3 * 1 / ncol(res_X)
+                pip_cutoff <- 3 * 1 / ncol(res_X)
             }
             top_model_pip <- lapply(1:ncol(res_Y), function(i) susieR::susie(res_X, res_Y[,i], L = 1)$pip)
-            check_model_pip <- sapply( top_model_pip, function(pip) any(pip > pip_cutoff_to_skip) )
+            check_model_pip <- sapply( top_model_pip, function(pip) any(pip > pip_cutoff) )
             include_idx <- which(check_model_pip)
             if (length(include_idx)==0){
                 message(paste("Skipping follow-up analysis for individual-context", context,  
-                              ". No signals above PIP threshold", pip_cutoff_to_skip, "in initial model screening."))
+                              ". No signals above PIP threshold", pip_cutoff, "in initial model screening."))
                 return(NULL)
             } else if (length(include_idx) == ncol(res_Y)) {
                 message(paste("Keep all individual-phenotypes in context", context,  "."))
@@ -583,7 +583,7 @@ qc_regional_data <- function(region_data,
                 exclude_idx <- setdiff(1:ncol(res_Y), include_idx)
                 exclude_pheno <- paste(colnames(res_Y)[exclude_idx], collapse = ";")
                 message(paste("Skipping follow-up analysis for individual-phenotypes", exclude_pheno, "in context", context,  
-                              ". No signals above PIP threshold", pip_cutoff_to_skip, "in initial model screening."))
+                              ". No signals above PIP threshold", pip_cutoff, "in initial model screening."))
                 res_Y <- res_Y[, include_idx, drop = FALSE] %>% .[, order(colnames(.)), drop = FALSE]
             }
         }
@@ -597,7 +597,7 @@ qc_regional_data <- function(region_data,
         Y,
         MAF,
         maf_cutoff = 0.0005,
-        pip_cutoff_to_skip = 0 ){
+        pip_cutoff_to_skip_ind = 0 ){
         
         # - add context to colname of Y
         Y <- add_context_to_Y(Y)
@@ -614,7 +614,7 @@ qc_regional_data <- function(region_data,
             # tmp <- filter_resX_maf(resX, maf, maf_cutoff = maf_cutoff)
             resX <- filter_X(resX, missing_rate_thresh=NULL, maf_thresh=maf_cutoff, maf=maf)
             # Initial PIP check
-            resY <- filter_resY_pip(resX, resY, pip_cutoff_to_skip = pip_cutoff_to_skip[i_context], context = context)
+            resY <- filter_resY_pip(resX, resY, pip_cutoff = pip_cutoff_to_skip_ind[i_context], context = context)
             if (!is.null(resY)){
                 residual_X <- c(residual_X, list(resX))
                 residual_Y <- c(residual_Y, list(resY))
@@ -645,63 +645,9 @@ qc_regional_data <- function(region_data,
         # 2. initial check PIP
         individual_data <- data_initial_screen_individual(X = X, Y = Y, MAF = MAF, 
                                                           maf_cutoff = maf_cutoff, 
-                                                          pip_cutoff_to_skip = pip_cutoff_to_skip_ind )
+                                                          pip_cutoff_to_skip_ind = pip_cutoff_to_skip_ind )
     }
     
-                                      
-    # Initial PIP check for summary statistics    
-    ##### FIXME later: i would like to combine initial screen and sumstat qc!
-    data_initial_screen_sumstat <- function(
-        sumstat_data,
-        remove_indels = FALSE,
-        pip_cutoff_to_skip = 0){
-
-
-        n_LD <- length(sumstat_data$LD_info)
-        conditions_sumstat <- names(pip_cutoff_to_skip)
-        for (i in 1:n_LD){
-            LD_data <- sumstat_data$LD_info[[i]]
-            sumstats <- sumstat_data$sumstats[[i]]
-            # Initial PIP check
-            if (any(pip_cutoff_to_skip != 0)){
-                pos <- match(names(sumstats), conditions_sumstat)
-                pip_cutoff_to_skip_ld <- pip_cutoff_to_skip[pos]
-
-                check_model_pip <- sapply(1:length(sumstats), function(ii){
-                    sumstat <- sumstats[[ii]]
-                    n <- sumstat$n
-                    var_y = sumstat$var_y
-                    preprocess_results <- rss_basic_qc(sumstat$sumstats, LD_data, remove_indels = remove_indels)
-                    sumstat <- preprocess_results$sumstats
-                    LD_mat <- preprocess_results$LD_mat   
-                    pip <- susie_rss_wrapper(z = sumstat$z, R = LD_mat, L = 1,
-                                             n = n, var_y = var_y)$pip
-                    if (pip_cutoff_to_skip_ld[ii] < 0){
-                        # automatically determine the cutoff to use
-                        pip_cutoff_to_skip_ld[ii] <- 3 * 1 / length(LD_data$combined_LD_variants)
-                    }
-                    any(pip > pip_cutoff_to_skip_ld[ii])
-                })
-                include_idx <- which(check_model_pip)
-                ld_condition <- names(sumstat_data$LD_info)[i]
-                if (length(include_idx)==0){
-                    message(paste("Skipping follow-up analysis for all summary statistic based on LD", ld_condition,  
-                                  ". No signals above PIP threshold", paste0(pip_cutoff_to_skip_ld,";"), "in initial model screening."))
-                    sumstat_data$sumstats[i] <- list(NULL)
-                } else if (length(include_idx) == length(sumstats)) {
-                    message(paste("Keep all summary statistics based on LD", ld_condition,  "."))
-                } else {
-                    exclude_idx <- setdiff(1:length(sumstats), include_idx)
-                    exclude_pheno <- paste(names(sumstats)[exclude_idx], collapse = ";")
-                    message(paste("Skipping follow-up analysis for summary statistics", exclude_pheno, "based on LD", ld_condition,  
-                                  ". No signals above PIP threshold", paste0(pip_cutoff_to_skip_ld[exclude_idx],";"), "in initial model screening."))
-                    sumstat_data$sumstats[[i]] <- sumstats[include_idx]
-                }
-            }
-        }
-        return(sumstat_data)
-
-    }
     
     # sumstat_data QC, imputation using raiss
     # return A list of sumstat_data after initial checking and QC:
@@ -712,64 +658,71 @@ qc_regional_data <- function(region_data,
     # } 
     summary_stats_qc_multitask <- function(sumstat_data,
                                            remove_indels = FALSE,
+                                           pip_cutoff_to_skip_sumstat = 0,
                                            qc_method = c("rss_qc", "dentist", "slalom"),
                                            impute = TRUE, 
                                            impute_opts = list(rcond = 0.01, R2_threshold = 0.6, minimum_ld = 5, lamb = 0.01)){
 
         n_LD <- length(sumstat_data$LD_info)
-        conditions_sumstat <- sapply(sumstat_data$sumstats, function(ss) names(ss)) %>% unlist() %>% as.vector()
-        final_sumstats <- final_LD <- list()
+        final_sumstats <- final_LD <- NULL
         LD_match <- c()
         for (i in 1:n_LD){
             LD_data <- sumstat_data$LD_info[[i]]
             sumstats <- sumstat_data$sumstats[[i]]
-            if (length(sumstats)==0) next
-            if (is.null(names(sumstat_data$LD_info))){
-                conditions_sumstat_ld <- conditions_sumstat
-            } else {
-                conditions_sumstat_ld <- names(sumstats)
-            }
             for (ii in 1:length(sumstats)){
                 sumstat <- sumstats[[ii]]
                 n <- sumstat$n
                 var_y = sumstat$var_y
+                conditions_sumstat <- names(sumstats)[ii]
+                pip_cutoff_to_skip_ld <- pip_cutoff_to_skip_sumstat[conditions_sumstat] %>% as.numeric
                 
+                # Preprocess the input data
                 preprocess_results <- rss_basic_qc(sumstat$sumstats, LD_data, remove_indels = remove_indels)
                 sumstat$sumstats <- preprocess_results$sumstats
-                LD_mat <- preprocess_results$LD_mat   
+                LD_mat <- preprocess_results$LD_mat  
+                
+                # initial PIP checking
+                if (pip_cutoff_to_skip_ld != 0){
+                    pip <- susie_rss_wrapper(z = sumstat$sumstats$z, R = LD_mat, L = 1, n = n, var_y = var_y)$pip
+                    if (pip_cutoff_to_skip_ld < 0){
+                        # automatically determine the cutoff to use
+                        pip_cutoff_to_skip_ld <- 3 * 1 / nrow(LD_mat)
+                    }
+                    if (!any(pip > pip_cutoff_to_skip_ld)){
+                        message(paste("Skipping follow-up analysis for sumstat study", conditions_sumstat,
+                                      ". No signals above PIP threshold", pip_cutoff_to_skip_ld, "in initial model screening."))
+                        next
+                    } else {
+                        message(paste("Keep summary study", conditions_sumstat,  "."))
+                    }
+                }
+                
                 # Perform quality control - remove
                 if (!is.null(qc_method)) {
                     qc_results <- summary_stats_qc(sumstat$sumstats, LD_data, n = n, var_y = var_y, method = qc_method)
-                    sumstat$sumstats <- qc_results$sumstats
-                    LD_mat <- qc_results$LD_mat
+                    sumstat$sumstats <- qc_results$sumstats; LD_mat <- qc_results$LD_mat
                 }
                 # Perform imputation
                 if (impute) {
-                    impute_results <- raiss(LD_data$ref_panel, 
-                                            sumstat$sumstats, 
-                                            LD_data$combined_LD_matrix, 
-                                            rcond = impute_opts$rcond, 
-                                            R2_threshold = impute_opts$R2_threshold, 
-                                            minimum_ld = impute_opts$minimum_ld, 
-                                            lamb = impute_opts$lamb)
-                    sumstat$sumstats <- impute_results$result_filter
-                    LD_mat <- impute_results$LD_mat
+                    impute_results <- raiss(LD_data$ref_panel, sumstat$sumstats, LD_data$combined_LD_matrix, rcond = impute_opts$rcond, 
+                                            R2_threshold = impute_opts$R2_threshold, minimum_ld = impute_opts$minimum_ld, lamb = impute_opts$lamb)
+                    sumstat$sumstats <- impute_results$result_filter; LD_mat <- impute_results$LD_mat
                 }
 
                 # - check if LD exist
-                variants <- colnames(LD_mat)
                 if (length(final_LD)==0){
-                    final_LD <- c(final_LD, list(LD_mat)%>%setNames(conditions_sumstat_ld[ii]))
-                    final_sumstats <- c(final_sumstats, list(sumstat)%>%setNames(conditions_sumstat_ld[ii]))
-                    LD_match <- c(LD_match, conditions_sumstat_ld[ii])
+                    final_LD <- c(final_LD, list(LD_mat)%>%setNames(conditions_sumstat))
+                    final_sumstats <- c(final_sumstats, list(sumstat)%>%setNames(conditions_sumstat))
+                    LD_match <- c(LD_match, conditions_sumstat)
                 } else {
-                    final_sumstats <- c(final_sumstats, list(sumstat)%>%setNames(conditions_sumstat_ld[ii]))
+                    variants <- colnames(LD_mat)
+                    final_sumstats <- c(final_sumstats, list(sumstat)%>%setNames(conditions_sumstat))
                     exist_variants <- lapply(final_LD, colnames)
                     if_exist <- sapply(exist_variants, function(v) all(variants==v) )
                     pos <- which(if_exist)
                     if (length(pos)==0){
-                       final_LD <- c(final_LD, list(LD_mat)%>%setNames(conditions_sumstat_ld[ii]))
-                       LD_match <- c(LD_match, conditions_sumstat_ld[ii])
+                       final_LD <- c(final_LD, list(LD_mat)%>%setNames(conditions_sumstat))
+                       LD_match <- c(LD_match, conditions_sumstat)
                     } else {
                        LD_match <- c(LD_match, LD_match[pos[1]])
                     }
@@ -784,13 +737,10 @@ qc_regional_data <- function(region_data,
     # - summary statistics QC
     sumstat_data = region_data$sumstat_data
     if (!is.null(sumstat_data)){
-        # - 1. initial check PIP
-        sumstat_data <- data_initial_screen_sumstat(sumstat_data, 
-                                                    remove_indels = remove_indels, 
-                                                    pip_cutoff_to_skip = pip_cutoff_to_skip_sumstat)
-        
-        # - qc or impute
-        sumstat_data <- summary_stats_qc_multitask(sumstat_data, qc_method = qc_method,
+        # - initial check PIP, qc or impute
+        sumstat_data <- summary_stats_qc_multitask(sumstat_data, remove_indels = remove_indels,
+                                                   pip_cutoff_to_skip_sumstat = pip_cutoff_to_skip_sumstat,
+                                                   qc_method = qc_method,
                                                    impute = impute, impute_opts = impute_opts)
         
     }
