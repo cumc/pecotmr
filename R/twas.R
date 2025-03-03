@@ -244,6 +244,7 @@ harmonize_twas <- function(twas_weights_data, ld_meta_file_path, gwas_meta_file)
         results[[molecular_id]][["gwas_qced"]][[study]] <- results[[molecular_id]][["gwas_qced"]][[study]][!duplicated(results[[molecular_id]][["gwas_qced"]][[study]][, c("variant_id", "z")]), ]
       }
     }
+    twas_weights_data[[molecular_id]] <- NULL
     # extract LD matrix for variants intersect with gwas and twas weights at molecular_id level
     all_molecular_variants <- unique(find_data(results[[molecular_id]][["gwas_qced"]], c(2, "variant_id")))
     if (is.null(all_molecular_variants)) {
@@ -253,7 +254,6 @@ harmonize_twas <- function(twas_weights_data, ld_meta_file_path, gwas_meta_file)
         results[[molecular_id]][["LD"]] <- as.matrix(LD_list$combined_LD_matrix[var_indx, var_indx])
         rownames(results[[molecular_id]][["LD"]]) <- colnames(results[[molecular_id]][["LD"]]) <- paste0("chr", colnames(results[[molecular_id]][["LD"]]))
     }
-
   }
   # return results
   return(list(twas_data_qced = results, snp_info = snp_info))
@@ -495,8 +495,10 @@ twas_pipeline <- function(twas_weights_data,
     })
     twas_gene_table <- do.call(rbind, lapply(twas_gene_results, function(x) x$twas_context_table))
     mr_gene_table <- do.call(rbind, lapply(twas_gene_results, function(x) x$mr_context_table))
+    twas_weights_data[[weight_db]] <- NULL
     return(list(twas_table = twas_gene_table, twas_data_qced = twas_data_qced[weight_db], mr_result = mr_gene_table, snp_info = twas_data_qced_result$snp_info))
   })
+  rm(twas_data_qced_result)
   twas_results_db <- twas_results_db[!sapply(twas_results_db, function(x) is.null(x) || (is.list(x) && all(sapply(x, is.null))))]
   if (length(twas_results_db) == 0) {
     return(NULL)
@@ -505,6 +507,7 @@ twas_pipeline <- function(twas_weights_data,
   mr_results <- do.call(rbind, lapply(twas_results_db, function(x) x$mr_result))
   twas_data <- do.call(c, lapply(twas_results_db, function(x) x$twas_data_qced))
   snp_info <- do.call(c, lapply(twas_results_db, function(x) x$snp_info))
+  rm(twas_results_db)
 
   # Step 2: Summarize and merge twas cv results and region information for all methods for all contexts for imputable genes.
   twas_table <- do.call(rbind, lapply(names(twas_data), function(molecular_id) {
