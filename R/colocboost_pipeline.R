@@ -199,7 +199,7 @@ load_multitask_regional_data <-  function(region, # a string of chr:start-end fo
 
      
 
-#' Multi-trait colocalization analysis pipline
+#' Multi-trait colocalization analysis pipeline
 #' 
 #' This function perform a multi-trait colocalization using ColocBoost
 #' 
@@ -227,7 +227,7 @@ load_multitask_regional_data <-  function(region, # a string of chr:start-end fo
 #' }
 #'
 #' @export         
-colocboost_analysis_pipline <- function(region_data, 
+colocboost_analysis_pipeline <- function(region_data, 
                                         target_trait = NULL,
                                         event_filters = NULL,
                                         # - analysis
