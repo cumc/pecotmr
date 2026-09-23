@@ -2238,15 +2238,15 @@ trimFinemappingFit <- function(fit, effectIdx, method, csTables) {
     } else {
         common
     }
-    # fSuSiE: keep the precomputed variants x features TWAS weight matrix
-    # (fsusieWeights output, attached as $coef before trimming) so downstream
-    # TWAS can read it without the dropped wavelet slots.
-    withCoef <- if (method == "fsusie" && !is.null(fit$coef)) {
-        list_assign(trimmed, coef = fit$coef)
+    # fSuSiE: retain the functional summaries alongside the precomputed
+    # weights, so a trimmed fit still yields curves, bands and TWAS weights
+    # once the wavelet reconstruction fields are gone.
+    withFsusie <- if (method == "fsusie") {
+        .trimAddFsusie(trimmed, fit)
     } else {
         trimmed
     }
-    `class<-`(withCoef, unique(c(method, "susie")))
+    `class<-`(withFsusie, unique(c(method, "susie")))
 }
 
 # The minimal always-kept subset of a susie fit (pip, credible sets, effect
@@ -2341,6 +2341,30 @@ trimFinemappingFit <- function(fit, effectIdx, method, csTables) {
 
 # mvsusie-specific slots: per-effect mu2_diag, the coefficient matrix, and the
 # conditional lfsr array.
+# fSuSiE: the fields the wavelet reconstruction would otherwise take with
+# it. The base trimmed fit already keeps alpha, lbf_variable and the sets for
+# coloc; these carry the fitted curve, its credible band and the functional
+# grid. The band is populated BEFORE trimming because
+# .fsusiePopulateCredibleBand() needs the reconstruction fields that trimming
+# removes. intersect() rather than a per-field guard: an absent field is
+# simply not retained.
+# @noRd
+.trimAddFsusie <- function(trimmed, fit) {
+    populated <- if (.isFsusieFit(fit)) {
+        .fsusiePopulateCredibleBand(fit)
+    } else {
+        fit
+    }
+    keep <- intersect(
+        c(
+            "coef", "fitted_func", "cred_band", "outing_grid", "cs",
+            "csd_X", "lfsr_func"
+        ),
+        names(populated)
+    )
+    list_assign(trimmed, !!!populated[keep])
+}
+
 .trimAddMvsusie <- function(trimmed, fit, effectIdx) {
     list_assign(
         trimmed,
@@ -5550,6 +5574,12 @@ krigingOutlierQc <- function(
 # @noRd
 #' @importFrom rlang try_fetch
 .fsusiePopulateCredibleBand <- function(fit) {
+    # A native post_processing = "none" run can leave zero-filled placeholder
+    # bands, so only reuse a band once trimming has removed the
+    # reconstruction fields -- otherwise recompute it.
+    if (is.null(fit$fitted_wc2) && !is.null(fit$cred_band)) {
+        return(fit)
+    }
     fn <- try_fetch(
         get("update_cal_credible_band.susiF", envir = asNamespace("fsusieR")),
         error = function(cnd) NULL

@@ -277,7 +277,7 @@ setMethod(
 )
 
 # fsusie joint fit (functional SuSiE over the trait domain; individual-level,
-# cross-trait). One per-condition entry per trait, with an optional CV slice.
+# cross-trait). Keep the first post-processed entry for this joint fit.
 # @noRd
 .jointFitFsusie <- function(group, Xc, Yc, nCond, cfg, args) {
     if (length(.jgTraitPos(group)) != nCond) {
@@ -295,7 +295,7 @@ setMethod(
     )
     raw <- exec(fitFsusie, !!!.splitMethodArgs(fitFsusie, fitArgs))
     # Collapse the functional fit to a variants x features weight matrix now
-    # (trimming later drops fitted_wc/csd_X); store on $coef so a trimmed fit
+    # (trimming later drops fitted_wc); store on $coef so a trimmed fit
     # can still yield TWAS weights.
     fit <- list_assign(
         raw,
@@ -306,14 +306,16 @@ setMethod(
     ) |>
         .setFinemappingFitClass("fsusie")
     cvM <- .jointFsusieCv(Xc, Yc, group, cfg, args, verbose)
-    map(
-        seq_len(nCond),
-        .jointFsusieEntry,
+    entry <- .jointFsusieEntry(
+        r = 1L,
         fit = fit,
         cvM = cvM,
         Xc = Xc,
         cfg = cfg
     )
+    entry@susieFit$trait_names <- as.character(.jgConditions(group)$trait)
+    entry@susieFit$trait_positions <- .jgTraitPos(group)
+    list(entry)
 }
 
 # Per-fold fsusie CV slice, or NULL when CV is disabled.

@@ -201,10 +201,10 @@ fineMappingRow <- function(variantIds, susieFit, topLoci, cvResult = NULL) {
 .isFsusieFit <- function(fit) {
     !is.null(fit) &&
         is.list(fit) &&
-        !is.null(fit$fitted_wc2) &&
         !is.null(fit$fitted_func) &&
         !is.null(fit$outing_grid) &&
-        !is.null(fit$alpha)
+        (!is.null(fit$cred_band) ||
+             (!is.null(fit$fitted_wc2) && !is.null(fit$alpha)))
 }
 
 # Chromosome of the fit's variants (matches topLoci's `chrom`, no "chr").
