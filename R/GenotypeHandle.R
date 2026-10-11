@@ -161,6 +161,7 @@ setMethod("show", "GenotypeHandle", function(object) {
 #'   \code{VariantAnnotation::readVcf} when the source is a VCF.
 #' @return A \code{GenotypeHandle} object.
 #' @keywords internal
+#' @rdname GenotypeHandle-class
 GenotypeHandle <- function(
     path = NULL,
     plink1Prefix = NULL,
