@@ -570,6 +570,17 @@ mashResidualCorrelation <- function(
     .mashResidCorNullBased(sumStatsList, inputScale, method, corArgs)
 }
 
+# The component contract is a named LIST of covariance matrices. c() collapses
+# two NULLs to NULL, which is exactly what a requested-but-empty component set
+# produces (flashier finding no factors on weak data, say), so normalise that
+# one case rather than handing a NULL to callers who were promised a list --
+# length()/names()/c() all keep working on an empty list, and "this component
+# ran and yielded nothing" stays distinguishable from a structural failure.
+# @noRd
+.mashComponentList <- function(x) {
+    if (is.null(x)) list() else x
+}
+
 #' @title Build mash Data-Driven Covariance Components
 #' @description Build the raw per-method data-driven covariance components
 #'   (\code{cov_canonical} / \code{cov_pca} / \code{cov_flash} /
@@ -638,7 +649,7 @@ mashCovarianceComponents <- function(
         components = components,
         nPcs = nPcs
     )
-    c(built$canonical, built$dataDriven)
+    .mashComponentList(c(built$canonical, built$dataDriven))
 }
 
 # `components` and `engine` each take a name or that choice's own
@@ -1057,7 +1068,11 @@ MashComponentParam <- function(
         )
     }
     list(
-        U = c(refined$U, comps$canonical),
+        # Same list contract as mashCovarianceComponents(). Defensive here
+        # rather than load-bearing: the mashr fit above aborts on an empty
+        # Ulist, so this return is not reached with zero components -- but the
+        # two component-returning entry points should not differ in shape.
+        U = .mashComponentList(c(refined$U, comps$canonical)),
         w = refined$w,
         loglik = refined$loglik
     )

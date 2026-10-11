@@ -1189,6 +1189,29 @@ test_that("mashCovarianceComponents builds a single requested component", {
     )))
 })
 
+test_that("a requested component that yields nothing returns an empty list", {
+    skip_if_not_installed("mashr")
+    ss <- mashFixture()
+    # flashier legitimately finds no factors on weak data. c(NULL, NULL) is
+    # NULL, so the collapse used to leak a NULL out of a function documented
+    # to return a named list -- length()/names()/c() then behave differently
+    # for callers, and "ran, found nothing" became indistinguishable from
+    # "nothing was built at all".
+    local_mocked_bindings(cov_flash = function(...) NULL, .package = "mashr")
+    out <- suppressMessages(suppressWarnings(
+        mashCovarianceComponents(
+            list(strong = ss),
+            alpha = 0,
+            vhat = diag(3),
+            components = "flash",
+            setSeed = 1L
+        )
+    ))
+    expect_type(out, "list")
+    expect_length(out, 0L)
+    expect_false(is.null(out))
+})
+
 test_that("mashCovarianceComponents default builds all non-udr components", {
     skip_if_not_installed("mashr")
     skip_if_not_installed("flashier")
