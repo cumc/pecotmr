@@ -313,7 +313,18 @@ setMethod(
         Xc = Xc,
         cfg = cfg
     )
-    entry@susieFit$trait_names <- as.character(.jgConditions(group)$trait)
+    # ONE entry for the whole joint fit, unlike mvsusie's one-per-condition.
+    # mvsusie's posteriors carry a conditions axis, so .fmSliceCond() gives
+    # each condition its own 2-D slice and N rows partition the fit at no
+    # cost. An fsusie fit has no such axis: each trait is a POSITION on a
+    # shared functional grid, so `fitted_func` / `cred_band` / `outing_grid`
+    # describe all traits at once and cannot be sliced per trait. One row per
+    # trait would therefore store N copies of the same curve.
+    #
+    # The trait list itself is not lost -- every row carries the full joint
+    # membership in its `jointTraits` column. Only the grid POSITIONS are
+    # unrecoverable from that, and they are what maps a curve position back
+    # to a trait, so they ride on the fit.
     entry@susieFit$trait_positions <- .jgTraitPos(group)
     list(entry)
 }

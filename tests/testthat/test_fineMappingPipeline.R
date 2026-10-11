@@ -1923,10 +1923,16 @@ test_that("fineMappingPipeline(QtlDataset): jointSpec='trait' with fsusie wires 
         )
     )
     expect_s4_class(res, "QtlFineMappingResult")
-    # fsusie over 2 traits emits one per-trait row each (shared functional fit).
-    expect_equal(nrow(res), 2L)
+    # fsusie fits ONE functional model across the traits and stores it once.
+    # Its curve spans the trait axis -- each trait is a POSITION on a shared
+    # grid -- so unlike mvsusie, whose posteriors carry a conditions axis
+    # that .fmSliceCond() slices per condition, there is nothing to
+    # partition: one row per trait would hold N copies of the same curve.
+    # The full membership stays visible in the `jointTraits` column.
+    expect_equal(nrow(res), 1L)
     expect_true(all(as.character(res$method) == "fsusie"))
-    expect_setequal(as.character(res$trait), c("ENSG_A", "ENSG_B"))
+    expect_equal(as.character(res$trait), "ENSG_A")
+    expect_equal(as.character(res$jointTraits), "ENSG_A;ENSG_B")
     expect_true("jointTraits" %in% pecotmr:::.tupleColumnNames(res))
 })
 
@@ -1948,8 +1954,15 @@ test_that("fineMappingPipeline(QtlDataset): fsusie multi-trait per context dispa
         fineMappingPipeline(qd, methods = "fsusie", cisWindow = 1000L)
     )
     expect_s4_class(res, "QtlFineMappingResult")
-    expect_equal(nrow(res), 2L)
-    expect_setequal(traitNames(res), c("ENSG_A", "ENSG_B"))
+    # fsusie fits ONE functional model across the traits and stores it once.
+    # Its curve spans the trait axis -- each trait is a POSITION on a shared
+    # grid -- so unlike mvsusie, whose posteriors carry a conditions axis
+    # that .fmSliceCond() slices per condition, there is nothing to
+    # partition: one row per trait would hold N copies of the same curve.
+    # The full membership stays visible in the `jointTraits` column.
+    expect_equal(nrow(res), 1L)
+    expect_equal(traitNames(res), "ENSG_A")
+    expect_equal(as.character(res$jointTraits), "ENSG_A;ENSG_B")
     expect_setequal(methodNames(res), "fsusie")
 })
 
@@ -3581,7 +3594,9 @@ test_that("fineMappingPipeline(QtlDataset): fsusie jointRegions=FALSE merges per
         region = regions,
         jointRegions = FALSE
     ))
-    expect_equal(nrow(res), 2L)
+    # One row for the joint fsusie fit (see above); the per-REGION merge is
+    # what `names(fit)` checks, and it is unaffected.
+    expect_equal(nrow(res), 1L)
     fit <- susieFit(
         res,
         studyName = "study1",

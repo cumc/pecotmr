@@ -942,7 +942,10 @@ test_that("fitJointGroup(Individual, Fm): fsusie keeps one entry", {
     expect_s4_class(entries[[1L]], "FineMappingRow")
     expect_identical(captured$Y, Y)
     expect_equal(captured$pos, c(100, 200)) # functional domain threaded
-    expect_identical(entries[[1L]]@susieFit$trait_names, c("G1", "G2"))
+    # The trait list lives in the collection's `jointTraits` column, so the
+    # fit carries only the grid POSITIONS -- the one piece that column
+    # cannot express.
+    expect_null(entries[[1L]]@susieFit$trait_names)
     expect_equal(entries[[1L]]@susieFit$trait_positions, c(100, 200))
 })
 
