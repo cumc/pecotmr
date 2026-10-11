@@ -5197,3 +5197,49 @@ test_that("CredibleSetParam setters are held to the same checks", {
     expect_equal(minAbsCorr(ok), 0.5)
     expect_equal(medianAbsCorr(ok), 0.4)
 })
+
+test_that("CredibleSetParam validity rejects non-scalar counts and flags", {
+    # Reached by poking a VALID object: new() straight from the prototype
+    # fails on `coverage` first, and the constructor guards these before
+    # validity ever sees them.
+    p <- CredibleSetParam()
+    q <- p
+    q@maxNumSingleEffects <- numeric(0)
+    expect_error(validObject(q), "maxNumSingleEffects must be a single")
+    q <- p
+    q@maxNumSingleEffects <- NA_real_
+    expect_error(validObject(q), "maxNumSingleEffects must be a single")
+    q <- p
+    q@includeAllCs <- NA
+    expect_error(validObject(q), "includeAllCs must be a single")
+    q <- p
+    q@includeAllCs <- c(TRUE, FALSE)
+    expect_error(validObject(q), "includeAllCs must be a single")
+    # A nullable slot left NULL is fine -- nullability is the slot type's
+    # job, so the value checks simply pass a NULL through.
+    q <- p
+    q@maxNumSingleEffectsGreedy <- NULL
+    expect_true(validObject(q))
+})
+
+test_that("SerOptions and FsusieOptions refuse what their wrappers own", {
+    # The susie_ser and susiF arms of .fmOwnedEngineArgs(): ser takes only
+    # the coverage half of csHome, and susiF owns five wrapper settings on
+    # top of its data arguments.
+    expect_error(SerOptions(z = 1), "supplied by pecotmr")
+    expect_error(SerOptions(n = 100L), "supplied by pecotmr")
+    expect_error(SerOptions(coverage = 0.9), "csCoverage")
+    expect_error(FsusieOptions(L = 2), "maxNumSingleEffects")
+    expect_error(FsusieOptions(min_purity = 0.5), "minPurity")
+    expect_error(FsusieOptions(max_scale = 6), "maxScale")
+    # ser does NOT own L -- susie_ser is single-effect by construction, so
+    # the csHome entry it takes is coverage alone.
+    expect_s4_class(SerOptions(prior_variance = 1), "MethodOptions")
+})
+
+test_that(".fmOwnedEngineArgs owns nothing for an unknown engine", {
+    expect_equal(
+        pecotmr:::.fmOwnedEngineArgs("susieR::not_a_real_engine"),
+        character(0)
+    )
+})

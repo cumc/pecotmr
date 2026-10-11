@@ -1646,6 +1646,72 @@ test_that(".ctwasPanelFor: cheap fields eagerly, correlation on request", {
     expect_equal(rownames(R), ids6)
 })
 
+test_that(".ctwasPanelLdSubset: refuses a variant absent from the panel", {
+    local_mocked_bindings(
+        extractBlockGenotypes = .ctp_mockExtractor(),
+        .package = "pecotmr"
+    )
+    panel <- pecotmr:::.ctwasPanelFor(.ctp_makeHandle(snp_n = 6L))
+    vids <- c(.ctp_snpId(2L), "chr22:999999999:A:G")
+    # Subsetting on a missing id would give an NA row/column that silently
+    # poisons the correlation, so it is refused by name and count.
+    expect_error(
+        pecotmr:::.ctwasPanelLdSubset(panel, vids),
+        "1 weight variant\\(s\\) absent from the block's LD panel"
+    )
+})
+
+test_that(".ctwasPanelLdSubset: slices a precomputed R when the panel has one", {
+    local_mocked_bindings(
+        extractBlockGenotypes = .ctp_mockExtractor(),
+        .package = "pecotmr"
+    )
+    panel <- pecotmr:::.ctwasPanelFor(.ctp_makeHandle(snp_n = 6L))
+    vids <- map_chr(c(1L, 3L), .ctp_snpId)
+    # With R already built, the subset is a slice rather than a recompute.
+    panel$R <- pecotmr:::.ctwasPanelLd(panel)
+    out <- pecotmr:::.ctwasPanelLdSubset(panel, vids)
+    expect_equal(dim(out), c(2L, 2L))
+    expect_equal(rownames(out), vids)
+    expect_equal(out, panel$R[vids, vids])
+})
+
+test_that(".ctwasLdMapRegionIds: falls back to positions without region_id", {
+    # The granular entry points accept hand-built LD_map stubs, which need
+    # not carry region_id -- and a region_id of the wrong length cannot be
+    # paired with the resolved blocks either.
+    expect_equal(
+        pecotmr:::.ctwasLdMapRegionIds(data.frame(x = 1:3), 3L),
+        c("1", "2", "3")
+    )
+    expect_equal(
+        pecotmr:::.ctwasLdMapRegionIds(data.frame(region_id = "a"), 3L),
+        c("1", "2", "3")
+    )
+    expect_equal(
+        pecotmr:::.ctwasLdMapRegionIds(
+            data.frame(region_id = c("a", "b")), 2L
+        ),
+        c("a", "b")
+    )
+})
+
+test_that(".ctwasGlobalPanelInfo: NULL when the collection has no sketch", {
+    # The shared fixture carries a sketch, so build one without: the global
+    # snpInfo table is only derivable when there is a panel behind it.
+    gs <- GwasSumStats(
+        studyName = "G1",
+        entry = list(.ctp_blockVariants(1L)),
+        genome = "hg19",
+        blockId = "block1",
+        qcInfo = list(step1 = "ok")
+    )
+    expect_null(ldSketch(gs))
+    # .ctwasRegionGwasLd reports the missing-sketch case with its own
+    # message, so this helper must stay quiet and hand back NULL.
+    expect_null(pecotmr:::.ctwasGlobalPanelInfo(gs))
+})
+
 test_that(".ctwasPanelLdSubset: equals the slice of the full correlation", {
     local_mocked_bindings(
         extractBlockGenotypes = .ctp_mockExtractor(),

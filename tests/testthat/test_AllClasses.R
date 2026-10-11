@@ -604,6 +604,47 @@ test_that("af<- numeric is positional and checks length hard", {
     expect_error(af(x) <- 0.3, "one value per variant")
 })
 
+test_that("maf<- and nSamples<- numeric are positional too", {
+    data(qtlSumStatsExample)
+    x <- qtlSumStatsExample
+    n <- length(variantIds(x))
+    # The numeric (positional) half of the dispatch, for the two columns that
+    # are swap-invariant and so have no allele-matching branch to exercise.
+    maf(x) <- seq(0.05, 0.2, length.out = n)
+    expect_equal(length(maf(x)), n)
+    expect_equal(maf(x)[[1L]], 0.05)
+    nSamples(x) <- rep(1234, n)
+    expect_equal(unique(nSamples(x)), 1234)
+    expect_error(maf(x) <- c(0.1, 0.2), "one value per variant")
+    expect_error(nSamples(x) <- 1L, "one value per variant")
+})
+
+test_that("a GRanges replacement warns about variants it could not place", {
+    data(qtlSumStatsExample)
+    x <- qtlSumStatsExample
+    gr <- .alc_replacementGr(x, payload = 0.4)
+    # Two variants shifted far enough to match nothing. Silently dropping
+    # them would hide a mis-joined replacement table, so it warns and says
+    # how many were ignored.
+    extra <- GenomicRanges::shift(gr[1:2], 10000000L)
+    expect_warning(af(x) <- c(gr, extra), "were ignored")
+    expect_equal(unique(af(x)), 0.4)
+})
+
+test_that("the variant-level setters work on a GwasSumStats as well", {
+    data(gwasSumStatsS4Example)
+    x <- gwasSumStatsS4Example
+    n <- length(variantIds(x))
+    # A GWAS collection is keyed by study alone, so the row lookup takes the
+    # non-QtlSumStats branch and the QTL-only selectors are refused.
+    af(x) <- rep(0.3, n)
+    expect_equal(unique(af(x)), 0.3)
+    expect_error(
+        af(x, context = "brain") <- rep(0.3, n),
+        "context"
+    )
+})
+
 test_that("af<- GRanges matches on (chrom, pos, A1, A2) regardless of order", {
     data(qtlSumStatsExample)
     x <- qtlSumStatsExample

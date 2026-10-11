@@ -4641,12 +4641,9 @@ setClass(
 # would notice on its own, which is how `coverage(p) <- c(0.9, 0.95)` used
 # to be accepted.
 # @noRd
-.csParamProportionProblem <- function(value, field, allowNull = FALSE) {
+.csParamProportionProblem <- function(value, field) {
     if (is.null(value)) {
-        if (allowNull) {
-            return(character(0))
-        }
-        return(glue("{field} must be a single number in [0, 1], not NULL."))
+        return(character(0))
     }
     if (length(value) != 1L || is.na(value)) {
         return(glue(
@@ -4662,12 +4659,9 @@ setClass(
 
 # One count-valued slot: a single whole number >= 1.
 # @noRd
-.csParamCountProblem <- function(value, field, allowNull = FALSE) {
+.csParamCountProblem <- function(value, field) {
     if (is.null(value)) {
-        if (allowNull) {
-            return(character(0))
-        }
-        return(glue("{field} must be a single whole number, not NULL."))
+        return(character(0))
     }
     if (length(value) != 1L || is.na(value)) {
         return(glue(
@@ -4725,16 +4719,11 @@ setValidity("CredibleSetParam", function(object) {
         .csParamProportionProblem(object@coverage, "coverage"),
         .csParamProportionProblem(object@signalCutoff, "signalCutoff"),
         .csParamProportionProblem(object@minAbsCorr, "minAbsCorr"),
-        .csParamProportionProblem(
-            object@medianAbsCorr,
-            "medianAbsCorr",
-            allowNull = TRUE
-        ),
+        .csParamProportionProblem(object@medianAbsCorr, "medianAbsCorr"),
         .csParamCountProblem(object@maxNumSingleEffects, "maxNumSingleEffects"),
         .csParamCountProblem(
             object@maxNumSingleEffectsGreedy,
-            "maxNumSingleEffectsGreedy",
-            allowNull = TRUE
+            "maxNumSingleEffectsGreedy"
         ),
         .csParamVectorProblems(object)
     )
