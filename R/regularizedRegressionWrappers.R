@@ -778,10 +778,22 @@ initPriorSd <- function(X, y, n = 30) {
 #'   itself is refused --- \code{GlmnetOptions(alpha=)} and
 #'   \code{NcvregOptions(penalty=)} select the penalty family, which is the
 #'   calling wrapper's to set. See \code{\link{MethodOptions}}.
+#'
+#'   \code{GlmnetOptions} rejects two names by hand, which the \code{...}
+#'   check above would otherwise let through in silence. \code{nfold} is not
+#'   a \code{cv.glmnet} argument at all --- the fold count is \code{nfolds},
+#'   and the shorter spelling only ever worked through R's partial matching.
+#'   \code{parallel} is a real one, but pecotmr does not expose it: glmnet
+#'   parallelises over its CV folds through a \code{foreach} backend that
+#'   this package neither declares nor registers, and weight fitting already
+#'   runs inside \code{BiocParallel} workers over the same folds, so
+#'   enabling it would nest two frameworks and oversubscribe the machine.
+#'   The glasso and univariate-glmnet \code{mr.mash} initialisations are
+#'   single-threaded for the same reason.
 #' @param ... Arguments for the engine, under its own names.
 #' @return A \code{\link{MethodOptions}} object.
 #' @examples
-#' GlmnetOptions(nfold = 10)
+#' GlmnetOptions(nfolds = 10)
 #' QggOptions(updateB = TRUE)
 #' LassosumOptions(thr = 1e-4)
 #' @name twasEngineOptions
@@ -791,6 +803,28 @@ NULL
 #' @export
 GlmnetOptions <- function(...) {
     extra <- list(...)
+    # cv.glmnet takes `...`, so neither of these would be reported by the
+    # name check: the first is not an argument at all, the second is one
+    # pecotmr will not expose. Both are called out by hand instead.
+    .configRefuseUnavailable(
+        extra,
+        c(
+            nfold = str_c(
+                "it is not an argument of glmnet::cv.glmnet(), whose fold ",
+                "count is `nfolds`. pecotmr passed this misspelling itself ",
+                "until recently, so it reached the engine only through R's ",
+                "partial matching"
+            ),
+            parallel = str_c(
+                "glmnet parallelises over its CV folds through a foreach ",
+                "backend, which pecotmr neither declares nor registers. ",
+                "Weight fitting already runs inside BiocParallel workers ",
+                "over the same folds, so a second framework underneath it ",
+                "would oversubscribe the machine rather than speed it up"
+            )
+        ),
+        "GlmnetOptions"
+    )
     .configRefuseOwned(
         extra,
         c(
@@ -1154,6 +1188,82 @@ MrmashRssOptions <- function(...) {
     )
 }
 
+#' Fit a cross-validated glmnet model
+#'
+#' The single interface to \code{glmnet::cv.glmnet}, which every glmnet fit in
+#' the package goes through. It returns the \emph{fit}, not weights:
+#' \code{\link{glmnetWeights}} extracts the \code{lambda.min} coefficient
+#' vector from it, while the \code{mr.mash} initialisation paths need the
+#' coefficient matrix, the intercept row, the lambda sequence and
+#' \code{predict()} on held-out rows --- the same fit-versus-extract split as
+#' \code{\link{fitMvsusie}} and \code{\link{mvsusieWeights}}.
+#'
+#' The four knobs below are formals rather than \code{\link{GlmnetOptions}}
+#' entries because they are what the package's glmnet call sites genuinely
+#' differ on, and leaving them implicit is how three different conventions
+#' came to coexist. Each defaults to \code{NULL}, meaning the argument is not
+#' passed at all and \code{cv.glmnet}'s own default stands; a value supplied
+#' through \code{methodArgs} still wins over the caller's, so none of them is
+#' refused by the constructor.
+#'
+#' @param x Numeric design matrix (samples x features).
+#' @param y Response: a vector, or a matrix for \code{family = "mgaussian"}.
+#' @param alpha Elastic-net mixing parameter in \code{[0, 1]}: \code{1} =
+#'   lasso, \code{0} = ridge, \code{0.5} = elastic net. The penalty family is
+#'   the calling wrapper's to choose, which is why \code{GlmnetOptions()}
+#'   refuses it.
+#' @param family glmnet's response family, e.g. \code{"gaussian"} or
+#'   \code{"mgaussian"} for a matrix response. \code{NULL} leaves glmnet's
+#'   own default.
+#' @param standardize Logical; standardize the columns of \code{x} before
+#'   fitting. \code{NULL} leaves glmnet's own default (\code{TRUE}).
+#' @param intercept Logical; fit an intercept. \code{NULL} leaves glmnet's
+#'   own default (\code{TRUE}).
+#' @param nfolds Number of cross-validation folds. \code{NULL} leaves
+#'   \code{cv.glmnet}'s own default (10).
+#' @param methodArgs Further arguments forwarded to
+#'   \code{glmnet::cv.glmnet}, built with \code{\link{GlmnetOptions}}. A bare
+#'   list is refused, since it cannot be checked against the engine.
+#' @return The fit object returned by \code{glmnet::cv.glmnet}.
+#' @examples
+#' data(eqtlRegionExample)
+#' X <- eqtlRegionExample$X[, 1:30]
+#' y <- eqtlRegionExample$yRes
+#' fit <- fitGlmnetCv(X, y, alpha = 0.5, nfolds = 5)
+#' coef(fit, s = "lambda.min")[1:5]
+#' @export
+fitGlmnetCv <- function(
+    x,
+    y,
+    alpha,
+    family = NULL,
+    standardize = NULL,
+    intercept = NULL,
+    nfolds = NULL,
+    methodArgs = GlmnetOptions()
+) {
+    if (!requireNamespace("glmnet", quietly = TRUE)) {
+        abort("Package 'glmnet' is required for this function.")
+    }
+    .assertMethodOptions(methodArgs, "GlmnetOptions", "methodArgs")
+    # compact() is what makes a NULL formal mean "do not pass it": an
+    # explicit NULL would reach cv.glmnet and override its default with
+    # nothing. methodArgs is spliced last, so a user value wins over the
+    # caller's -- these are literal defaults, not pecotmr-owned arguments.
+    callArgs <- list_modify(
+        c(
+            list(x = x, y = y, alpha = alpha),
+            compact(list(
+                family = family,
+                standardize = standardize,
+                intercept = intercept,
+                nfolds = nfolds
+            ))
+        ),
+        !!!methodArgs
+    )
+    exec(glmnet::cv.glmnet, !!!callArgs)
+}
 #' Compute TWAS weights via penalized regression (glmnet)
 #'
 #' Fit a cross-validated elastic-net / lasso model with \code{glmnet::cv.glmnet}
@@ -1175,28 +1285,21 @@ MrmashRssOptions <- function(...) {
 #' glmnetWeights(X, y, alpha = 0.5)
 #' @export
 glmnetWeights <- function(X, y, alpha, methodArgs = GlmnetOptions()) {
-    # Check if glmnet is installed
-    if (!requireNamespace("glmnet", quietly = TRUE)) {
-        abort("Package 'glmnet' is required for this function.")
-    }
-    .assertMethodOptions(methodArgs, "GlmnetOptions", "methodArgs")
     eff.wgt <- matrix(0, ncol = 1, nrow = ncol(X))
     keep <- .dropZeroVariance(X, "glmnetWeights")
     # `alpha` is the wrapper's own dial and is refused by GlmnetOptions()
-    # itself, so there is no second check here. Everything else pecotmr
-    # fixed below is a literal default and stays overridable.
-    callArgs <- list_modify(
-        list(
-            x = X[, keep, drop = FALSE],
-            y = y,
-            alpha = alpha,
-            nfold = 5,
-            intercept = TRUE,
-            standardize = FALSE
-        ),
-        !!!methodArgs
+    # itself, so there is no second check here. The three settings below are
+    # literal defaults and stay overridable through `methodArgs`; the glmnet
+    # requirement check and the constructor check live in fitGlmnetCv().
+    enet <- fitGlmnetCv(
+        x = X[, keep, drop = FALSE],
+        y = y,
+        alpha = alpha,
+        standardize = FALSE,
+        intercept = TRUE,
+        nfolds = 5,
+        methodArgs = methodArgs
     )
-    enet <- exec(glmnet::cv.glmnet, !!!callArgs)
     replace(eff.wgt, keep, coef(enet, s = "lambda.min")[2:(sum(keep) + 1)])
 }
 
@@ -3687,19 +3790,18 @@ computeCoefficientsGlasso <- function(
 ) {
     assertFlag(standardize)
     assertInt(numThreads)
-    n <- nrow(X)
     p <- ncol(X)
     r <- ncol(Y)
     conditionNames <- colnames(Y)
 
-    # Fit group-lasso
-    cvfitGlmnet <- glmnet::cv.glmnet(
+    # Fit group-lasso. `parallel = FALSE` used to be restated here; it is
+    # cv.glmnet's own default, so transcribing it bought nothing.
+    cvfitGlmnet <- fitGlmnetCv(
         x = X,
         y = Y,
-        family = "mgaussian",
         alpha = 1,
-        standardize = standardize,
-        parallel = FALSE
+        family = "mgaussian",
+        standardize = standardize
     )
     coeffGlmnet <- coef(cvfitGlmnet, s = "lambda.min")
 
@@ -3733,13 +3835,12 @@ computeCoefficientsGlasso <- function(
     Ynomiss <- Y[samplesKept, i, drop = FALSE]
     Xnomiss <- X[samplesKept, , drop = FALSE]
 
-    cvfit <- glmnet::cv.glmnet(
+    cvfit <- fitGlmnetCv(
         x = Xnomiss,
         y = Ynomiss,
-        family = "gaussian",
         alpha = alpha,
-        standardize = standardize,
-        parallel = FALSE
+        family = "gaussian",
+        standardize = standardize
     )
     coeffic <- as.vector(coef(cvfit, s = "lambda.min"))
     lambdaSeq <- cvfit$lambda

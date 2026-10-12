@@ -18,9 +18,10 @@ fitMvsusie(
 \item{Y}{Numeric matrix of multi-trait / multi-context outcomes (samples x
 conditions).}
 
-\item{prior_variance}{Prior variance matrix; pass the output of
-\code{mvsusieR::create_mixture_prior(R = ncol(Y))} unless you have a
-domain-specific prior.}
+\item{prior_variance}{Prior variance; build it with
+\code{\link{buildMvsusieMixturePrior}}, which is the single interface
+to \code{mvsusieR::create_mixture_prior()} and defaults to the
+canonical mixture over the conditions it is given.}
 
 \item{coverage}{Credible set coverage (default 0.95).}
 
@@ -45,6 +46,6 @@ data(multiTraitData)
 X <- multiTraitData$X[, 1:60]
 Y <- multiTraitData$Y
 fitMvsusie(X, Y,
-  prior_variance = mvsusieR::create_mixture_prior(R = ncol(Y)))
+  prior_variance = buildMvsusieMixturePrior(conditionNames = colnames(Y)))
 }
 }

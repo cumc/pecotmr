@@ -3737,21 +3737,21 @@ setMethod(
 # @return Normalized coefficient vector of length Kvalid.
 # @noRd
 .solveEnsembleGlmnet <- function(Pvalid, yObs, Kvalid, alpha = 1) {
-    # Engine-call exception: glmnet is a constrained-regression solver here,
-    # fitting the ensemble's stacking weights -- a different role from its use
-    # as a weight-learning engine in regularizedRegressionWrappers.R. The
-    # stacking step is pipeline logic, so the call stays with it.
-    if (!requireNamespace("glmnet", quietly = TRUE)) {
-        abort("Package 'glmnet' is required for solver='glmnet'.")
-    }
-
+    # Here glmnet is a constrained-regression solver fitting the ensemble's
+    # stacking weights -- a different role from weight learning, but the same
+    # engine, so the call goes through fitGlmnetCv() like every other. Only
+    # the stacking logic is pipeline-side. `lower.limits = 0` is what makes
+    # the regression non-negative; it has no pecotmr formal, so it travels in
+    # the engine's own options bag. `standardize` is left at glmnet's default
+    # because the columns of `Pvalid` are already on one scale: they are all
+    # predictions of the same outcome.
     fit <- try_fetch(
-        glmnet::cv.glmnet(
+        fitGlmnetCv(
             x = Pvalid,
             y = yObs,
-            lower.limits = 0,
             alpha = alpha,
-            intercept = FALSE
+            intercept = FALSE,
+            methodArgs = GlmnetOptions(lower.limits = 0)
         ),
         error = function(cnd) {
             msg <- glue(
@@ -4628,7 +4628,7 @@ setClass("TwasWeightsMethodsParam", contains = "MethodsSelectionParam")
 #' TwasWeightsMethodsParam(methods = list(lasso = list(), susie = list()))
 #' TwasWeightsMethodsParam(
 #'     methods = list(susie = list()),
-#'     qtlDatasetMethods = list(lasso = GlmnetOptions(nfold = 5)),
+#'     qtlDatasetMethods = list(lasso = GlmnetOptions(nfolds = 5)),
 #'     qtlSumStatsMethods = list(lasso = LassosumOptions())
 #' )
 #' @export

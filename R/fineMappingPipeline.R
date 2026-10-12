@@ -1920,7 +1920,7 @@ combineFineMappingResults <- function(..., ldSketch = NULL) {
         return(.fmFoldWeightsMv(Xtr, Ytr, coverage, userArgs, mvPrior))
     }
     if (token == "fsusie") {
-        return(.fmFoldWeightsFsusie(Xtr, Ytr, pos, userArgs))
+        return(.fmFoldWeightsFsusie(Xtr, Ytr, pos, coverage, userArgs))
     }
     NULL
 }
@@ -1971,9 +1971,11 @@ combineFineMappingResults <- function(..., ldSketch = NULL) {
 
 # Per-fold fsusie weights.
 # @noRd
-.fmFoldWeightsFsusie <- function(Xtr, Ytr, pos, userArgs) {
+.fmFoldWeightsFsusie <- function(Xtr, Ytr, pos, coverage, userArgs) {
+    # coverage reaches the fold fit here for the same reason it does in the
+    # susie and mvsusie fold paths; L is left to susiF's default there too.
     fsArgs <- .fmMergeUserArgs(
-        list(X = Xtr, Y = Ytr, pos = pos),
+        list(X = Xtr, Y = Ytr, pos = pos, covLev = coverage),
         "fsusie",
         userArgs
     )
@@ -3501,14 +3503,18 @@ setMethod(
             ),
             csHome["coverage"]
         ),
+        # Only what the pipeline ACTUALLY supplies. `prior`, `max_scale` and
+        # `max_SNP_EM` used to be listed here because this row described the
+        # retired fsusieWrapper(), which passed them; the pipeline calls
+        # fitFsusie() and never did, so refusing them closed the only path to
+        # setting them at all -- the same trap the `residual_variance` note
+        # above records.
         "fsusieR::susiF" = c(
-            set_names(rep(fromData, 4L), c("X", "Y", "pos", "prior")),
+            set_names(rep(fromData, 3L), c("X", "Y", "pos")),
             c(
                 L = "`maxNumSingleEffects()` on CredibleSetParam",
-                min_purity = "the wrapper's `minPurity`",
-                max_SNP_EM = "the wrapper's `maxSnpEm`",
-                cov_lev = "the wrapper's `covLev`",
-                max_scale = "the wrapper's `maxScale`"
+                cov_lev = "`csCoverage()` on CredibleSetParam",
+                min_purity = "`minAbsCorr()` on CredibleSetParam"
             )
         ),
         character(0)

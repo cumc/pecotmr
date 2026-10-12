@@ -17,7 +17,7 @@ context("SS-TWAS: weights, pipeline, and omnibus combination")
 #
 # What remains: tests of the internal SuSiE-RSS weight extractors that
 # are still present in `R/twasWeights.R` (`.susieRssExtractWeights`,
-# `susieRssWeights`, `susieInfRssWeights`, `fitSusieInfThenSusieRss`).
+# `susieRssWeights`, `susieInfRssWeights`).
 
 # =============================================================================
 # SuSiE-RSS weight extraction
@@ -63,21 +63,6 @@ test_that("mrmashWeights fitRetention: slim omits the full fit, full keeps it", 
 # =============================================================================
 # Two-stage SuSiE-RSS fitting
 # =============================================================================
-
-test_that("fitSusieInfThenSusieRss returns two fits", {
-    skip_if_not_installed("susieR")
-    set.seed(42)
-    p <- 20
-    n <- 500
-    R <- diag(p)
-    z <- rnorm(p)
-    fits <- fitSusieInfThenSusieRss(z, R, n, args = SusieOptions(max_iter = 5))
-    expect_true(is.list(fits))
-    expect_true("susie" %in% names(fits))
-    expect_true("susieInf" %in% names(fits))
-    expect_true("susieInf" %in% class(fits$susieInf))
-    expect_true("susieRss" %in% class(fits$susie))
-})
 
 # === Tests migrated from test_mrmashWrapper.R (mr.mash + glasso/glmnet coef helpers) ===
 
@@ -434,6 +419,136 @@ test_that("computeCoefficientsUnivGlmnet handles NA in Y", {
 #  so test_fineMappingWrappers.R can reuse them for the SuSiE weight extractors.)
 
 # -------------------------------- individual --------------------------------
+
+# Capture what reaches cv.glmnet, which is all fitGlmnetCv() is responsible
+# for -- the engine itself is glmnet's. The fake fit is not a usable
+# cv.glmnet object, so an extractor downstream of the call errors; `try`
+# swallows that, since only the captured arguments are under test.
+.rrw_captureGlmnet <- function(expr) {
+    captured <- NULL
+    local_mocked_bindings(
+        cv.glmnet = function(...) {
+            captured <<- list(...)
+            structure(list(), class = "cv.glmnet")
+        },
+        .package = "glmnet"
+    )
+    try(force(expr), silent = TRUE)
+    captured
+}
+
+test_that("fitGlmnetCv: NULL formals leave glmnet's own defaults", {
+    skip_if_not_installed("glmnet")
+    f <- .rrwXy()
+    args <- .rrw_captureGlmnet(fitGlmnetCv(f$X, f$y, alpha = 0.5))
+    expect_equal(args$alpha, 0.5)
+    # An explicit NULL would reach cv.glmnet and override its default with
+    # nothing, so an unset formal must be ABSENT from the call.
+    for (nm in c("family", "standardize", "intercept", "nfolds")) {
+        expect_false(is_in(nm, names(args)))
+    }
+})
+
+test_that("fitGlmnetCv: set formals use glmnet's own argument names", {
+    skip_if_not_installed("glmnet")
+    f <- .rrwXy()
+    args <- .rrw_captureGlmnet(fitGlmnetCv(
+        f$X,
+        f$y,
+        alpha = 1,
+        family = "mgaussian",
+        standardize = TRUE,
+        intercept = FALSE,
+        nfolds = 3
+    ))
+    expect_equal(args$family, "mgaussian")
+    expect_true(args$standardize)
+    expect_false(args$intercept)
+    expect_equal(args$nfolds, 3)
+    expect_false(is_in("nfold", names(args)))
+})
+
+test_that("fitGlmnetCv: methodArgs win over the caller's defaults", {
+    skip_if_not_installed("glmnet")
+    f <- .rrwXy()
+    args <- .rrw_captureGlmnet(fitGlmnetCv(
+        f$X,
+        f$y,
+        alpha = 0.5,
+        nfolds = 5,
+        methodArgs = GlmnetOptions(nfolds = 3)
+    ))
+    expect_equal(args$nfolds, 3)
+    expect_error(
+        fitGlmnetCv(f$X, f$y, alpha = 0.5, methodArgs = list(nfolds = 3)),
+        "GlmnetOptions"
+    )
+})
+
+test_that("GlmnetOptions: nfold is refused and names nfolds instead", {
+    expect_error(GlmnetOptions(nfold = 5), "fold count is `nfolds`")
+})
+
+test_that("GlmnetOptions: parallel is refused outright", {
+    # glmnet's `parallel` needs a foreach backend pecotmr does not declare,
+    # and weight fitting already runs inside BiocParallel workers over the
+    # same CV folds -- so there is no value a caller could usefully set.
+    # cv.glmnet takes `...`, so nothing else would report it.
+    expect_error(GlmnetOptions(parallel = TRUE), "cannot be set here")
+    expect_error(GlmnetOptions(parallel = FALSE), "foreach backend")
+    # A refusal must not swallow the names that ARE settable.
+    expect_equal(GlmnetOptions(nfolds = 3)$nfolds, 3)
+})
+
+test_that("fitGlmnetCv: the engine is never asked to parallelise", {
+    skip_if_not_installed("glmnet")
+    f <- .rrwXy()
+    args <- .rrw_captureGlmnet(fitGlmnetCv(f$X, f$y, alpha = 0.5))
+    expect_false(is_in("parallel", names(args)))
+})
+
+test_that("glmnetWeights: the fold count reaches the engine as nfolds", {
+    skip_if_not_installed("glmnet")
+    f <- .rrwXy()
+    args <- .rrw_captureGlmnet(glmnetWeights(f$X, f$y, alpha = 0.5))
+    expect_equal(args$nfolds, 5)
+    expect_false(args$standardize)
+    expect_true(args$intercept)
+    # Regression: pecotmr passed `nfold = 5`, which reached cv.glmnet only by
+    # partial matching, so a user who spelled the engine's own `nfolds`
+    # supplied BOTH and glmnet failed with a message about `family`.
+    w <- glmnetWeights(f$X, f$y, 0.5, methodArgs = GlmnetOptions(nfolds = 3))
+    expect_length(as.numeric(w), f$p)
+})
+
+test_that("mr.mash glmnet initialisation routes through fitGlmnetCv", {
+    skip_if_not_installed("glmnet")
+    f <- .rrwXy()
+    Y <- cbind(f$y, f$y + rnorm(length(f$y)))
+    gl <- .rrw_captureGlmnet(computeCoefficientsGlasso(
+        f$X,
+        Y,
+        standardize = TRUE,
+        numThreads = 1L
+    ))
+    expect_equal(gl$family, "mgaussian")
+    expect_equal(gl$alpha, 1)
+    expect_true(gl$standardize)
+    # `parallel = FALSE` was a restatement of cv.glmnet's own default.
+    expect_false(is_in("parallel", names(gl)))
+    uv <- .rrw_captureGlmnet(pecotmr:::.linreg(
+        1L,
+        f$X,
+        Y,
+        alpha = 0.5,
+        standardize = FALSE,
+        Xnew = NULL
+    ))
+    expect_equal(uv$family, "gaussian")
+    expect_equal(uv$alpha, 0.5)
+    expect_false(uv$standardize)
+    expect_false(is_in("parallel", names(uv)))
+})
 
 test_that("lassoWeights / enetWeights (glmnet) return length-p weights", {
     skip_if_not_installed("glmnet")

@@ -77,9 +77,21 @@ Options forwarded to the engine behind a TWAS weight method,
   itself is refused --- \code{GlmnetOptions(alpha=)} and
   \code{NcvregOptions(penalty=)} select the penalty family, which is the
   calling wrapper's to set. See \code{\link{MethodOptions}}.
+
+  \code{GlmnetOptions} rejects two names by hand, which the \code{...}
+  check above would otherwise let through in silence. \code{nfold} is not
+  a \code{cv.glmnet} argument at all --- the fold count is \code{nfolds},
+  and the shorter spelling only ever worked through R's partial matching.
+  \code{parallel} is a real one, but pecotmr does not expose it: glmnet
+  parallelises over its CV folds through a \code{foreach} backend that
+  this package neither declares nor registers, and weight fitting already
+  runs inside \code{BiocParallel} workers over the same folds, so
+  enabling it would nest two frameworks and oversubscribe the machine.
+  The glasso and univariate-glmnet \code{mr.mash} initialisations are
+  single-threaded for the same reason.
 }
 \examples{
-GlmnetOptions(nfold = 10)
+GlmnetOptions(nfolds = 10)
 QggOptions(updateB = TRUE)
 LassosumOptions(thr = 1e-4)
 }

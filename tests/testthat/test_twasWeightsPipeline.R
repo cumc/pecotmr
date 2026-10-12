@@ -1914,7 +1914,12 @@ test_that(".twasCheckMultivariateY: mvsusie/mrmash error with single trait, sing
         sampleIds = character(),
         pgenPtr = NULL
     )
-    GwasSumStats(studyName = "g1", entry = list(gr), genome = "hg19", ldSketch = gh)
+    GwasSumStats(
+        studyName = "g1",
+        entry = list(gr),
+        genome = "hg19",
+        ldSketch = gh
+    )
 }
 
 test_that(".twasAssertQcd: errors when qcInfo is empty", {
@@ -3640,6 +3645,29 @@ test_that(".solveEnsembleNnls: solver failure and all-zero fall back to equal we
     expect_equal(z2, c(0.5, 0.5))
 })
 
+test_that(".solveEnsembleGlmnet: routes through fitGlmnetCv", {
+    skip_if_not_installed("glmnet")
+    set.seed(3)
+    P <- matrix(rnorm(60), 20, 3)
+    yObs <- rnorm(20)
+    captured <- NULL
+    local_mocked_bindings(
+        cv.glmnet = function(...) {
+            captured <<- list(...)
+            structure(list(), class = "cv.glmnet")
+        },
+        .package = "glmnet"
+    )
+    # coef() on the fake fit errors downstream of the call; only the
+    # arguments that reached the engine are under test here.
+    try(pecotmr:::.solveEnsembleGlmnet(P, yObs, 3L), silent = TRUE)
+    # `lower.limits = 0` is what makes the stacking regression non-negative;
+    # it has no pecotmr formal, so it travels in the engine's options bag.
+    expect_equal(captured$lower.limits, 0)
+    expect_false(captured$intercept)
+    expect_equal(captured$alpha, 1)
+})
+
 test_that(".solveEnsembleGlmnet: solver failure falls back to equal weights", {
     skip_if_not_installed("glmnet")
     P <- matrix(rnorm(20), 10, 2)
@@ -4405,7 +4433,12 @@ test_that("a multivariate group resumes from the cache only in full", {
     # there was no per-group question being asked. There is -- it is just
     # all-or-nothing, because reusing some contexts' weights while refitting
     # the others would mix two fits inside a group that was fitted together.
-    w <- .tp_tw(studyName = "s1", context = "c1", trait = "t1", method = "mrmash")
+    w <- .tp_tw(
+        studyName = "s1",
+        context = "c1",
+        trait = "t1",
+        method = "mrmash"
+    )
 
     # One context cached out of two -> no reuse.
     expect_null(pecotmr:::.twasMvCacheHits(

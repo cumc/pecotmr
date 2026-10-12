@@ -157,11 +157,11 @@ test_that("malformed slots are rejected with the caller's own error", {
 test_that("TwasWeightsMethodsParam shares the rules with its own registry", {
     p <- TwasWeightsMethodsParam(
         methods = list(susie = list()),
-        qtlDatasetMethods = list(lasso = GlmnetOptions(nfold = 5)),
+        qtlDatasetMethods = list(lasso = GlmnetOptions(nfolds = 5)),
         qtlSumStatsMethods = list(lasso = LassosumOptions())
     )
     expect_s4_class(p, "TwasWeightsMethodsParam")
-    expect_equal(p$qtlDatasetMethods$lasso$nfold, 5)
+    expect_equal(p$qtlDatasetMethods$lasso$nfolds, 5)
     # The registries differ: prsCs is summary-statistics only, enet
     # individual only, and both are methods a fine-mapping Param never has.
     expect_error(
@@ -469,7 +469,7 @@ test_that("show renders a slot holding per-method entries", {
     multi <- paste(
         capture.output(show(TwasWeightsMethodsParam(
             methods = list(susie = list()),
-            qtlDatasetMethods = list(lasso = GlmnetOptions(nfold = 5)),
+            qtlDatasetMethods = list(lasso = GlmnetOptions(nfolds = 5)),
             qtlSumStatsMethods = list(lasso = LassosumOptions())
         ))),
         collapse = " "
