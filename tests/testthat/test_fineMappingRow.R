@@ -1007,7 +1007,8 @@ test_that("credibleSetSummary aggregates across a collection with entry identity
         rep(0.1, length(vids))
     }
     # Canonical CS labels + purity from the fit's CS membership, mirroring what
-    # fsusieWrapper writes into a real FMR's topLoci (cs_95 / cs_95_purity).
+    # The fsusie post-processing writes into a real FMR's topLoci
+    # (cs_95 / cs_95_purity).
     cs95 <- rep("fsusie_0", length(vids))
     for (l in seq_along(fit$cs)) {
         idx <- fit$cs[[l]]

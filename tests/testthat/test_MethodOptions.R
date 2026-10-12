@@ -397,6 +397,7 @@ test_that("a constructor is unchecked only when its engine takes dots", {
         DprOptions = "RcppDPR::fit_model",
         GlmnetOptions = "glmnet::cv.glmnet",
         MashCorEmOptions = "mashr::mash_estimate_corr_em",
+        MvsusieMixturePriorOptions = "mvsusieR::create_mixture_prior",
         MvsusieRssOptions = "mvsusieR::mvsusie_rss",
         NcvregOptions = "ncvreg::cv.ncvreg",
         PoolrOptions = "poolr::fisher",

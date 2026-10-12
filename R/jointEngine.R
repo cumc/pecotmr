@@ -288,8 +288,20 @@ setMethod(
         abort(msg)
     }
     verbose <- if (is.null(cfg$verbose)) 1 else cfg$verbose
+    # Supply what .fmOwnedEngineArgs("fsusieR::susiF") says is supplied:
+    # these are refused in FsusieOptions, so the pipeline is their only
+    # source. They are fitFsusie() formals, so .splitMethodArgs() routes them
+    # past the constructor that refuses them.
+    csp <- cfg$credibleSetParam
     fitArgs <- .fmMergeUserArgs(
-        list(X = Xc, Y = Yc, pos = .jgTraitPos(group)),
+        list(
+            X = Xc,
+            Y = Yc,
+            pos = .jgTraitPos(group),
+            maxNumSingleEffects = csp$maxNumSingleEffects,
+            covLev = csp$coverage,
+            minPurity = csp$minAbsCorr
+        ),
         "fsusie",
         args$methodArgs[["fsusie"]]
     )

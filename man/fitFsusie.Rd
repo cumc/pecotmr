@@ -4,7 +4,15 @@
 \alias{fitFsusie}
 \title{Fit fSuSiE on individual-level (X, Y, pos) data}
 \usage{
-fitFsusie(X, Y, pos, methodArgs = FsusieOptions())
+fitFsusie(
+  X,
+  Y,
+  pos,
+  maxNumSingleEffects = NULL,
+  covLev = NULL,
+  minPurity = NULL,
+  methodArgs = FsusieOptions()
+)
 }
 \arguments{
 \item{X}{Numeric matrix of genotypes (samples x variants).}
@@ -12,6 +20,21 @@ fitFsusie(X, Y, pos, methodArgs = FsusieOptions())
 \item{Y}{Numeric matrix of multi-trait outcomes (samples x traits).}
 
 \item{pos}{Numeric vector of trait positions (length \code{ncol(Y)}).}
+
+\item{maxNumSingleEffects}{Maximum number of single effects
+(\code{susiF}'s \code{L}). \code{NULL} leaves susiF's own default. An
+explicit formal rather than an \code{\link{FsusieOptions}} entry because
+the pipeline supplies it from \code{maxNumSingleEffects()} on
+\code{\link{CredibleSetParam}}, the same way \code{\link{fitMvsusieRss}}
+takes \code{coverage}.}
+
+\item{covLev}{Credible-set coverage level (\code{susiF}'s \code{cov_lev}).
+\code{NULL} leaves susiF's own default; the pipeline supplies
+\code{csCoverage()} on \code{\link{CredibleSetParam}}.}
+
+\item{minPurity}{Minimum credible-set purity (\code{susiF}'s
+\code{min_purity}). \code{NULL} leaves susiF's own default; the pipeline
+supplies \code{minAbsCorr()} on \code{\link{CredibleSetParam}}.}
 
 \item{methodArgs}{Options forwarded to \code{fsusieR::susiF}, built with
 \code{\link{FsusieOptions}}. A bare list is refused: it cannot be checked

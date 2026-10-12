@@ -73,9 +73,9 @@ base <- sin(seq(0, 2 * pi, length.out = nPos))
 Y <- matrix(rep(base, each = n), n, nPos) +
   X[, 1] \%o\% (0.5 * cos(seq(0, pi, length.out = nPos)))
 pos <- seq_len(nPos)
-fit <- fsusieWrapper(X, Y, pos = pos, maxNumSingleEffects = 2,
-  prior = "mixture_normal_per_scale", maxSnpEm = 10,
-  covLev = 0.95, minPurity = 0.5, maxScale = 6)
+fit <- fitFsusie(X, Y, pos = pos, maxNumSingleEffects = 2,
+  methodArgs = FsusieOptions(prior = "mixture_normal_per_scale",
+    max_SNP_EM = 10, max_scale = 6))
 fsusieWeights(fsusieFit = fit, X = X, Y = Y,
   variantIds = colnames(X))
 }

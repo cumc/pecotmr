@@ -46,7 +46,7 @@ Selects the methods \code{\link{twasWeightsPipeline}} runs and
 TwasWeightsMethodsParam(methods = list(lasso = list(), susie = list()))
 TwasWeightsMethodsParam(
     methods = list(susie = list()),
-    qtlDatasetMethods = list(lasso = GlmnetOptions(nfold = 5)),
+    qtlDatasetMethods = list(lasso = GlmnetOptions(nfolds = 5)),
     qtlSumStatsMethods = list(lasso = LassosumOptions())
 )
 }

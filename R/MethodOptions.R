@@ -390,6 +390,36 @@ setClass("MethodOptions", contains = "SimpleList")
     ))
 }
 
+# Refuse names for a reason OTHER than pecotmr supplying them -- a name the
+# engine does not have, or one it has that pecotmr will not expose. Those
+# cannot go through .configRefuseOwned(), whose message promises the value
+# would be overwritten and names where to set it instead; here there is no
+# such place, so the reason is stated outright. `unavailable` is a named
+# character vector, name = the refused argument, value = why, read as
+# "`<name>` cannot be set here: <why>".
+#
+# This exists for engines taking `...`, where an unknown name is accepted and
+# silently ignored instead of reported (see .engineAcceptedNames). Everywhere
+# else the engine's own formals are the check.
+# @noRd
+.configRefuseUnavailable <- function(extra, unavailable, label) {
+    clash <- intersect(names(extra), names(unavailable))
+    if (length(clash) == 0L) {
+        return(invisible(NULL))
+    }
+    why <- str_flatten(
+        sprintf(
+            "`%s` cannot be set here: %s",
+            clash,
+            unname(
+                unavailable[clash]
+            )
+        ),
+        collapse = "; "
+    )
+    abort(glue("{label}: {why}."))
+}
+
 # TRUE for a record a constructor produced. Used by the pipelines to refuse a
 # bare list, which is the whole point of requiring constructors.
 # @noRd

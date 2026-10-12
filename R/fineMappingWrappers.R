@@ -267,81 +267,6 @@ fitSusieInfThenSusie <- function(
     list(susie = susieFit, susieInf = susieInfFit)
 }
 
-#' Two-stage SuSiE-RSS Fine-mapping
-#'
-#' RSS analog of \code{fitSusieInfThenSusie}. Fits SuSiE-inf via \code{susieRss}
-#' first, then initialises standard SuSiE-RSS from the SuSiE-inf result. The
-#' single pair of fits can be used both for fine-mapping post-processing and
-#' TWAS weight extraction.
-#'
-#' @param z Numeric vector of z-scores.
-#' @param R LD correlation matrix.
-#' @param n Sample size (scalar).
-#' @param args Defaults forwarded to both fits, built with
-#'   \code{\link{SusieOptions}}. A bare list is refused, since it cannot be
-#'   checked; \code{list()} (the default) means no options.
-#' @param SusieInfOptions SuSiE-inf-specific overrides, built with
-#'   \code{\link{SusieInfOptions}}; they take precedence over \code{args}.
-#' @param SusieOptions Standard SuSiE-RSS-specific overrides, built with
-#'   \code{\link{SusieOptions}}; they take precedence over \code{args}.
-#' @param fittedModels Optional list with pre-fitted \code{$susie} and/or
-#'   \code{$susieInf} objects to skip re-fitting.
-#' @return A list with \code{susie} and \code{susieInf} fit objects.
-#' @importFrom susieR susie_rss
-#' @examples
-#' data(eqtlRegionExample)
-#' X <- eqtlRegionExample$X[, 1:30]
-#' y <- eqtlRegionExample$yRes
-#' ss <- lapply(seq_len(ncol(X)), function(j) {
-#'   coef(summary(lm(y ~ X[, j])))[2, 1:2]
-#' })
-#' stat <- list(
-#'   bhat = vapply(ss, `[`, numeric(1), 1L),
-#'   shat = vapply(ss, `[`, numeric(1), 2L),
-#'   z = vapply(ss, function(s) s[1] / s[2], numeric(1)),
-#'   n = rep(nrow(X), ncol(X)))
-#' LD <- cor(X)
-#' fitSusieInfThenSusieRss(z = stat$z, R = LD, n = nrow(X))
-#' @importFrom checkmate assertNumeric assertNumber assertList
-#' @export
-fitSusieInfThenSusieRss <- function(
-    z,
-    R,
-    n,
-    args = list(),
-    SusieInfOptions = list(),
-    SusieOptions = list(),
-    fittedModels = NULL
-) {
-    assertNumeric(z)
-    assertNumber(n, lower = 0, finite = TRUE)
-    .fmAssertChainArgs(args, SusieInfOptions, SusieOptions)
-    assertList(fittedModels, null.ok = TRUE)
-    # RSS analog of fitSusieInfThenSusie, built from the shared per-token RSS
-    # fitter (.fmFitSusieRss). .fmFitSusieRss tags every fit "susieRss", so the
-    # inf fit is re-tagged "susieInf" to preserve this wrapper's contract.
-    cached <- fittedModels %||% list()
-    infRaw <- cached[["susieInf"]] %||%
-        .fmFitSusieRss(
-            z,
-            R,
-            n,
-            "susieInf",
-            userArgs = .fmChainStageArgs(args, SusieInfOptions)
-        )
-    susieInfFit <- .setFinemappingFitClass(infRaw, "susieInf")
-    susieRaw <- cached[["susie"]] %||%
-        .fmFitSusieRss(
-            z,
-            R,
-            n,
-            "susie",
-            chainFromInf = susieInfFit,
-            userArgs = .fmChainStageArgs(args, SusieOptions)
-        )
-    susieFit <- .setFinemappingFitClass(susieRaw, "susieRss")
-    list(susie = susieFit, susieInf = susieInfFit)
-}
 
 #' Post-process Fine-mapping Fits
 #'
@@ -2357,8 +2282,13 @@ trimFinemappingFit <- function(fit, effectIdx, method, csTables) {
     }
     keep <- intersect(
         c(
-            "coef", "fitted_func", "cred_band", "outing_grid", "cs",
-            "csd_X", "lfsr_func"
+            "coef",
+            "fitted_func",
+            "cred_band",
+            "outing_grid",
+            "cs",
+            "csd_X",
+            "lfsr_func"
         ),
         names(populated)
     )
@@ -2575,99 +2505,6 @@ fsusieGetCs <- function(fsusieObj, X, requestedCoverage = 0.95) {
     return(sets)
 }
 
-#' @title Wrapper for fsusie Function with Automatic Post-Processing
-#'
-#' @description This function serves as a wrapper for the fsusie function,
-#'   facilitating automatic post-processing such as removing dummy credible sets
-#'   (cs) that don't meet the minimum purity threshold and calculating
-#'   correlations for the remaining cs. The function parameters are identical to
-#'   those of the fSuSiE function.
-#'
-#' @param X Residual genotype matrix.
-#' @param Y Response phenotype matrix.
-#' @param pos Genomics position of phenotypes, used for specifying the wavelet
-#'   model.
-#' @param maxNumSingleEffects The maximum number of the credible set.
-#' @param prior method to generate the prior.
-#' @param maxSnpEm maximum number of SNP used for learning the prior.
-#' @param covLev Coverage level for the credible sets.
-#' @param maxScale numeric, define the maximum of wavelet coefficients used in
-#'   the analysis (2^maxScale). Set 10 true by default.
-#' @param minPurity Minimum purity threshold for credible sets to be retained.
-#' @param methodArgs Options forwarded to \code{fsusieR::susiF}, built with
-#'   \code{\link{FsusieOptions}}. A bare list is refused: it cannot be checked
-#'   against the engine, so a misspelled option would be silently ignored.
-#' @return A modified fsusie object with the susie sets list, correlations for
-#'   cs, alpha as df like susie, and without the dummy cs that do not meet the
-#'   minimum purity requirement.
-#' @examples
-#' data(eqtlRegionExample)
-#' X <- eqtlRegionExample$X[, 1:50]
-#' n <- nrow(X)
-#' nPos <- 16
-#' base <- sin(seq(0, 2 * pi, length.out = nPos))
-#' Y <- matrix(rep(base, each = n), n, nPos) +
-#'   X[, 1] %o% (0.5 * cos(seq(0, pi, length.out = nPos)))
-#' pos <- seq_len(nPos)
-#' fsusieWrapper(X, Y, pos = pos, maxNumSingleEffects = 2,
-#'   prior = "mixture_normal_per_scale", maxSnpEm = 10,
-#'   covLev = 0.95, minPurity = 0.5, maxScale = 6)
-#' @export
-fsusieWrapper <- function(
-    X,
-    Y,
-    pos,
-    maxNumSingleEffects,
-    prior,
-    maxSnpEm,
-    covLev,
-    minPurity,
-    maxScale,
-    methodArgs = FsusieOptions()
-) {
-    .assertMethodOptions(methodArgs, "FsusieOptions", "methodArgs")
-    if (!requireNamespace("fsusieR", quietly = TRUE)) {
-        abort("Package 'fsusieR' is required for this function.")
-    }
-    callArgs <- list_modify(
-        list(
-            X = X,
-            Y = Y,
-            pos = pos,
-            L = maxNumSingleEffects,
-            prior = prior,
-            max_SNP_EM = maxSnpEm,
-            cov_lev = covLev,
-            min_purity = minPurity,
-            max_scale = maxScale
-        ),
-        !!!methodArgs
-    )
-    fsusieObj <- exec(fsusieR::susiF, !!!callArgs)
-    .fsusieWrapperPostprocess(fsusieObj, X, minPurity, covLev)
-}
-
-# Drop dummy credible sets below the purity threshold (else build sets + CS
-# correlations), then reshape alpha (per-effect list) into a single data.frame.
-.fsusieWrapperPostprocess <- function(fsusieObj, X, minPurity, covLev) {
-    withSets <- if (all(abs(as.numeric(fsusieObj$purity)) < minPurity)) {
-        list_assign(
-            fsusieObj,
-            cs = list(NULL),
-            sets = list(cs = list(NULL), requested_coverage = covLev)
-        )
-    } else {
-        list_assign(
-            fsusieObj,
-            sets = fsusieGetCs(fsusieObj, X, requestedCoverage = covLev)
-        )
-    }
-    list_assign(
-        withSets,
-        alpha = bind_rows(map(fsusieObj$alpha, .asDataFrameT))
-    )
-}
-
 
 # =============================================================================
 # Uniform fit wrappers for mvSuSiE (individual + RSS)
@@ -2686,9 +2523,10 @@ fsusieWrapper <- function(
 #' @param X Numeric matrix of genotypes (samples x variants).
 #' @param Y Numeric matrix of multi-trait / multi-context outcomes (samples x
 #'   conditions).
-#' @param prior_variance Prior variance matrix; pass the output of
-#'   \code{mvsusieR::create_mixture_prior(R = ncol(Y))} unless you have a
-#'   domain-specific prior.
+#' @param prior_variance Prior variance; build it with
+#'   \code{\link{buildMvsusieMixturePrior}}, which is the single interface
+#'   to \code{mvsusieR::create_mixture_prior()} and defaults to the
+#'   canonical mixture over the conditions it is given.
 #' @param coverage Credible set coverage (default 0.95).
 #' @param methodArgs Options forwarded to \code{mvsusieR::mvsusie}, built
 #'   with \code{\link{MvsusieOptions}}. A bare list is refused: it cannot be
@@ -2704,7 +2542,7 @@ fsusieWrapper <- function(
 #' X <- multiTraitData$X[, 1:60]
 #' Y <- multiTraitData$Y
 #' fitMvsusie(X, Y,
-#'   prior_variance = mvsusieR::create_mixture_prior(R = ncol(Y)))
+#'   prior_variance = buildMvsusieMixturePrior(conditionNames = colnames(Y)))
 #' }
 #' @importFrom checkmate assertNumber
 #' @export
@@ -2785,6 +2623,153 @@ fitMvsusieRss <- function(
     exec(mvsusieR::mvsusie_rss, !!!callArgs)
 }
 
+#' @title Arguments For mvsusieR's Mixture-Prior Builder
+#' @description Arguments for \code{mvsusieR::create_mixture_prior()}, the
+#'   function that builds the mvSuSiE prior mixture. The mixture itself, the
+#'   condition count, the conditions to restrict to and the weight cutoff are
+#'   all pecotmr's to supply, so they are refused here --- they have formals
+#'   of their own on \code{\link{buildMvsusieMixturePrior}}.
+#'
+#'   \code{create_mixture_prior()} takes \code{...}, which it forwards to
+#'   \code{create_cov_canonical()}, so names given here cannot be checked
+#'   against its formals: a misspelling reaches the engine, which ignores it
+#'   silently. See \code{\link{MethodOptions}}.
+#'
+#'   No defaults: the engine's own are left in place.
+#' @param ... Arguments for \code{mvsusieR::create_mixture_prior()} ---
+#'   \code{null_weight}, \code{max_mixture_len} --- or the
+#'   \code{create_cov_canonical()} passthroughs \code{singletons} and
+#'   \code{hetgrid} that shape the canonical mixture.
+#' @return A \code{\link{MethodOptions}} object.
+#' @examples
+#' MvsusieMixturePriorOptions(singletons = FALSE)
+#' @export
+MvsusieMixturePriorOptions <- function(...) {
+    extra <- list(...)
+    .configRefuseOwned(
+        extra,
+        c(
+            mixture_prior = str_c(
+                "`mixtureMatrices` / `mixtureWeights` on ",
+                "buildMvsusieMixturePrior()"
+            ),
+            R = "`R` on buildMvsusieMixturePrior()",
+            include_indices = "`conditionNames` on buildMvsusieMixturePrior()",
+            weights_tol = "`weightsTol` on buildMvsusieMixturePrior()"
+        ),
+        "MvsusieMixturePriorOptions"
+    )
+    .newMethodOptions(
+        "mvsusieR::create_mixture_prior",
+        defaults = list(),
+        extra = extra,
+        label = "MvsusieMixturePriorOptions",
+        engine = "mvsusieMixturePrior"
+    )
+}
+
+# The `exactly one of mixture_prior / R` arm of create_mixture_prior(). The
+# engine tests those two with missing(), so only ONE of the names may appear
+# in the call at all -- passing the unused one as NULL still counts as
+# supplied and trips its "Require exactly one of" stop.
+# @noRd
+.mvMixtureArm <- function(R, conditionNames, mixtureMatrices, mixtureWeights) {
+    if (!is.null(mixtureMatrices)) {
+        mixture <- compact(list(
+            matrices = mixtureMatrices,
+            weights = mixtureWeights
+        ))
+        return(list(mixture_prior = mixture))
+    }
+    # The canonical arm labels R x R covariances with `conditionNames` and
+    # then subsets by those very names, so a count that disagrees with the
+    # names fails deep inside the engine on a dimnames length. Checking `R`
+    # here also catches the default standing in for unnamed conditions:
+    # length(NULL) is 0, which the engine turns into a 0 x 0 subscript error.
+    assertCount(R, positive = TRUE)
+    if (!is.null(conditionNames) && length(conditionNames) != R) {
+        abort(glue(
+            "buildMvsusieMixturePrior(): `conditionNames` names ",
+            "{length(conditionNames)} conditions but `R` is {R}. The ",
+            "canonical mixture labels R x R covariances with those names, ",
+            "so the two must agree."
+        ))
+    }
+    list(R = R)
+}
+
+#' Build the mvSuSiE mixture prior
+#'
+#' The single interface to \code{mvsusieR::create_mixture_prior()}, which
+#' every mvSuSiE prior in the package goes through. That function takes
+#' \strong{exactly one} of \code{mixture_prior} and \code{R} and tests the
+#' two with \code{missing()}, so the unused one cannot simply be passed as
+#' \code{NULL}; this wrapper owns that branch. Supply
+#' \code{mixtureMatrices} for a data-driven mixture --- e.g. the reweighted
+#' mr.mash covariances --- or leave it NULL for the canonical uniform
+#' mixture over \code{R} conditions.
+#'
+#' @param conditionNames Character vector naming the conditions the prior is
+#'   over, forwarded as \code{include_indices}. On the data-driven arm this
+#'   \emph{restricts} the supplied covariances to these conditions by name,
+#'   so a mixture spanning more conditions than the fit at hand is subset
+#'   here. On the canonical arm it only labels the generated covariances.
+#'   NULL leaves the mixture unrestricted and unlabelled.
+#' @param R Number of conditions for the canonical mixture. Defaults to
+#'   \code{length(conditionNames)}; pass it explicitly when the conditions
+#'   are unnamed. Unused when \code{mixtureMatrices} is supplied, since the
+#'   mixture then carries its own dimension.
+#' @param mixtureMatrices Named list of prior covariance matrices to use as
+#'   the mixture. NULL (default) builds the canonical mixture from \code{R}
+#'   instead.
+#' @param mixtureWeights Numeric vector of mixture weights, named to match
+#'   \code{mixtureMatrices}. NULL leaves the engine's uniform weights.
+#' @param weightsTol Mixture components weighted at or below this are
+#'   dropped.
+#' @param methodArgs Options forwarded to
+#'   \code{mvsusieR::create_mixture_prior}, built with
+#'   \code{\link{MvsusieMixturePriorOptions}}. A bare list is refused: it
+#'   cannot be checked against the engine.
+#' @return The prior object \code{mvsusieR::create_mixture_prior()} returns,
+#'   ready to pass as \code{prior_variance} to \code{\link{fitMvsusie}} or
+#'   \code{\link{fitMvsusieRss}}.
+#' @examples
+#' \donttest{
+#' # Canonical uniform mixture over two named conditions.
+#' buildMvsusieMixturePrior(conditionNames = c("brain", "blood"))
+#' }
+#' @importFrom checkmate assertCount
+#' @export
+buildMvsusieMixturePrior <- function(
+    conditionNames = NULL,
+    R = length(conditionNames),
+    mixtureMatrices = NULL,
+    mixtureWeights = NULL,
+    weightsTol = 1e-10,
+    methodArgs = MvsusieMixturePriorOptions()
+) {
+    if (!requireNamespace("mvsusieR", quietly = TRUE)) {
+        abort("Package 'mvsusieR' is required.")
+    }
+    .assertMethodOptions(
+        methodArgs,
+        "MvsusieMixturePriorOptions",
+        "methodArgs"
+    )
+    arm <- .mvMixtureArm(R, conditionNames, mixtureMatrices, mixtureWeights)
+    callArgs <- list_modify(
+        c(
+            arm,
+            compact(list(
+                include_indices = conditionNames,
+                weights_tol = weightsTol
+            ))
+        ),
+        !!!methodArgs
+    )
+    exec(mvsusieR::create_mixture_prior, !!!callArgs)
+}
+
 #' Fit fSuSiE on individual-level (X, Y, pos) data
 #'
 #' Thin wrapper around \code{fsusieR::susiF}.
@@ -2792,6 +2777,18 @@ fitMvsusieRss <- function(
 #' @param X Numeric matrix of genotypes (samples x variants).
 #' @param Y Numeric matrix of multi-trait outcomes (samples x traits).
 #' @param pos Numeric vector of trait positions (length \code{ncol(Y)}).
+#' @param maxNumSingleEffects Maximum number of single effects
+#'   (\code{susiF}'s \code{L}). \code{NULL} leaves susiF's own default. An
+#'   explicit formal rather than an \code{\link{FsusieOptions}} entry because
+#'   the pipeline supplies it from \code{maxNumSingleEffects()} on
+#'   \code{\link{CredibleSetParam}}, the same way \code{\link{fitMvsusieRss}}
+#'   takes \code{coverage}.
+#' @param covLev Credible-set coverage level (\code{susiF}'s \code{cov_lev}).
+#'   \code{NULL} leaves susiF's own default; the pipeline supplies
+#'   \code{csCoverage()} on \code{\link{CredibleSetParam}}.
+#' @param minPurity Minimum credible-set purity (\code{susiF}'s
+#'   \code{min_purity}). \code{NULL} leaves susiF's own default; the pipeline
+#'   supplies \code{minAbsCorr()} on \code{\link{CredibleSetParam}}.
 #' @param methodArgs Options forwarded to \code{fsusieR::susiF}, built with
 #'   \code{\link{FsusieOptions}}. A bare list is refused: it cannot be checked
 #'   against the engine, so a misspelled option would be silently ignored.
@@ -2807,9 +2804,29 @@ fitMvsusieRss <- function(
 #' pos <- seq_len(nPos)
 #' fitFsusie(X, Y, pos = pos, methodArgs = FsusieOptions(maxit = 5))
 #' @export
-fitFsusie <- function(X, Y, pos, methodArgs = FsusieOptions()) {
+fitFsusie <- function(
+    X,
+    Y,
+    pos,
+    maxNumSingleEffects = NULL,
+    covLev = NULL,
+    minPurity = NULL,
+    methodArgs = FsusieOptions()
+) {
     .assertMethodOptions(methodArgs, "FsusieOptions", "methodArgs")
-    callArgs <- list_modify(list(X = X, Y = Y, pos = pos), !!!methodArgs)
+    # These three are refused by FsusieOptions() as pipeline-owned, so they
+    # travel as formals: .splitMethodArgs() routes a formal straight here
+    # instead of through the constructor that would reject it. compact()
+    # keeps susiF's own defaults when a caller leaves one NULL.
+    owned <- compact(list(
+        L = maxNumSingleEffects,
+        cov_lev = covLev,
+        min_purity = minPurity
+    ))
+    callArgs <- list_modify(
+        c(list(X = X, Y = Y, pos = pos), owned),
+        !!!methodArgs
+    )
     exec(fsusieR::susiF, !!!callArgs)
 }
 
@@ -3236,7 +3253,7 @@ susieAshRssWeights <- function(
 #' X <- multiTraitData$X[, 1:60]
 #' Y <- multiTraitData$Y
 #' fit <- fitMvsusie(X = X, Y = Y,
-#'   prior_variance = mvsusieR::create_mixture_prior(R = ncol(Y)),
+#'   prior_variance = buildMvsusieMixturePrior(R = ncol(Y)),
 #'   methodArgs = MvsusieOptions(max_iter = 50))
 #' mvsusieWeights(mvsusieFit = fit)
 #' }
@@ -3338,9 +3355,9 @@ mvsusieWeights <- function(mvsusieFit = NULL) {
 #' Y <- matrix(rep(base, each = n), n, nPos) +
 #'   X[, 1] %o% (0.5 * cos(seq(0, pi, length.out = nPos)))
 #' pos <- seq_len(nPos)
-#' fit <- fsusieWrapper(X, Y, pos = pos, maxNumSingleEffects = 2,
-#'   prior = "mixture_normal_per_scale", maxSnpEm = 10,
-#'   covLev = 0.95, minPurity = 0.5, maxScale = 6)
+#' fit <- fitFsusie(X, Y, pos = pos, maxNumSingleEffects = 2,
+#'   methodArgs = FsusieOptions(prior = "mixture_normal_per_scale",
+#'     max_SNP_EM = 10, max_scale = 6))
 #' fsusieWeights(fsusieFit = fit, X = X, Y = Y,
 #'   variantIds = colnames(X))
 #' @export
@@ -3437,7 +3454,7 @@ fsusieWeights <- function(
 }
 
 # Normalize alpha to a list of per-effect vectors. fsusieR::susiF returns a
-# list; fsusieWrapper reshaping yields an L x nSNP matrix/data.frame.
+# list; a caller that has reshaped it hands over an L x nSNP matrix/data.frame.
 .fsusieAlphaList <- function(alpha) {
     if (is.list(alpha) && !is.data.frame(alpha)) {
         return(map(alpha, as.numeric))
@@ -5127,14 +5144,14 @@ extractTopPipInfo <- function(fmRow, sumstats) {
 }
 
 # The canonical (non-reweighted) mvSuSiE mixture prior for residual variance
-# `V`:
-# create_mixture_prior(R) restricted to the group's conditions.
+# `V`: the uniform canonical mixture over the group's conditions, paired with
+# `V` in the shape the mvsusie callers consume.
 # @noRd
 .fmCanonicalPrior <- function(V, conditionNames, R) {
     list(
-        priorVariance = mvsusieR::create_mixture_prior(
-            R = R,
-            include_indices = conditionNames
+        priorVariance = buildMvsusieMixturePrior(
+            conditionNames = conditionNames,
+            R = R
         ),
         residualVariance = V
     )
@@ -5143,16 +5160,17 @@ extractTopPipInfo <- function(fmRow, sumstats) {
 # Rebuild the mvSuSiE data-driven *reweighted* mixture prior + residual variance
 # from a stored mr.mash fit -- the lean payload
 # (list(dataDrivenPriorMatrices, w0, V)) that mrmashWeights() attaches at
-# fitRetention "slim" and twasWeightsPipeline keeps on the mrmash row. Shared
-# by the fine-mapping mvsusie consumer and the twas mvsusie_weights consumer.
+# fitRetention "slim" and twasWeightsPipeline keeps on the mrmash row. The
+# fine-mapping mvsusie paths are the only consumers: mvsusieWeights() extracts
+# from a supplied fit and no longer fits, so it needs no prior of its own.
 #
 # Reproduces the deleted multivariate_pipeline.R reweighting bit-identically:
 # rescaleCovW0(w0) collapses the expanded mr.mash weights onto the original
 # data-driven covariance matrices ($U), filters to surviving components, and
-# create_mixture_prior() wraps them, restricted to the fit's conditions
+# buildMvsusieMixturePrior() wraps them, restricted to the fit's conditions
 # (`conditionNames` = colnames(Y)). `V` becomes mvsusie's residual_variance.
 # A NULL fit, NULL matrices, or no surviving component falls back to the
-# canonical create_mixture_prior(R), matching the legacy `else` branch.
+# canonical mixture, matching the legacy `else` branch.
 # Returns list(priorVariance, residualVariance) (residualVariance NULL only
 # when no fit was supplied at all).
 # @noRd
@@ -5183,12 +5201,12 @@ extractTopPipInfo <- function(fmRow, sumstats) {
     if (length(w0Updated) == 0L) {
         return(.fmCanonicalPrior(fitParts$V, conditionNames, R))
     }
-    mixture <- list(matrices = ddpm$U[names(w0Updated)], weights = w0Updated)
     list(
-        priorVariance = mvsusieR::create_mixture_prior(
-            mixture_prior = mixture,
-            weights_tol = weightsTol,
-            include_indices = conditionNames
+        priorVariance = buildMvsusieMixturePrior(
+            conditionNames = conditionNames,
+            mixtureMatrices = ddpm$U[names(w0Updated)],
+            mixtureWeights = w0Updated,
+            weightsTol = weightsTol
         ),
         residualVariance = fitParts$V
     )
@@ -5264,7 +5282,8 @@ extractTopPipInfo <- function(fmRow, sumstats) {
 # Per-fold mvsusie weights. Reuses the data-driven reweighted prior + residual
 # covariance from the full-data mr.mash fit on every fold -- the prior is over
 # conditions, identical across folds (only samples are held out). NULL mvPrior
-# -> canonical prior (unchanged behavior).
+# -> the canonical mixture over this fold's outcome columns, which is the same
+# prior .fmCanonicalPrior() builds for the full-data path.
 # @noRd
 .fmFoldWeightsMv <- function(Xtr, Ytr, coverage, userArgs, mvPrior) {
     baseArgs <- list(
@@ -5272,7 +5291,10 @@ extractTopPipInfo <- function(fmRow, sumstats) {
         Y = Ytr,
         coverage = coverage,
         prior_variance = if (is.null(mvPrior)) {
-            mvsusieR::create_mixture_prior(R = ncol(Ytr))
+            buildMvsusieMixturePrior(
+                conditionNames = colnames(Ytr),
+                R = ncol(Ytr)
+            )
         } else {
             mvPrior$priorVariance
         }

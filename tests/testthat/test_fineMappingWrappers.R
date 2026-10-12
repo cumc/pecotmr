@@ -416,7 +416,11 @@ test_that("postprocessFinemappingFits keeps all effects when V is NULL", {
     skip_if_not_installed("susieR")
     p <- 5
     L <- 3
-    fake_output <- makeFakeSusieOutput(p, maxNumSingleEffects = L, has_V = FALSE)
+    fake_output <- makeFakeSusieOutput(
+        p,
+        maxNumSingleEffects = L,
+        has_V = FALSE
+    )
     R <- diag(p)
     colnames(R) <- rownames(R) <- names(fake_output$pip)
     post <- postprocessFinemappingFits(
@@ -1722,8 +1726,6 @@ test_that("posterior_mean equals colSums(alpha*mu); posterior_sd equals sqrt(pma
 })
 
 
-context("fsusieWrapper")
-
 # ---- cal_purity ----
 test_that("cal_purity with min method and single element CS", {
     set.seed(42)
@@ -1784,111 +1786,6 @@ test_that("cal_purity with multiple credible sets", {
 })
 
 # ---- fsusieGetCs ----
-# ---- fsusieWrapper ----
-test_that("fsusieWrapper errors when fsusieR is not installed", {
-    skip_if(
-        requireNamespace("fsusieR", quietly = TRUE),
-        "fsusieR is installed, skipping not-installed test"
-    )
-    set.seed(1)
-    X <- matrix(rnorm(50), nrow = 10, ncol = 5)
-    Y <- matrix(rnorm(40), nrow = 10, ncol = 4)
-    expect_error(
-        fsusieWrapper(
-            X = X,
-            Y = Y,
-            pos = seq_len(4),
-            maxNumSingleEffects = 3,
-            prior = "mixture_normal",
-            maxSnpEm = 100,
-            covLev = 0.95,
-            minPurity = 0.5,
-            maxScale = 5
-        ),
-        "fsusieR"
-    )
-})
-
-test_that("fsusieWrapper low-purity branch sets cs to list(NULL) and cs_corr to NULL", {
-    skip_if_not_installed("fsusieR")
-    fake_fit <- list(
-        cs = list(c(1, 2), c(3)),
-        purity = c(0.1, 0.05), # all < min_purity = 0.5
-        pip = c(0.1, 0.2, 0.3, 0.05, 0.05),
-        alpha = list(
-            matrix(0.1, nrow = 2, ncol = 5),
-            matrix(0.1, nrow = 2, ncol = 5)
-        )
-    )
-    local_mocked_bindings(
-        susiF = function(...) fake_fit,
-        .package = "fsusieR"
-    )
-    set.seed(1)
-    X <- matrix(rnorm(50), nrow = 10, ncol = 5)
-    Y <- matrix(rnorm(40), nrow = 10, ncol = 4)
-    out <- fsusieWrapper(
-        X = X,
-        Y = Y,
-        pos = seq_len(4),
-        maxNumSingleEffects = 3,
-        prior = "mixture_normal",
-        maxSnpEm = 100,
-        covLev = 0.95,
-        minPurity = 0.5,
-        maxScale = 5
-    )
-    expect_equal(out$cs, list(NULL))
-    expect_equal(out$sets$cs, list(NULL))
-    expect_null(out$cs_corr)
-})
-
-test_that("fsusieWrapper high-purity branch builds sets", {
-    skip_if_not_installed("fsusieR")
-    set.seed(2)
-    p <- 5
-    fake_fit <- list(
-        cs = list(c(1, 2), c(3, 4)),
-        purity = c(0.95, 0.9), # all > min_purity = 0.5
-        pip = c(0.4, 0.4, 0.6, 0.6, 0.1),
-        alpha = list(
-            matrix(
-                rep(c(0.4, 0.4, 0.05, 0.05, 0.1), each = 2),
-                nrow = 2,
-                byrow = FALSE
-            ),
-            matrix(
-                rep(c(0.05, 0.05, 0.45, 0.4, 0.05), each = 2),
-                nrow = 2,
-                byrow = FALSE
-            )
-        )
-    )
-    local_mocked_bindings(
-        susiF = function(...) fake_fit,
-        cal_cor_cs = function(obj, X) matrix(c(1, 0.9, 0.9, 1), nrow = 2),
-        .package = "fsusieR"
-    )
-    X <- matrix(rnorm(10 * p), nrow = 10, ncol = p)
-    Y <- matrix(rnorm(40), nrow = 10, ncol = 4)
-    out <- fsusieWrapper(
-        X = X,
-        Y = Y,
-        pos = seq_len(4),
-        maxNumSingleEffects = 3,
-        prior = "mixture_normal",
-        maxSnpEm = 100,
-        covLev = 0.95,
-        minPurity = 0.5,
-        maxScale = 5
-    )
-    expect_length(out$sets$cs, 2)
-    expect_equal(names(out$sets$cs), c("L1", "L2"))
-    # cs_corr is no longer stored on the fit (computed on demand later by
-    # computeCsCorrelation()).
-    expect_null(out$cs_corr)
-    expect_equal(out$sets$requested_coverage, 0.95)
-})
 
 test_that("fsusieGetCs creates susie-like sets", {
     set.seed(42)
@@ -4571,49 +4468,6 @@ test_that("mvsusie / fsusie wrappers: numeric guards fire", {
     )
 })
 
-test_that("fitSusieInfThenSusieRss: argument guards fire", {
-    expect_error(
-        fitSusieInfThenSusieRss(z = "nope", R = NULL, n = 100),
-        "z.*Must be of type 'numeric'"
-    )
-    expect_error(
-        fitSusieInfThenSusieRss(z = 1, R = NULL, n = -1),
-        "n.*is not >= 0"
-    )
-    expect_error(
-        fitSusieInfThenSusieRss(z = 1, R = NULL, n = 1, args = 1L),
-        "must be built with SusieOptions"
-    )
-    # A bare list is the case the constructors exist to refuse: it cannot be
-    # checked, so a misspelling would reach susieR and be ignored.
-    expect_error(
-        fitSusieInfThenSusieRss(
-            z = 1,
-            R = NULL,
-            n = 1,
-            SusieInfOptions = list(L = 5)
-        ),
-        "must be built with SusieInfOptions"
-    )
-    expect_error(
-        fitSusieInfThenSusieRss(
-            z = 1,
-            R = NULL,
-            n = 1,
-            SusieOptions = SusieOptions(nope = 1)
-        ),
-        "unknown argument"
-    )
-    expect_error(
-        fitSusieInfThenSusieRss(
-            z = 1,
-            R = NULL,
-            n = 1,
-            fittedModels = 1L
-        ),
-        "fittedModels.*Must be of type 'list'"
-    )
-})
 
 test_that(".fmwConcat answers an empty list for no pieces", {
     expect_identical(pecotmr:::.fmwConcat(list()), list())
@@ -4725,6 +4579,117 @@ test_that(".fmSerScreen: disables on 0, skips no-signal, keeps signal + adaptive
     expect_true(fn(X, ySig, -1)) # adaptive 3/p: signal keeps
     expect_false(fn(X, yNull, -1)) # adaptive 3/p: null skips
     expect_true(fn(X, yNull, NA)) # malformed cutoff -> advisory keep
+})
+
+# Capture what buildMvsusieMixturePrior() hands the engine, which is the only
+# thing the wrapper is responsible for: the engine itself is mvsusieR's.
+.fmw_captureMixturePrior <- function(expr) {
+    captured <- NULL
+    local_mocked_bindings(
+        create_mixture_prior = function(...) {
+            captured <<- list(...)
+            "PRIOR"
+        },
+        .package = "mvsusieR"
+    )
+    force(expr)
+    captured
+}
+
+test_that("buildMvsusieMixturePrior: canonical arm names only R", {
+    args <- .fmw_captureMixturePrior(
+        buildMvsusieMixturePrior(conditionNames = c("c1", "c2"))
+    )
+    # create_mixture_prior() tests the two with missing(), so the unused name
+    # must be ABSENT, not NULL -- supplying both trips its own stop().
+    expect_false("mixture_prior" %in% names(args))
+    expect_equal(args$R, 2L)
+    expect_equal(args$include_indices, c("c1", "c2"))
+    expect_equal(args$weights_tol, 1e-10)
+})
+
+test_that("buildMvsusieMixturePrior: data-driven arm omits R", {
+    U <- list(compA = diag(2), compB = diag(2) * 2)
+    args <- .fmw_captureMixturePrior(buildMvsusieMixturePrior(
+        conditionNames = c("c1", "c2"),
+        mixtureMatrices = U,
+        mixtureWeights = c(compA = 0.25, compB = 0.75),
+        weightsTol = 1e-8
+    ))
+    expect_false("R" %in% names(args))
+    expect_equal(names(args$mixture_prior$matrices), c("compA", "compB"))
+    expect_equal(args$mixture_prior$weights, c(compA = 0.25, compB = 0.75))
+    expect_equal(args$include_indices, c("c1", "c2"))
+    expect_equal(args$weights_tol, 1e-8)
+})
+
+test_that("buildMvsusieMixturePrior: NULL mixtureWeights stay uniform", {
+    args <- .fmw_captureMixturePrior(
+        buildMvsusieMixturePrior(mixtureMatrices = list(compA = diag(2)))
+    )
+    # Absent rather than NULL: create_mixture_prior() fills uniform weights
+    # when `weights` is missing from the mixture.
+    expect_false("weights" %in% names(args$mixture_prior))
+    expect_equal(names(args$mixture_prior$matrices), "compA")
+})
+
+test_that("buildMvsusieMixturePrior: unnamed conditions need an explicit R", {
+    # length(NULL) is 0, which create_cov_canonical() turns into a 0 x 0
+    # subscript error deep in the engine. Caught here instead.
+    expect_error(buildMvsusieMixturePrior(), "Must be >= 1")
+    args <- .fmw_captureMixturePrior(buildMvsusieMixturePrior(R = 3))
+    expect_equal(args$R, 3)
+    expect_false("include_indices" %in% names(args))
+})
+
+test_that("buildMvsusieMixturePrior: conditionNames must agree with R", {
+    expect_error(
+        buildMvsusieMixturePrior(conditionNames = c("c1", "c2"), R = 3),
+        "names 2 conditions but `R` is 3"
+    )
+})
+
+test_that("buildMvsusieMixturePrior: methodArgs forwarded, list refused", {
+    args <- .fmw_captureMixturePrior(buildMvsusieMixturePrior(
+        conditionNames = c("c1", "c2"),
+        methodArgs = MvsusieMixturePriorOptions(singletons = FALSE)
+    ))
+    expect_false(args$singletons)
+    expect_error(
+        buildMvsusieMixturePrior(R = 2, methodArgs = list(singletons = FALSE)),
+        "MvsusieMixturePriorOptions"
+    )
+})
+
+test_that("MvsusieMixturePriorOptions refuses the arguments the builder owns", {
+    for (owned in c("mixture_prior", "R", "include_indices", "weights_tol")) {
+        expect_error(
+            exec(MvsusieMixturePriorOptions, !!!set_names(list(1), owned)),
+            "supplied by pecotmr"
+        )
+    }
+})
+
+test_that(".fmFoldWeightsMv: NULL mvPrior uses buildMvsusieMixturePrior", {
+    # Regression: the fold path used to inline its own
+    # create_mixture_prior(R = ncol(Ytr)) -- the last fragment of the legacy
+    # hardcoded canonical prior -- so its prior came back unlabelled while
+    # the full-data path's did not.
+    Xtr <- matrix(rnorm(20), 10, 2, dimnames = list(NULL, c("v1", "v2")))
+    Ytr <- matrix(rnorm(20), 10, 2, dimnames = list(NULL, c("c1", "c2")))
+    args <- .fmw_captureMixturePrior({
+        local_mocked_bindings(
+            fitMvsusie = function(...) "FIT",
+            mvsusieWeights = function(mvsusieFit) {
+                matrix(0, 2, 2, dimnames = list(c("v1", "v2"), NULL))
+            },
+            .fmLeanFoldFit = function(fit, token) NULL,
+            .package = "pecotmr"
+        )
+        pecotmr:::.fmFoldWeightsMv(Xtr, Ytr, 0.95, NULL, NULL)
+    })
+    expect_equal(args$R, 2L)
+    expect_equal(args$include_indices, c("c1", "c2"))
 })
 
 test_that(".buildMvsusieReweightedPrior: canonical fallback when no usable fit", {

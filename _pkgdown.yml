@@ -214,6 +214,7 @@ reference:
       - MashPosteriorOptions
       - MrmashCanonicalCovsOptions
       - MrmashExpandCovsOptions
+      - MvsusieMixturePriorOptions
       - PlinkQcOptions
       - PoolrOptions
       - QvalueOptions
@@ -608,10 +609,9 @@ reference:
       - fsusieWeights
       - fitMvsusie
       - fitMvsusieRss
+      - buildMvsusieMixturePrior
       - fitFsusie
-      - fitSusieInfThenSusieRss
       - fsusieGetCs
-      - fsusieWrapper
       - susieResult
       - computeCsTables
       - buildTopLoci
@@ -635,6 +635,7 @@ reference:
 
   - subtitle: "Penalized regression"
     contents:
+      - fitGlmnetCv
       - glmnetWeights
       - lassoWeights
       - enetWeights

@@ -1462,12 +1462,19 @@ test_that("fineMappingPipeline(QtlDataset): fsusie with single trait rejected", 
     function(R, ...) list(R = R)
 }
 .fmp_mockSusiF <- function() {
-    function(X, Y, pos) {
+    # L / cov_lev / min_purity are refused by FsusieOptions as pipeline-owned,
+    # so the pipeline is their only source: record them here so a test can
+    # assert they actually arrive. `...` keeps the stub tolerant of further
+    # susiF arguments.
+    function(X, Y, pos, L = NULL, cov_lev = NULL, min_purity = NULL, ...) {
         list(
             token = "fsusie",
             n_X_cols = ncol(X),
             n_Y_cols = ncol(Y),
-            pos = pos
+            pos = pos,
+            L = L,
+            cov_lev = cov_lev,
+            min_purity = min_purity
         )
     }
 }
@@ -1934,6 +1941,45 @@ test_that("fineMappingPipeline(QtlDataset): jointSpec='trait' with fsusie wires 
     expect_equal(as.character(res$trait), "ENSG_A")
     expect_equal(as.character(res$jointTraits), "ENSG_A;ENSG_B")
     expect_true("jointTraits" %in% pecotmr:::.tupleColumnNames(res))
+})
+
+test_that("fineMappingPipeline(QtlDataset): fsusie receives the CredibleSetParam settings", {
+    # Regression: .fmOwnedEngineArgs() refuses L / cov_lev / min_purity in
+    # FsusieOptions on the grounds that the pipeline supplies them, but for a
+    # while nothing did -- the row described the retired fsusieWrapper() while
+    # the pipeline called fitFsusie(). `--L` was silently ignored and susiF
+    # ran at its own default. The mocked susiF records what it was handed.
+    qd <- .fmp_makeQtlDataset(
+        contexts = "brain",
+        traits = c("ENSG_A", "ENSG_B")
+    )
+    local_mocked_bindings(
+        extractBlockGenotypes = .fmp_mockExtractor(),
+        .fmPostprocessOne = .fmp_mockPostprocess(),
+        .package = "pecotmr"
+    )
+    local_mocked_bindings(
+        susiF = .fmp_mockSusiF(),
+        .package = "fsusieR"
+    )
+    res <- suppressMessages(
+        fineMappingPipeline(
+            qd,
+            methods = "fsusie",
+            cisWindow = 1000L,
+            jointSpecification = "trait",
+            credibleSetParam = CredibleSetParam(
+                maxNumSingleEffects = 3L,
+                coverage = 0.9,
+                minAbsCorr = 0.4
+            )
+        )
+    )
+    # .fmp_mockPostprocess stores the raw fit under `payload`.
+    recorded <- susieFit(res[1, ])$payload
+    expect_equal(recorded$L, 3L)
+    expect_equal(recorded$cov_lev, 0.9)
+    expect_equal(recorded$min_purity, 0.4)
 })
 
 test_that("fineMappingPipeline(QtlDataset): fsusie multi-trait per context dispatch", {
@@ -5239,14 +5285,21 @@ test_that("CredibleSetParam validity rejects non-scalar counts and flags", {
 
 test_that("SerOptions and FsusieOptions refuse what their wrappers own", {
     # The susie_ser and susiF arms of .fmOwnedEngineArgs(): ser takes only
-    # the coverage half of csHome, and susiF owns five wrapper settings on
-    # top of its data arguments.
+    # the coverage half of csHome, and susiF owns the three settings the
+    # pipeline actually supplies to it.
     expect_error(SerOptions(z = 1), "supplied by pecotmr")
     expect_error(SerOptions(n = 100L), "supplied by pecotmr")
     expect_error(SerOptions(coverage = 0.9), "csCoverage")
     expect_error(FsusieOptions(L = 2), "maxNumSingleEffects")
-    expect_error(FsusieOptions(min_purity = 0.5), "minPurity")
-    expect_error(FsusieOptions(max_scale = 6), "maxScale")
+    expect_error(FsusieOptions(min_purity = 0.5), "minAbsCorr")
+    expect_error(FsusieOptions(cov_lev = 0.9), "csCoverage")
+    # ... and ONLY those. max_scale / max_SNP_EM / prior were refused while
+    # this row still described the retired fsusieWrapper(); nothing supplies
+    # them on the pipeline path, so refusing them closed the only way to set
+    # them at all.
+    expect_s4_class(FsusieOptions(max_scale = 6), "MethodOptions")
+    expect_s4_class(FsusieOptions(max_SNP_EM = 20), "MethodOptions")
+    expect_s4_class(FsusieOptions(prior = "mixture_normal"), "MethodOptions")
     # ser does NOT own L -- susie_ser is single-effect by construction, so
     # the csHome entry it takes is coverage alone.
     expect_s4_class(SerOptions(prior_variance = 1), "MethodOptions")
