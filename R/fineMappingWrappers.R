@@ -845,13 +845,40 @@ selectEffects <- function(fit, priorEffTol = 1e-9) {
 }
 
 .asLbfMatrix <- function(fit) {
-    if (!is.null(fit$lbf_variable)) {
-        return(.asEffectMatrix(fit$lbf_variable))
+    # Every shape a fit's per-effect LBF is known to arrive in, in one place.
+    # `lbf()` and colocPipeline used to keep separate lists of these and had
+    # drifted apart -- coloc was blind to a bare `fit$lBF`, which is exactly
+    # what an fSuSiE fit carries, so fSuSiE colocalization silently skipped.
+    nested <- if (is.list(fit) && length(fit) >= 1L) fit[[1L]] else NULL
+    # compact() drops NULL and zero-length entries, so the first survivor is
+    # the first shape the fit actually carries.
+    candidates <- compact(list(
+        .fitField(fit, "lbf_variable"),
+        .fitField(fit, "lBF"),
+        .fitField(fit, "fsusie_result", "lBF"),
+        .fitField(nested, "fsusie_result", "lBF")
+    ))
+    if (length(candidates) == 0L) {
+        return(NULL)
     }
-    if (!is.null(fit$lBF)) {
-        return(.asEffectMatrix(fit$lBF))
+    .asEffectMatrix(candidates[[1L]])
+}
+
+# Read a nested fit field by path, tolerating every way the path can fail to
+# exist. Neither `$` nor `[[` is safe here on its own: `$` errors on an atomic
+# vector (a fit's first element is often a matrix) and `[[` errors on a name a
+# list does not have.
+# @noRd
+.fitField <- function(x, ...) {
+    reduce(c(...), .fitFieldStep, .init = x)
+}
+
+# @noRd
+.fitFieldStep <- function(x, nm) {
+    if (!is.list(x) || !is_in(nm, names(x))) {
+        return(NULL)
     }
-    NULL
+    x[[nm]]
 }
 
 #' Compute Credible-Set Tables From a Fine-Mapping Fit
@@ -1107,12 +1134,13 @@ setMethod(
 # Per-effect (per credible set) variant-level columns from the susie fit. Always
 # returns `within_cs_pip` (the variant's alpha in the single effect of its
 # assigned primary-coverage CS; NA for non-CS variants -- alpha is a
-# probability,
-# no scaling). With fullFit = TRUE it also widens the per-effect matrices, one
-# column set per CS: `within_cs_pip_<lab>` (alpha) and -- unless
-# perCsColumns = "full" -- `cs_logbf_<lab>` (lbf_variable),
-# `cs_effect_<lab>` (mu /
-# X_column_scale_factors) and `cs_effect_var_<lab>` ((mu2 - mu^2) / scale^2).
+# probability, no scaling).
+#
+# `perCsColumns` then decides how much of the per-effect matrices is widened,
+# one column set per CS: "none" stops at the scalar above, "alpha" adds
+# `within_cs_pip_<lab>` (alpha), and "full" adds `cs_logbf_<lab>`
+# (lbf_variable), `cs_effect_<lab>` (mu / X_column_scale_factors) and
+# `cs_effect_var_<lab>` ((mu2 - mu^2) / scale^2) on top of it.
 # includeAllCs = TRUE widens EVERY effect (label `L<k>`), else only effects that
 # produced a passing CS (label `cs<pos>`, matching the cs_<cov> columns).
 # alpha/mu/mu2/lbf are L x p per-effect matrices (mu/mu2 already
@@ -1550,7 +1578,7 @@ buildTopLoci <- function(
     cov <- .btlCoverage(csTables)
     fc <- .btlFitConstants(dataY, otherQuantities, region)
     post <- .btlPosterior(fit, conditionIdx, nV)
-    marg <- .btlMarginal(sumstats, nV)
+    marg <- .btlMarginal(sumstats, nV, af, n)
     cs <- .btlCsMembership(cov, csTables, nV, variantNames)
     fullFitBlock <- .btlFullFitBlock(
         fit,
@@ -1632,11 +1660,7 @@ buildTopLoci <- function(
     withCond <- if (is.null(conditionIdx)) {
         out
     } else {
-        mutate(
-            out,
-            conditional_effect = cond$condEffect,
-            lfsr = cond$condLfsr
-        )
+        mutate(out, lfsr = cond$condLfsr)
     }
     if (is.null(signalCutoff) || signalCutoff <= 0) {
         return(withCond)
@@ -1718,19 +1742,65 @@ buildTopLoci <- function(
     )
 }
 
+
+# The per-variant standardization factors susie divides its coefficients by,
+# or 1 where the fit records none -- an RSS fit has no X to scale, and a fit
+# run with `standardize = FALSE` records all-1s. Read with `[[`: `$` on a list
+# falls back to prefix matching.
+# @noRd
+.btlScaleFactors <- function(fit, nV) {
+    sf <- fit[["X_column_scale_factors"]]
+    if (is.null(sf) || !is.numeric(sf) || length(sf) != nV) {
+        return(rep(1, nV))
+    }
+    # A zero factor would divide to Inf; it can only come from a constant
+    # column, which carries no effect anyway.
+    replace(as.numeric(sf), !is.finite(sf) | sf == 0, 1)
+}
+
+# susieInf / susieAsh carry an infinitesimal effect alongside the sparse one,
+# and `coef.susie()` adds it in. Dropping it would silently change what the
+# posterior effect means for those two methods.
+# @noRd
+.btlInfinitesimal <- function(fit, nV) {
+    theta <- fit[["theta"]]
+    if (is.null(theta) || !is.numeric(theta) || length(theta) != nV) {
+        return(rep(0, nV))
+    }
+    replace(as.numeric(theta), !is.finite(theta), 0)
+}
+
 # Per-variant posterior mean/SD (from alpha, mu, mu2) and the strongest
 # single-effect log Bayes factor. A conditionIdx slices 3-D mvsusie mu/mu2.
+#
+# The mean and SD are returned on the scale of the X the fit was GIVEN, which
+# means dividing the internal `colSums(alpha * mu)` by
+# `X_column_scale_factors` -- exactly what `susieR::coef.susie()` does, and
+# what `susieWeights()`, `.ctwasRenormalizeSusieWeights()` and the whole TWAS
+# layer already return. Without the division this one column was the only
+# quantity in the package on the standardized scale: the same fit yielded two
+# different "posterior effects" depending on whether you read `topLoci()` or
+# `susieWeights()`, and `weight_standardized` could not describe both.
 .btlPosterior <- function(fit, conditionIdx, nV) {
     alpha <- as.matrix(fit$alpha)
     mu <- .fmSliceCond(fit$mu, conditionIdx)
     mu2 <- .fmSliceCond(fit$mu2, conditionIdx)
-    postMean <- if (!is.null(mu) && all(dim(alpha) == dim(mu))) {
-        colSums(alpha * mu)
+    scaleFactors <- .btlScaleFactors(fit, nV)
+    meanStd <- if (!is.null(mu) && all(dim(alpha) == dim(mu))) {
+        colSums(alpha * mu) + .btlInfinitesimal(fit, nV)
     } else {
         rep(NA_real_, nV)
     }
+    postMean <- meanStd / scaleFactors
     postSd <- if (!is.null(mu2) && all(dim(alpha) == dim(mu2))) {
-        sqrt(pmax(colSums(alpha * mu2) - postMean^2, 0))
+        # From the STANDARDIZED mean, then rescaled: an SD rescales the same
+        # way its mean does, but the mu2 identity only holds in the units mu2
+        # is stored in.
+        sdStd <- sqrt(pmax(
+            colSums(alpha * mu2) - colSums(alpha * mu)^2,
+            0
+        ))
+        sdStd / scaleFactors
     } else {
         rep(NA_real_, nV)
     }
@@ -1783,7 +1853,7 @@ buildTopLoci <- function(
 
 # Marginal univariate effects (beta, se, z, p) from the sumstats list; z and p
 # are derived when not supplied directly.
-.btlMarginal <- function(sumstats, nV) {
+.btlMarginal <- function(sumstats, nV, af = NULL, n = NULL) {
     beta <- if (!is.null(sumstats$betahat)) {
         as.numeric(sumstats$betahat)
     } else {
@@ -1794,7 +1864,12 @@ buildTopLoci <- function(
     } else {
         rep(NA_real_, nV)
     }
-    z <- if (!is.null(sumstats$z)) {
+    # Whether the SOURCE supplied z matters downstream, not just its value:
+    # the GWAS-VCF `EZ` field is defined as the z "provided if it was used to
+    # derive the ES and SE fields", so a z we computed from a recorded
+    # beta/se must not be published as one that was provided.
+    zSupplied <- !is.null(sumstats$z)
+    z <- if (zSupplied) {
         as.numeric(sumstats$z)
     } else if (any(!is.na(beta)) && any(!is.na(se))) {
         beta / se
@@ -1808,7 +1883,38 @@ buildTopLoci <- function(
     } else {
         rep(NA_real_, nV)
     }
-    list(beta = beta, se = se, z = z, p = p)
+    filled <- .btlFillFromZ(beta, se, z, af, n, nV)
+    list(
+        beta = filled$beta,
+        se = filled$se,
+        z = z,
+        p = p,
+        zSupplied = zSupplied
+    )
+}
+
+# A z-only source still has an effect size. .zToBetaSe() inverts the model
+# (se = 1/sqrt(2*p*q*(N + z^2)), beta = z*se) given allele frequency and N, so
+# leaving beta/se NA made every downstream effect-size consumer silently lose a
+# GWAS that reported only z -- and such sources are routine.
+#
+# Only when NOTHING was recorded: filling the gaps in a partly-recorded column
+# would mix measured and model-derived values under one name. `af` rather than
+# maf is fine, since the 2*p*q variance term is symmetric in p <-> q.
+# @noRd
+.btlFillFromZ <- function(beta, se, z, af, n, nV) {
+    asIs <- list(beta = beta, se = se)
+    if (any(!is.na(beta)) || all(is.na(z))) {
+        return(asIs)
+    }
+    if (is.null(af) || is.null(n) || anyNA(af) || anyNA(n)) {
+        return(asIs)
+    }
+    if (length(af) != nV || !is_in(length(n), c(1L, nV))) {
+        return(asIs)
+    }
+    bs <- .zToBetaSe(z, af, n)
+    list(beta = as.numeric(bs$beta), se = as.numeric(bs$se))
 }
 
 # CS membership index + purity for every coverage present (high -> low), with
@@ -1857,29 +1963,6 @@ buildTopLoci <- function(
     )
 }
 
-# Per-condition conditional effect (coef / pip) for a multi-condition fit.
-# Accepts a trimmed fit's `$coef` or a raw mvsusie fit via coef.mvsusie().
-.btlCondEffect <- function(fit, method, conditionIdx, nV) {
-    coefMat <- if (!is.null(fit$coef)) {
-        as.matrix(fit$coef)
-    } else if (
-        identical(method, "mvsusie") &&
-            requireNamespace("mvsusieR", quietly = TRUE)
-    ) {
-        cm <- try_fetch(mvsusieR::coef.mvsusie(fit), error = function(cnd) NULL)
-        if (!is.null(cm)) as.matrix(cm)[-1L, , drop = FALSE] else NULL
-    } else {
-        NULL
-    }
-    if (
-        is.null(coefMat) || nrow(coefMat) != nV || ncol(coefMat) < conditionIdx
-    ) {
-        return(rep(NA_real_, nV))
-    }
-    pipVec <- as.numeric(fit$pip)
-    if_else(pipVec > 0, coefMat[, conditionIdx] / pipVec, NA_real_)
-}
-
 # Per-condition conditional lfsr: map each variant to its effect (L) via the
 # primary (highest-coverage) credible set, then read that effect's lfsr.
 .btlCondLfsr <- function(
@@ -1890,7 +1973,9 @@ buildTopLoci <- function(
     csTables,
     nV
 ) {
-    clf <- if (!is.null(fit$clfsr)) fit$clfsr else fit$conditional_lfsr
+    # `%||%` not `if (!is.null(...))`: three sources in priority order, the
+    # last of which COMPUTES the quantity a univariate fit never reports.
+    clf <- fit$clfsr %||% fit$conditional_lfsr %||% .btlUnivariateClfsr(fit)
     condLfsr <- rep(NA_real_, nV)
     if (
         is.null(clf) ||
@@ -1938,6 +2023,38 @@ buildTopLoci <- function(
 # One credible set's conditional-lfsr values, or NULL when its effect is out
 # of range or it covers no in-range variant.
 # @noRd
+# The conditional lfsr of a univariate susie fit, which reports none.
+#
+# It has everything needed to compute one: the single-effect posterior for
+# variant j in effect l is N(mu[l, j], mu2[l, j] - mu[l, j]^2), so the
+# probability of a SIGN error conditional on that variant carrying the effect
+# is pnorm(-|mu| / sd). That is the same quantity mvSuSiE reports in `clfsr`,
+# for the one condition a univariate fit has -- so it comes back in the same
+# [effect, variant, condition] shape and flows through the identical credible
+# set assignment, rather than needing a parallel code path.
+#
+# NULL (hence NA downstream, as before) when the fit was trimmed of mu / mu2.
+# @noRd
+.btlUnivariateClfsr <- function(fit) {
+    mu <- fit$mu
+    mu2 <- fit$mu2
+    if (is.null(mu) || is.null(mu2)) {
+        return(NULL)
+    }
+    mu <- as.matrix(mu)
+    mu2 <- as.matrix(mu2)
+    if (!identical(dim(mu), dim(mu2)) || length(dim(mu)) != 2L) {
+        return(NULL)
+    }
+    # Numerical slop can make mu2 - mu^2 very slightly negative.
+    sd <- sqrt(pmax(mu2 - mu^2, 0))
+    lfsr <- stats::pnorm(-abs(mu) / sd)
+    # A zero-variance single effect is degenerate rather than sign-certain, so
+    # it reports nothing instead of a confident 0.
+    lfsr[sd <= 0 | !is.finite(lfsr)] <- NA_real_
+    array(lfsr, dim = c(dim(mu), 1L))
+}
+
 .btlCondLfsrForSet <- function(
     csPos,
     setsPrim,
@@ -1969,13 +2086,9 @@ buildTopLoci <- function(
     nV
 ) {
     if (is.null(conditionIdx)) {
-        return(list(
-            condEffect = rep(NA_real_, nV),
-            condLfsr = rep(NA_real_, nV)
-        ))
+        return(list(condLfsr = rep(NA_real_, nV)))
     }
     list(
-        condEffect = .btlCondEffect(fit, method, conditionIdx, nV),
         condLfsr = .btlCondLfsr(
             fit,
             conditionIdx,
@@ -2078,6 +2191,7 @@ buildTopLoci <- function(
         marginal_beta = unname(marg$beta),
         marginal_se = unname(marg$se),
         marginal_z = unname(marg$z),
+        marginal_z_supplied = isTRUE(marg$zSupplied),
         marginal_p = unname(marg$p),
         pip = as.numeric(fit$pip),
         posterior_mean = unname(post$postMean),
@@ -2116,6 +2230,7 @@ buildTopLoci <- function(
         marginal_beta = numeric(),
         marginal_se = numeric(),
         marginal_z = numeric(),
+        marginal_z_supplied = logical(),
         marginal_p = numeric(),
         pip = numeric(),
         posterior_mean = numeric(),
@@ -2137,6 +2252,18 @@ buildTopLoci <- function(
 }
 
 .parseGrange <- function(regionStr) {
+    # Every in-package source of a window is a GRanges (the pipeline's
+    # `region`, an X block's own range); only the documented user-facing form
+    # is a string. Normalize here so no caller has to.
+    if (methods::is(regionStr, "GRanges")) {
+        if (length(regionStr) == 0L) {
+            return(c(start = NA_integer_, end = NA_integer_))
+        }
+        return(c(
+            start = as.integer(GenomicRanges::start(regionStr)[[1L]]),
+            end = as.integer(GenomicRanges::end(regionStr)[[1L]])
+        ))
+    }
     if (
         is.null(regionStr) ||
             length(regionStr) == 0L ||
@@ -4314,7 +4441,8 @@ extractTopPipInfo <- function(fmRow, sumstats) {
     ctx,
     tid,
     af,
-    fitRetention
+    fitRetention,
+    region = NULL
 ) {
     fit <- .fmXFitOne(
         tk,
@@ -4338,7 +4466,8 @@ extractTopPipInfo <- function(fmRow, sumstats) {
         y = y,
         credibleSetParam = credibleSetParam,
         af = af,
-        fitRetention = fitRetention
+        fitRetention = fitRetention,
+        region = region
     )
 }
 
@@ -4357,7 +4486,8 @@ extractTopPipInfo <- function(fmRow, sumstats) {
     ctx,
     tid,
     af,
-    fitRetention
+    fitRetention,
+    region = NULL
 ) {
     chainLocal <- .fmResolveSusieChain(toRun, initializeWithSusieInf)
     infFit <- .fmXInfFit(
@@ -4384,7 +4514,8 @@ extractTopPipInfo <- function(fmRow, sumstats) {
             ctx = ctx,
             tid = tid,
             af = af,
-            fitRetention = fitRetention
+            fitRetention = fitRetention,
+            region = region
         ),
         toRun
     ))
@@ -4405,7 +4536,8 @@ extractTopPipInfo <- function(fmRow, sumstats) {
     samplePartition = NULL,
     af = NULL,
     fitRetention = "slim",
-    seed = NULL
+    seed = NULL,
+    region = NULL
 ) {
     out <- .fmXFitAll(
         toRun,
@@ -4418,7 +4550,8 @@ extractTopPipInfo <- function(fmRow, sumstats) {
         ctx = ctx,
         tid = tid,
         af = af,
-        fitRetention = fitRetention
+        fitRetention = fitRetention,
+        region = region
     )
     .fmXCrossValidate(
         out,
@@ -4516,7 +4649,8 @@ extractTopPipInfo <- function(fmRow, sumstats) {
     y,
     credibleSetParam,
     af,
-    fitRetention
+    fitRetention,
+    region = NULL
 ) {
     .fmPostprocessOne(
         fit = fit,
@@ -4524,6 +4658,7 @@ extractTopPipInfo <- function(fmRow, sumstats) {
         dataX = X,
         dataY = y,
         af = af,
+        region = region,
         csInput = "X",
         credibleSetParam = credibleSetParam,
         fitRetention = fitRetention
@@ -4596,7 +4731,8 @@ extractTopPipInfo <- function(fmRow, sumstats) {
     af = NULL,
     nVar = NULL,
     fitRetention = "slim",
-    susieRssParam
+    susieRssParam,
+    region = NULL
 ) {
     chainLocal <- .fmResolveSusieChain(toRun, initializeWithSusieInf)
     infFit <- .fmRssInfFit(
@@ -4626,7 +4762,8 @@ extractTopPipInfo <- function(fmRow, sumstats) {
             label = label,
             af = af,
             nVar = nVar,
-            fitRetention = fitRetention
+            fitRetention = fitRetention,
+            region = region
         ),
         toRun
     ))
@@ -4649,7 +4786,8 @@ extractTopPipInfo <- function(fmRow, sumstats) {
     label,
     af,
     nVar,
-    fitRetention
+    fitRetention,
+    region = NULL
 ) {
     f <- .fmRssFitOne(
         tk,
@@ -4674,7 +4812,8 @@ extractTopPipInfo <- function(fmRow, sumstats) {
         credibleSetParam = credibleSetParam,
         af = af,
         nVar = nVar,
-        fitRetention = fitRetention
+        fitRetention = fitRetention,
+        region = region
     )
     if (f$isStd && isTRUE(susieRssParam$serFallback)) {
         return(.fmRssRecordFallback(entry, f, susieRssParam$keepFullFit))
@@ -4839,7 +4978,8 @@ extractTopPipInfo <- function(fmRow, sumstats) {
     credibleSetParam,
     af,
     nVar,
-    fitRetention
+    fitRetention,
+    region = NULL
 ) {
     .fmPostprocessOne(
         fit = fit,
@@ -4851,6 +4991,7 @@ extractTopPipInfo <- function(fmRow, sumstats) {
         # path that has no per-variant N -> buildTopLoci leaves N as NA,
         # never 1. This is NOT `n` (the scalar median the RSS fit consumes).
         n = nVar,
+        region = region,
         csInput = "Xcorr",
         credibleSetParam = credibleSetParam,
         fitRetention = fitRetention

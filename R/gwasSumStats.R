@@ -507,6 +507,7 @@ setMethod("varY", "GwasSumStats", function(x, studyName = NULL) {
     if (is.na(val)) NULL else val
 })
 
+
 # =============================================================================
 # Coercion / converters
 # =============================================================================

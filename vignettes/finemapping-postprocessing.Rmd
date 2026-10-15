@@ -54,10 +54,28 @@ head(as.data.frame(loci)[, c(
     "pip",
     "cs_95",
     "cs_95_purity",
-    "beta",
-    "se"
+    "posterior_effect",
+    "posterior_se"
 )], 4)
 ```
+
+`posterior_effect` is the posterior mean effect — the same quantity a TWAS
+weight is, and literally what `susieWeights()` returns — and `posterior_se`
+its standard error. They are deliberately *not* called `beta`/`se`:
+[`marginalEffects()`](#) publishes the **marginal** single-variant estimate
+under those names, so sharing them would let the two views be joined into a
+silent mix of posterior and marginal effects.
+
+Both are on the standardized genotype scale, because the `QtlDataset`
+accessors centre and scale every genotype column to unit variance before
+fitting — `residualizedGenotypes()` does it, governed by
+`ResidualizationParam(scaleResiduals = FALSE)` per call or the dataset's own
+`scaleResiduals` slot. The published `weight_standardized` records whichever
+way it resolved.
+That is what makes a posterior effect comparable with a TWAS weight from any
+other method — they are all on the scale of the `X` the fitter was given, and
+on the same scale as the LD correlations and z-scores a TWAS Z is computed
+from. The published `weight_standardized` column records it.
 
 `cs_95` names the credible set the variant belongs to, or is `NA` when it
 belongs to none. The `cs_70` / `cs_50` columns give the same membership at
@@ -266,19 +284,72 @@ object the other helpers expect.
 
 ## Writing results out
 
-`writeSumStatsVcf()` serialises a fine-mapping result — or summary
-statistics — to GWAS-VCF, the interchange format most external tools read:
+Two generics cover every published format. `exportToVcf()` serialises a
+fine-mapping result — or summary statistics, or TWAS weights — to GWAS-VCF,
+the interchange format most external tools read: one record per variant, one
+sample per study or fitted model, and the statistics as FORMAT fields.
 
 ```{r vcf, eval=FALSE}
-writeSumStatsVcf(
+exportToVcf(
     qtlFineMappingExample,
-    file = "finemapping.vcf.gz",
-    genome = "hg38"
+    outputPath = "finemapping.vcf.gz",
+    context = "context_1"
 )
 ```
 
 It needs the `VariantAnnotation` package, which is a suggested dependency
 rather than a hard one.
+
+`exportToBed()` writes the published long-format tables instead, one row per
+published observation, bgzipped and tabix-indexed when the path ends in `.gz`:
+
+```{r bed, eval=FALSE}
+# the top-loci table: the posterior view joined to the marginal one
+exportToBed(qtlFineMappingExample, "top_loci.bed.gz")
+# every remaining column the view carries, after the published schema
+exportToBed(qtlFineMappingExample, "top_loci_full.bed.gz", columns = "all")
+# the fSuSiE table: one row per (context, credible set), carrying the fitted
+# curve at both resolutions -- the wavelet grid and its reinterpolation onto
+# the trait positions. `levels` keeps only one of the two.
+exportToBed(fsusieFineMappingExample, "fsusie.bed.gz", schema = "fsusie")
+exportToBed(fsusieFineMappingExample, "fsusie_grid.bed.gz",
+    schema = "fsusie", levels = "wavelet")
+```
+
+Both accept a `list` of results and fold it into one sorted, indexed output,
+so a genome's worth of per-region RDSes needs no separate concatenate step.
+
+## Reading results back
+
+`readFineMappingResult()` is the inverse, and it is also the way into pecotmr
+for a result produced somewhere else: it reads either format and rebuilds the
+collection, keyed by whatever `(study, context, trait, method)` tuples the
+file holds.
+
+```{r read, eval=FALSE}
+res <- readFineMappingResult("top_loci.bed.gz")
+# only the variants of one region, from a tabix-indexed file
+res <- readFineMappingResult("top_loci.bed.gz", region = "chr22:32e6-33e6")
+```
+
+It requires almost nothing: coordinate-encoding variant ids and a `PIP`.
+Every other column is optional, because each consumer needs a different few —
+Mendelian randomization the marginal effect and its standard error,
+colocalization the log Bayes factors — and a table converted from another tool
+will carry some and not others. A consumer reached without what it needs names
+the column that is missing rather than quietly producing nothing.
+
+Two arguments exist for files that were assembled by hand. `studyName`,
+`context`, `trait` and `method` fill in identity columns the file does not
+record (a value that *disagrees* with the file is an error, not an override),
+and `weightStandardized` says which genotype scale a published `WGT` is on —
+required when the file does not say, because the two scales differ by a
+per-variant, allele-frequency-dependent factor and neither is recognisable on
+its own.
+
+`readTwasWeights()` does the same for a weights file. Note that a fine-mapping
+table reads as weights too: the posterior effect *is* the prediction weight,
+which is why both schemas publish it as `WGT`.
 
 ## Next steps
 

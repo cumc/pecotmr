@@ -772,6 +772,7 @@ setMethod("methodNames", "FineMappingResultBase", function(x) {
     unique(as.character(x$method))
 })
 
+
 #' @noRd
 setMethod(
     "adjustPips",
@@ -1083,6 +1084,24 @@ setMethod(
 #' @export
 setMethod("fsusieCredibleBand", "FineMappingResultBase", function(x) {
     .fmrAggregateView(x, perEntry = .fmrRowFsusieCredibleBand)
+})
+
+#' @rdname fsusieTraitEffects
+#' @export
+setMethod("fsusieTraitEffects", "FineMappingResultBase", function(x) {
+    # Not .fmrAggregateView(): the per-entry payload carries only the fit, and
+    # this view also needs the row's `jointTraits` column for the trait names.
+    meta <- .fmrRowMetadata(x)
+    parts <- compact(map(
+        seq_len(nrow(x)),
+        .fsusieEntryTraitEffects,
+        x = x,
+        meta = meta
+    ))
+    if (length(parts) == 0L) {
+        return(bind_cols(slice(meta, integer(0)), .emptyTraitEffects()))
+    }
+    .rbindAligned(parts)
 })
 
 #' @rdname fsusieAffectedRegions

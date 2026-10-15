@@ -2911,7 +2911,13 @@ effectiveN <- function(nCase, nControl) {
         "SE",
         "P",
         "N_CASE",
-        "N_CONTROL"
+        "N_CONTROL",
+        # Lower case, unlike its neighbours, because it is not a statistic:
+        # it is the per-variant flag saying whether `Z` was supplied by the
+        # source or derived by pecotmr from BETA / SE, and GWAS-VCF's `EZ`
+        # means only the former. Same name as the fine-mapping marginal
+        # view's, so the vocabulary is one.
+        "z_supplied"
     )
     use <- intersect(c(baseCols, optCols), colnames(df))
     S4Vectors::`mcols<-`(

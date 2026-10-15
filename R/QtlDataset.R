@@ -1652,6 +1652,20 @@ setMethod("phenotypeCovariates", "QtlDataset", function(x, contexts) {
     set_names(map(contexts, .qtlContextColData, x = x), contexts)
 })
 
+# Whether to scale residual columns to unit variance: the per-call override
+# when the bundle sets one, else the dataset's own slot.
+#
+# Unset (NULL) rather than FALSE means "not asked", the same three-state
+# convention `residualizePhenotype` / `residualizeGenotype` use -- a flat
+# formal defaulting to TRUE could not tell "FALSE" from "not given".
+# @noRd
+.qtlScaleResiduals <- function(x, residualizationArgs) {
+    if (is.null(residualizationArgs)) {
+        return(scaleResiduals(x))
+    }
+    residualizationArgs$scaleResiduals %||% scaleResiduals(x)
+}
+
 # Internal: residualize a numeric matrix Y (n x k) against a covariate
 # matrix C (n x p) via pivoted QR decomposition. Adds an intercept column
 # to C. When C is rank-deficient (e.g., union of all contexts' phenotype
@@ -2021,7 +2035,7 @@ setMethod("phenotypeCovariates", "QtlDataset", function(x, contexts) {
     .qtlResidualizeQr(
         aligned$G,
         aligned$C,
-        scaleResiduals = scaleResiduals(x)
+        scaleResiduals = .qtlScaleResiduals(x, residualizationArgs)
     )
 }
 
@@ -2149,7 +2163,8 @@ setMethod(
         x = x,
         outlierAction = outlierAction,
         outlierPvalThreshold = outlierPvalThreshold,
-        outlierArgs = outlierArgs
+        outlierArgs = outlierArgs,
+        scaleResiduals = .qtlScaleResiduals(x, residualizationArgs)
     )
 }
 
@@ -2203,7 +2218,8 @@ setMethod(
     x,
     outlierAction,
     outlierPvalThreshold,
-    outlierArgs
+    outlierArgs,
+    scaleResiduals
 ) {
     out <- set_names(
         map(
@@ -2214,7 +2230,8 @@ setMethod(
             x = x,
             outlierAction = outlierAction,
             outlierPvalThreshold = outlierPvalThreshold,
-            outlierArgs = outlierArgs
+            outlierArgs = outlierArgs,
+            scaleResiduals = scaleResiduals
         ),
         contexts
     )
@@ -2303,7 +2320,8 @@ setMethod("show", "QtlDataset", function(object) {
     x,
     outlierAction,
     outlierPvalThreshold,
-    outlierArgs = list()
+    outlierArgs = list(),
+    scaleResiduals = scaleResiduals(x)
 ) {
     .qtlResidualizeContextPheno(
         Yraw[[ctx]],
@@ -2311,7 +2329,7 @@ setMethod("show", "QtlDataset", function(object) {
         ctx,
         outlierAction,
         outlierPvalThreshold,
-        scaleResiduals(x),
+        scaleResiduals,
         outlierArgs
     )
 }
@@ -2332,6 +2350,7 @@ setClass(
         genotypeCovariates = "CovariateSelection",
         residualizePhenotype = "logical_OR_NULL",
         residualizeGenotype = "logical_OR_NULL",
+        scaleResiduals = "logical_OR_NULL",
         covariateNaAction = "character_OR_NULL"
     )
 )
@@ -2374,6 +2393,14 @@ setClass(
 #'   read as \code{TRUE}.
 #' @param residualizeGenotype Logical. Residualize on the genotype
 #'   covariates. \code{NULL} (default) means unset, read as \code{TRUE}.
+#' @param scaleResiduals Logical. Scale each residual column to unit
+#'   variance, which is what puts a fitted effect on the standardized
+#'   genotype scale. \code{NULL} (default) means unset, and the accessors
+#'   fall back to the dataset's own \code{\link{scaleResiduals}} slot
+#'   (itself \code{TRUE} by default) --- so this is the per-call override of
+#'   a per-object default, and the only knob the pipelines need: it reaches
+#'   \code{\link{residualizedGenotypes}} already, which is the one point
+#'   every individual-level fit draws its genotypes through.
 #' @param covariateNaAction How missing covariate values are handled when the
 #'   design is assembled: \code{"impute"} or \code{"drop"}. \code{NULL}
 #'   (default) leaves the accessor's own default in place.
@@ -2386,6 +2413,7 @@ ResidualizationParam <- function(
     genotypeCovariates = NULL,
     residualizePhenotype = NULL,
     residualizeGenotype = NULL,
+    scaleResiduals = NULL,
     covariateNaAction = NULL
 ) {
     # NULL means "unset", which is why the accessors no longer need a
@@ -2398,6 +2426,7 @@ ResidualizationParam <- function(
         genotypeCovariates = genotypeCovariates,
         residualizePhenotype = residualizePhenotype,
         residualizeGenotype = residualizeGenotype,
+        scaleResiduals = scaleResiduals,
         covariateNaAction = covariateNaAction
     )
 }

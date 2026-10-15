@@ -2405,7 +2405,12 @@ validateMethodsVsJointSpec <- function(methodsParsed, jointSpecParsed) {
             dataType = weightsDataType,
             crossValidationArgs = .cvResolve(CrossValidationParam()),
             fitFullData = TRUE,
-            standardized = FALSE,
+            # What the accessor will actually do on this path. No
+            # residualization bundle reaches the TWAS joint dispatcher, so
+            # `residualizedGenotypes()` falls back to the dataset's own
+            # `scaleResiduals` slot -- which is therefore the honest answer
+            # here, and `NULL` says that explicitly rather than by omission.
+            standardized = .qtlScaleResiduals(data, NULL),
             seed = seed,
             ldSketch = NULL
         )

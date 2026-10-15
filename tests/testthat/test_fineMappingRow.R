@@ -5,7 +5,11 @@
 .makeAdjustEntry <- function(vids, maxNumSingleEffects = 2L) {
     p <- length(vids)
     set.seed(11L)
-    lbf <- matrix(rnorm(maxNumSingleEffects * p), nrow = maxNumSingleEffects, ncol = p)
+    lbf <- matrix(
+        rnorm(maxNumSingleEffects * p),
+        nrow = maxNumSingleEffects,
+        ncol = p
+    )
     colnames(lbf) <- vids
     alpha <- lbfToAlpha(lbf)
     pip <- as.numeric(1 - apply(1 - alpha, 2, prod))
@@ -509,11 +513,22 @@ test_that("credibleSets / topLoci minPurity filters CS by purity, independent of
 
 # A fit whose alpha was built from a deliberately NON-uniform prior, so the
 # stored-alpha route and the rebuild-from-lbf route disagree.
-.makeNonUniformPriorEntry <- function(vids, prior, maxNumSingleEffects = 2L, seed = 404L) {
+.makeNonUniformPriorEntry <- function(
+    vids,
+    prior,
+    maxNumSingleEffects = 2L,
+    seed = 404L
+) {
     p <- length(vids)
     set.seed(seed)
-    lbf <- matrix(rnorm(maxNumSingleEffects * p, sd = 2), maxNumSingleEffects, p, dimnames = list(NULL, vids))
-    w <- exp(sweep(lbf, 1L, apply(lbf, 1L, max), `-`)) * rep(prior, each = maxNumSingleEffects)
+    lbf <- matrix(
+        rnorm(maxNumSingleEffects * p, sd = 2),
+        maxNumSingleEffects,
+        p,
+        dimnames = list(NULL, vids)
+    )
+    w <- exp(sweep(lbf, 1L, apply(lbf, 1L, max), `-`)) *
+        rep(prior, each = maxNumSingleEffects)
     alpha <- w / rowSums(w)
     pip <- as.numeric(1 - apply(1 - alpha, 2, prod))
     list(
@@ -758,7 +773,11 @@ test_that("lbf is empty when the fit carries no lbf matrix", {
 test_that("lbf aggregates over a collection, carrying identity + NA-filling ragged effects", {
     vids <- c("chr1:100:A:G", "chr1:200:C:T", "chr1:300:G:A")
     mkEntry <- function(maxNumSingleEffects) {
-        lbf <- matrix(seq_len(maxNumSingleEffects * length(vids)), nrow = maxNumSingleEffects, byrow = TRUE) # L x p
+        lbf <- matrix(
+            seq_len(maxNumSingleEffects * length(vids)),
+            nrow = maxNumSingleEffects,
+            byrow = TRUE
+        ) # L x p
         fit <- structure(
             list(lbf_variable = lbf, pip = rep(0.3, length(vids))),
             class = "susie"
@@ -856,8 +875,11 @@ test_that("credibleSetSummary returns one row per CS with size/purity/V/logBF/le
     expect_equal(s$cs_log_bf, c(1.9597, 1.2031), tolerance = 1e-3)
     # cs_pip = summed member PIP (inclusion mass captured)
     expect_equal(s$cs_pip, c(1.1, 0.8), tolerance = 1e-6)
-    # cs_mean_effect = NA for univariate susie (no conditional_effect column)
-    expect_true(all(is.na(s$cs_mean_effect)))
+    # cs_mean_effect = mean(posterior_mean / pip) over the members. It was NA
+    # for every univariate susie fit while it read a `conditional_effect`
+    # column that only multi-condition fits ever got -- an artefact of where
+    # the column came from, not of the quantity.
+    expect_true(all(is.finite(s$cs_mean_effect)))
     # lead = highest-PIP member
     expect_equal(s$lead_variant, c("chr1:100:A:G", "chr1:300:A:G"))
 })
@@ -1031,7 +1053,10 @@ test_that("fsusieCredibleBand returns a long effect + band table (lower <= effec
     skip_if_not_installed("fsusieR")
     skip_if_not_installed("wavethresh")
     cb <- .fmrRowFsusieCredibleBand(.fsa_entry(.fsa_makeFit()))
-    expect_named(cb, c("cs", "chrom", "pos", "effect", "lower", "upper"))
+    expect_named(
+        cb,
+        c("cs", "chrom", "pos", "effect", "lower", "upper", "halfwidth")
+    )
     expect_gt(nrow(cb), 0)
     expect_true(all(
         cb$lower <= cb$effect + 1e-9 & cb$effect <= cb$upper + 1e-9
@@ -1047,7 +1072,10 @@ test_that("trimmed fSuSiE keeps curves, bands and coloc inputs", {
         expectedFit <- pecotmr:::.fsusiePopulateCredibleBand(fit)
         tables <- list(list(sets = list(cs = list())))
         trimmed <- pecotmr:::trimFinemappingFit(
-            fit, seq_along(fit$alpha), "fsusie", tables
+            fit,
+            seq_along(fit$alpha),
+            "fsusie",
+            tables
         )
         entry <- unserialize(serialize(.fsa_entry(trimmed), NULL))
         saved <- entry@susieFit
@@ -1115,6 +1143,103 @@ test_that("fsusie accessors degrade to empty for a non-fSuSiE / trimmed fit (no 
     )
     expect_equal(nrow(.fmrRowFsusieCredibleBand(e)), 0L)
     expect_equal(length(.fmrRowFsusieAffectedRegions(e)), 0L)
+})
+
+# ---- fsusieTraitEffects ---------------------------------------------
+
+# The pipeline stamps trait_positions onto the stored fit (jointEngine.R) and
+# keeps the matching names in the row's jointTraits column; rebuild that pairing
+# here, since .fsa_makeFit() returns the raw susiF fit.
+.fsa_jointFit <- function(fit, pos) {
+    fit$trait_positions <- pos
+    fit
+}
+
+test_that("fsusieTraitEffects evaluates the curve at each joint trait", {
+    skip_if_not_installed("fsusieR")
+    skip_if_not_installed("wavethresh")
+    fit <- .fsa_makeFit()
+    nTrait <- length(fit$outing_grid)
+    # Positions BETWEEN grid points, so the interpolation is doing real work.
+    pos <- as.numeric(seq_len(nTrait)) + 0.5
+    names <- paste0("gene", seq_len(nTrait))
+    res <- QtlFineMappingResult(
+        studyName = "s",
+        context = "brain",
+        trait = "g",
+        method = "fsusie",
+        entry = list(.fsa_entry(.fsa_jointFit(fit, pos))),
+        jointTraits = paste(names, collapse = ";")
+    )
+
+    te <- fsusieTraitEffects(res)
+    expect_true(all(
+        c(
+            "study",
+            "context",
+            "trait",
+            "method",
+            "cs",
+            "chrom",
+            "jointTrait",
+            "traitPos",
+            "effect"
+        ) %in%
+            names(te)
+    ))
+    nCs <- length(fit$fitted_func)
+    expect_equal(nrow(te), nCs * nTrait)
+    expect_equal(unique(te$jointTrait), names)
+    expect_equal(sort(unique(te$traitPos)), sort(pos))
+
+    # The effect is the fitted curve interpolated onto the trait positions,
+    # with constant extrapolation past the grid ends.
+    first <- te[te$cs == "fsusie_1", ]
+    expect_equal(
+        first$effect,
+        stats::approx(
+            as.numeric(fit$outing_grid),
+            as.numeric(fit$fitted_func[[1L]]),
+            xout = pos,
+            rule = 2,
+            ties = "ordered"
+        )$y
+    )
+})
+
+test_that("fsusieTraitEffects refuses a fit whose positions and names disagree", {
+    skip_if_not_installed("fsusieR")
+    skip_if_not_installed("wavethresh")
+    fit <- .fsa_makeFit()
+    res <- QtlFineMappingResult(
+        studyName = "s",
+        context = "brain",
+        trait = "g",
+        method = "fsusie",
+        entry = list(.fsa_entry(.fsa_jointFit(
+            fit,
+            seq_along(fit$outing_grid)
+        ))),
+        jointTraits = "only;two"
+    )
+    expect_error(fsusieTraitEffects(res), "trait position")
+})
+
+test_that("fsusieTraitEffects returns zero rows for a non-fsusie fit", {
+    res <- QtlFineMappingResult(
+        studyName = "s",
+        context = "brain",
+        trait = "g",
+        method = "susie",
+        entry = list(fineMappingRow(
+            variantIds = "chr1:100:A:G",
+            susieFit = list(pip = 0.5),
+            topLoci = data.frame(variant_id = "chr1:100:A:G", pip = 0.5)
+        ))
+    )
+    te <- fsusieTraitEffects(res)
+    expect_equal(nrow(te), 0L)
+    expect_true(all(c("cs", "jointTrait", "traitPos", "effect") %in% names(te)))
 })
 
 test_that("fsusieCredibleBand + fsusieAffectedRegions aggregate across a collection", {
@@ -1367,7 +1492,11 @@ test_that("topLoci must list the variants in the same order", {
 
 .fmr_susieFit <- function(p = 5L, maxNumSingleEffects = 2L, seed = 7L) {
     set.seed(seed)
-    lbf <- matrix(rnorm(maxNumSingleEffects * p, sd = 3), maxNumSingleEffects, p)
+    lbf <- matrix(
+        rnorm(maxNumSingleEffects * p, sd = 3),
+        maxNumSingleEffects,
+        p
+    )
     alpha <- lbfToAlpha(lbf)
     list(
         alpha = alpha,
@@ -1590,11 +1719,23 @@ test_that("an untrimmed fit with no recorded coverage uses its primary sets", {
     expect_equal(pecotmr:::.csSetsForCoverage(fit, 0.95)$cs$L1, 1:2)
 })
 
-test_that("mean conditional effect is NA when the column is absent", {
+test_that("mean conditional effect is the posterior mean over the PIP", {
+    # NA when either column the quotient needs is absent.
     expect_true(is.na(pecotmr:::.csMeanEffect(tibble(a = 1))))
+    expect_true(is.na(pecotmr:::.csMeanEffect(tibble(pip = c(0.5, 0.5)))))
     expect_equal(
-        pecotmr:::.csMeanEffect(tibble(conditional_effect = c(1, 3))),
+        pecotmr:::.csMeanEffect(
+            tibble(posterior_mean = c(0.5, 1.5), pip = c(0.5, 0.5))
+        ),
         2
+    )
+    # A zero PIP has no conditional effect to speak of, so it drops out
+    # rather than contributing an infinity.
+    expect_equal(
+        pecotmr:::.csMeanEffect(
+            tibble(posterior_mean = c(0.5, 1), pip = c(0.5, 0))
+        ),
+        1
     )
 })
 
@@ -1731,15 +1872,36 @@ test_that(".csLog10Bf and .csMeanEffect return NA, never -Inf or NaN", {
 
     expect_identical(pecotmr:::.csMeanEffect(list()), NA_real_)
     expect_identical(
-        pecotmr:::.csMeanEffect(list(conditional_effect = numeric(0))),
+        pecotmr:::.csMeanEffect(
+            list(posterior_mean = numeric(0), pip = numeric(0))
+        ),
         NA_real_
     )
     expect_identical(
-        pecotmr:::.csMeanEffect(list(conditional_effect = c(NA, NA))),
+        pecotmr:::.csMeanEffect(
+            list(posterior_mean = c(NA, NA), pip = c(0.5, 0.5))
+        ),
         NA_real_
     )
     expect_identical(
-        pecotmr:::.csMeanEffect(list(conditional_effect = c(1, 3))),
+        pecotmr:::.csMeanEffect(
+            list(posterior_mean = c(0.5, 1.5), pip = c(0.5, 0.5))
+        ),
         2
     )
+})
+
+test_that("fsusieCredibleBand() carries the band half-width", {
+    data(fsusieFineMappingExample)
+    band <- as.data.frame(fsusieCredibleBand(fsusieFineMappingExample))
+    expect_true(is_in("halfwidth", names(band)))
+    expect_gt(nrow(band), 0L)
+    expect_equal(band$halfwidth, (band$upper - band$lower) / 2)
+    # A band half-width is a magnitude, never negative.
+    expect_true(all(band$halfwidth >= 0))
+})
+
+test_that("an empty credible band still declares halfwidth", {
+    expect_true(is_in("halfwidth", names(.emptyCredibleBand())))
+    expect_identical(nrow(.emptyCredibleBand()), 0L)
 })

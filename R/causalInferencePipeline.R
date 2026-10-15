@@ -767,6 +767,12 @@ causalInferencePipeline <- function(
     }
     wr <- resolveWeights(ent)
     if (length(wr$variantIds) == 0L) {
+        warn(glue(
+            "causalInferencePipeline: no weights resolved for ",
+            "(study={studyName}, context={context}, trait={trait}, ",
+            "method={method}); skipping. The row carries variants but no ",
+            "usable weight, or the two are not the same length."
+        ))
         return(NULL)
     }
     wr
@@ -971,13 +977,7 @@ causalInferencePipeline <- function(
         return(NULL)
     }
     cols <- .cipTlCols(tl)
-    if (
-        length(cols$pip) == 0L ||
-            length(cols$beta) == 0L ||
-            length(cols$se) == 0L
-    ) {
-        return(NULL)
-    }
+    .cipRequireMrCols(cols, c("pip", "beta", "se"), "the Wald-ratio path")
     keep <- !is.na(tl[[cols$pip[[1L]]]]) & tl[[cols$pip[[1L]]]] > pipCutoff
     ivVars <- as.character(tl$variant_id)[keep]
     if (length(ivVars) == 0L) {
@@ -1067,14 +1067,11 @@ causalInferencePipeline <- function(
         return(NULL)
     }
     cols <- .cipTlCols(tl)
-    if (
-        length(cols$pip) == 0L ||
-            length(cols$beta) == 0L ||
-            length(cols$se) == 0L ||
-            length(cols$cs) == 0L
-    ) {
-        return(NULL)
-    }
+    .cipRequireMrCols(
+        cols,
+        c("pip", "beta", "se", "cs"),
+        "the credible-set-aware path"
+    )
     raw <- .cipCsAwareRaw(tl, cols)
     if (is.null(raw)) {
         return(NULL)
@@ -1270,6 +1267,30 @@ causalInferencePipeline <- function(
 # Resolve the topLoci column aliases used across the CIP MR helpers. Returns the
 # first matching column name for each role (character(0) if absent); `cs` also
 # falls back to any column whose name starts with "cs" (e.g. cs_0.95).
+# Abort naming the columns Mendelian randomization needs but the exposure does
+# not have.
+#
+# These used to return NULL, so a result lacking `se` -- routine for a table
+# converted from another tool, or read back from a published file whose source
+# recorded only z -- produced "no (qtl, gwas) tuples produced a result" with
+# nothing pointing at the cause. A column that is ABSENT is a structural
+# property of the input and identical for every tuple, so it is worth stopping
+# over; a column that is present but empty for one tuple stays a skip.
+# @noRd
+.cipRequireMrCols <- function(cols, need, label) {
+    absent <- need[map_int(cols[need], length) == 0L]
+    if (length(absent) == 0L) {
+        return(invisible(NULL))
+    }
+    abort(glue(
+        "causalInferencePipeline: {label} needs ",
+        "{str_flatten(need, ', ')} on the exposure, and this result has no ",
+        "{str_flatten(absent, ', ')}. A result read from a published table ",
+        "carries beta/se only if the source recorded them, or if af and n ",
+        "let .zToBetaSe() derive them."
+    ))
+}
+
 .cipTlCols <- function(tl) {
     cn <- colnames(tl)
     exact <- intersect("cs", cn)
@@ -1284,8 +1305,14 @@ causalInferencePipeline <- function(
     }
     list(
         pip = intersect(c("pip", "PIP"), cn),
-        beta = intersect(c("betahat", "beta", "bhat_x"), cn),
-        se = intersect(c("sebetahat", "se", "sbhat_x"), cn),
+        beta = intersect(
+            c("betahat", "beta", "bhat_x", "posterior_effect"),
+            cn
+        ),
+        se = intersect(
+            c("sebetahat", "se", "sbhat_x", "posterior_se"),
+            cn
+        ),
         cs = cs
     )
 }

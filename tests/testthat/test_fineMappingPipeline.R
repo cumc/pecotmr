@@ -474,7 +474,10 @@ test_that(".fmResolveSusieChain: keeps susieInf when explicitly requested", {
 })
 
 test_that(".fmResolveSusieChain: no chain when addSusieInf=FALSE", {
-    res <- pecotmr:::.fmResolveSusieChain(c("susie"), initializeWithSusieInf = FALSE)
+    res <- pecotmr:::.fmResolveSusieChain(
+        c("susie"),
+        initializeWithSusieInf = FALSE
+    )
     expect_false(res$chainSusie)
     expect_false(res$runInf)
 })
@@ -701,8 +704,16 @@ test_that(".rbindFineMappingResult: concatenates two GwasFineMappingResult colle
             stringsAsFactors = FALSE
         )
     )
-    a <- GwasFineMappingResult(studyName = "g1", method = "susie", entry = list(e))
-    b <- GwasFineMappingResult(studyName = "g2", method = "susie", entry = list(e))
+    a <- GwasFineMappingResult(
+        studyName = "g1",
+        method = "susie",
+        entry = list(e)
+    )
+    b <- GwasFineMappingResult(
+        studyName = "g2",
+        method = "susie",
+        entry = list(e)
+    )
     out <- pecotmr:::.rbindFineMappingResult(a, b)
     expect_s4_class(out, "GwasFineMappingResult")
     expect_equal(nrow(out), 2L)
@@ -2143,7 +2154,10 @@ test_that("fineMappingPipeline(MSQD): L / Lgreedy reach the per-study fit", {
             methods = "susie",
             cisWindow = 1000L,
             initializeWithSusieInf = FALSE,
-            credibleSetParam = CredibleSetParam(maxNumSingleEffects = 4L, maxNumSingleEffectsGreedy = 2L)
+            credibleSetParam = CredibleSetParam(
+                maxNumSingleEffects = 4L,
+                maxNumSingleEffectsGreedy = 2L
+            )
         )
     )
     # The multi-study method had no L / Lgreedy formals of its own before the
@@ -2717,7 +2731,10 @@ test_that("fineMappingPipeline(QtlSumStats): top-level L / Lgreedy reach the sus
             ss,
             methods = "susie",
             initializeWithSusieInf = FALSE,
-            credibleSetParam = CredibleSetParam(maxNumSingleEffects = 4L, maxNumSingleEffectsGreedy = 2L)
+            credibleSetParam = CredibleSetParam(
+                maxNumSingleEffects = 4L,
+                maxNumSingleEffectsGreedy = 2L
+            )
         )
     )
     # QtlDataset and GwasSumStats have always taken these; QtlSumStats did not,
@@ -5200,7 +5217,10 @@ test_that("CredibleSetParam validity accepts every legitimate construction", {
         "CredibleSetParam"
     )
     expect_s4_class(
-        CredibleSetParam(maxNumSingleEffects = 4L, maxNumSingleEffectsGreedy = 2L),
+        CredibleSetParam(
+            maxNumSingleEffects = 4L,
+            maxNumSingleEffectsGreedy = 2L
+        ),
         "CredibleSetParam"
     )
     expect_s4_class(
@@ -5228,8 +5248,14 @@ test_that("CredibleSetParam validity catches range and length errors", {
         CredibleSetParam(secondaryCoverage = c(0.7, 3)),
         "secondaryCoverage"
     )
-    expect_error(CredibleSetParam(maxNumSingleEffects = 0), "maxNumSingleEffects")
-    expect_error(CredibleSetParam(maxNumSingleEffects = 2.5), "maxNumSingleEffects")
+    expect_error(
+        CredibleSetParam(maxNumSingleEffects = 0),
+        "maxNumSingleEffects"
+    )
+    expect_error(
+        CredibleSetParam(maxNumSingleEffects = 2.5),
+        "maxNumSingleEffects"
+    )
     expect_error(
         CredibleSetParam(maxNumSingleEffectsGreedy = 0),
         "maxNumSingleEffectsGreedy"
@@ -5310,4 +5336,282 @@ test_that(".fmOwnedEngineArgs owns nothing for an unknown engine", {
         pecotmr:::.fmOwnedEngineArgs("susieR::not_a_real_engine"),
         character(0)
     )
+})
+
+test_that(".fmBlockIdRange recovers a block boundary the variants cannot give", {
+    # Adjacent LD blocks leave gaps, so the realized variant span is narrower
+    # than the block; only blockId carries the boundary.
+    gr <- .fmBlockIdRange("chr22_49355984_50799822")
+    expect_s4_class(gr, "GRanges")
+    expect_identical(as.character(GenomicRanges::seqnames(gr)), "chr22")
+    expect_identical(GenomicRanges::start(gr), 49355984L)
+    expect_identical(GenomicRanges::end(gr), 50799822L)
+    # the chr:start-end spelling works too
+    expect_identical(
+        as.character(.fmBlockIdRange("chr1:100-200")),
+        as.character(GenomicRanges::GRanges("chr1:100-200"))
+    )
+    # anything that is not coordinates is not guessed at
+    expect_null(.fmBlockIdRange("ENSG00000283047"))
+    expect_null(.fmBlockIdRange(NA_character_))
+    expect_null(.fmBlockIdRange(NULL))
+    expect_null(.fmBlockIdRange(c("chr1_1_2", "chr1_3_4")))
+})
+
+test_that(".fmRssFitWindow prefers the block boundary over the variant span", {
+    ids <- c("chr22:49363017:A:T", "chr22:50598205:C:G")
+    withBlock <- .fmRssFitWindow(NULL, ids, "chr22_49355984_50799822")
+    expect_identical(GenomicRanges::start(withBlock), 49355984L)
+    # No parseable blockId -> the fit's own variants define the window.
+    noBlock <- .fmRssFitWindow(NULL, ids, NULL)
+    expect_identical(GenomicRanges::start(noBlock), 49363017L)
+    expect_identical(GenomicRanges::end(noBlock), 50598205L)
+})
+
+test_that(".fmBlockWindow falls back to the trait's own cis window", {
+    data(qtlDatasetExample)
+    explicit <- GenomicRanges::GRanges("chr1:1-999")
+    # An explicit block range wins untouched.
+    expect_identical(
+        .fmBlockWindow(explicit, "ctx", "t", list(data = qtlDatasetExample)),
+        explicit
+    )
+    # Without one, the cis path's window is the trait's position +/- cisWindow
+    # -- the same interval .fmResidGenoBlock() slices X over. Widening the
+    # cis window must widen the recorded window.
+    cfgNarrow <- list(data = qtlDatasetExample, cisWindow = 1000)
+    cfgWide <- list(data = qtlDatasetExample, cisWindow = 500000)
+    ctx <- contexts(qtlDatasetExample)[[1L]]
+    tid <- rownames(molecularTraits(qtlDatasetExample, contexts = ctx))[[1L]]
+    narrow <- .fmBlockWindow(NULL, ctx, tid, cfgNarrow)
+    wide <- .fmBlockWindow(NULL, ctx, tid, cfgWide)
+    skip_if(is.null(narrow) || is.null(wide))
+    expect_lt(GenomicRanges::start(wide), GenomicRanges::start(narrow))
+    expect_gt(GenomicRanges::end(wide), GenomicRanges::end(narrow))
+    expect_identical(
+        GenomicRanges::width(wide) - GenomicRanges::width(narrow),
+        2L * (500000L - 1000L)
+    )
+})
+
+test_that("a supplied block key survives into the result; a seqname fallback does not", {
+    data(gwasSumStatsS4Example)
+    gss <- gwasSumStatsS4Example
+    gr <- .collectionEntry(gss, 1L)
+    derived <- .fmGwasRangeKey(gr)
+
+    # (a) No manifest and no explicit blockId: GwasSumStats() falls back to the
+    # bare seqname, which carries no coordinates and must NOT override the
+    # entry's own range key.
+    bare <- gss
+    S4Vectors::mcols(bare)$blockId <- rep("chr22", nrow(bare))
+    expect_identical(.fmGwasBlockId(bare, 1L, gr), derived)
+
+    # (b) A coordinate-bearing key -- from an ldBlocks manifest or an explicit
+    # vector -- IS the block boundary and wins. Adjacent blocks leave gaps, so
+    # it is wider than the variants that survived QC.
+    supplied <- gss
+    key <- "chr22_1_50000000"
+    S4Vectors::mcols(supplied)$blockId <- rep(key, nrow(supplied))
+    expect_identical(.fmGwasBlockId(supplied, 1L, gr), key)
+    expect_false(identical(.fmGwasBlockId(supplied, 1L, gr), derived))
+
+    # (c) The resume cache keys on the DERIVED range either way, so supplying a
+    # wider boundary cannot make the cache miss.
+    expect_identical(.fmGwasRangeKey(gr), derived)
+})
+
+# ---------------------------------------------------------------------------
+# Provenance columns (dataType / dataSource / standardized)
+#
+# These three are what exportToBed() / exportToVcf() publish as data_type,
+# data_source and weight_standardized. Only the first is an outside fact; the
+# other two follow from the branch the pipeline took, so they are derived and
+# the summary-statistics methods refuse to be told.
+# ---------------------------------------------------------------------------
+
+# @noRd
+.fmprov_cols <- function(res) {
+    as.data.frame(S4Vectors::mcols(res))[,
+        intersect(
+            c("dataType", "dataSource", "standardized"),
+            colnames(S4Vectors::mcols(res))
+        ),
+        drop = FALSE
+    ]
+}
+
+test_that("fineMappingPipeline(QtlDataset) records what it is given", {
+    data(qtlDatasetExample, envir = environment())
+    res <- suppressMessages(fineMappingPipeline(
+        qtlDatasetExample,
+        methods = "susie",
+        cisWindow = 1e6,
+        dataType = "bulk_rnaseq"
+    ))
+    cols <- .fmprov_cols(res)
+    expect_equal(unique(cols$dataType), "bulk_rnaseq")
+    # Derived, not supplied: this entry point fits individual-level genotypes.
+    expect_equal(unique(cols$dataSource), "individual")
+    # Also derived: the genotypes were standardized on the way in, so there
+    # is nothing for a caller to declare and no way for it to be FALSE.
+    expect_true(all(cols$standardized))
+})
+
+test_that("fineMappingPipeline(QtlDataset) omits dataType when not supplied", {
+    data(qtlDatasetExample, envir = environment())
+    res <- suppressMessages(fineMappingPipeline(
+        qtlDatasetExample,
+        methods = "susie",
+        cisWindow = 1e6
+    ))
+    # An absent label leaves the column out rather than filling it with NA --
+    # an all-NA column is dropped on export anyway, and its absence is what
+    # the reader sees either way.
+    expect_false("dataType" %in% colnames(S4Vectors::mcols(res)))
+    cols <- .fmprov_cols(res)
+    expect_equal(unique(cols$dataSource), "individual")
+    expect_true(all(cols$standardized))
+})
+
+test_that("fineMappingPipeline(QtlSumStats) records sumstat / standardized", {
+    res <- suppressWarnings(suppressMessages(fineMappingPipeline(
+        .rssf_qcd(),
+        methods = "susie",
+        dataType = "bulk_rnaseq"
+    )))
+    cols <- .fmprov_cols(res)
+    expect_equal(unique(cols$dataType), "bulk_rnaseq")
+    expect_equal(unique(cols$dataSource), "sumstat")
+    # The RSS likelihood is written in standardized units, so the posterior
+    # effects are on that scale whatever the caller believes.
+    expect_true(all(cols$standardized))
+})
+
+test_that("no pipeline takes a weight-scale declaration any more", {
+    # It was an argument while the caller's genotypes went to the fitter
+    # untouched. They are standardized on the way in now, so the flag is
+    # derived and a declaration could only contradict it.
+    expect_error(
+        fineMappingPipeline(
+            .rssf_qcd(),
+            methods = "susie",
+            weightStandardized = FALSE
+        ),
+        "unused argument"
+    )
+    data(qtlDatasetExample, envir = environment())
+    expect_error(
+        fineMappingPipeline(
+            qtlDatasetExample,
+            methods = "susie",
+            cisWindow = 1e6,
+            weightStandardized = FALSE
+        ),
+        "unused argument"
+    )
+})
+
+test_that(".fmMsDataSource leaves a mixed collection's joint rows NA", {
+    mixed <- structure(list(), class = "fmprov_mixed")
+    local_mocked_bindings(
+        qtlDatasets = function(x, ...) list(1),
+        sumStats = function(x, ...) list(1),
+        .package = "pecotmr"
+    )
+    expect_true(is.na(pecotmr:::.fmMsDataSource(mixed)))
+})
+
+test_that(".fmMsDataSource derives a single-kind collection's joint rows", {
+    local_mocked_bindings(
+        qtlDatasets = function(x, ...) list(),
+        sumStats = function(x, ...) list(1),
+        .package = "pecotmr"
+    )
+    expect_equal(pecotmr:::.fmMsDataSource(NULL), "sumstat")
+    local_mocked_bindings(
+        qtlDatasets = function(x, ...) list(1),
+        sumStats = function(x, ...) list(),
+        .package = "pecotmr"
+    )
+    expect_equal(pecotmr:::.fmMsDataSource(NULL), "individual")
+})
+
+test_that("individual-level genotypes reach the fitter standardized", {
+    # Through residualizedGenotypes(), which owns the scaling.
+    # The single preparation point for every individual-level fit in the
+    # package: fine-mapping's per-tuple and joint paths, the TWAS joint
+    # engine, and the top-PC construction all come through it.
+    data(qtlDatasetExample, envir = environment())
+    X <- pecotmr:::.fmResidGeno(
+        qtlDatasetExample,
+        ResidualizationParam(),
+        contexts = "brain",
+        traitId = "ENSG_example",
+        cisWindow = 1e6
+    )
+    expect_true(max(abs(colMeans(X))) < 1e-10)
+    sds <- matrixStats::colSds(X)
+    expect_true(all(abs(sds[sds > 0] - 1) < 1e-10))
+})
+
+test_that("a constant genotype column comes back as zeros, not NaN", {
+    # `.qtlResidualizeQr()` treats anything below sqrt(.Machine$double.eps) as
+    # constant: lm.fit residuals of a constant column are ~1e-16 rather than
+    # 0, and dividing the (also tiny) residuals by that amplifies roundoff to
+    # unit scale. The column is zeroed instead, and .dropZeroVariance()
+    # removes it downstream.
+    Y <- cbind(a = c(1, 2, 3, 4), b = c(2, 2, 2, 2))
+    out <- pecotmr:::.qtlResidualizeQr(Y, NULL, scaleResiduals = TRUE)
+    expect_equal(unname(out[, "b"]), rep(0, 4))
+    expect_equal(sd(out[, "a"]), 1)
+    expect_false(anyNA(out))
+})
+
+test_that("the genotype scale comes from the accessor, not the pipeline", {
+    # ONE knob: ResidualizationParam(scaleResiduals=) per call, with the
+    # QtlDataset's own slot as the default. The pipelines add no mechanism of
+    # their own -- they only RECORD what the accessor resolved, so a wrong
+    # record and a wrong scale cannot come apart.
+    data(qtlDatasetExample, envir = environment())
+    recorded <- function(..., dataset = qtlDatasetExample) {
+        res <- suppressMessages(fineMappingPipeline(
+            dataset,
+            methods = "susie",
+            cisWindow = 1e6,
+            residualizationArgs = ResidualizationParam(...)
+        ))
+        unique(as.logical(S4Vectors::mcols(res)$standardized))
+    }
+    expect_true(recorded())
+    expect_true(recorded(scaleResiduals = TRUE))
+    expect_false(recorded(scaleResiduals = FALSE))
+    # Unset falls back to the object, which is where the default lives.
+    off <- methods::initialize(qtlDatasetExample, scaleResiduals = FALSE)
+    expect_false(recorded(dataset = off))
+    # An explicit per-call value overrides the object either way.
+    expect_true(recorded(scaleResiduals = TRUE, dataset = off))
+})
+
+test_that("the pipelines add no second standardization mechanism", {
+    # The accessor owns it. A parallel step inside .fmResidGeno() would have
+    # covered only its own callers -- colocboostPipeline() calls
+    # residualizedGenotypes() directly and would have been left out.
+    expect_false(exists(
+        ".fmStandardizeGenotypes",
+        envir = asNamespace("pecotmr")
+    ))
+    expect_false(is_in(
+        "standardizeGenotypes",
+        names(formals(pecotmr:::.fmPipelineQtlDataset))
+    ))
+})
+
+test_that("the hatch does not reach a summary-statistics fit", {
+    # There are no genotypes to scale, and the RSS likelihood is in
+    # standardized units whatever anyone asks, so the flag stays TRUE.
+    res <- suppressWarnings(suppressMessages(
+        fineMappingPipeline(.rssf_qcd(), methods = "susie")
+    ))
+    expect_true(all(as.logical(S4Vectors::mcols(res)$standardized)))
 })

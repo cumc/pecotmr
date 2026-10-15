@@ -10,6 +10,10 @@ GwasFineMappingResult(
   entry,
   blockId = NULL,
   traitPos = NULL,
+  region = NULL,
+  dataType = NULL,
+  dataSource = NULL,
+  weightStandardized = NULL,
   ldSketch = NULL
 )
 }
@@ -29,6 +33,29 @@ blocks' spans leave gaps.}
 \item{traitPos}{Optional per-row trait genomic anchor (a \code{GRanges} or
 \code{NULL}), carried forward as provenance; not part of the identity key.
 \code{NULL} (default) omits the column.}
+
+\item{region}{Optional per-row analysis WINDOW (a \code{GRanges} or
+\code{NULL}) -- the interval each row's fit was run over, carried
+forward as provenance; not part of the identity key. \code{NULL}
+(default) omits the column, and \code{\link{genomicRegion}} then
+derives the window from the span of the variants present.}
+
+\item{dataType}{Optional assay / modality label ("bulk_rnaseq",
+"methylation"), recorded as a per-row provenance column. Length 1 or
+one per row; \code{NULL} (default) omits the column.}
+
+\item{dataSource}{Optional per-row label for the kind of input the fit saw,
+\code{"individual"} or \code{"sumstat"}. Recorded rather than derived: a
+combined collection can hold rows of both kinds, and its single
+\code{ldSketch} cannot say which row came from which.}
+
+\item{weightStandardized}{Optional per-row flag: whether the posterior
+effect is on the STANDARDIZED genotype scale. The posterior effect IS the
+prediction weight, so it carries the same scale question as a TWAS
+weight. \code{\link{fineMappingPipeline}} always passes \code{TRUE}:
+it standardizes genotypes before fitting, and the posterior mean is
+reported on the scale of the \code{X} the fit was given. The argument
+exists for a collection assembled by hand, where only the caller knows.}
 
 \item{ldSketch}{An optional genotype panel (see
 \code{\link{readGenotypes}}).}

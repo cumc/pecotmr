@@ -259,7 +259,7 @@
 # GWAS rows carry study/method/blockId -- so the same call works on either.
 # `region` matches the `blockId` column. Returns all rows when nothing
 # constrains. Unlike the single-row selectors above this never errors on
-# ambiguity; it is the aggregate counterpart used by getTopLoci.
+# ambiguity; it is the aggregate counterpart used by topLoci().
 .fmrRowsMatching <- function(
     x,
     studyName = NULL,
@@ -296,7 +296,16 @@
 # method). Columns the collection lacks are NA-filled so QTL and GWAS results
 # yield the same metadata shape. Safe for zero-row collections.
 .fmrRowMetadata <- function(x) {
-    cols <- c("study", "context", "trait", "blockId", "method")
+    cols <- c(
+        "study",
+        "context",
+        "trait",
+        "blockId",
+        "method",
+        "dataType",
+        "dataSource",
+        "standardized"
+    )
     n <- nrow(x)
     as_tibble(set_names(map(cols, .fmrMetadataCol, x = x, n = n), cols))
 }
@@ -311,21 +320,34 @@
     bind_rows(parts)
 }
 
-# Internal: read the per-row `region` GRanges column of a collection, or an
-# empty GRanges when the collection carries none. Shared by genomicRegion on
-# TwasWeights and FineMappingResultBase (region is a uniform column across the
-# family; no derivation from topLoci / blockId).
-# The per-element span, DERIVED from the ranges rather than read from a stored
-# `region` column (spec 4.4). range() is always in sync by construction, where
-# a stored window had no correct update rule under subsetRegion() and would
-# quietly go stale. `blockId` carries the nominal block identity instead.
+# Internal: the per-row analysis WINDOW -- the genomic interval each row's fit
+# was run over, as stored on the `region` column. Shared by genomicRegion() on
+# TwasWeights and FineMappingResultBase.
+#
+# Stored rather than derived, because it is the half that cannot be recovered:
+# QC and screening drop variants before the fit, so the realized span of the
+# variants present is narrower than the window that was analysed (a fit over
+# chr22:10,000,000-18,000,000 whose variants span 10,414,272-16,916,492). The
+# span IS recoverable -- it is just range(x) -- so nothing is lost by deriving
+# it on demand, and that is what callers wanting current content should use.
+#
+# Spec 4.4 removed a stored column on the grounds that it "would quietly go
+# stale" under subsetRegion(). That argument holds for a SPAN, which is
+# current state and must track subsetting; it does not hold for a WINDOW,
+# which is provenance -- subsetting a fit's variants does not retroactively
+# change which interval was analysed.
+#
+# Falls back to the derived span for collections built before the column
+# existed (older saved objects, hand-built collections), so the accessor never
+# returns nothing where it used to return a range.
 # @noRd
 .getRegionColumn <- function(x) {
     if (nrow(x) == 0L) {
         return(GenomicRanges::GRanges())
     }
-    # No stored region column: nothing carries one any more, so the span is
-    # always derived from the elements' own ranges.
+    if (is_in("region", .tupleColumnNames(x))) {
+        return(.tupleColumn(x, "region"))
+    }
     unlist(range(x), use.names = FALSE)
 }
 
@@ -349,13 +371,109 @@
     c(cols, list(blockId = as.character(blockId)))
 }
 
+# Internal: normalize a caller-supplied window into the single GRanges the
+# `region` column stores, or NULL when there is none. Accepts whatever the
+# pipeline's `region` argument accepts (a "chr:start-end" string or a
+# GRanges); a multi-range window (jointRegions) is recorded as its overall
+# span, which is the interval the fit covered.
+.asAnalysisWindow <- function(region) {
+    if (is.null(region) || length(region) == 0L) {
+        return(NULL)
+    }
+    gr <- try_fetch(.asGRegion(region), error = function(cnd) NULL)
+    if (is.null(gr) || length(gr) == 0L) {
+        return(NULL)
+    }
+    if (length(gr) == 1L) gr else range(gr)[1L]
+}
+
+# Internal: `.asAnalysisWindow()` replicated to one range per row, for the
+# constructors that take a whole collection's worth of rows at once.
+.analysisWindowForRows <- function(region, n) {
+    gr <- .asAnalysisWindow(region)
+    if (is.null(gr) || n == 0L) {
+        return(NULL)
+    }
+    rep(gr, n)
+}
+
 # Internal: append a validated `region` GRanges to a constructor's column list
-# (no-op when region is NULL). Shared by the TwasWeights / FineMappingResult
+# (no-op when NULL). Shared by the TwasWeights / FineMappingResult
 # constructors so the provenance column is added identically everywhere.
+# Internal: an optional per-row provenance column. One helper for all three
+# (`dataType`, `dataSource`, `standardized`) since they differ only in name and
+# coercion.
+#
+# `dataSource` is per ROW, not per collection: it used to be derived from the
+# collection's single `ldSketch` slot, so after combineFineMappingResults()
+# folded individual-level and RSS-derived fits together every row got the
+# combined object's answer.
+#
+# `standardized` gets the same treatment fine-mapping needed anyway: the
+# posterior effect IS the prediction weight, so it carries the same genotype-
+# scale ambiguity as a TWAS weight -- and the fit cannot answer it (susie
+# records whether IT scaled, not whether the supplied X was already
+# standardized), so it has to be recorded rather than derived.
+# @noRd
+.appendProvenanceCol <- function(cols, value, nm, n, coerce = as.character) {
+    if (is.null(value)) {
+        return(cols)
+    }
+    v <- coerce(value)
+    if (!is_in(length(v), c(1L, n))) {
+        abort(glue("`{nm}` must be length 1 or the same length as `study`."))
+    }
+    c(cols, set_names(list(rep(v, length.out = n)), nm))
+}
+
+# @noRd
+.appendDataTypeCol <- function(cols, dataType, n) {
+    .appendProvenanceCol(cols, dataType, "dataType", n)
+}
+
+# @noRd
+.appendFmProvenanceCols <- function(
+    cols,
+    dataType,
+    dataSource,
+    standardized,
+    n
+) {
+    cols <- .appendProvenanceCol(cols, dataType, "dataType", n)
+    cols <- .appendProvenanceCol(cols, dataSource, "dataSource", n)
+    .appendProvenanceCol(cols, standardized, "standardized", n, as.logical)
+}
+
+.appendRegionCol <- function(cols, region, n) {
+    if (is.null(region)) {
+        return(cols)
+    }
+    if (!methods::is(region, "GRanges")) {
+        abort("`region` must be a GRanges (one range per row) or NULL.")
+    }
+    if (length(region) != n) {
+        abort("`region` must have the same length as `study`.")
+    }
+    c(cols, list(region = region))
+}
 
 # Internal: validate the optional `region` GRanges column (one range per row),
 # shared by the TwasWeights / FineMappingResult validity methods. Returns a
 # character vector of errors (empty when valid or the column is absent).
+.validateRegionColumn <- function(object) {
+    if (!is_in("region", .tupleColumnNames(object))) {
+        return(character(0))
+    }
+    region <- .tupleColumn(object, "region")
+    res <- checkClass(region, "GRanges")
+    if (!isTRUE(res)) {
+        return(str_c("'region' column ", res))
+    }
+    if (length(region) != nrow(object)) {
+        return("'region' column must have one range per row")
+    }
+    character(0)
+}
 
 # Internal: trait-position provenance. One GRanges per trait carrying the
 # molecular feature's OWN genomic coordinates (gene/peak range; TSS = start()),
@@ -842,18 +960,19 @@
 # @noRd
 .fmrRowResolveWeights <- function(parts) {
     empty <- list(variantIds = character(0), weights = numeric(0))
-    # The topLoci posterior view projects the effect to `beta`; use it as the
-    # per-variant weight, aligned with variant_id.
+    # The topLoci posterior view projects the effect to `posterior_effect`,
+    # and that effect IS the per-variant weight -- a susie posterior mean is
+    # the TWAS coefficient. Aligned with variant_id.
     tl <- .fmrRowTopLoci(parts)
     if (
         is.null(tl) ||
             nrow(tl) == 0L ||
-            !all(is_in(c("variant_id", "beta"), names(tl)))
+            !all(is_in(c("variant_id", "posterior_effect"), names(tl)))
     ) {
         return(empty)
     }
     vids <- as.character(tl$variant_id)
-    w <- as.numeric(tl$beta)
+    w <- as.numeric(tl$posterior_effect)
     ok <- !is.na(vids) & !is.na(w)
     if (!any(ok)) {
         return(empty)

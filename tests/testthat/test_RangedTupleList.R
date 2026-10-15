@@ -848,3 +848,53 @@ test_that("seqinfo is left alone when the source carries none", {
     )
     expect_identical(pecotmr:::.rtlRestoreSeqinfo(grl, empty), grl)
 })
+
+# ---------------------------------------------------------------------------
+# blockId(): per-ROW, on every collection flavour
+#
+# `blockId` was a constructor argument and a published column with no
+# accessor, so reading it back meant reaching into mcols(). One method on the
+# shared base rather than one per flavour: every collection that keys rows by
+# LD block stores it in the same column, and the ones with no block axis want
+# the same NA-padded answer.
+# ---------------------------------------------------------------------------
+
+test_that("blockId is one value per row, NA where the row records none", {
+    data(gwasFineMappingExample, qtlFineMappingExample, envir = environment())
+    gwas <- blockId(gwasFineMappingExample)
+    expect_length(gwas, nrow(gwasFineMappingExample))
+    expect_false(anyNA(gwas))
+    # Per ROW, not unique() like studyName/methodNames: a block id labels one
+    # fit, so the vector has to stay alignable with the rows.
+    expect_type(gwas, "character")
+    # A QTL result has no block axis at all, so NA per row rather than an
+    # error -- code handling both flavours needs no class test.
+    qtl <- blockId(qtlFineMappingExample)
+    expect_length(qtl, nrow(qtlFineMappingExample))
+    expect_true(all(is.na(qtl)))
+})
+
+test_that("blockId holds the length contract on every flavour", {
+    data(gwasSumStatsS4Example, twasWeightsExample, envir = environment())
+    for (x in list(gwasSumStatsS4Example, twasWeightsExample)) {
+        expect_length(blockId(x), nrow(x))
+    }
+})
+
+test_that("blockId reads the recorded value, not the variants' span", {
+    # The point of storing it: the id keys the external block manifest, so it
+    # carries the true block BOUNDARIES, while range(x) is only the span of
+    # the variants that survived QC.
+    tl <- data.frame(
+        variant_id = c("chr1:100:A:G", "chr1:200:C:T"),
+        pip = c(0.9, 0.1)
+    )
+    row <- fineMappingRow(tl$variant_id, susieFit = list(), topLoci = tl)
+    res <- GwasFineMappingResult(
+        studyName = "s",
+        method = "susie",
+        entry = list(row),
+        blockId = "chr1_1_1000000"
+    )
+    expect_equal(blockId(res), "chr1_1_1000000")
+})

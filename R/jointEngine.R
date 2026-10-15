@@ -252,6 +252,56 @@ NULL
 
 # ---- fitters (fitJointGroup) ------------------------------------------------
 
+# The window a joint group was analysed over. An explicit region wins; failing
+# that the group's traits define it, as the union span of their own cis
+# windows -- one joint fit over several traits covers all of them.
+# @noRd
+.jointGroupWindow <- function(data, cond, args) {
+    explicit <- .asAnalysisWindow(args$region)
+    if (!is.null(explicit)) {
+        return(explicit)
+    }
+    per <- try_fetch(
+        .anchorVector(
+            data,
+            as.character(cond$context),
+            as.character(cond$trait),
+            "region",
+            args$cisWindow
+        ),
+        error = function(cnd) NULL
+    )
+    if (is.null(per) || length(per) == 0L) {
+        return(NULL)
+    }
+    range(per)[1L]
+}
+
+
+# Per-variant allele frequency for a joint group's design matrix, or NULL.
+#
+# The univariate/RSS paths pass `af` into postprocessFinemappingFits(); the
+# joint ones did not, so every mvsusie / fsusie row exported af = NA (and
+# therefore maf = NA) even though the genotypes were right there. The window is
+# taken from the fit's OWN variants rather than a trait cis-window: a joint
+# group spans several traits, so no single trait's window describes X.
+# @noRd
+.jointAfForGroup <- function(data, g) {
+    if (!is(g, "IndividualJointGroup")) {
+        return(NULL)
+    }
+    X <- .jgX(g)
+    if (is.null(X) || ncol(X) == 0L) {
+        return(NULL)
+    }
+    rg <- try_fetch(.csVariantRegion(colnames(X)), error = function(cnd) NULL)
+    if (is.null(rg)) {
+        return(NULL)
+    }
+    .fmAfForX(data, X, region = rg)
+}
+
+
 # (individual, fine-mapping) -> mvSuSiE joint fit + honest per-fold CV prior.
 setMethod(
     "fitJointGroup",
@@ -323,7 +373,9 @@ setMethod(
         fit = fit,
         cvM = cvM,
         Xc = Xc,
-        cfg = cfg
+        cfg = cfg,
+        af = args$af,
+        region = args$region
     )
     # ONE entry for the whole joint fit, unlike mvsusie's one-per-condition.
     # mvsusie's posteriors carry a conditions axis, so .fmSliceCond() gives
@@ -374,13 +426,17 @@ setMethod(
     Xc,
     cfg,
     credibleSetParam,
-    fitRetention
+    fitRetention,
+    af = NULL,
+    region = NULL
 ) {
     bare <- .fmPostprocessOne(
         fit = fit,
         method = "fsusie",
         dataX = Xc,
         dataY = NULL,
+        af = af,
+        region = region,
         conditionIdx = r,
         csInput = "fsusie",
         credibleSetParam = cfg$credibleSetParam,
@@ -425,7 +481,9 @@ setMethod(
         Xc = Xc,
         keep = keep,
         survivors = survivors,
-        cfg = cfg
+        cfg = cfg,
+        af = args$af,
+        region = args$region
     )
 }
 
@@ -551,7 +609,9 @@ setMethod(
     survivors,
     cfg,
     credibleSetParam,
-    fitRetention
+    fitRetention,
+    af = NULL,
+    region = NULL
 ) {
     if (!keep[i]) {
         return(NULL)
@@ -562,6 +622,8 @@ setMethod(
         method = "mvsusie",
         dataX = Xc,
         dataY = NULL,
+        af = af,
+        region = region,
         conditionIdx = r,
         csInput = "X",
         credibleSetParam = cfg$credibleSetParam,
@@ -605,7 +667,8 @@ setMethod(
             .jointRssEntry,
             fit = fit,
             ldMat = ldMat,
-            cfg = cfg
+            cfg = cfg,
+            region = args$region
         )
     }
 )
@@ -656,12 +719,13 @@ setMethod(
 # `credibleSet` / `fitRetention` come off `cfg`, which is what the caller
 # supplies; they were also declared as formals with no defaults, so nothing
 # could ever have passed them without erroring. `group` was unused too.
-.jointRssEntry <- function(r, fit, ldMat, cfg) {
+.jointRssEntry <- function(r, fit, ldMat, cfg, region = NULL) {
     .fmPostprocessOne(
         fit = fit,
         method = "mvsusie",
         dataX = ldMat,
         dataY = NULL,
+        region = region,
         conditionIdx = r,
         csInput = "Xcorr",
         credibleSetParam = cfg$credibleSetParam,
@@ -1917,9 +1981,20 @@ setMethod("construct", "TwasJointPipeline", function(pipeline, records) {
         cond = cond,
         js = .jointAxisMembers(cond, "study"),
         jc = .jointAxisMembers(cond, "context"),
-        jt = .jointAxisMembers(cond, "trait")
+        jt = .jointAxisMembers(cond, "trait"),
+        # The window this group was analysed over: the caller's region when
+        # one was named, else the group's own cis window (the union span of
+        # its traits +/- cisWindow). Recorded because the fit only ever sees
+        # whichever variants survived QC; read back by genomicRegion().
+        region = .jointGroupWindow(data, cond, args)
     )
     fitArgs <- .twasGroupArgs(g, pipeline, args)
+    # Provenance the fitters cannot recover for themselves: `data` lives here
+    # but not inside fitJointGroup(), and the requested window is only ever
+    # known to the caller. Both are read back as args$af / args$region where
+    # the entries are post-processed.
+    fitArgs$af <- .jointAfForGroup(data, g)
+    fitArgs$region <- args$region
     perTokenEntries <- compact(set_names(
         map(
             tokens,
@@ -2576,7 +2651,8 @@ setMethod("construct", "TwasJointPipeline", function(pipeline, records) {
         jointStudies = grp$js,
         jointContexts = grp$jc,
         jointTraits = grp$jt,
-        traitPos = tpos
+        traitPos = tpos,
+        region = grp$region
     )
 }
 

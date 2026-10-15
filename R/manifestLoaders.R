@@ -484,11 +484,21 @@ NULL
         ))
     }
     if (is.character(region) && length(region) == 1L) {
+        # "chr1_100_200" is the LD-block / region-id spelling of
+        # "chr1:100-200". Normalized here so one matcher below handles both
+        # and the seqname survives verbatim (parseRegion() canonicalizes the
+        # chromosome, which would drop a "chr" prefix the variants still use).
+        region <- str_replace(
+            region,
+            "^([^:]+)_([0-9,]+)_([0-9,]+)$",
+            "\\1:\\2-\\3"
+        )
         m <- str_match(region, "^([^:]+):([0-9,]+)-([0-9,]+)$")[1L, ]
         if (is.na(m[[1L]])) {
             msg <- glue(
-                "`region` must be a 'chr:start-end' string, a GRanges, or a ",
-                "one-row data.frame with chrom/start/end."
+                "`region` must be a 'chr:start-end' or 'chr_start_end' ",
+                "string, a GRanges, or a one-row data.frame with ",
+                "chrom/start/end."
             )
             abort(msg)
         }
@@ -866,6 +876,11 @@ NULL
         } else {
             as.numeric(df[[z$betaSrc]]) / as.numeric(df[[z$seSrc]])
         },
+        # Whether the SOURCE supplied z, which is what GWAS-VCF's `EZ` means.
+        # Recorded here because this is the only place that still knows: past
+        # it, a supplied z and a Wald z computed from beta/se are both just
+        # `Z`.
+        z_supplied = z$hasZ,
         !!!.sumstatSampleSizeCols(df, n),
         !!!map(present, .sumstatNumericColumn, df = df)
     )
@@ -915,12 +930,37 @@ NULL
 }
 
 # Default GWAS-VCF FORMAT tag mapping (canonical stat -> FORMAT field).
+# Candidate FORMAT keys per field, in priority order: the GWAS-VCF reserved
+# key first, then spellings found in the wild.
+#
+# `N` used to be `"SS"` alone -- which is NOT a GWAS-VCF key; the spec's
+# sample-size field is `NS`. The writer emitted `SS` too, so the two
+# round-tripped with each other while neither conformed, and fixing the writer
+# would have broken this reader on pecotmr's own output. `SS` stays as a
+# fallback because files in the wild use it.
+# @noRd
 .gwasVcfFormatDefaults <- list(
     BETA = "ES",
     SE = "SE",
+    # `EZ` is the z the SOURCE supplied -- the spec defines it as the z
+    # "provided if it was used to derive the ES and SE fields". Reading it was
+    # missing entirely, so a z-derived study round-tripped as though pecotmr
+    # had computed its z from ES/SE.
+    Z = "EZ",
     P = "LP",
-    N = "SS",
-    MAF = "EAF"
+    N = c("NS", "SS"),
+    # `AF` is the spec's ALTERNATIVE-allele frequency: DIRECTIONAL, and the
+    # one the posterior view publishes as `af`. It used to be read as a
+    # fallback for the MAF slot and then folded with pmin(af, 1 - af), so an
+    # AF of 0.8 came back as a MAF of 0.2 with no `AF` column at all --
+    # pecotmr's own VCF output did not round-trip, and the direction the
+    # standardized-to-raw weight conversion needs was silently gone. The
+    # mirror of the released writer bug where `AF` held MAF.
+    AF = "AF",
+    # `EAF` stays with MAF deliberately, matching the delimited-table loader:
+    # a column calling itself an effect-allele frequency is not auto-trusted
+    # as directional, because the effect allele it refers to is not stated.
+    MAF = c("MAF", "EAF")
 )
 
 # Pick the FORMAT sample column of a GWAS-VCF to read. Defaults to the single
@@ -950,14 +990,18 @@ NULL
 # Read column `tag` from the GWAS-VCF geno matrix for one sample as numeric, or
 # NULL when the tag is absent/unmapped.
 # @noRd
+# `tag` may name SEVERAL candidate keys in priority order (the spec's key then
+# the spellings found in the wild), so the first one the file actually carries
+# wins. A single string still works -- it is a length-1 candidate list.
+# @noRd
 .vcfGetField <- function(tag, geno, sample) {
-    if (!is.null(tag) && is_in(tag, names(geno))) {
-        # unname: geno matrix columns carry variant-id element names that the
-        # canonical sumstat tibble must not keep (data.frame stripped them).
-        unname(as.numeric(geno[[tag]][, sample]))
-    } else {
-        NULL
+    hit <- intersect(as.character(tag %||% character(0)), names(geno))
+    if (length(hit) == 0L) {
+        return(NULL)
     }
+    # unname: geno matrix columns carry variant-id element names that the
+    # canonical sumstat tibble must not keep (data.frame stripped them).
+    unname(as.numeric(geno[[hit[[1L]]]][, sample]))
 }
 
 # Convert a VCF (GWAS-VCF format) into the canonical sumstats data.frame. The
@@ -978,39 +1022,73 @@ NULL
     sample <- .pickVcfSample(colnames(vcf), sampleSelect, label)
     es <- .vcfGetField(fmap$BETA, geno, sample)
     se <- .vcfGetField(fmap$SE, geno, sample)
+    ez <- .vcfGetField(fmap$Z, geno, sample)
     lp <- .vcfGetField(fmap$P, geno, sample)
     ss <- .vcfGetField(fmap$N, geno, sample)
+    af <- .vcfGetField(fmap$AF, geno, sample)
     eaf <- .vcfGetField(fmap$MAF, geno, sample)
-    if (is.null(es) || is.null(se)) {
+    if ((is.null(es) || is.null(se)) && is.null(ez)) {
         msg <- glue(
-            "{label}: GWAS-VCF must carry ES and SE FORMAT fields to derive ",
-            "Z (configure via `formatMapping`)."
+            "{label}: GWAS-VCF must carry either a supplied z (EZ) or ES and ",
+            "SE to derive one from (configure via `formatMapping`)."
         )
         abort(msg)
     }
     if (is.null(ss)) {
         msg <- glue(
-            "{label}: GWAS-VCF must carry an SS (sample size) FORMAT field."
+            "{label}: GWAS-VCF must carry a sample-size FORMAT field ",
+            "(NS, or SS in older files; configure via `formatMapping`)."
         )
         abort(msg)
     }
+    z <- .vcfSumstatZ(es, se, ez, length(rr))
     out <- tibble(
         chrom = as.character(GenomicRanges::seqnames(rr)),
         pos = unname(as.integer(GenomicRanges::start(rr))),
         SNP = names(rr),
         A1 = alt,
         A2 = ref,
-        Z = es / se,
-        N = ss,
-        BETA = es,
-        SE = se
+        Z = z$z,
+        z_supplied = z$supplied,
+        N = ss
     )
     mutate(
         out,
         !!!compact(list(
+            BETA = es,
+            SE = se,
             P = if (!is.null(lp)) 10^(-lp),
-            MAF = if (!is.null(eaf)) pmin(eaf, 1 - eaf)
+            AF = af,
+            # A directionless MAF of its own when the file has one; else
+            # folded from AF, which is QC-usable and keeps `AF` intact
+            # alongside it rather than consuming it.
+            MAF = if (!is.null(eaf)) {
+                pmin(eaf, 1 - eaf)
+            } else if (!is.null(af)) {
+                pmin(af, 1 - af)
+            }
         ))
+    )
+}
+
+# The z and its provenance, per variant. A supplied `EZ` wins where it has a
+# value; elsewhere the Wald z is derived from ES / SE. Per VARIANT rather than
+# per file because a field declared in the header can be absent from
+# individual records, and publishing a derived z as a supplied one would tell
+# a reader that ES and SE came from it.
+# @noRd
+.vcfSumstatZ <- function(es, se, ez, n) {
+    derived <- if (is.null(es) || is.null(se)) {
+        rep(NA_real_, n)
+    } else {
+        es / se
+    }
+    if (is.null(ez)) {
+        return(list(z = derived, supplied = rep(FALSE, n)))
+    }
+    list(
+        z = if_else(is.na(ez), derived, ez),
+        supplied = !is.na(ez)
     )
 }
 

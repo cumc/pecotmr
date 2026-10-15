@@ -20,4 +20,5 @@ non-scalar input is returned unchanged.
 }
 \examples{
 parseRegion("chr1:1000000-2000000")
+parseRegion("chr1_1000000_2000000")
 }

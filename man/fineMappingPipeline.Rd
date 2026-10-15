@@ -33,7 +33,8 @@ fineMappingPipeline(data, ...)
   dataDrivenPriorWeightsCutoff = 1e-10,
   naAction = c("drop", "impute"),
   verbose = 1,
-  fitRetention = c("slim", "full")
+  fitRetention = c("slim", "full"),
+  dataType = NULL
 )
 
 \S4method{fineMappingPipeline}{MultiStudyQtlDataset}(
@@ -61,7 +62,8 @@ fineMappingPipeline(data, ...)
   seed = NULL,
   naAction = c("drop", "impute"),
   verbose = 1,
-  fitRetention = c("slim", "full")
+  fitRetention = c("slim", "full"),
+  dataType = NULL
 )
 
 \S4method{fineMappingPipeline}{QtlSumStats}(
@@ -80,7 +82,8 @@ fineMappingPipeline(data, ...)
   susieRssParam = SusieRssParam(),
   panelFilterParam = PanelFilterParam(),
   crossValidationArgs = CrossValidationParam(),
-  residualizationArgs = ResidualizationParam()
+  residualizationArgs = ResidualizationParam(),
+  dataType = NULL
 )
 
 \S4method{fineMappingPipeline}{GwasSumStats}(
@@ -94,7 +97,8 @@ fineMappingPipeline(data, ...)
   susieRssParam = SusieRssParam(),
   panelFilterParam = PanelFilterParam(),
   crossValidationArgs = CrossValidationParam(),
-  residualizationArgs = ResidualizationParam()
+  residualizationArgs = ResidualizationParam(),
+  dataType = NULL
 )
 }
 \arguments{
@@ -285,6 +289,12 @@ matrices. The per-variant \code{topLoci} table is fully populated
 either way --- its per-credible-set columns are governed by
 \code{credibleSet}'s \code{perCsColumns}, not by this.}
 
+\item{dataType}{Optional assay / modality label for the phenotype the fit
+was run on (\code{"bulk_rnaseq"}, \code{"methylation"}), recorded as a
+per-row provenance column and published by \code{\link{exportToBed}} /
+\code{\link{exportToVcf}}. \code{NULL} (default) omits the column. It
+cannot be derived --- the input carries the values, not what they measure.}
+
 \item{panelFilterParam}{LD-reference-panel filters for the summary-statistics
 and GWAS methods, built with \code{\link{PanelFilterParam}}. See
 \emph{Panel filters on the RSS path} above.}
@@ -462,6 +472,29 @@ deliberately not ported here:
   \code{summaryStatsQc(imputeArgs = ...)}, which only bounds which variants
   RAISS will impute. Use it when the panel cannot support the LD estimate a
   rare variant would need.
+}
+
+\section{The genotype scale}{
+
+  Individual-level genotypes reach every fit centred and scaled to unit
+  variance, so a posterior effect --- which is the prediction weight --- is
+  on the standardized scale, and the published
+  \code{weight_standardized} records it. That scaling belongs to the
+  \code{QtlDataset} accessors, not to this pipeline: it is
+  \code{\link{residualizedGenotypes}} that applies it, governed by
+  \code{ResidualizationParam(scaleResiduals = )} per call with the
+  dataset's own \code{\link{scaleResiduals}} slot as the default. One
+  mechanism, one place, shared with \code{\link{twasWeightsPipeline}} and
+  \code{\link{colocboostPipeline}}. An RSS fit needs nothing done: its
+  likelihood is written in standardized units already.
+
+  It is what makes weights comparable across methods. Measured through
+  pecotmr's own entry points, every TWAS method returns coefficients on the
+  scale of the \code{X} it was given, and the DPR samplers are not even
+  scale-equivariant --- a uniform rescale of \code{X} changes their fit
+  rather than just its units. One input scale removes the question, and it
+  is the scale the LD correlations and z-scores behind a TWAS Z are already
+  on.
 }
 
 \examples{

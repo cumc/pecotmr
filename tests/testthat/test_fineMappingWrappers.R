@@ -631,6 +631,9 @@ if (!exists(".makeUnivariateData", inherits = FALSE)) {
     "marginal_beta",
     "marginal_se",
     "marginal_z",
+    # Whether the SOURCE supplied z, which is what GWAS-VCF's `EZ` means: a
+    # Wald z pecotmr derived from beta/se must not be published as provided.
+    "marginal_z_supplied",
     "marginal_p",
     "pip",
     "posterior_mean",
@@ -913,11 +916,12 @@ test_that("buildTopLoci: mvsusie per-condition lfsr + effect (long)", {
         method = "mvsusie",
         conditionIdx = 1L
     )
-    expect_true(all(c("conditional_effect", "lfsr") %in% names(tl1)))
-    expect_true(is.numeric(tl1$conditional_effect) && is.numeric(tl1$lfsr))
-    # conditional_effect = coef[, condition] / pip, for every variant
-    expect_equal(unname(tl1$conditional_effect), unname(coef[, 1] / pip))
-    # lfsr populated ONLY for the 0.95 CS variants, pulled from clfsr[L, variant, condition]
+    expect_true(is_in("lfsr", names(tl1)))
+    expect_true(is.numeric(tl1$lfsr))
+    # `conditional_effect` is gone: it was coef[, condition] / pip, and the
+    # posterior mean is on coef()'s scale now, so the table already held it.
+    expect_false(is_in("conditional_effect", names(tl1)))
+    # lfsr populated ONLY for the 0.95 CS variants, from clfsr[L, variant, condition]
     expect_equal(tl1$lfsr[1:2], c(0.001, 0.02))
     expect_true(all(is.na(tl1$lfsr[3:4])))
     # conditionIdx = 2 selects the other condition's coef + clfsr slice
@@ -928,14 +932,13 @@ test_that("buildTopLoci: mvsusie per-condition lfsr + effect (long)", {
         method = "mvsusie",
         conditionIdx = 2L
     )
-    expect_equal(unname(tl2$conditional_effect), unname(coef[, 2] / pip))
     expect_equal(tl2$lfsr[1:2], c(0.30, 0.40))
     # univariate fit (no conditionIdx) keeps the base schema, no extra columns
     tl0 <- buildTopLoci(fit, cst, variantNames = vids, method = "susie")
     expect_false(any(c("conditional_effect", "lfsr") %in% names(tl0)))
 })
 
-test_that("topLoci surfaces mvsusie conditional_effect + lfsr through the projector", {
+test_that("topLoci surfaces the mvsusie lfsr through the projector", {
     tl <- data.frame(
         variant_id = c("chr1:100:A:G", "chr1:200:C:T"),
         chrom = "1",
@@ -946,7 +949,6 @@ test_that("topLoci surfaces mvsusie conditional_effect + lfsr through the projec
         posterior_mean = c(0.1, 0.2),
         posterior_sd = c(0.05, 0.05),
         cs_95 = c("mvsusie_1", "mvsusie_1"),
-        conditional_effect = c(0.3, -0.2),
         lfsr = c(0.001, 0.02),
         stringsAsFactors = FALSE
     )
@@ -956,9 +958,8 @@ test_that("topLoci surfaces mvsusie conditional_effect + lfsr through the projec
         topLoci = tl
     )
     out <- .fmrRowTopLoci(e, signalCutoff = 0)
-    expect_true(all(c("conditional_effect", "lfsr") %in% names(out)))
+    expect_true(is_in("lfsr", names(out)))
     expect_equal(out$lfsr, c(0.001, 0.02))
-    expect_equal(out$conditional_effect, c(0.3, -0.2))
 })
 
 test_that("buildTopLoci derives CS columns from the ACTUAL coverages (no hardcoded 0.95/0.70/0.50)", {
@@ -1694,7 +1695,10 @@ test_that("missing region produces NA grange columns rather than silent omission
     expect_equal(unique(out$event), "ctx_ENSG00000179403")
 })
 
-test_that("posterior_mean equals colSums(alpha*mu); posterior_sd equals sqrt(pmax(colSums(alpha*mu2) - mean^2, 0))", {
+test_that("posterior_mean is colSums(alpha*mu) when the fit records no scale", {
+    # The no-scale-factors case: an RSS fit has no X to scale, and a fit run
+    # with standardize = FALSE records all-1s, so the quotient below is the
+    # identity. The division itself is pinned by the next test.
     variant_ids <- c("chr1:100:A:G", "chr1:200:C:T")
     cs_at_cov <- list(
         "0.95" = list(c(1L, 2L)),
@@ -1725,6 +1729,47 @@ test_that("posterior_mean equals colSums(alpha*mu); posterior_sd equals sqrt(pma
     }
 })
 
+
+test_that("posterior_mean and posterior_sd are on the SUPPLIED X scale", {
+    # `.btlPosterior()` reports what `susieR::coef.susie()` reports:
+    # (colSums(alpha*mu) + theta) / X_column_scale_factors. Without the
+    # division this column was the only quantity in the package on the
+    # standardized scale, so the same fit gave two different "posterior
+    # effects" depending on whether you read topLoci() or susieWeights().
+    nV <- 3L
+    fit <- list(
+        alpha = matrix(
+            c(0.6, 0.3, 0.1, 0.2, 0.7, 0.1),
+            nrow = 2L,
+            byrow = TRUE
+        ),
+        mu = matrix(c(0.5, 1.0, 2.0, 0.4, 0.8, 1.6), nrow = 2L, byrow = TRUE),
+        mu2 = matrix(c(0.5, 1.2, 4.2, 0.4, 0.9, 3.0), nrow = 2L, byrow = TRUE),
+        X_column_scale_factors = c(0.5, 2, 4)
+    )
+    meanStd <- colSums(fit$alpha * fit$mu)
+    sdStd <- sqrt(pmax(colSums(fit$alpha * fit$mu2) - meanStd^2, 0))
+    post <- pecotmr:::.btlPosterior(fit, NULL, nV)
+    expect_equal(post$postMean, meanStd / fit$X_column_scale_factors)
+    # An SD rescales the way its mean does, but the mu2 identity only holds
+    # in the units mu2 is stored in -- so it is computed there, then divided.
+    expect_equal(post$postSd, sdStd / fit$X_column_scale_factors)
+
+    # susieInf / susieAsh carry an infinitesimal term that coef.susie adds in;
+    # dropping it would silently change what the posterior effect means.
+    withTheta <- `$<-`(fit, "theta", c(0.1, -0.2, 0.05))
+    expect_equal(
+        pecotmr:::.btlPosterior(withTheta, NULL, nV)$postMean,
+        (meanStd + withTheta$theta) / fit$X_column_scale_factors
+    )
+
+    # A zero factor can only come from a constant column, which carries no
+    # effect: treated as 1 rather than dividing to Inf.
+    zeroed <- `$<-`(fit, "X_column_scale_factors", c(0.5, 0, 4))
+    expect_true(all(is.finite(
+        pecotmr:::.btlPosterior(zeroed, NULL, nV)$postMean
+    )))
+})
 
 # ---- cal_purity ----
 test_that("cal_purity with min method and single element CS", {
@@ -3617,14 +3662,6 @@ test_that("the N column falls back to the fit N and recycles a scalar", {
 # ===========================================================================
 # buildTopLoci per-condition blocks
 # ===========================================================================
-
-test_that("conditional effects are NA when the fit carries no coefficients", {
-    # susie without a coef matrix and no mvsusie fallback: one NA per variant
-    # rather than a shorter vector that would misalign the column.
-    out <- pecotmr:::.btlCondEffect(list(), "susie", 1L, 3L)
-    expect_length(out, 3L)
-    expect_true(all(is.na(out)))
-})
 
 test_that("conditional lfsr passes through when no coverage level matches", {
     clf <- array(0.1, dim = c(2L, 3L, 1L))

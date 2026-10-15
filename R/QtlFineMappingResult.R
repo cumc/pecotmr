@@ -71,6 +71,7 @@ setClass(
     c(
         .qfmrCheckEntryLength(object),
         .validateTraitPosColumn(object),
+        .validateRegionColumn(object),
         .qfmrCheckJointCols(object, jointCols),
         .qfmrCheckTupleUniqueness(object, jointCols)
     )
@@ -181,12 +182,31 @@ setClass(
 #'   shape as \code{jointStudies}.
 #' @param jointTraits Optional character vector for cross-trait joints. Same
 #'   shape as \code{jointStudies}.
+#' @param dataType Optional assay / modality label ("bulk_rnaseq",
+#'   "methylation"), recorded as a per-row provenance column. Length 1 or
+#'   one per row; \code{NULL} (default) omits the column.
+#' @param dataSource Optional per-row label for the kind of input the fit saw,
+#'   \code{"individual"} or \code{"sumstat"}. Recorded rather than derived: a
+#'   combined collection can hold rows of both kinds, and its single
+#'   \code{ldSketch} cannot say which row came from which.
+#' @param weightStandardized Optional per-row flag: whether the posterior
+#'   effect is on the STANDARDIZED genotype scale. The posterior effect IS the
+#'   prediction weight, so it carries the same scale question as a TWAS
+#'   weight. \code{\link{fineMappingPipeline}} always passes \code{TRUE}:
+#'   it standardizes genotypes before fitting, and the posterior mean is
+#'   reported on the scale of the \code{X} the fit was given. The argument
+#'   exists for a collection assembled by hand, where only the caller knows.
 #' @param ldSketch An optional genotype panel (see \code{\link{readGenotypes}})
 #'   (the LD reference for RSS-derived fits), or \code{NULL} for
 #'   individual-level fits.
 #' @param traitPos Optional per-row trait genomic anchor (a \code{GRanges} or
 #'   \code{NULL}), carried forward as provenance; not part of the identity key.
 #'   \code{NULL} (default) omits the column.
+#' @param region Optional per-row analysis WINDOW (a \code{GRanges} or
+#'   \code{NULL}) -- the interval each row's fit was run over, carried
+#'   forward as provenance; not part of the identity key. \code{NULL}
+#'   (default) omits the column, and \code{\link{genomicRegion}} then
+#'   derives the window from the span of the variants present.
 #' @return A \code{QtlFineMappingResult} object.
 #' @examples
 #' tl <- data.frame(variant_id = paste0("chr1:", 100 * 1:3, ":A:G"),
@@ -208,6 +228,10 @@ QtlFineMappingResult <- function(
     jointContexts = NULL,
     jointTraits = NULL,
     traitPos = NULL,
+    region = NULL,
+    dataType = NULL,
+    dataSource = NULL,
+    weightStandardized = NULL,
     ldSketch = NULL
 ) {
     .qfmrAssertArgs(
@@ -234,6 +258,10 @@ QtlFineMappingResult <- function(
         jointContexts,
         jointTraits,
         traitPos,
+        region,
+        dataType,
+        dataSource,
+        weightStandardized,
         n
     )
     obj <- new(
@@ -286,6 +314,10 @@ QtlFineMappingResult <- function(
     jointContexts,
     jointTraits,
     traitPos,
+    region,
+    dataType,
+    dataSource,
+    weightStandardized,
     n
 ) {
     baseCols <- list(
@@ -303,7 +335,17 @@ QtlFineMappingResult <- function(
         jointTraits,
         n
     )
-    .appendTraitPosCol(withJoint, traitPos, n)
+    .appendFmProvenanceCols(
+        .appendRegionCol(
+            .appendTraitPosCol(withJoint, traitPos, n),
+            region,
+            n
+        ),
+        dataType,
+        dataSource,
+        weightStandardized,
+        n
+    )
 }
 
 # Each joint-provenance column must be one value per row.

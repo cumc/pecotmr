@@ -4536,3 +4536,95 @@ test_that(".ensembleAssertCv reports the fold count it actually saw", {
         CrossValidationParam(folds = 0)
     ))
 })
+
+# ---------------------------------------------------------------------------
+# The weight SCALE declaration
+#
+# `weight_standardized` is published alongside every weight, and it cannot be
+# recovered from the numbers: the standardized-to-raw conversion is a
+# per-variant factor 1/sqrt(2*af*(1-af)), so the two scales differ by an
+# allele-frequency-dependent amount at every variant and neither is
+# recognisable on its own. The pipeline hardcoded FALSE, so an
+# individual-level run on genotypes the caller HAD standardized published the
+# opposite of the truth with no way to say so. fineMappingPipeline() takes the
+# same argument for the same reason -- a posterior effect IS a weight.
+# ---------------------------------------------------------------------------
+
+test_that("twasWeightsPipeline(QtlDataset) records the standardized scale", {
+    qd <- .tp_makeQtlDataset()
+    exec(
+        local_mocked_bindings,
+        !!!c(
+            list(extractBlockGenotypes = .tp_mockExtractor()),
+            .tp_mockIndividualWeights(),
+            list(.package = "pecotmr")
+        )
+    )
+    res <- suppressMessages(suppressWarnings(twasWeightsPipeline(
+        qd,
+        methods = "lasso",
+        cisWindow = 1000L,
+        estimatePi = FALSE,
+        verbose = 0,
+        crossValidationArgs = CrossValidationParam(folds = 0)
+    )))
+    # Derived, not declared: genotypes are standardized on the way to every
+    # fitter, so there is nothing for a caller to say.
+    expect_true(all(as.logical(S4Vectors::mcols(res)$standardized)))
+})
+
+test_that("a summary-statistics run records the standardized scale itself", {
+    # The RSS likelihood is written in standardized units, so the scale is not
+    # the caller's to declare there -- the method has no such argument, and
+    # its rows record TRUE on their own.
+    ss <- .tp_makeQtlSumStats()
+    expect_error(
+        twasWeightsPipeline(ss, methods = "lasso", weightStandardized = FALSE),
+        "unused argument"
+    )
+    exec(
+        local_mocked_bindings,
+        !!!c(
+            list(extractBlockGenotypes = .tp_mockExtractor()),
+            .tp_mockSumstatWeights(),
+            list(.package = "pecotmr")
+        )
+    )
+    res <- suppressMessages(suppressWarnings(
+        twasWeightsPipeline(ss, methods = "lasso", verbose = 0)
+    ))
+    expect_true(all(as.logical(S4Vectors::mcols(res)$standardized)))
+})
+
+test_that("the TWAS genotype scale also comes from the accessor", {
+    qd <- .tp_makeQtlDataset()
+    exec(
+        local_mocked_bindings,
+        !!!c(
+            list(extractBlockGenotypes = .tp_mockExtractor()),
+            .tp_mockIndividualWeights(),
+            list(.package = "pecotmr")
+        )
+    )
+    recorded <- function(...) {
+        res <- suppressMessages(suppressWarnings(twasWeightsPipeline(
+            qd,
+            methods = "lasso",
+            cisWindow = 1000L,
+            estimatePi = FALSE,
+            verbose = 0,
+            crossValidationArgs = CrossValidationParam(folds = 0),
+            residualizationArgs = ResidualizationParam(...)
+        )))
+        unique(as.logical(S4Vectors::mcols(res)$standardized))
+    }
+    expect_true(recorded())
+    expect_false(recorded(scaleResiduals = FALSE))
+})
+
+test_that("no TWAS pipeline takes a standardizeGenotypes argument", {
+    expect_false(is_in(
+        "standardizeGenotypes",
+        names(formals(pecotmr:::.twasPipelineQtlDataset))
+    ))
+})

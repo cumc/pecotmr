@@ -24,6 +24,7 @@ colocboostPipeline(qtlData, gwasSumStats = NULL, ...)
   panelFilterParam = PanelFilterParam(),
   signalScreenArgs = SignalScreenParam(),
   alleleFlip = TRUE,
+  residualizationArgs = ResidualizationParam(),
   methodArgs = ColocboostOptions()
 )
 
@@ -56,6 +57,7 @@ colocboostPipeline(qtlData, gwasSumStats = NULL, ...)
   panelFilterParam = PanelFilterParam(),
   signalScreenArgs = SignalScreenParam(),
   alleleFlip = TRUE,
+  residualizationArgs = ResidualizationParam(),
   methodArgs = ColocboostOptions()
 )
 }
@@ -133,6 +135,17 @@ across the individual X, sumstats, and LD by (chrom, pos) with ref/alt
 swaps recognized (flipping z / residualized dosage / LD to a shared
 coding); when FALSE, match on exact alleles only (names-only), so a ref/alt
 swap is treated as a distinct variant.}
+
+\item{residualizationArgs}{Covariate residualization settings for
+individual-level input, built with \code{\link{ResidualizationParam}}.
+Reaches both \code{\link{residualizedGenotypes}} and
+\code{\link{residualizedPhenotypes}}, so it governs what is regressed
+out of each side and --- through \code{scaleResiduals} --- whether the
+columns are scaled to unit variance. Previously absent, which left this
+pipeline on the dataset's own settings with no per-call say, unlike
+\code{\link{fineMappingPipeline}} and
+\code{\link{twasWeightsPipeline}}. \strong{Ignored} on
+\code{QtlSumStats} input, which has nothing to residualize.}
 
 \item{methodArgs}{Additional arguments forwarded to
 \code{colocboost::colocboost}, built with

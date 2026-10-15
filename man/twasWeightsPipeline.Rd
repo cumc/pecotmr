@@ -311,6 +311,29 @@ same shared partition.
   RAISS will impute.
 }
 
+\section{The genotype scale}{
+
+  Individual-level genotypes reach every method centred and scaled to unit
+  variance, so all the weights are on one scale and the recorded
+  \code{weight_standardized} says so. The scaling belongs to the
+  \code{QtlDataset} accessors rather than to this pipeline:
+  \code{\link{residualizedGenotypes}} applies it, governed by
+  \code{ResidualizationParam(scaleResiduals = )} per call with the
+  dataset's own \code{\link{scaleResiduals}} slot as the default.
+
+  It is not cosmetic: measured through pecotmr's own entry points, every
+  method returns coefficients on the scale of the \code{X} it was given
+  --- exactly so for glmnet / ncvreg / L0Learn / mr.ash / the Bayesian
+  alphabet and for \code{susieWeights()} --- while the DPR samplers are
+  not scale-equivariant at all, so a uniform rescale of \code{X} changes
+  their fit and not merely its units. The chosen scale is also the one the
+  LD correlations and z-scores behind a TWAS Z already use. A
+  summary-statistics fit needs nothing done.
+
+  \code{\link{learnTwasWeights}} still takes \code{weightStandardized}:
+  there the caller supplies \code{X} themselves, so only they can say.
+}
+
 \examples{
 data(qtlDatasetExample)
 twasWeightsPipeline(qtlDatasetExample, methods = "lasso", cisWindow = 1e6)

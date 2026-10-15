@@ -174,12 +174,13 @@ Collate:
     'qtlEnrichmentPipeline.R'
     'regularizedRegressionWrappers.R'
     'relatednessQc.R'
+    'twasWeights.R'
+    'resultWriters.R'
+    'resultReaders.R'
     'sldscPostprocessingPipeline.R'
     'sldscWrapper.R'
-    'twasWeights.R'
     'twasWeightsPipeline.R'
     'twasWeightsRow.R'
-    'vcfWriter.R'
 Depends: 
     R (>= 4.5)
 LazyData: false

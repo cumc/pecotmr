@@ -3123,3 +3123,22 @@ test_that(".twasEnsembleCollect answers empty parts when no token contributes", 
     expect_identical(out$wts, list())
     expect_identical(out$rsq, c())
 })
+
+test_that(".jointAfForGroup resolves allele frequencies for an individual group", {
+    data(qtlDatasetExample)
+    X <- matrix(
+        c(0, 1, 2, 1, 2, 0),
+        nrow = 3,
+        dimnames = list(c("s1", "s2", "s3"), c("chr1:100:A:T", "chr1:200:C:G"))
+    )
+    g <- new(
+        "IndividualJointGroup",
+        conditions = tibble(study = "s", context = "c", trait = "t"),
+        X = X,
+        Y = matrix(1:3, ncol = 1, dimnames = list(c("s1", "s2", "s3"), "c:t"))
+    )
+    # Not a QtlDataset -> no af rather than an error.
+    expect_null(.jointAfForGroup(NULL, g))
+    # A SumStats group has no design matrix to take frequencies from.
+    expect_null(.jointAfForGroup(qtlDatasetExample, "not a group"))
+})

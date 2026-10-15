@@ -4,7 +4,7 @@
 \alias{genomicRegion}
 \alias{genomicRegion,FineMappingResultBase-method}
 \alias{genomicRegion,TwasWeights-method}
-\title{Get Per-Row Genomic Regions}
+\title{Get Per-Row Analysis Windows}
 \usage{
 genomicRegion(x, ...)
 
@@ -19,16 +19,34 @@ genomicRegion(x, ...)
 }
 \value{
 A \code{GRanges} with one range per row of \code{x}, or an empty
-  \code{GRanges} when the collection carries no region provenance.
+  \code{GRanges} when the collection has no rows.
 }
 \description{
-Return the genomic anchor of each row of a per-tuple collection
-  as a \code{GRanges} with one range per row -- the trait's own region for a
-  \code{TwasWeights}, or the fine-mapping window for a
-  \code{FineMappingResult}. This is location provenance (e.g. for cTWAS
-  LD-block placement).
+Return the genomic interval each row was analysed over, as a
+  \code{GRanges} with one range per row -- the trait's own region for a
+  \code{TwasWeights}, and for a \code{FineMappingResult} the window the fit
+  was run over (the requested region, or the trait's cis-window when the fit
+  was driven by \code{traitId} + \code{cisWindow}). This is location
+  provenance (e.g. for cTWAS LD-block placement).
+
+  This is the window that was ANALYSED, not the span of the variants that
+  survived into the fit: QC and screening drop variants first, so a fit over
+  \code{chr22:10000000-18000000} may contain variants spanning only
+  \code{chr22:10414272-16916492}. The window is stored because it cannot be
+  recovered from the object; the span can, and is simply \code{range(x)}.
+
+  Being a record of what was analysed, it deliberately does NOT change under
+  \code{subsetRegion()} or row subsetting -- a subset of a fit's variants was
+  still produced by a fit over the original window. Use \code{range(x)} when
+  you want the current content instead.
+
+  Collections built before the window was recorded fall back to the derived
+  span, so the accessor always returns a range.
 }
 \examples{
 data(qtlFineMappingExample)
 genomicRegion(qtlFineMappingExample)
+}
+\seealso{
+\code{\link{traitPosition}} for the trait's own coordinates.
 }

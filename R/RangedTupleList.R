@@ -230,6 +230,16 @@ methods::setValidity("RangedTupleList", function(object) {
 #' @export
 setMethod("nrow", "RangedTupleList", function(x) length(x))
 
+# One method on the shared base rather than one per flavour: every collection
+# that keys rows by LD block stores the id in the same mcols column, and the
+# ones that have no block axis want the same NA-padded answer. Serialized
+# collections predating the column take that path too.
+#' @rdname blockId
+#' @export
+setMethod("blockId", "RangedTupleList", function(x, ...) {
+    .fmrIdentityColumn(x, "blockId")
+})
+
 #' @rdname RangedTupleList-methods
 #' @export
 setMethod("ncol", "RangedTupleList", function(x) {

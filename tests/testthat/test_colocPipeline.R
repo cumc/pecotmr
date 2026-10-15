@@ -165,7 +165,11 @@ context("colocPipeline")
 
 # The enrichment lookup takes each side's identity list, as the scoring loop
 # builds it.
-.cp_side <- function(studyName, context = NA_character_, trait = NA_character_) {
+.cp_side <- function(
+    studyName,
+    context = NA_character_,
+    trait = NA_character_
+) {
     list(study = studyName, context = context, trait = trait)
 }
 
@@ -517,14 +521,14 @@ test_that(".colocExtractLbfFromEntry: entry without trimmedFit returns NULL with
             stringsAsFactors = FALSE
         )
     )
-    expect_warning(
-        out <- pecotmr:::.colocExtractLbfFromEntry(
-            e,
-            ColocLbfFilterParam()
-        ),
-        "has no trimmedFit"
+    # An absent fit means an absent LBF, and coloc.bf_bf has nothing to score.
+    # That is a refusal, not a skip: warning per tuple produced an empty
+    # result that read as "no colocalization" rather than "this input cannot
+    # be colocalized".
+    expect_error(
+        pecotmr:::.colocExtractLbfFromEntry(e, ColocLbfFilterParam()),
+        "no retained fit"
     )
-    expect_null(out)
 })
 
 test_that(".colocExtractLbfFromEntry: filterLbfCs subsets by cs_index", {
@@ -1080,15 +1084,15 @@ test_that(".colocExtractLbfFromEntry: stacks nested fSuSiE lBF (fit[[1]] path)",
     expect_equal(nrow(out$lbf), 2L)
 })
 
-test_that(".colocExtractLbfFromEntry: warns + NULL when fit carries no LBF slot", {
-    fit <- list(notLbf = list(a = 1)) # fit[[1]] is a list -> $ access is safe
+test_that(".colocExtractLbfFromEntry: refuses a fit carrying no LBF slot", {
+    fit <- list(notLbf = list(a = 1))
     e <- fineMappingRow(
         variantIds = "chr1:100:A:G",
         susieFit = fit,
         topLoci = .cp_tl("chr1:100:A:G")
     )
-    expect_warning(
-        out <- pecotmr:::.colocExtractLbfFromEntry(
+    expect_error(
+        pecotmr:::.colocExtractLbfFromEntry(
             e,
             lbfFilterArgs = ColocLbfFilterParam(
                 filterLbfCs = FALSE,
@@ -1096,12 +1100,24 @@ test_that(".colocExtractLbfFromEntry: warns + NULL when fit carries no LBF slot"
                 concentration = 0.5
             )
         ),
-        "no lbf_variable"
+        "no per-effect LBF matrix"
     )
-    expect_null(out)
 })
 
-test_that(".colocExtractLbfFromEntry: warns + NULL on an empty LBF matrix", {
+test_that(".colocExtractLbfFromEntry: reads a bare fSuSiE lBF list", {
+    # The shape an fSuSiE fit actually carries. coloc used to look only for
+    # lbf_variable / fsusie_result$lBF and skipped these silently, while
+    # lbf() read them fine -- the two extractors had drifted apart.
+    data(fsusieFineMappingExample)
+    fit <- susieFit(fsusieFineMappingExample)
+    expect_type(fit$lBF, "list")
+    m <- pecotmr:::.colocLbfMatrix(fit, "probe")
+    expect_true(is.matrix(m))
+    expect_identical(nrow(m), length(fit$lBF))
+    expect_identical(m, pecotmr:::.asLbfMatrix(fit))
+})
+
+test_that(".colocExtractLbfFromEntry: refuses an empty LBF matrix", {
     fit <- list(
         lbf_variable = matrix(
             numeric(0),
@@ -1115,8 +1131,8 @@ test_that(".colocExtractLbfFromEntry: warns + NULL on an empty LBF matrix", {
         susieFit = fit,
         topLoci = .cp_tl(sprintf("chr1:%d:A:G", 100L * (1:3)))
     )
-    expect_warning(
-        out <- pecotmr:::.colocExtractLbfFromEntry(
+    expect_error(
+        pecotmr:::.colocExtractLbfFromEntry(
             e,
             lbfFilterArgs = ColocLbfFilterParam(
                 filterLbfCs = FALSE,
@@ -1124,9 +1140,8 @@ test_that(".colocExtractLbfFromEntry: warns + NULL on an empty LBF matrix", {
                 concentration = 0.5
             )
         ),
-        "LBF matrix is empty"
+        "no per-effect LBF matrix"
     )
-    expect_null(out)
 })
 
 test_that(".colocExtractLbfFromEntry: secondary CS filter subsets rows", {

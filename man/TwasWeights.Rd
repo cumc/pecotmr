@@ -14,6 +14,7 @@ TwasWeights(
   jointContexts = NULL,
   jointTraits = NULL,
   traitPos = NULL,
+  region = NULL,
   ldSketch = NULL
 )
 }
@@ -45,6 +46,12 @@ shape as \code{jointStudies}.}
 \item{traitPos}{Optional per-row trait genomic anchor (a \code{GRanges} or
 \code{NULL}), carried forward as provenance; not part of the identity key.
 \code{NULL} (default) omits the column.}
+
+\item{region}{Optional per-row analysis WINDOW (a \code{GRanges} or
+\code{NULL}) -- the interval each row's fit was run over, carried
+forward as provenance; not part of the identity key. \code{NULL}
+(default) omits the column, and \code{\link{genomicRegion}} then
+derives the window from the span of the variants present.}
 
 \item{ldSketch}{An optional genotype panel (see
 \code{\link{readGenotypes}}), or \code{NULL} for individual-level fits.}
