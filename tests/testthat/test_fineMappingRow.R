@@ -1905,3 +1905,145 @@ test_that("an empty credible band still declares halfwidth", {
     expect_true(is_in("halfwidth", names(.emptyCredibleBand())))
     expect_identical(nrow(.emptyCredibleBand()), 0L)
 })
+
+# ---------------------------------------------------------------------------
+# fsusie trait-effect edge paths, and the two projections either side of them
+# ---------------------------------------------------------------------------
+
+# The minimum a fit needs to pass `.isFsusieFit()` and carry trait positions:
+# one curve per effect over `outing_grid`, plus the two fields that identify a
+# susiF fit. A `NULL` element of `fitted_func` is what an effect that produced
+# no curve looks like.
+# @noRd
+.fte_stubFit <- function(curves, pos) {
+    list(
+        fitted_func = curves,
+        outing_grid = c(1, 2, 3),
+        fitted_wc2 = 1,
+        alpha = 1,
+        trait_positions = pos
+    )
+}
+
+# @noRd
+.fte_row <- function(fit) {
+    fineMappingRow(
+        variantIds = "chr1:100:A:G",
+        susieFit = fit,
+        topLoci = data.frame(
+            variant_id = "chr1:100:A:G",
+            pip = 0.5,
+            stringsAsFactors = FALSE
+        )
+    )
+}
+
+test_that("an effect with no fitted curve contributes no trait effects", {
+    res <- QtlFineMappingResult(
+        studyName = "s",
+        context = "brain",
+        trait = "g",
+        method = "fsusie",
+        entry = list(.fte_row(.fte_stubFit(list(NULL, NULL), 1.5))),
+        jointTraits = "g1"
+    )
+    te <- fsusieTraitEffects(res)
+    # Every effect skipped, so there is nothing to report -- but the empty
+    # table keeps the schema, so a caller can bind or filter it exactly as it
+    # would a populated one.
+    expect_equal(nrow(te), 0L)
+    expect_true(all(
+        c("cs", "chrom", "jointTrait", "traitPos", "effect") %in% names(te)
+    ))
+})
+
+test_that("a fit with no jointTraits names its curves after the row", {
+    res <- QtlFineMappingResult(
+        studyName = "s",
+        context = "brain",
+        trait = "g",
+        method = "fsusie",
+        entry = list(.fte_row(.fte_stubFit(list(c(1, 2, 3)), 1.5)))
+    )
+    te <- fsusieTraitEffects(res)
+    # The joint member names ride on `jointTraits`; a fit over a single trait
+    # has none, so the row's own trait is the name of its curve.
+    expect_equal(nrow(te), 1L)
+    expect_equal(te$jointTrait, "g")
+    # The curve is linear on the grid, so the midpoint interpolates exactly.
+    expect_equal(te$effect, 1.5)
+})
+
+test_that("a GWAS fsusie fit has no trait axis to name its curves", {
+    res <- GwasFineMappingResult(
+        studyName = "s",
+        method = "fsusie",
+        entry = list(.fte_row(.fte_stubFit(list(c(1, 2, 3)), 1.5)))
+    )
+    # A GWAS result is not keyed by trait at all, so there is no name to fall
+    # back to and the fit's one trait position has nothing to pair with.
+    expect_error(
+        fsusieTraitEffects(res),
+        "1 trait position\\(s\\) but 0 trait name\\(s\\)"
+    )
+})
+
+test_that("a credible-set label matching no fit effect claims none", {
+    tl <- data.frame(
+        variant_id = "chr1:100:A:G",
+        cs_95 = "fsusie_1",
+        stringsAsFactors = FALSE
+    )
+    # The label's variants are not any effect's membership, so the label has
+    # no effect to attach to -- NA rather than silently taking the first.
+    expect_true(is.na(.fsusieFirstMatchingEffect(
+        "fsusie_1",
+        fitSets = list("chr1:200:A:G", "chr1:300:A:G"),
+        topLoci = tl
+    )))
+    expect_equal(
+        .fsusieFirstMatchingEffect(
+            "fsusie_1",
+            fitSets = list("chr1:300:A:G", "chr1:100:A:G"),
+            topLoci = tl
+        ),
+        2L
+    )
+})
+
+test_that("a NULL posterior table projects to an empty GRanges", {
+    gr <- .fmeTopLociGRanges(NULL)
+    expect_s4_class(gr, "GRanges")
+    expect_length(gr, 0L)
+})
+
+test_that("a fit whose prior variances all vanished labels nothing", {
+    vids <- str_c("chr1:", (1:4) * 100, ":A:G")
+    p <- length(vids)
+    L <- 2L
+    set.seed(3L)
+    lbf <- matrix(stats::rnorm(L * p), nrow = L, ncol = p)
+    colnames(lbf) <- vids
+    alpha <- lbfToAlpha(lbf)
+    pip <- as.numeric(1 - apply(1 - alpha, 2, prod))
+    entry <- fineMappingRow(
+        variantIds = vids,
+        susieFit = list(
+            pip = pip,
+            alpha = alpha,
+            lbf_variable = lbf,
+            # Every prior variance driven to zero: no effect clears the
+            # tolerance, so there is no credible set left to label with.
+            V = rep(0, L)
+        ),
+        topLoci = data.frame(
+            variant_id = vids,
+            pip = pip,
+            method = "susie",
+            cs_95 = c("susie_1", rep("susie_0", p - 1L)),
+            stringsAsFactors = FALSE
+        )
+    )
+    adj <- adjustPips(entry, vids[1:3])
+    expect_equal(.fmrRowTopLoci(adj, raw = TRUE)$cs_95, rep("susie_0", 3L))
+})
