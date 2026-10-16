@@ -5464,3 +5464,32 @@ test_that("a frequency vector that does not match the variants is not used", {
     )
     expect_false(anyNA(ok$beta))
 })
+
+test_that("an unnormalisable id set is returned as given", {
+    # `normalizeVariantId()` leaves an id it cannot parse alone rather than
+    # emitting "chrNA:..." garbage, so a fit named by rsID keeps its names
+    # and only the parseable ones are rewritten.
+    out <- extractVariantNames(list(
+        pip = set_names(
+            c(0.1, 0.2, 0.3),
+            c(
+                "rs12345",
+                "chr1_200_C_T",
+                "not an id"
+            )
+        )
+    ))
+    expect_equal(out, c("rs12345", "chr1:200:C:T", "not an id"))
+})
+
+test_that("a screen whose marginal z cannot be computed falls back", {
+    # univariate_regression refuses a non-finite X, and the screen is
+    # advisory: a block it cannot score is kept (the fineMapping default)
+    # rather than silently discarded.
+    X <- matrix(c(Inf, stats::rnorm(49L)), nrow = 10L, ncol = 5L)
+    y <- stats::rnorm(10L)
+    scr <- list(metric = "absZ", cutoff = 2)
+    expect_true(.fmSerScreen(X, y, scr, fallback = TRUE))
+    # colocboost passes FALSE: it drops an outcome it cannot screen.
+    expect_false(.fmSerScreen(X, y, scr, fallback = FALSE))
+})

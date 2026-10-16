@@ -759,22 +759,16 @@ postprocessFinemappingFit.susiF <- function(
     )
 }
 
+# No try_fetch around the normalisation: `normalizeVariantId()` refuses only a
+# non-CHARACTER `ids`, and all three sources here -- names(), colnames() and
+# str_c() -- are character or NULL by construction. For character input it
+# never throws; an id it cannot parse (an rsID, say) is returned unchanged,
+# which is the behaviour the fallback was there to approximate.
 extractVariantNames <- function(fit) {
     variantNames <- names(fit$pip) %||%
         colnames(fit$alpha) %||%
         str_c("variant_", seq_along(fit$pip))
-    try_fetch(
-        normalizeVariantId(variantNames),
-        error = function(cnd) {
-            msg <- glue(
-                "variant ids could not be normalised; using them as given. ",
-                "Downstream joins that assume the canonical form may not ",
-                "match."
-            )
-            warn(msg, parent = cnd)
-            variantNames
-        }
-    )
+    normalizeVariantId(variantNames)
 }
 
 extractSumstats <- function(
