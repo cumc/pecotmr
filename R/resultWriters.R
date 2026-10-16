@@ -2170,11 +2170,14 @@ setMethod(
 }
 
 # The CS membership / purity values as a tibble, for binding into a block.
+#
+# `csCols` is never empty here. The only caller runs downstream of
+# `.fmbPrimaryCsLevel()`, which aborts outright for a table carrying no
+# `cs_<n>` column, and both columns of every level that IS present come back
+# from `.pubCsPair()` unconditionally -- so an empty-`csCols` branch would be
+# dead by construction.
 # @noRd
 .pubFrameCs <- function(view, csCols) {
-    if (length(csCols) == 0L) {
-        return(tibble(.rows = nrow(view)))
-    }
     as_tibble(
         .fmbCsValues(view, csCols),
         .name_repair = "minimal"
@@ -2425,11 +2428,13 @@ setMethod(
 }
 
 # A per-row List column flattened to one string per row.
+#
+# No absent-column branch, unlike `.twbColumnOr()` above: this is only ever
+# asked for `dataType`, which `TwasWeights()` materializes for every row even
+# when no row declares one -- and that constructor is the only way to build
+# the class, so the column is always there.
 # @noRd
 .twbListColumn <- function(x, nm) {
-    if (!is_in(nm, .tupleColumnNames(x))) {
-        return(rep(NA_character_, nrow(x)))
-    }
     map_chr(as.list(.tupleColumn(x, nm)), .twbScalarChr)
 }
 

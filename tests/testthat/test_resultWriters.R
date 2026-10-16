@@ -2120,3 +2120,41 @@ test_that("columns= appends a hand-built row's own variant columns", {
         "already writes"
     )
 })
+
+test_that("a weight matrix with no columns publishes a header-only file", {
+    # A joint fit that retained no conditions leaves a 0-column weight
+    # matrix, so the row contributes no (variant, trait) block at all. The
+    # published file is then the schema with no rows -- the same shape an
+    # empty result takes everywhere else -- rather than a file with no header
+    # a reader could not parse.
+    gr <- .variantIdsToGRanges(sprintf("chr1:%d:A:G", 100L * (1:4)), "v")
+    w <- matrix(numeric(0), nrow = 4L, ncol = 0L)
+    mcols(gr)$weight <- w
+    tw <- TwasWeights(
+        studyName = "S",
+        context = "c",
+        trait = "t",
+        method = "lasso",
+        entry = list(methods::new(
+            "TwasWeightsRow",
+            variants = gr,
+            weights = w,
+            weightStandardized = FALSE
+        ))
+    )
+    expect_length(.twbWeightLabels(mcols(tw[[1L]])$weight), 0L)
+    expect_null(.twbWeightsTable(tw, NULL, NULL))
+    out <- withr::local_tempfile(fileext = ".bed")
+    exportToBed(tw, out)
+    lines <- readLines(out)
+    expect_length(lines, 1L)
+    expect_equal(
+        str_split_1(lines[[1L]], "\t")[1:4],
+        c(
+            "#chr",
+            "start",
+            "end",
+            "ID"
+        )
+    )
+})
