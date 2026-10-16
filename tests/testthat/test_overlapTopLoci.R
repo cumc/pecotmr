@@ -191,5 +191,5 @@ test_that("overlapTopLoci returns a GRanges of the shared variants", {
     gr <- overlapTopLoci(qtl, gwas, signalCutoff = 0)
     expect_s4_class(gr, "GRanges")
     expect_equal(length(gr), 1L)
-    expect_true("gwas_beta" %in% names(S4Vectors::mcols(gr)))
+    expect_true("gwas_posterior_effect" %in% names(S4Vectors::mcols(gr)))
 })

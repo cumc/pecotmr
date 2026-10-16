@@ -631,6 +631,9 @@ if (!exists(".makeUnivariateData", inherits = FALSE)) {
     "marginal_beta",
     "marginal_se",
     "marginal_z",
+    # Whether the SOURCE supplied z, which is what GWAS-VCF's `EZ` means: a
+    # Wald z pecotmr derived from beta/se must not be published as provided.
+    "marginal_z_supplied",
     "marginal_p",
     "pip",
     "posterior_mean",
@@ -757,6 +760,11 @@ if (!exists(".makeUnivariateData", inherits = FALSE)) {
     otherQuantities = NULL,
     region = NULL
 ) {
+    # `signalCutoff` has to go to buildTopLoci's OWN formal: that is the one
+    # the PIP filter reads, and it is what the pipeline unpacks from
+    # CredibleSetParam before calling here. Setting it only on the param --
+    # which this helper used to do -- left every caller's cutoff inert, so a
+    # test asking for 0.5 was silently testing no filtering at all.
     buildTopLoci(
         fit = inp$fit,
         csTables = inp$cs_tables,
@@ -764,6 +772,7 @@ if (!exists(".makeUnivariateData", inherits = FALSE)) {
         sumstats = sumstats,
         af = af,
         method = method,
+        signalCutoff = signalCutoff,
         dataY = inp$data_y,
         otherQuantities = otherQuantities,
         region = region,
@@ -913,11 +922,12 @@ test_that("buildTopLoci: mvsusie per-condition lfsr + effect (long)", {
         method = "mvsusie",
         conditionIdx = 1L
     )
-    expect_true(all(c("conditional_effect", "lfsr") %in% names(tl1)))
-    expect_true(is.numeric(tl1$conditional_effect) && is.numeric(tl1$lfsr))
-    # conditional_effect = coef[, condition] / pip, for every variant
-    expect_equal(unname(tl1$conditional_effect), unname(coef[, 1] / pip))
-    # lfsr populated ONLY for the 0.95 CS variants, pulled from clfsr[L, variant, condition]
+    expect_true(is_in("lfsr", names(tl1)))
+    expect_true(is.numeric(tl1$lfsr))
+    # `conditional_effect` is gone: it was coef[, condition] / pip, and the
+    # posterior mean is on coef()'s scale now, so the table already held it.
+    expect_false(is_in("conditional_effect", names(tl1)))
+    # lfsr populated ONLY for the 0.95 CS variants, from clfsr[L, variant, condition]
     expect_equal(tl1$lfsr[1:2], c(0.001, 0.02))
     expect_true(all(is.na(tl1$lfsr[3:4])))
     # conditionIdx = 2 selects the other condition's coef + clfsr slice
@@ -928,14 +938,13 @@ test_that("buildTopLoci: mvsusie per-condition lfsr + effect (long)", {
         method = "mvsusie",
         conditionIdx = 2L
     )
-    expect_equal(unname(tl2$conditional_effect), unname(coef[, 2] / pip))
     expect_equal(tl2$lfsr[1:2], c(0.30, 0.40))
     # univariate fit (no conditionIdx) keeps the base schema, no extra columns
     tl0 <- buildTopLoci(fit, cst, variantNames = vids, method = "susie")
     expect_false(any(c("conditional_effect", "lfsr") %in% names(tl0)))
 })
 
-test_that("topLoci surfaces mvsusie conditional_effect + lfsr through the projector", {
+test_that("topLoci surfaces the mvsusie lfsr through the projector", {
     tl <- data.frame(
         variant_id = c("chr1:100:A:G", "chr1:200:C:T"),
         chrom = "1",
@@ -946,7 +955,6 @@ test_that("topLoci surfaces mvsusie conditional_effect + lfsr through the projec
         posterior_mean = c(0.1, 0.2),
         posterior_sd = c(0.05, 0.05),
         cs_95 = c("mvsusie_1", "mvsusie_1"),
-        conditional_effect = c(0.3, -0.2),
         lfsr = c(0.001, 0.02),
         stringsAsFactors = FALSE
     )
@@ -956,9 +964,8 @@ test_that("topLoci surfaces mvsusie conditional_effect + lfsr through the projec
         topLoci = tl
     )
     out <- .fmrRowTopLoci(e, signalCutoff = 0)
-    expect_true(all(c("conditional_effect", "lfsr") %in% names(out)))
+    expect_true(is_in("lfsr", names(out)))
     expect_equal(out$lfsr, c(0.001, 0.02))
-    expect_equal(out$conditional_effect, c(0.3, -0.2))
 })
 
 test_that("buildTopLoci derives CS columns from the ACTUAL coverages (no hardcoded 0.95/0.70/0.50)", {
@@ -1694,7 +1701,10 @@ test_that("missing region produces NA grange columns rather than silent omission
     expect_equal(unique(out$event), "ctx_ENSG00000179403")
 })
 
-test_that("posterior_mean equals colSums(alpha*mu); posterior_sd equals sqrt(pmax(colSums(alpha*mu2) - mean^2, 0))", {
+test_that("posterior_mean is colSums(alpha*mu) when the fit records no scale", {
+    # The no-scale-factors case: an RSS fit has no X to scale, and a fit run
+    # with standardize = FALSE records all-1s, so the quotient below is the
+    # identity. The division itself is pinned by the next test.
     variant_ids <- c("chr1:100:A:G", "chr1:200:C:T")
     cs_at_cov <- list(
         "0.95" = list(c(1L, 2L)),
@@ -1725,6 +1735,47 @@ test_that("posterior_mean equals colSums(alpha*mu); posterior_sd equals sqrt(pma
     }
 })
 
+
+test_that("posterior_mean and posterior_sd are on the SUPPLIED X scale", {
+    # `.btlPosterior()` reports what `susieR::coef.susie()` reports:
+    # (colSums(alpha*mu) + theta) / X_column_scale_factors. Without the
+    # division this column was the only quantity in the package on the
+    # standardized scale, so the same fit gave two different "posterior
+    # effects" depending on whether you read topLoci() or susieWeights().
+    nV <- 3L
+    fit <- list(
+        alpha = matrix(
+            c(0.6, 0.3, 0.1, 0.2, 0.7, 0.1),
+            nrow = 2L,
+            byrow = TRUE
+        ),
+        mu = matrix(c(0.5, 1.0, 2.0, 0.4, 0.8, 1.6), nrow = 2L, byrow = TRUE),
+        mu2 = matrix(c(0.5, 1.2, 4.2, 0.4, 0.9, 3.0), nrow = 2L, byrow = TRUE),
+        X_column_scale_factors = c(0.5, 2, 4)
+    )
+    meanStd <- colSums(fit$alpha * fit$mu)
+    sdStd <- sqrt(pmax(colSums(fit$alpha * fit$mu2) - meanStd^2, 0))
+    post <- pecotmr:::.btlPosterior(fit, NULL, nV)
+    expect_equal(post$postMean, meanStd / fit$X_column_scale_factors)
+    # An SD rescales the way its mean does, but the mu2 identity only holds
+    # in the units mu2 is stored in -- so it is computed there, then divided.
+    expect_equal(post$postSd, sdStd / fit$X_column_scale_factors)
+
+    # susieInf / susieAsh carry an infinitesimal term that coef.susie adds in;
+    # dropping it would silently change what the posterior effect means.
+    withTheta <- `$<-`(fit, "theta", c(0.1, -0.2, 0.05))
+    expect_equal(
+        pecotmr:::.btlPosterior(withTheta, NULL, nV)$postMean,
+        (meanStd + withTheta$theta) / fit$X_column_scale_factors
+    )
+
+    # A zero factor can only come from a constant column, which carries no
+    # effect: treated as 1 rather than dividing to Inf.
+    zeroed <- `$<-`(fit, "X_column_scale_factors", c(0.5, 0, 4))
+    expect_true(all(is.finite(
+        pecotmr:::.btlPosterior(zeroed, NULL, nV)$postMean
+    )))
+})
 
 # ---- cal_purity ----
 test_that("cal_purity with min method and single element CS", {
@@ -3618,14 +3669,6 @@ test_that("the N column falls back to the fit N and recycles a scalar", {
 # buildTopLoci per-condition blocks
 # ===========================================================================
 
-test_that("conditional effects are NA when the fit carries no coefficients", {
-    # susie without a coef matrix and no mvsusie fallback: one NA per variant
-    # rather than a shorter vector that would misalign the column.
-    out <- pecotmr:::.btlCondEffect(list(), "susie", 1L, 3L)
-    expect_length(out, 3L)
-    expect_true(all(is.na(out)))
-})
-
 test_that("conditional lfsr passes through when no coverage level matches", {
     clf <- array(0.1, dim = c(2L, 3L, 1L))
     out <- pecotmr:::.btlCondLfsr(
@@ -5240,3 +5283,213 @@ test_that("krigingOutlierQc forwards methodArgs to susieR::kriging_rss", {
 # Fixtures moved here with the tests that use them.
 
 # Fixtures moved here with the tests that use them.
+
+# ---------------------------------------------------------------------------
+# buildTopLoci: the PIP filter and the z-only source
+# ---------------------------------------------------------------------------
+
+test_that("signalCutoff drops rows at or below the cutoff", {
+    vids <- c("chr1:100:A:G", "chr1:200:C:T", "chr1:300:G:T")
+    noCs <- list("0.95" = list(), "0.7" = list(), "0.5" = list())
+    inp <- .fakeFitAndCs(vids, noCs, pip = c(0.02, 0.4, 0.95))
+    # 0 (and NULL) keeps everything: the cutoff is a publication filter, not
+    # part of the fit.
+    expect_equal(nrow(.runBuildTopLoci(inp, signalCutoff = 0)), 3L)
+    # Strictly greater than the cutoff survives, so 0.4 goes at 0.5 and
+    # stays at 0.3.
+    expect_equal(
+        .runBuildTopLoci(inp, signalCutoff = 0.3)$variant_id,
+        vids[2:3]
+    )
+    expect_equal(
+        .runBuildTopLoci(inp, signalCutoff = 0.5)$variant_id,
+        vids[[3L]]
+    )
+})
+
+test_that("a z-only source still reports an effect size", {
+    vids <- c("chr1:100:A:G", "chr1:200:C:T")
+    noCs <- list("0.95" = list(), "0.7" = list(), "0.5" = list())
+    inp <- .fakeFitAndCs(vids, noCs, pip = c(0.9, 0.8))
+    af <- c(0.2, 0.35)
+    n <- 1000
+    z <- c(3.5, -2.1)
+    out <- buildTopLoci(
+        fit = inp$fit,
+        csTables = inp$cs_tables,
+        variantNames = inp$variantNames,
+        # A GWAS that published only z, which is routine: with af and N the
+        # model inverts to an effect size, and leaving the columns NA would
+        # lose the study for every effect-size consumer downstream.
+        sumstats = list(z = z),
+        af = af,
+        n = n,
+        method = "susie",
+        dataY = inp$data_y
+    )
+    se <- 1 / sqrt(2 * af * (1 - af) * (n + z^2))
+    expect_equal(out$marginal_se, se)
+    expect_equal(out$marginal_beta, z * se)
+    # The z was the source's own, which is what the published EZ field means.
+    expect_true(all(out$marginal_z_supplied))
+})
+
+test_that("a z-only source with no af or N leaves the effect unfilled", {
+    vids <- c("chr1:100:A:G", "chr1:200:C:T")
+    noCs <- list("0.95" = list(), "0.7" = list(), "0.5" = list())
+    inp <- .fakeFitAndCs(vids, noCs, pip = c(0.9, 0.8))
+    out <- buildTopLoci(
+        fit = inp$fit,
+        csTables = inp$cs_tables,
+        variantNames = inp$variantNames,
+        sumstats = list(z = c(3.5, -2.1)),
+        method = "susie",
+        dataY = inp$data_y
+    )
+    # Without the frequency and sample size the model cannot be inverted, so
+    # the columns stay empty rather than being filled with a guess.
+    expect_true(all(is.na(out$marginal_beta)))
+    expect_true(all(is.na(out$marginal_se)))
+    expect_equal(out$marginal_z, c(3.5, -2.1))
+})
+
+test_that("the RSS weight extractors refuse to fine-map themselves", {
+    # These read weights off an existing fit; without one there is nothing to
+    # extract, and the message says where the fit comes from.
+    expect_error(
+        susieRssWeights(stat = list(z = 1), LD = diag(2)),
+        "susieRssWeights: no 'susie' fit supplied"
+    )
+    expect_error(
+        susieInfRssWeights(stat = list(z = 1), LD = diag(2)),
+        "susieInfRssWeights: no 'susieInf' fit supplied"
+    )
+    expect_error(
+        susieAshRssWeights(stat = list(z = 1), LD = diag(2)),
+        "susieAshRssWeights: no 'susieAsh' fit supplied"
+    )
+})
+
+# ---------------------------------------------------------------------------
+# Degenerate inputs the fine-mapping helpers have to absorb
+# ---------------------------------------------------------------------------
+
+test_that("an out-of-range credible-set position yields no within-CS PIP", {
+    # The primary CS position points at effect 5 of a one-effect fit, so
+    # there is no row of alpha to read the within-CS share from.
+    expect_equal(
+        .ffcWithinPip(
+            alpha = matrix(0.5, nrow = 1L, ncol = 3L),
+            primaryCsPos = c(1L, 1L, 1L),
+            effectOf = 5L,
+            nV = 3L,
+            hasAlpha = TRUE
+        ),
+        rep(NA_real_, 3L)
+    )
+})
+
+test_that("a credible set with no members assigns no variant", {
+    # The coverage matches and the set list is non-empty, but the set itself
+    # holds no variant, so every variant stays unassigned (0).
+    expect_equal(
+        .fmCsIdxAtCoverage(
+            targetCov = 0.95,
+            coverageValues = 0.95,
+            csTables = list(list(sets = list(cs = list(L1 = integer(0))))),
+            nV = 3L
+        ),
+        integer(3L)
+    )
+})
+
+test_that("mu and mu2 of different shapes yield no conditional lfsr", {
+    # mu2 is the second moment of mu, so a shape disagreement means the two
+    # describe different fits -- no lfsr rather than a recycled one.
+    expect_null(.btlUnivariateClfsr(list(
+        mu = matrix(0, 2L, 3L),
+        mu2 = matrix(1, 2L, 4L)
+    )))
+})
+
+test_that("an empty window parses to no coordinates", {
+    expect_equal(
+        .parseGrange(GenomicRanges::GRanges()),
+        c(start = NA_integer_, end = NA_integer_)
+    )
+})
+
+test_that("merging two already-merged blocks changes nothing", {
+    parent <- list(a = "a", b = "b")
+    once <- .ufUnion("a", "b", parent)
+    expect_equal(once[["b"]], "a")
+    # Both now have the same root, so the second merge is a no-op rather than
+    # re-pointing a root at itself.
+    expect_identical(.ufUnion("a", "b", once), once)
+    expect_identical(.ufUnion("b", "a", once), once)
+})
+
+test_that("a purity calculation that fails leaves the sets untouched", {
+    skip_if_not_installed("fsusieR")
+    sets <- list(cs = list(L1 = 1:2))
+    # cal_purity needs the genotype matrix the sets index into; given
+    # something else it errors, and purity is simply absent rather than the
+    # credible sets being lost with it.
+    expect_identical(.fsusieSetsWithPurity(sets, "not-a-matrix"), sets)
+})
+
+test_that("a frequency vector that does not match the variants is not used", {
+    # af has one value for two variants. Recycling it would attach one
+    # variant's frequency to the other and derive an effect size from it, so
+    # the fill-in declines instead and the columns stay empty.
+    out <- .btlFillFromZ(
+        beta = rep(NA_real_, 2L),
+        se = rep(NA_real_, 2L),
+        z = c(1.5, -2.5),
+        af = 0.2,
+        n = 1000,
+        nV = 2L
+    )
+    expect_true(all(is.na(out$beta)))
+    expect_true(all(is.na(out$se)))
+    # A single N for every variant IS allowed -- one sample size can describe
+    # the whole study, where one frequency cannot.
+    ok <- .btlFillFromZ(
+        beta = rep(NA_real_, 2L),
+        se = rep(NA_real_, 2L),
+        z = c(1.5, -2.5),
+        af = c(0.2, 0.3),
+        n = 1000,
+        nV = 2L
+    )
+    expect_false(anyNA(ok$beta))
+})
+
+test_that("an unnormalisable id set is returned as given", {
+    # `normalizeVariantId()` leaves an id it cannot parse alone rather than
+    # emitting "chrNA:..." garbage, so a fit named by rsID keeps its names
+    # and only the parseable ones are rewritten.
+    out <- extractVariantNames(list(
+        pip = set_names(
+            c(0.1, 0.2, 0.3),
+            c(
+                "rs12345",
+                "chr1_200_C_T",
+                "not an id"
+            )
+        )
+    ))
+    expect_equal(out, c("rs12345", "chr1:200:C:T", "not an id"))
+})
+
+test_that("a screen whose marginal z cannot be computed falls back", {
+    # univariate_regression refuses a non-finite X, and the screen is
+    # advisory: a block it cannot score is kept (the fineMapping default)
+    # rather than silently discarded.
+    X <- matrix(c(Inf, stats::rnorm(49L)), nrow = 10L, ncol = 5L)
+    y <- stats::rnorm(10L)
+    scr <- list(metric = "absZ", cutoff = 2)
+    expect_true(.fmSerScreen(X, y, scr, fallback = TRUE))
+    # colocboost passes FALSE: it drops an outcome it cannot screen.
+    expect_false(.fmSerScreen(X, y, scr, fallback = FALSE))
+})

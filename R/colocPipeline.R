@@ -1151,14 +1151,15 @@ colocPipeline <- function(
 ) {
     fit <- susieFit(parts)
     if (is.null(fit)) {
-        msg <- glue("colocPipeline: {label} has no trimmedFit; skipping.")
-        warn(msg)
-        return(NULL)
+        abort(glue(
+            "colocPipeline: {label} has no retained fit, so it carries no ",
+            "LBF matrix and cannot be colocalized. Refit with ",
+            "`keepLbf = TRUE`."
+        ))
     }
+    # Filtering down to nothing below is a legitimate "no signal here" and
+    # stays a skip; it is only an ABSENT LBF that is an error.
     allRows <- .colocLbfMatrix(fit, label)
-    if (is.null(allRows)) {
-        return(NULL)
-    }
     allMass <- .colocEffectRetainedMass(fit, nrow(allRows))
     keep <- .colocSelectLbfRows(allRows, fit, lbfFilterArgs)
     kept <- allRows[keep, , drop = FALSE]
@@ -1181,39 +1182,31 @@ colocPipeline <- function(
     )
 }
 
-# Extract the (effects x variants) LBF matrix from a fit: susie lbf_variable, or
-# a stacked fSuSiE lBF (direct or nested), or NULL (with a warning) when absent
-# / empty.
+# The (effects x variants) LBF matrix of a fit, or an ABORT.
+#
+# Delegates to .asLbfMatrix(), which knows every shape the LBF arrives in.
+# These two used to keep separate shape lists and had drifted: coloc did not
+# recognise a bare `fit$lBF`, which is what an fSuSiE fit carries, so fSuSiE
+# colocalization skipped silently.
+#
+# A missing LBF is an ERROR, not a skip. coloc.bf_bf scores per-effect Bayes
+# factors; without them there is nothing to approximate from -- a single-SNP
+# ABF reconstructed from z/se is a different object on a different (prior-
+# dependent) scale, and substituting one would quietly change the analysis.
+# Warning per tuple and carrying on produced an empty result that looked like
+# "no colocalization" rather than "the input cannot be colocalized", which is
+# the wrong failure for a genome-wide run.
 # @noRd
 .colocLbfMatrix <- function(fit, label) {
-    lbfMatrix <- if (!is.null(fit$lbf_variable)) {
-        as.matrix(fit$lbf_variable)
-    } else if (
-        !is.null(fit$fsusie_result) &&
-            is.list(fit$fsusie_result$lBF)
-    ) {
-        # fSuSiE path: stack per-trait lBF lists into a single matrix.
-        lbfList <- fit$fsusie_result$lBF
-        exec(rbind, !!!lbfList)
-    } else if (
-        is.list(fit) &&
-            length(fit) >= 1L &&
-            !is.null(fit[[1L]]$fsusie_result$lBF)
-    ) {
-        lbfList <- fit[[1L]]$fsusie_result$lBF
-        exec(rbind, !!!lbfList)
-    } else {
-        msg <- glue(
-            "colocPipeline: {label} trimmedFit has no lbf_variable / fsusie ",
-            "lBF; skipping."
-        )
-        warn(msg)
-        return(NULL)
-    }
+    lbfMatrix <- .asLbfMatrix(fit)
     if (is.null(lbfMatrix) || nrow(lbfMatrix) == 0L) {
-        msg <- glue("colocPipeline: {label} LBF matrix is empty.")
-        warn(msg)
-        return(NULL)
+        abort(glue(
+            "colocPipeline: {label} carries no per-effect LBF matrix ",
+            "(no lbf_variable / fSuSiE lBF), so it cannot be colocalized. ",
+            "Refit with `keepLbf = TRUE`, or -- for a result read back from ",
+            "a published table -- export it from a fit built with ",
+            "`CredibleSetParam(perCsColumns = \"full\")`."
+        ))
     }
     lbfMatrix
 }

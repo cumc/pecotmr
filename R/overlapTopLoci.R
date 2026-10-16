@@ -48,7 +48,6 @@
 }
 
 
-
 # The per-variant top-loci columns of one side as a tibble -- topLoci()
 # returns ranges, and mcols() is exactly the pre-conversion table.
 # @noRd
@@ -64,8 +63,8 @@
 #' \code{GwasFineMappingResult} on shared variants, matched with pecotmr's
 #' allele-aware \code{matchVariants} (handling strand flips / ref-alt swaps
 #' rather than naive id equality). The GWAS side is harmonized to the QTL
-#' orientation: its signed effect columns (\code{beta}, \code{z},
-#' \code{conditional_effect}) are sign-flipped and its effect-allele frequency
+#' orientation: its signed effect columns (\code{posterior_effect},
+#' \code{beta}, \code{z}) are sign-flipped and its effect-allele frequency
 #' (\code{af}) is complemented wherever a swap occurred. The result keeps the
 #' variant key columns once (from the QTL, the reference orientation) and
 #' prefixes every other column \code{qtl_} / \code{gwas_}. A variant shared
@@ -167,7 +166,11 @@ setMethod(
 # @noRd
 .overlapRelabelGwas <- function(gwasTl, vmap, coordCols) {
     joined <- inner_join(gwasTl, vmap, by = c("variant_id" = "gwas_vid"))
-    signedCols <- c("beta", "z", "conditional_effect")
+    # `posterior_effect` FIRST: it is what topLoci() actually publishes, and
+    # `any_of()` below skips a name it does not find SILENTLY -- so omitting it
+    # left a swapped variant's posterior effect with the wrong sign and no
+    # error. `beta`/`z` stay for a marginal-view frame.
+    signedCols <- c("posterior_effect", "beta", "z")
     # Bound with partial() rather than across()'s deprecated `...`; the local
     # matters because partial() resolves it lazily (see .negateWhere et al).
     rowSign <- joined$.sign

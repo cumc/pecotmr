@@ -1816,3 +1816,79 @@ test_that("manifest loaders guard the QtlDataset pass-through arguments", {
         "xvarCutoff.*is not >= 0"
     )
 })
+
+# ---------------------------------------------------------------------------
+# AF vs MAF on the GWAS-VCF path
+#
+# `AF` is the spec's ALTERNATIVE-allele frequency -- directional, and what the
+# posterior view publishes as `af`. It used to be a fallback for the MAF slot
+# and was then folded with pmin(af, 1 - af), so an AF of 0.8 came back as a
+# MAF of 0.2 with no `AF` column at all: pecotmr's own VCF output did not
+# round-trip, and the direction the standardized-to-raw weight conversion
+# needs was gone. The mirror of the released writer bug where `AF` held MAF.
+# ---------------------------------------------------------------------------
+
+# @noRd
+.afvcf_sumstats <- function(af = c(0.8, 0.3)) {
+    gr <- GenomicRanges::GRanges(
+        "chr1",
+        IRanges::IRanges(c(100L, 200L), width = 1L)
+    )
+    cols <- S4Vectors::DataFrame(
+        SNP = c("chr1:100:A:G", "chr1:200:C:T"),
+        A1 = c("G", "T"),
+        A2 = c("A", "C"),
+        Z = c(2.5, -1.2),
+        N = c(1000L, 1000L),
+        BETA = c(0.25, -0.12),
+        SE = c(0.1, 0.1),
+        z_supplied = c(TRUE, TRUE)
+    )
+    if (!is.null(af)) {
+        cols$AF <- af
+    }
+    GwasSumStats(
+        studyName = "s",
+        entry = list(S4Vectors::`mcols<-`(gr, value = cols)),
+        genome = "hg38"
+    )
+}
+
+test_that("a directional AF survives the GWAS-VCF round trip", {
+    skip_if_not_installed("VariantAnnotation")
+    out <- withr::local_tempfile(fileext = ".vcf")
+    exportToVcf(.afvcf_sumstats(), out)
+    back <- .readSumStatsVcf(out, NULL, NULL, NULL, "x")
+    # Unfolded, and under its own name -- 0.8 is an ALT frequency above 0.5,
+    # which is exactly the case folding destroys.
+    expect_equal(as.numeric(back$AF), c(0.8, 0.3))
+    # A directionless MAF is still derived for QC, alongside AF rather than
+    # instead of it.
+    expect_equal(as.numeric(back$MAF), c(0.2, 0.3))
+})
+
+test_that("a GWAS-VCF with no AF has neither AF nor a folded one", {
+    skip_if_not_installed("VariantAnnotation")
+    out <- withr::local_tempfile(fileext = ".vcf")
+    exportToVcf(.afvcf_sumstats(af = NULL), out)
+    back <- .readSumStatsVcf(out, NULL, NULL, NULL, "x")
+    expect_false(is_in("AF", names(back)))
+    expect_false(is_in("MAF", names(back)))
+})
+
+test_that("an explicit formatMapping still redirects the AF slot", {
+    skip_if_not_installed("VariantAnnotation")
+    out <- withr::local_tempfile(fileext = ".vcf")
+    exportToVcf(.afvcf_sumstats(), out)
+    # Reading the spec's AF field into the MAF slot on purpose: the caller
+    # says this file's AF is not to be trusted as directional.
+    back <- .readSumStatsVcf(
+        out,
+        NULL,
+        NULL,
+        list(AF = "NOPE", MAF = "AF"),
+        "x"
+    )
+    expect_false(is_in("AF", names(back)))
+    expect_equal(as.numeric(back$MAF), c(0.2, 0.3))
+})

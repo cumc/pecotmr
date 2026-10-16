@@ -1513,3 +1513,51 @@ test_that(".cbAppendGwasPairs disambiguates a colliding study key", {
 test_that(".cbConcat answers an empty list for no pieces", {
     expect_identical(pecotmr:::.cbConcat(list()), list())
 })
+
+test_that("colocboostPipeline forwards residualizationArgs to both sides", {
+    # It accepted no bundle at all, so it ran on the dataset's own settings
+    # with no per-call say -- unlike fineMappingPipeline() and
+    # twasWeightsPipeline(). Both SIDES matter here: colocboost consumes X and
+    # Y together, so a bundle that reached only the genotypes would
+    # residualize the two against different covariate sets.
+    data(qtlDatasetExample, envir = environment())
+    origG <- residualizedGenotypes
+    origP <- residualizedPhenotypes
+    seen <- new.env(parent = emptyenv())
+    note <- function(which, ra) {
+        assign(
+            which,
+            c(
+                get0(which, seen, ifnotfound = character(0)),
+                as.character(ra$scaleResiduals %||% "unset")
+            ),
+            envir = seen
+        )
+    }
+    local_mocked_bindings(
+        residualizedGenotypes = function(
+            x,
+            ...,
+            residualizationArgs = ResidualizationParam()
+        ) {
+            note("geno", residualizationArgs)
+            origG(x, ..., residualizationArgs = residualizationArgs)
+        },
+        residualizedPhenotypes = function(
+            x,
+            ...,
+            residualizationArgs = ResidualizationParam()
+        ) {
+            note("pheno", residualizationArgs)
+            origP(x, ..., residualizationArgs = residualizationArgs)
+        },
+        .package = "pecotmr"
+    )
+    suppressWarnings(suppressMessages(colocboostPipeline(
+        qtlDatasetExample,
+        cisWindow = 1e6,
+        residualizationArgs = ResidualizationParam(scaleResiduals = FALSE)
+    )))
+    expect_equal(unique(get("geno", envir = seen)), "FALSE")
+    expect_equal(unique(get("pheno", envir = seen)), "FALSE")
+})

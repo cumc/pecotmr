@@ -261,7 +261,10 @@ screenCtwasRegions <- function(
 #' @export
 CtwasGeneZOptions <- function(...) {
     .ctwasStepOptions(
-        list(...), .ctwasOwnedGeneZ(), "CtwasGeneZOptions", "ctwasGeneZ",
+        list(...),
+        .ctwasOwnedGeneZ(),
+        "CtwasGeneZOptions",
+        "ctwasGeneZ",
         "ctwas::compute_gene_z"
     )
 }
@@ -292,7 +295,8 @@ CtwasRegionDataOptions <- function(...) {
             thin = "CtwasPriorParam(thin =)",
             ncore = "the pipeline's own `numThreads`"
         ),
-        "CtwasRegionDataOptions", "ctwasRegionData",
+        "CtwasRegionDataOptions",
+        "ctwasRegionData",
         "ctwas::assemble_region_data"
     )
 }
@@ -321,7 +325,8 @@ CtwasEstParamOptions <- function(...) {
             group_prior_var_structure = "CtwasPriorParam(varStructure =)",
             ncore = "the pipeline's own `numThreads`"
         ),
-        "CtwasEstParamOptions", "ctwasEstParam",
+        "CtwasEstParamOptions",
+        "ctwasEstParam",
         c("ctwas::est_param", "ctwas::fit_EM")
     )
 }
@@ -343,7 +348,9 @@ CtwasScreenOptions <- function(...) {
             group_prior_var = "estimated by the EM step",
             ncore = "the pipeline's own `numThreads`"
         ),
-        "CtwasScreenOptions", "ctwasScreen", "ctwas::screen_regions"
+        "CtwasScreenOptions",
+        "ctwasScreen",
+        "ctwas::screen_regions"
     )
 }
 
@@ -365,7 +372,9 @@ CtwasExpandOptions <- function(...) {
             z_snp = "supplied from the data by the pipeline",
             ncore = "the pipeline's own `numThreads`"
         ),
-        "CtwasExpandOptions", "ctwasExpand", "ctwas::expand_region_data"
+        "CtwasExpandOptions",
+        "ctwasExpand",
+        "ctwas::expand_region_data"
     )
 }
 
@@ -392,7 +401,9 @@ CtwasFinemapOptions <- function(...) {
             snpinfo_loader_fun = "fixed by the pipeline's LD loaders",
             ncore = "the pipeline's own `numThreads`"
         ),
-        "CtwasFinemapOptions", "ctwasFinemap", "ctwas::finemap_regions"
+        "CtwasFinemapOptions",
+        "ctwasFinemap",
+        "ctwas::finemap_regions"
     )
 }
 
@@ -437,7 +448,8 @@ CtwasMergeOptions <- function(...) {
             snpinfo_loader_fun = "fixed by the pipeline's LD loaders",
             ncore = "the pipeline's own `numThreads`"
         ),
-        "CtwasMergeOptions", "ctwasMerge",
+        "CtwasMergeOptions",
+        "ctwasMerge",
         c(
             "ctwas::postprocess_region_merging",
             "ctwas::postprocess_region_merging_noLD",
@@ -464,7 +476,8 @@ CtwasBoundaryGenesOptions <- function(...) {
             weights = "supplied from the data by the pipeline",
             ncore = "the pipeline's own `numThreads`"
         ),
-        "CtwasBoundaryGenesOptions", "ctwasBoundaryGenes",
+        "CtwasBoundaryGenesOptions",
+        "ctwasBoundaryGenes",
         "ctwas::get_boundary_genes"
     )
 }
@@ -523,7 +536,9 @@ CtwasOptions <- function(
     .assertMethodOptions(finemap, "CtwasFinemapOptions", "finemap")
     .assertMethodOptions(merge, "CtwasMergeOptions", "merge")
     .assertMethodOptions(
-        boundaryGenes, "CtwasBoundaryGenesOptions", "boundaryGenes"
+        boundaryGenes,
+        "CtwasBoundaryGenesOptions",
+        "boundaryGenes"
     )
     .newMethodOptions(
         NULL,

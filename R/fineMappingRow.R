@@ -204,7 +204,7 @@ fineMappingRow <- function(variantIds, susieFit, topLoci, cvResult = NULL) {
         !is.null(fit$fitted_func) &&
         !is.null(fit$outing_grid) &&
         (!is.null(fit$cred_band) ||
-             (!is.null(fit$fitted_wc2) && !is.null(fit$alpha)))
+            (!is.null(fit$fitted_wc2) && !is.null(fit$alpha)))
 }
 
 # Chromosome of the fit's variants (matches topLoci's `chrom`, no "chr").
@@ -224,8 +224,118 @@ fineMappingRow <- function(variantIds, susieFit, topLoci, cvResult = NULL) {
         pos = numeric(),
         effect = numeric(),
         lower = numeric(),
-        upper = numeric()
+        upper = numeric(),
+        halfwidth = numeric()
     )
+}
+
+# ---- fsusieTraitEffects helpers -------------------------------------
+
+# The fit's effect curve lives on a wavelet GRID; the traits it was fit over sit
+# at arbitrary positions between grid points. Evaluating the curve AT each trait
+# is linear interpolation with constant extrapolation past the ends (rule = 2),
+# which is what a per-trait effect means for a functional fit.
+# @noRd
+.fsusieTraitEffectRow <- function(l, fit, grid, pos, traitNames, chrom) {
+    eff <- fit$fitted_func[[l]]
+    if (is.null(eff)) {
+        return(NULL)
+    }
+    tibble(
+        cs = str_c("fsusie_", l),
+        chrom = chrom,
+        jointTrait = traitNames,
+        traitPos = pos,
+        effect = stats::approx(
+            grid,
+            as.numeric(eff),
+            xout = pos,
+            rule = 2,
+            ties = "ordered"
+        )$y
+    )
+}
+
+# @noRd
+.emptyTraitEffects <- function() {
+    tibble(
+        cs = character(),
+        chrom = character(),
+        jointTrait = character(),
+        traitPos = numeric(),
+        effect = numeric()
+    )
+}
+
+# One entry's per-trait effects. `traitNames` is index-aligned with the fit's
+# `trait_positions` -- both come from the same joint group, which is why the
+# names can be carried in the row's `jointTraits` column while only the
+# positions ride on the fit.
+# @noRd
+.fsusieTraitEffectsFit <- function(fit, traitNames) {
+    if (!.isFsusieFit(fit) || is.null(fit$trait_positions)) {
+        return(.emptyTraitEffects())
+    }
+    grid <- as.numeric(fit$outing_grid)
+    pos <- as.numeric(fit$trait_positions)
+    if (length(traitNames) != length(pos)) {
+        msg <- glue(
+            "fsusieTraitEffects: the fit has {length(pos)} trait position(s) ",
+            "but {length(traitNames)} trait name(s). They index the same ",
+            "joint group, so a mismatch means the stored fit and ",
+            "`jointTraits` disagree."
+        )
+        abort(msg)
+    }
+    chrom <- .fsusieChrom(fit)
+    parts <- compact(map(
+        seq_along(fit$fitted_func),
+        .fsusieTraitEffectRow,
+        fit = fit,
+        grid = grid,
+        pos = pos,
+        traitNames = traitNames,
+        chrom = chrom
+    ))
+    if (length(parts) == 0L) {
+        return(.emptyTraitEffects())
+    }
+    bind_rows(parts)
+}
+
+# The joint members of row `i`, index-aligned with the fit's trait_positions.
+# A fit over a single trait has no `jointTraits` entry, so fall back to the
+# row's own trait id.
+# @noRd
+.fmrJointTraitNames <- function(x, i) {
+    cols <- .tupleColumnNames(x)
+    jt <- if (is_in("jointTraits", cols)) {
+        as.character(x$jointTraits[[i]])
+    } else {
+        NA_character_
+    }
+    if (length(jt) != 1L || is.na(jt) || !nzchar(jt)) {
+        return(
+            if (is_in("trait", cols)) {
+                as.character(x$trait[[i]])
+            } else {
+                character(0)
+            }
+        )
+    }
+    str_split_1(jt, fixed(";"))
+}
+
+# @noRd
+.fsusieEntryTraitEffects <- function(i, x, meta) {
+    v <- .fsusieTraitEffectsFit(
+        susieFit(.fmrRowParts(x, i)),
+        .fmrJointTraitNames(x, i)
+    )
+    if (nrow(v) == 0L) {
+        return(NULL)
+    }
+    bind_cols(slice(meta, rep(i, nrow(v))), v)
 }
 
 # @noRd
@@ -328,7 +438,9 @@ fineMappingRow <- function(variantIds, susieFit, topLoci, cvResult = NULL) {
 # ---- map/apply helpers (lambda-free callbacks) ---------------------------
 
 # One credible band's variant-level data.frame (effect + lower/upper), or NULL
-# when band `l` has no fitted band/effect.
+# when band `l` has no fitted band/effect. `halfwidth` is the band's half-width
+# at each grid point -- the symmetric +/- quantity publication tables carry,
+# which every consumer otherwise re-derives as (upper - lower) / 2.
 # @noRd
 .fsusieBandRow <- function(l, fit, chrom, grid) {
     band <- fit$cred_band[[l]]
@@ -336,13 +448,16 @@ fineMappingRow <- function(variantIds, susieFit, topLoci, cvResult = NULL) {
     if (is.null(band) || is.null(eff)) {
         return(NULL)
     }
+    lower <- as.numeric(band[2, ])
+    upper <- as.numeric(band[1, ])
     tibble(
         cs = str_c("fsusie_", l),
         chrom = chrom,
         pos = grid,
         effect = as.numeric(eff),
-        lower = as.numeric(band[2, ]),
-        upper = as.numeric(band[1, ])
+        lower = lower,
+        upper = upper,
+        halfwidth = (upper - lower) / 2
     )
 }
 
@@ -636,8 +751,8 @@ fineMappingRow <- function(variantIds, susieFit, topLoci, cvResult = NULL) {
         cs_log_bf = .csEffectLogBf(ctx$fit, Lidx),
         # cs_pip: total posterior inclusion mass captured by the CS.
         cs_pip = suppressWarnings(sum(as.numeric(m$pip), na.rm = TRUE)),
-        # cs_mean_effect: mean posterior conditional effect over the CS (NA when
-        # the entry has no conditional_effect column, e.g. univariate susie).
+        # cs_mean_effect: mean effect over the CS members CONDITIONAL on the
+        # variant being causal, i.e. the posterior mean over the PIP.
         cs_mean_effect = .csMeanEffect(m),
         lead_variant = as.character(m$variant_id[lead]),
         lead_pip = as.numeric(m$pip[lead])
@@ -683,19 +798,39 @@ fineMappingRow <- function(variantIds, susieFit, topLoci, cvResult = NULL) {
     if (length(v) == 0L) NA_real_ else max(v)
 }
 
-# cs_mean_effect: mean conditional effect over the CS (NA when absent).
+# cs_mean_effect: the mean over the CS members of the effect conditional on
+# the variant being causal.
+#
+# Derived from `posterior_mean / pip` rather than read from a stored
+# `conditional_effect` column. That column was `coef[, condition] / pip`,
+# which IS this quotient now that `.btlPosterior()` puts the posterior mean on
+# the same scale `coef()` uses -- verified exactly against a real mvsusie fit.
+# Before that change the two differed by the per-variant standardization
+# factor, so the column was carrying information the table lacked and could
+# not be dropped.
+#
+# A knock-on improvement: this is now populated for univariate susie too,
+# where the stored column only ever existed for multi-condition fits.
 # @noRd
 .csMeanEffect <- function(m) {
-    if (!is_in("conditional_effect", names(m))) {
+    effect <- suppressWarnings(as.numeric(.csColumn(m, "posterior_mean")))
+    pip <- suppressWarnings(as.numeric(.csColumn(m, "pip")))
+    if (length(effect) == 0L || length(pip) != length(effect)) {
         return(NA_real_)
     }
     # suppressWarnings covers only the coercion; the empty case is handled
-    # explicitly so it returns NA_real_ rather than NaN.
+    # explicitly so it returns NA_real_ rather than NaN. A zero PIP has no
+    # conditional effect to speak of and drops out with the non-finites.
     v <- keep(
-        suppressWarnings(as.numeric(m$conditional_effect)),
+        if_else(!is.na(pip) & pip > 0, effect / pip, NA_real_),
         is.finite
     )
     if (length(v) == 0L) NA_real_ else mean(v)
+}
+
+# @noRd
+.csColumn <- function(m, nm) {
+    if (is_in(nm, names(m))) m[[nm]] else numeric(0)
 }
 
 
@@ -1270,21 +1405,27 @@ fineMappingRow <- function(variantIds, susieFit, topLoci, cvResult = NULL) {
 # given type when the column is absent. Lets accessor projectors tolerate
 # skeletal entries that lack optional columns.
 # @noRd
-.tlCol <- function(tl, name, type = c("character", "integer", "numeric")) {
+.tlCol <- function(
+    tl,
+    name,
+    type = c("character", "integer", "numeric", "logical")
+) {
     type <- arg_match(type)
     if (is_in(name, colnames(tl))) {
         return(switch(
             type,
             character = as.character(tl[[name]]),
             integer = as.integer(tl[[name]]),
-            numeric = as.numeric(tl[[name]])
+            numeric = as.numeric(tl[[name]]),
+            logical = as.logical(tl[[name]])
         ))
     }
     switch(
         type,
         character = rep(NA_character_, nrow(tl)),
         integer = rep(NA_integer_, nrow(tl)),
-        numeric = rep(NA_real_, nrow(tl))
+        numeric = rep(NA_real_, nrow(tl)),
+        logical = rep(NA, nrow(tl))
     )
 }
 
@@ -1307,8 +1448,11 @@ fineMappingRow <- function(variantIds, susieFit, topLoci, cvResult = NULL) {
         A2 = .tlCol(tl, "A2", "character"),
         N = .tlCol(tl, "N", "numeric"),
         af = .tlCol(tl, "af", "numeric"),
-        beta = .tlCol(tl, "posterior_mean", "numeric"),
-        se = .tlCol(tl, "posterior_sd", "numeric"),
+        # NOT `beta`/`se`: marginalEffects() publishes the MARGINAL estimate
+        # under those names, so using them here for the posterior mean made
+        # the two views silently joinable into a mix of the two quantities.
+        posterior_effect = .tlCol(tl, "posterior_mean", "numeric"),
+        posterior_se = .tlCol(tl, "posterior_sd", "numeric"),
         pip = .tlCol(tl, "pip", "numeric"),
         logBF = .tlCol(tl, "logBF", "numeric")
     )
@@ -1332,8 +1476,8 @@ fineMappingRow <- function(variantIds, susieFit, topLoci, cvResult = NULL) {
         A2 = character(0),
         N = numeric(0),
         af = numeric(0),
-        beta = numeric(0),
-        se = numeric(0),
+        posterior_effect = numeric(0),
+        posterior_se = numeric(0),
         pip = numeric(0),
         logBF = numeric(0)
     )
@@ -1342,9 +1486,11 @@ fineMappingRow <- function(variantIds, susieFit, topLoci, cvResult = NULL) {
 # Optional pass-through columns for the posterior view, in canonical order: the
 # dynamic CS columns (cs_<C> membership / cs_<C>_purity), the per-CS variant-
 # level fullFit columns (within_cs_pip[_<lab>] / cs_logbf_<lab> /
-# cs_effect[_var]_<lab>), the per-condition posterior quantities
-# (conditional_effect, lfsr), and pipeline-added annotations -- whichever are
-# present.
+# cs_effect[_var]_<lab>), the per-condition `lfsr`, and pipeline-added
+# annotations -- whichever are present.
+#
+# `conditional_effect` was one of these and is gone: it was
+# `posterior_mean / pip` once the posterior mean moved onto `coef()`'s scale.
 # @noRd
 .projectPosteriorExtraCols <- function(tl) {
     csCols <- colnames(tl)[str_detect(colnames(tl), "^cs_[0-9.]+(_purity)?$")]
@@ -1356,7 +1502,6 @@ fineMappingRow <- function(variantIds, susieFit, topLoci, cvResult = NULL) {
         c(
             csCols,
             fullFitCols,
-            "conditional_effect",
             "lfsr",
             "method",
             "gene",
@@ -1400,6 +1545,7 @@ fineMappingRow <- function(variantIds, susieFit, topLoci, cvResult = NULL) {
         beta = .tlCol(tl, "marginal_beta", "numeric"),
         se = .tlCol(tl, "marginal_se", "numeric"),
         z = .tlCol(tl, "marginal_z", "numeric"),
+        z_supplied = .tlCol(tl, "marginal_z_supplied", "logical"),
         p = .tlCol(tl, "marginal_p", "numeric")
     )
 }

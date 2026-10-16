@@ -1238,6 +1238,26 @@ combineTwasWeights <- function(..., ldSketch = NULL) {
 #'   something the input cannot do.
 #' @param weightsDataType Optional data-type label recorded on every
 #'   \code{TwasWeightsRow$dataType} (e.g. \code{"expression"}).
+#' @section The genotype scale:
+#'   Individual-level genotypes reach every method centred and scaled to unit
+#'   variance, so all the weights are on one scale and the recorded
+#'   \code{weight_standardized} says so. The scaling belongs to the
+#'   \code{QtlDataset} accessors rather than to this pipeline:
+#'   \code{\link{residualizedGenotypes}} applies it, governed by
+#'   \code{ResidualizationParam(scaleResiduals = )} per call with the
+#'   dataset's own \code{\link{scaleResiduals}} slot as the default.
+#'
+#'   It is not cosmetic: measured through pecotmr's own entry points, every
+#'   method returns coefficients on the scale of the \code{X} it was given
+#'   --- exactly so for glmnet / ncvreg / L0Learn / mr.ash / the Bayesian
+#'   alphabet and for \code{susieWeights()} --- while the DPR samplers are
+#'   not scale-equivariant at all, so a uniform rescale of \code{X} changes
+#'   their fit and not merely its units. The chosen scale is also the one the
+#'   LD correlations and z-scores behind a TWAS Z already use. A
+#'   summary-statistics fit needs nothing done.
+#'
+#'   \code{\link{learnTwasWeights}} still takes \code{weightStandardized}:
+#'   there the caller supplies \code{X} themselves, so only they can say.
 #' @param verbose Verbosity (0 silent, 1 default, 2 includes external package
 #'   messages).
 #' @param seed Integer or \code{NULL}. When supplied (\code{QtlDataset} path),
@@ -1505,6 +1525,7 @@ setGeneric("twasWeightsPipeline", function(data, ...) {
         ensembleArgs = .ensembleResolve(ensembleArgs),
         fitFullData = fitFullData,
         weightsDataType = weightsDataType,
+        standardized = .qtlScaleResiduals(data, residualizationArgs),
         fitRetention = fitRetention,
         estimatePi = estimatePi,
         verbose = verbose,
@@ -1796,6 +1817,7 @@ setMethod(
     ensembleArgs,
     fitFullData,
     weightsDataType,
+    standardized,
     fitRetention,
     estimatePi,
     verbose,
@@ -1812,7 +1834,12 @@ setMethod(
             fitFullData = fitFullData,
             dataType = weightsDataType,
             fitRetention = fitRetention,
-            standardized = FALSE,
+            # DERIVED from what the accessors actually do: genotypes reach
+            # the fitter scaled to unit variance unless
+            # `ResidualizationParam(scaleResiduals = FALSE)` or the dataset's
+            # own slot says otherwise. Resolved by the caller, which is where
+            # the dataset and the bundle are both in scope.
+            standardized = standardized,
             estimatePi = estimatePi,
             verbose = verbose,
             seed = seed,

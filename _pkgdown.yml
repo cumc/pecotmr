@@ -297,6 +297,7 @@ reference:
       - computeCsCorrelation
       - fsusieAffectedRegions
       - fsusieCredibleBand
+      - fsusieTraitEffects
       - credibleSetSummary
       - credibleSets
       - lbf
@@ -312,7 +313,10 @@ reference:
       - variantIds
       - intersectVariants
       - resolveWeights
-      - writeSumStatsVcf
+      - exportToVcf
+      - exportToBed
+      - readFineMappingResult
+      - blockId
 
   - subtitle: "QtlFineMappingResult"
     contents:
@@ -369,7 +373,7 @@ reference:
       - sumStatsDataFrame
       - "sumStats,GwasSumStats-method"
       - varY
-      - writeSumStatsVcf
+      - exportToVcf
 
   - subtitle: "QtlSumStats"
     contents:
@@ -400,6 +404,9 @@ reference:
       - variantIds
       - weights-methods
       - resolveWeights
+      - exportToVcf
+      - exportToBed
+      - readTwasWeights
 
   - subtitle: "TwasWeightsRow"
     contents:
@@ -588,6 +595,7 @@ reference:
       - parseRegion
       - regionToDf
       - asGranges
+      - genomicOrder
 
   - title: "Fine-mapping"
     desc: >

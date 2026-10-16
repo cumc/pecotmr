@@ -59,6 +59,7 @@ setClass(
     c(
         .gfmrCheckEntryLength(object),
         .validateTraitPosColumn(object),
+        .validateRegionColumn(object),
         .gfmrCheckTupleUniqueness(object)
     )
 }
@@ -126,11 +127,30 @@ setClass(
 #'   not part of the identity key. Supply it when the block BOUNDARIES matter:
 #'   those are the one thing not recoverable from the variants, since adjacent
 #'   blocks' spans leave gaps.
+#' @param dataType Optional assay / modality label ("bulk_rnaseq",
+#'   "methylation"), recorded as a per-row provenance column. Length 1 or
+#'   one per row; \code{NULL} (default) omits the column.
+#' @param dataSource Optional per-row label for the kind of input the fit saw,
+#'   \code{"individual"} or \code{"sumstat"}. Recorded rather than derived: a
+#'   combined collection can hold rows of both kinds, and its single
+#'   \code{ldSketch} cannot say which row came from which.
+#' @param weightStandardized Optional per-row flag: whether the posterior
+#'   effect is on the STANDARDIZED genotype scale. The posterior effect IS the
+#'   prediction weight, so it carries the same scale question as a TWAS
+#'   weight. \code{\link{fineMappingPipeline}} always passes \code{TRUE}:
+#'   it standardizes genotypes before fitting, and the posterior mean is
+#'   reported on the scale of the \code{X} the fit was given. The argument
+#'   exists for a collection assembled by hand, where only the caller knows.
 #' @param ldSketch An optional genotype panel (see
 #'   \code{\link{readGenotypes}}).
 #' @param traitPos Optional per-row trait genomic anchor (a \code{GRanges} or
 #'   \code{NULL}), carried forward as provenance; not part of the identity key.
 #'   \code{NULL} (default) omits the column.
+#' @param region Optional per-row analysis WINDOW (a \code{GRanges} or
+#'   \code{NULL}) -- the interval each row's fit was run over, carried
+#'   forward as provenance; not part of the identity key. \code{NULL}
+#'   (default) omits the column, and \code{\link{genomicRegion}} then
+#'   derives the window from the span of the variants present.
 #' @return A \code{GwasFineMappingResult} object.
 #' @examples
 #' tl <- data.frame(variant_id = paste0("chr1:", 100 * 1:3, ":A:G"),
@@ -145,6 +165,10 @@ GwasFineMappingResult <- function(
     entry,
     blockId = NULL,
     traitPos = NULL,
+    region = NULL,
+    dataType = NULL,
+    dataSource = NULL,
+    weightStandardized = NULL,
     ldSketch = NULL
 ) {
     n <- length(studyName)
@@ -160,7 +184,9 @@ GwasFineMappingResult <- function(
         cvResult = S4Vectors::SimpleList(map(entry, cvResult))
     ) |>
         .appendBlockIdCol(blockId, n) |>
-        .appendTraitPosCol(traitPos, n)
+        .appendTraitPosCol(traitPos, n) |>
+        .appendRegionCol(region, n) |>
+        .appendFmProvenanceCols(dataType, dataSource, weightStandardized, n)
     dfArgs <- c(cols, list(check.names = FALSE))
     # Each entry's variants become one ELEMENT, its topLoci that element's
     # inner mcols, and its fit/cv payload outer mcols. A multi-seqname entry

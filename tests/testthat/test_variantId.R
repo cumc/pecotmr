@@ -201,9 +201,33 @@ test_that("parseRegion: handles X chromosome", {
     expect_equal(res$end, 2000L)
 })
 
+test_that("parseRegion: accepts the underscore form its docs advertise", {
+    # LD-block / region ids are spelled chr_start_end; the docstring always
+    # claimed this worked while the regex rejected it.
+    expect_identical(
+        parseRegion("chr1_100_200"),
+        parseRegion("chr1:100-200")
+    )
+    expect_identical(
+        parseRegion("chr22_49355984_50799822"),
+        parseRegion("chr22:49355984-50799822")
+    )
+})
+
+test_that("parseRegion: accepts the mitochondrial contig", {
+    # canonChrom() exists to normalize MT/M, which the old regex made
+    # unreachable by erroring first.
+    res <- parseRegion("chrMT:10-20")
+    expect_identical(as.integer(res$start), 10L)
+    expect_identical(as.integer(res$end), 20L)
+})
+
 test_that("parseRegion: rejects malformed input", {
-    expect_error(parseRegion("notARegion"), "format must be 'chr:start-end'")
-    expect_error(parseRegion("1:100:200"), "format must be 'chr:start-end'")
+    expect_error(parseRegion("notARegion"), "format must be")
+    expect_error(parseRegion("1:100:200"), "format must be")
+    # mixed spellings are not a third format
+    expect_error(parseRegion("chr1:100_200"), "format must be")
+    expect_error(parseRegion("chr1_100-200"), "format must be")
 })
 
 test_that("parseRegion: returns non-character input unchanged", {

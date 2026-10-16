@@ -1191,16 +1191,24 @@ matchVariants <- function(
 #' @importFrom stringr str_split
 #' @examples
 #' parseRegion("chr1:1000000-2000000")
+#' parseRegion("chr1_1000000_2000000")
 #' @export
 parseRegion <- function(region) {
     if (!is.character(region) || length(region) != 1) {
         return(region)
     }
 
-    if (!str_detect(region, "^chr[0-9XY]+:[0-9]+-[0-9]+$")) {
-        abort("Input string format must be 'chr:start-end'.")
+    # Both documented spellings: "chr1:100-200" and the underscore form
+    # "chr1_100_200" that LD-block / region ids use. MT and M are accepted
+    # alongside X/Y -- canonChrom() below exists precisely to normalize them,
+    # and rejecting them here made that unreachable.
+    pattern <- "^chr[0-9XYMTm]+(:[0-9]+-[0-9]+|_[0-9]+_[0-9]+)$"
+    if (!str_detect(region, pattern)) {
+        abort(
+            "Input string format must be 'chr:start-end' or 'chr_start_end'."
+        )
     }
-    parts <- str_split_1(region, "[:-]")
+    parts <- str_split_1(region, "[:_-]")
     tibble(
         chrom = canonChrom(parts[1]),
         start = as.integer(parts[2]),

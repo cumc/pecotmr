@@ -170,7 +170,11 @@ test_that(".tupleSelectRowGwasFmr: zero-row input errors", {
         stringsAsFactors = FALSE
     )
     expect_error(
-        pecotmr:::.tupleSelectRowGwasFmr(empty, studyName = "g1", method = "susie"),
+        pecotmr:::.tupleSelectRowGwasFmr(
+            empty,
+            studyName = "g1",
+            method = "susie"
+        ),
         "GwasFineMappingResult has no rows"
     )
 })
@@ -263,7 +267,11 @@ test_that(".tupleSelectRowGwasFmr: ambiguous multi-match (no region) lists candi
         stringsAsFactors = FALSE
     )
     expect_error(
-        pecotmr:::.tupleSelectRowGwasFmr(multi, studyName = "g1", method = "susie"),
+        pecotmr:::.tupleSelectRowGwasFmr(
+            multi,
+            studyName = "g1",
+            method = "susie"
+        ),
         "pass `region` to disambiguate"
     )
 })
@@ -335,7 +343,7 @@ test_that(".fmrRowsMatching: a vector selector matches any listed value", {
 # .fmrRowMetadata (stable 5-column identity frame)
 # ===========================================================================
 
-test_that(".fmrRowMetadata: emits all five identity columns, NA-filling absent ones", {
+test_that(".fmrRowMetadata: emits all eight identity columns, NA-filling absent ones", {
     qtl <- .ts_coll(
         study = c("s1", "s1"),
         context = c("c1", "c2"),
@@ -346,7 +354,16 @@ test_that(".fmrRowMetadata: emits all five identity columns, NA-filling absent o
     m <- pecotmr:::.fmrRowMetadata(qtl)
     expect_equal(
         names(m),
-        c("study", "context", "trait", "blockId", "method")
+        c(
+            "study",
+            "context",
+            "trait",
+            "blockId",
+            "method",
+            "dataType",
+            "dataSource",
+            "standardized"
+        )
     )
     expect_equal(m$context, c("c1", "c2"))
     expect_true(all(is.na(m$blockId))) # QTL frame has no blockId
@@ -376,7 +393,16 @@ test_that(".fmrRowMetadata: zero-row input yields a zero-row 5-column frame", {
     expect_equal(nrow(m), 0L)
     expect_equal(
         names(m),
-        c("study", "context", "trait", "blockId", "method")
+        c(
+            "study",
+            "context",
+            "trait",
+            "blockId",
+            "method",
+            "dataType",
+            "dataSource",
+            "standardized"
+        )
     )
 })
 
@@ -634,4 +660,93 @@ test_that(".twrRowResolveWeights drops rows whose weights are all NA", {
 
 test_that(".ssConcatChr answers character(0) for no pieces", {
     expect_identical(pecotmr:::.ssConcatChr(list()), character(0))
+})
+
+# ---- the stored analysis window ---------------------------------------------
+
+test_that("genomicRegion() is the analysis window, not the variant span", {
+    data(qtlFineMappingExample)
+    x <- qtlFineMappingExample
+    # Built without a window: fall back to the derived span, so the accessor
+    # never returns nothing where it used to return a range.
+    expect_s4_class(genomicRegion(x), "GRanges")
+
+    want <- GenomicRanges::GRanges("chr22:1-50000000")
+    withWindow <- QtlFineMappingResult(
+        studyName = as.character(.tupleColumn(x, "study")),
+        context = as.character(.tupleColumn(x, "context")),
+        trait = as.character(.tupleColumn(x, "trait")),
+        method = as.character(.tupleColumn(x, "method")),
+        entry = list(.fmrRowParts(x, 1L)),
+        region = rep(want, nrow(x))
+    )
+    expect_identical(
+        as.character(genomicRegion(withWindow)),
+        rep(as.character(want), nrow(x))
+    )
+    # The window is WIDER than the variants that survived -- that gap is the
+    # whole reason it has to be stored rather than derived.
+    span <- unlist(range(withWindow), use.names = FALSE)
+    expect_gt(
+        GenomicRanges::start(span)[[1L]],
+        GenomicRanges::start(want)[[1L]]
+    )
+    expect_lt(GenomicRanges::end(span)[[1L]], GenomicRanges::end(want)[[1L]])
+})
+
+test_that("the stored window survives subsetting, the derived span does not", {
+    data(qtlFineMappingExample)
+    x <- qtlFineMappingExample
+    want <- GenomicRanges::GRanges("chr22:1-50000000")
+    obj <- QtlFineMappingResult(
+        studyName = as.character(.tupleColumn(x, "study")),
+        context = as.character(.tupleColumn(x, "context")),
+        trait = as.character(.tupleColumn(x, "trait")),
+        method = as.character(.tupleColumn(x, "method")),
+        entry = list(.fmrRowParts(x, 1L)),
+        region = rep(want, nrow(x))
+    )
+    # Provenance: a subset of a fit's variants was still produced by a fit
+    # over the original window, so this must NOT move.
+    expect_identical(
+        as.character(genomicRegion(obj[1L])),
+        as.character(want)
+    )
+})
+
+test_that("a region column must be a GRanges with one range per row", {
+    data(qtlFineMappingExample)
+    x <- qtlFineMappingExample
+    build <- function(rg) {
+        QtlFineMappingResult(
+            studyName = as.character(.tupleColumn(x, "study")),
+            context = as.character(.tupleColumn(x, "context")),
+            trait = as.character(.tupleColumn(x, "trait")),
+            method = as.character(.tupleColumn(x, "method")),
+            entry = list(.fmrRowParts(x, 1L)),
+            region = rg
+        )
+    }
+    expect_error(build("chr22:1-2"), "must be a GRanges")
+    expect_error(
+        build(GenomicRanges::GRanges(c("chr22:1-2", "chr22:3-4"))),
+        "same length as"
+    )
+})
+
+test_that(".asAnalysisWindow normalizes strings, GRanges and multi-range input", {
+    expect_null(.asAnalysisWindow(NULL))
+    expect_null(.asAnalysisWindow(GenomicRanges::GRanges()))
+    expect_identical(
+        as.character(.asAnalysisWindow("chr1:100-200")),
+        as.character(GenomicRanges::GRanges("chr1:100-200"))
+    )
+    # A multi-range window collapses to the span it covered.
+    span <- .asAnalysisWindow(GenomicRanges::GRanges(c(
+        "chr1:100-200",
+        "chr1:500-900"
+    )))
+    expect_length(span, 1L)
+    expect_identical(GenomicRanges::start(span)[[1L]], 100L)
+    expect_identical(GenomicRanges::end(span)[[1L]], 900L)
 })

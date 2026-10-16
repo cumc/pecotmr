@@ -97,6 +97,7 @@ setClass(
     c(
         .twasValidateEntries(object),
         .validateTraitPosColumn(object),
+        .validateRegionColumn(object),
         .twasValidateJointCols(object, jointCols),
         .twasValidateKeyUniqueness(object, jointCols)
     )
@@ -174,6 +175,11 @@ setClass(
 #' @param traitPos Optional per-row trait genomic anchor (a \code{GRanges} or
 #'   \code{NULL}), carried forward as provenance; not part of the identity key.
 #'   \code{NULL} (default) omits the column.
+#' @param region Optional per-row analysis WINDOW (a \code{GRanges} or
+#'   \code{NULL}) -- the interval each row's fit was run over, carried
+#'   forward as provenance; not part of the identity key. \code{NULL}
+#'   (default) omits the column, and \code{\link{genomicRegion}} then
+#'   derives the window from the span of the variants present.
 #' @return A \code{TwasWeights} object.
 #' @examples
 #' twe <- twasWeightsRow(variantIds = sprintf("chr1:%d:A:G", 100L * (1:4)),
@@ -195,6 +201,7 @@ TwasWeights <- function(
     jointContexts = NULL,
     jointTraits = NULL,
     traitPos = NULL,
+    region = NULL,
     ldSketch = NULL
 ) {
     .twasAssertArgs(
@@ -220,6 +227,7 @@ TwasWeights <- function(
         jointContexts,
         jointTraits,
         traitPos,
+        region,
         n
     )
     obj <- new(
@@ -272,6 +280,7 @@ TwasWeights <- function(
     jointContexts,
     jointTraits,
     traitPos,
+    region,
     n
 ) {
     baseCols <- c(
@@ -290,7 +299,7 @@ TwasWeights <- function(
         jointTraits,
         n
     )
-    .appendTraitPosCol(withJoint, traitPos, n)
+    .appendRegionCol(.appendTraitPosCol(withJoint, traitPos, n), region, n)
 }
 
 # One entry -> its element: the variants as a GRanges, with the per-variant
@@ -361,6 +370,7 @@ TwasWeights <- function(
 #' @rdname genomicRegion
 #' @export
 setMethod("genomicRegion", "TwasWeights", function(x) .getRegionColumn(x))
+
 
 #' @rdname traitPosition
 #' @export

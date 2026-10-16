@@ -1381,25 +1381,50 @@ setGeneric("weightsDataType", function(x, ...) {
 # AlleleQcResult accessor generics
 # QcResult accessor generics
 # =============================================================================
-# VCF/BCF writer generic
+# Published-output generics (VCF/BCF and BED)
 # =============================================================================
 
-#' Write summary statistics or fine-mapping results to VCF/BCF
+#' Export a result to VCF/BCF
 #'
-#' Creates a VCF object from GWAS summary statistics or fine-mapping results and
-#' writes it to disk via VariantAnnotation and Rsamtools. Supports bgzipped
-#' VCF (.vcf.gz/.vcf.bgz); BCF (.bcf) additionally needs a working
-#' \code{Rsamtools::asBcf()}, which recent Rsamtools releases disable, so
-#' prefer .vcf.bgz.
+#' Writes GWAS summary statistics, fine-mapping results or TWAS weights to a
+#' GWAS-VCF-style file via VariantAnnotation and Rsamtools: one record per
+#' variant, one SAMPLE per study / fitted model, and the per-variant statistics
+#' as FORMAT fields. Supports bgzipped VCF (.vcf.gz/.vcf.bgz); BCF (.bcf)
+#' additionally needs a working \code{Rsamtools::asBcf()}, which recent
+#' Rsamtools releases disable, so prefer .vcf.bgz.
 #'
-#' @param x Input data: a \code{GwasSumStats} object, a \code{FineMappingResult}
-#'   object, or a data.frame with columns \code{chrom}, \code{pos}, \code{ref},
-#'   \code{alt}.
+#' Which FORMAT fields are written depends on the input:
+#' \describe{
+#'   \item{\code{GwasSumStats}}{\code{ES} / \code{SS} / \code{AF} for one
+#'     study.}
+#'   \item{\code{FineMappingResult}}{the marginal fields (\code{ES},
+#'     \code{SE}, \code{LP}, \code{SS}, \code{AF}) plus the posterior ones
+#'     (\code{PIP}, \code{LBF}, \code{LFSR}, and a \code{CS}/\code{PUR} pair
+#'     per credible-set coverage present).}
+#'   \item{\code{TwasWeights}}{\code{WGT}, the prediction weight.}
+#' }
+#'
+#' Every fit the selectors match becomes a SAMPLE of ONE file: the records are
+#' the union of their variants, the FORMAT schema is the union of their fields,
+#' and a fit that did not include a variant -- or does not report a field --
+#' leaves those cells empty. So two methods over a region, or a dozen weight
+#' methods for one gene, are compared by reading one file rather than a dozen.
+#' Each sample is described in its own \code{##SAMPLE} header line, carrying
+#' the fit's identity tuple and how many variants it contributed.
+#' Cross-validation results are not exported -- see \code{\link{exportToBed}}
+#' for why -- and an export requires the full-data fit.
+#'
+#' \code{splitByContext} / \code{splitByTrait} opt out of that and write one
+#' single-sample file per fit, at a path decorated with the axis value.
+#'
+#' @param x A \code{GwasSumStats}, \code{FineMappingResult} or
+#'   \code{TwasWeights} object, or a \code{list} of \code{FineMappingResult}
+#'   / \code{TwasWeights} objects to combine first.
 #' @param outputPath File path for output. Extension determines format:
 #'   \code{.vcf.gz} or \code{.vcf.bgz} for bgzipped VCF, \code{.bcf} for BCF,
 #'   \code{.vcf} for uncompressed VCF.
-#' @param sampleName Name for the VCF sample column (default: trait name or
-#'   method name from the S4 object).
+#' @param sampleName Name(s) for the VCF sample column(s). Default \code{NULL}
+#'   derives them from the object's identity tuple.
 #' @param studyName Character or \code{NULL}. Restrict the written records to
 #'   this study; \code{NULL} includes all studies.
 #' @param context Character or \code{NULL}. Restrict the written records to this
@@ -1413,14 +1438,109 @@ setGeneric("weightsDataType", function(x, ...) {
 #' @param splitByTrait Logical. If \code{TRUE}, write one VCF per trait. Default
 #'   \code{FALSE}.
 #' @param ... Additional arguments passed to methods.
-#' @return Invisible path to the written file.
+#' @return Invisible path(s) to the written file(s).
+#' @seealso \code{\link{exportToBed}}
 #' @examples
 #' data(gwasSumStatsS4Example)
-#' writeSumStatsVcf(
+#' exportToVcf(
 #'   gwasSumStatsS4Example, outputPath = tempfile(fileext = ".vcf"))
 #' @export
-setGeneric("writeSumStatsVcf", function(x, outputPath, sampleName = NULL, ...) {
-    standardGeneric("writeSumStatsVcf")
+setGeneric("exportToVcf", function(x, outputPath, sampleName = NULL, ...) {
+    standardGeneric("exportToVcf")
+})
+
+#' Export a result to a published BED table
+#'
+#' Writes fine-mapping results or TWAS weights to a published FunGen-xQTL BED
+#' table, bgzipping and tabix-indexing the output when the path ends in
+#' \code{.gz} / \code{.bgz}. The tabular counterpart of
+#' \code{\link{exportToVcf}}: the VCF is one record per variant with the models
+#' as samples, while these tables are long-format, one row per published
+#' observation.
+#'
+#' A \code{TwasWeights} writes one table, a row per (variant, weight column).
+#' A \code{FineMappingResult} offers two, selected with \code{schema}:
+#' \describe{
+#'   \item{\code{"topLoci"}}{(default) the posterior view joined to the
+#'     marginal one, a row per (variant, context).}
+#'   \item{\code{"fsusie"}}{the functional view, a row per (context,
+#'     credible set), carrying the fitted curve at both resolutions
+#'     \code{levels} selects.}
+#' }
+#'
+#' Every table identifies the fit a row came from -- \code{study_ID},
+#' \code{gene_ID}, \code{event_ID} and (where it spans methods)
+#' \code{method} -- because these collections are keyed by that tuple and
+#' several of them are routinely folded into one output.
+#'
+#' Cross-validation results are NOT exported, in any schema. They describe how
+#' a model scored on held-out FOLDS; nothing about them is per-variant, and a
+#' published file has no data-secure way to express anything fold-level,
+#' because fold membership is sample-level information and sample names can be
+#' protected. They remain on the object, where \code{\link{cvResult}} returns
+#' them and the caller tabulates whatever they need. For the same reason an
+#' export REQUIRES the full-data fit: a cross-validation-only collection (what
+#' \code{twasWeightsPipeline(fitFullData = FALSE)} produces) is refused rather
+#' than written out empty.
+#'
+#' @param x A \code{FineMappingResult} or \code{TwasWeights} object, or a
+#'   \code{list} of either, to combine first.
+#' @param outputPath Output path. A \code{.gz} / \code{.bgz} extension selects
+#'   bgzip + tabix (via Rsamtools, so no htslib binary is needed); any other
+#'   extension writes a plain table.
+#' @param schema \code{FineMappingResult} only: which published schema to
+#'   write, \code{"topLoci"} (default) or \code{"fsusie"}.
+#' @param coverage Which credible-set coverage levels to publish, as
+#'   proportions (\code{c(0.95, 0.5)}). \code{NULL} (default) publishes every
+#'   level the input carries. Which levels exist is fixed at FIT time by
+#'   \code{\link{CredibleSetParam}} and the stored \code{cs_<n>} columns are
+#'   read rather than recomputed, so this selects a subset and errors --
+#'   naming what is available -- for a level the fit never computed.
+#' @param levels \code{"fsusie"} schema only: which resolution(s) of the
+#'   fitted effect to write. fSuSiE carries the same effect twice --
+#'   \code{"wavelet"}, the curve on the fit's own grid
+#'   (\code{\link{fsusieCredibleBand}}), and \code{"trait"}, that curve
+#'   reinterpolated onto the positions of the traits the fit ran over
+#'   (\code{\link{fsusieTraitEffects}}). They are complementary, so both are
+#'   written by default; naming one drops the other's columns, leaving a strict
+#'   subset of the full table.
+#' @param signalCutoff PIP cutoff passed to \code{\link{topLoci}}
+#'   (\code{FineMappingResult}, \code{"topLoci"} schema only). Default 0.025.
+#' @param minPurity Optional credible-set purity cutoff passed to
+#'   \code{\link{topLoci}} (\code{FineMappingResult}, \code{"topLoci"} schema
+#'   only). Default \code{NULL} for no purity filter.
+#' @param columns Which of the SOURCE view's own variant-level columns to
+#'   append after the published schema. \code{NULL} (default) appends none;
+#'   \code{"all"} appends every column the view carries that the schema does
+#'   not already write; a character vector appends exactly those. The
+#'   published columns always lead, so adding to them never moves an existing
+#'   one. The fine-mapping views carry a long tail worth asking for
+#'   (\code{grange_start} / \code{grange_end}, the legacy \code{gene} /
+#'   \code{event} aliases, and whatever a custom build added); a
+#'   \code{TwasWeights} element carries only its alleles and weight, so there
+#'   is nothing further to add unless the collection was built by hand. Not
+#'   accepted by the \code{"performance"} schema, which has no variant axis.
+#' @param extraColumns Optional NAMED list of trailing columns to append after
+#'   the published schema. Each element is either length 1 (recycled across
+#'   every row) or one value per row. For fields no S4 object can know -- the
+#'   legacy top-loci BED's \code{block_id}, parsed from the source filename,
+#'   is the motivating case. Names that collide with a published column are an
+#'   error rather than a silent overwrite.
+#' @param ... Additional arguments passed to methods.
+#' @return \code{outputPath}, invisibly.
+#' @seealso \code{\link{exportToVcf}}, \code{\link{genomicOrder}}
+#' @examples
+#' data(qtlFineMappingExample)
+#' exportToBed(qtlFineMappingExample, tempfile(fileext = ".bed"))
+#' exportToBed(
+#'     qtlFineMappingExample, tempfile(fileext = ".bed"),
+#'     schema = "topLoci", columns = "all"
+#' )
+#' data(twasWeightsExample)
+#' exportToBed(twasWeightsExample, tempfile(fileext = ".bed"))
+#' @export
+setGeneric("exportToBed", function(x, outputPath, ...) {
+    standardGeneric("exportToBed")
 })
 
 # =============================================================================
@@ -1460,18 +1580,63 @@ setGeneric("contexts", function(x) standardGeneric("contexts"))
 #' @export
 setGeneric("traitNames", function(x) standardGeneric("traitNames"))
 
-#' @title Get Per-Row Genomic Regions
-#' @description Return the genomic anchor of each row of a per-tuple collection
-#'   as a \code{GRanges} with one range per row -- the trait's own region for a
-#'   \code{TwasWeights}, or the fine-mapping window for a
-#'   \code{FineMappingResult}. This is location provenance (e.g. for cTWAS
-#'   LD-block placement).
+#' @title Get Per-Row Analysis Windows
+#' @description Return the genomic interval each row was analysed over, as a
+#'   \code{GRanges} with one range per row -- the trait's own region for a
+#'   \code{TwasWeights}, and for a \code{FineMappingResult} the window the fit
+#'   was run over (the requested region, or the trait's cis-window when the fit
+#'   was driven by \code{traitId} + \code{cisWindow}). This is location
+#'   provenance (e.g. for cTWAS LD-block placement).
+#'
+#'   This is the window that was ANALYSED, not the span of the variants that
+#'   survived into the fit: QC and screening drop variants first, so a fit over
+#'   \code{chr22:10000000-18000000} may contain variants spanning only
+#'   \code{chr22:10414272-16916492}. The window is stored because it cannot be
+#'   recovered from the object; the span can, and is simply \code{range(x)}.
+#'
+#'   Being a record of what was analysed, it deliberately does NOT change under
+#'   \code{subsetRegion()} or row subsetting -- a subset of a fit's variants was
+#'   still produced by a fit over the original window. Use \code{range(x)} when
+#'   you want the current content instead.
+#'
+#'   Collections built before the window was recorded fall back to the derived
+#'   span, so the accessor always returns a range.
 #' @param x The object.
 #' @param ... Reserved for future use.
 #' @return A \code{GRanges} with one range per row of \code{x}, or an empty
-#'   \code{GRanges} when the collection carries no region provenance.
+#'   \code{GRanges} when the collection has no rows.
+#' @seealso \code{\link{traitPosition}} for the trait's own coordinates.
 #' @export
 setGeneric("genomicRegion", function(x, ...) standardGeneric("genomicRegion"))
+
+#' @title Get The LD Block Identifier
+#' @description Return the LD-block identifier of each row of a collection
+#'   that keys its rows by block --- a \code{GwasSumStats}, or a
+#'   \code{GwasFineMappingResult} fine-mapped over one.
+#'
+#'   Per ROW, like \code{\link{genomicRegion}} and unlike
+#'   \code{\link{studyName}} / \code{\link{methodNames}}: a block id is
+#'   provenance for a particular fit, not an axis the collection is indexed
+#'   on, so the returned vector is always the same length as \code{nrow(x)}
+#'   and can be used to label or join rows directly.
+#'
+#'   It keys the external block manifest the blocks were defined in, and so
+#'   carries the true block BOUNDARIES --- unlike \code{range(x)}, which is
+#'   the span of the variants that survived QC. A collection with no block
+#'   axis (every QTL flavour) returns \code{NA} for every row rather than
+#'   erroring, so code that handles both flavours needs no class test.
+#' @param x The object.
+#' @param ... Reserved for future use.
+#' @return Character, one value per row of \code{x} (\code{NA} where the row
+#'   records none).
+#' @seealso \code{\link{genomicRegion}} for the window that was analysed.
+#' @examples
+#' data(gwasFineMappingExample, qtlFineMappingExample)
+#' blockId(gwasFineMappingExample)
+#' # A QTL result has no block axis, so one NA per row rather than an error.
+#' blockId(qtlFineMappingExample)
+#' @export
+setGeneric("blockId", function(x, ...) standardGeneric("blockId"))
 
 #' @title Get Per-Row Trait Positions
 #' @description Return the molecular feature's OWN genomic coordinates (the gene
@@ -2287,15 +2452,46 @@ setGeneric("credibleSetSummary", function(x, ...) {
 #'
 #' @param x A \code{FineMappingRow} or \code{FineMappingResultBase}.
 #' @param ... Ignored.
-#' @return A long \code{tibble}: \code{cs, chrom, pos, effect, lower, upper}
-#'   (the collection method additionally carries the entry identity columns).
-#' @seealso \code{\link{fsusieAffectedRegions}}
+#' @return A long \code{tibble}: \code{cs, chrom, pos, effect, lower, upper,
+#'   halfwidth} -- \code{halfwidth} being \code{(upper - lower) / 2}, the
+#'   symmetric band half-width publication tables carry (the collection method
+#'   additionally carries the entry identity columns).
+#' @seealso \code{\link{fsusieTraitEffects}},
+#'   \code{\link{fsusieAffectedRegions}}
 #' @examples
 #' data(fsusieFineMappingExample)
 #' fsusieCredibleBand(fsusieFineMappingExample)
 #' @export
 setGeneric("fsusieCredibleBand", function(x, ...) {
     standardGeneric("fsusieCredibleBand")
+})
+
+#' fSuSiE effect at each joint trait
+#'
+#' The fitted effect curve evaluated AT the traits the functional fit was run
+#' over, one row per (credible set, trait). The curve itself lives on a wavelet
+#' grid (\code{\link{fsusieCredibleBand}}); the traits sit at arbitrary
+#' positions between grid points, so the effect is linearly interpolated with
+#' constant extrapolation past the ends.
+#'
+#' This is the view that pairs a trait's NAME with its position: the names come
+#' from the row's \code{jointTraits} column and the positions from the fit,
+#' index-aligned because both describe the same joint group. Returns zero rows
+#' when the functional fields are absent.
+#'
+#' @param x A \code{FineMappingRow} or \code{FineMappingResultBase}.
+#' @param ... Ignored.
+#' @return A long \code{tibble}: \code{cs, chrom, jointTrait, traitPos,
+#'   effect} (the collection method additionally carries the entry identity
+#'   columns).
+#' @seealso \code{\link{fsusieCredibleBand}},
+#'   \code{\link{fsusieAffectedRegions}}
+#' @examples
+#' data(fsusieFineMappingExample)
+#' fsusieTraitEffects(fsusieFineMappingExample)
+#' @export
+setGeneric("fsusieTraitEffects", function(x, ...) {
+    standardGeneric("fsusieTraitEffects")
 })
 
 #' fSuSiE affected genomic regions

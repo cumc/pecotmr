@@ -1202,7 +1202,10 @@ test_that(".cipComputeMr: IVW Wald-ratio over PIP-passing instruments", {
         se = rep(0.05, 4),
         stringsAsFactors = FALSE
     )
-    local_mocked_bindings(.cipTopLociTable = function(x) tl, .package = "pecotmr")
+    local_mocked_bindings(
+        .cipTopLociTable = function(x) tl,
+        .package = "pecotmr"
+    )
     res <- pecotmr:::.cipComputeMr(
         NULL,
         .cip_gwasDf(sprintf("chr1:%d:A:G", 100L * (1:4)), c(2, -1.5, 1, 1.8)),
@@ -1227,7 +1230,10 @@ test_that(".cipComputeMr: the exposure standardizes when maf/N are absent", {
         se = 0.01,
         stringsAsFactors = FALSE
     )
-    local_mocked_bindings(.cipTopLociTable = function(x) tl, .package = "pecotmr")
+    local_mocked_bindings(
+        .cipTopLociTable = function(x) tl,
+        .package = "pecotmr"
+    )
     g <- .cip_gwasDf("chr1:100:A:G", 2)
     noScale <- g[, setdiff(names(g), c("N", "maf"))]
     res <- pecotmr:::.cipComputeMr(NULL, noScale, pipCutoff = 0.5)
@@ -1282,7 +1288,10 @@ test_that(".cipComputeMr matches across a chr-prefix difference (tuple match)", 
         se = c(0.05, 0.05),
         stringsAsFactors = FALSE
     )
-    local_mocked_bindings(.cipTopLociTable = function(x) tl, .package = "pecotmr")
+    local_mocked_bindings(
+        .cipTopLociTable = function(x) tl,
+        .package = "pecotmr"
+    )
     # GWAS carries the same variants without the "chr" prefix.
     g <- .cip_gwasDf(c("1:100:A:G", "1:200:A:G"), z = c(2, 1.5))
     res <- pecotmr:::.cipComputeMr(NULL, g, pipCutoff = 0.5)
@@ -1298,7 +1307,10 @@ test_that(".cipComputeMr includes an allele-swapped GWAS variant and flips the s
         se = 0.05,
         stringsAsFactors = FALSE
     )
-    local_mocked_bindings(.cipTopLociTable = function(x) tl, .package = "pecotmr")
+    local_mocked_bindings(
+        .cipTopLociTable = function(x) tl,
+        .package = "pecotmr"
+    )
     rSame <- pecotmr:::.cipComputeMr(
         NULL,
         .cip_gwasDf("chr1:100:A:G", z = 2.0),
@@ -1323,7 +1335,10 @@ test_that(".cipComputeMr with alleleFlip = FALSE drops an allele-swapped GWAS va
         se = 0.05,
         stringsAsFactors = FALSE
     )
-    local_mocked_bindings(.cipTopLociTable = function(x) tl, .package = "pecotmr")
+    local_mocked_bindings(
+        .cipTopLociTable = function(x) tl,
+        .package = "pecotmr"
+    )
     # GWAS variant is the ref/alt swap; with flipping disabled it is not matched.
     rSwap <- pecotmr:::.cipComputeMr(
         NULL,
@@ -1344,7 +1359,10 @@ test_that(".cipComputeMrCsAware matches across a chr-prefix difference", {
         se = c(0.05, 0.05),
         stringsAsFactors = FALSE
     )
-    local_mocked_bindings(.cipTopLociTable = function(x) tl, .package = "pecotmr")
+    local_mocked_bindings(
+        .cipTopLociTable = function(x) tl,
+        .package = "pecotmr"
+    )
     g <- .cip_gwasDf(c("1:100:A:G", "1:200:A:G"), z = c(2, 1.5))
     res <- pecotmr:::.cipComputeMrCsAware(NULL, g, cpipCutoff = 0.5)
     expect_equal(res$nCs, 1L)
@@ -1368,7 +1386,7 @@ test_that(".cipComputeTwasZ reconciles a chr-prefix mismatch (previously dropped
     expect_true(is.finite(res$Z))
 })
 
-test_that(".cipComputeMr: NA on empty / missing-col / no-IV / no-overlap / zero-beta", {
+test_that(".cipComputeMr: NA on empty / no-IV / no-overlap / zero-beta", {
     g <- .cip_gwasDf(sprintf("chr1:%d:A:G", 100L * (1:4)))
     isNa <- function(r) {
         expect_true(is.na(r$waldRatio))
@@ -1379,17 +1397,6 @@ test_that(".cipComputeMr: NA on empty / missing-col / no-IV / no-overlap / zero-
         .package = "pecotmr"
     )
     isNa(pecotmr:::.cipComputeMr(NULL, g, 0.5)) # empty
-    local_mocked_bindings(
-        .cipTopLociTable = function(x) {
-            # no beta/se
-            data.frame(
-                variant_id = sprintf("chr1:%d:A:G", 100L * (1:4)),
-                pip = rep(0.9, 4)
-            )
-        },
-        .package = "pecotmr"
-    )
-    isNa(pecotmr:::.cipComputeMr(NULL, g, 0.5))
     local_mocked_bindings(
         .cipTopLociTable = function(x) {
             # none pass
@@ -1440,7 +1447,10 @@ test_that(".cipComputeMrCsAware: CS-aware composite Wald + heterogeneity", {
         se = rep(0.05, 4),
         stringsAsFactors = FALSE
     )
-    local_mocked_bindings(.cipTopLociTable = function(x) tl, .package = "pecotmr")
+    local_mocked_bindings(
+        .cipTopLociTable = function(x) tl,
+        .package = "pecotmr"
+    )
     res <- pecotmr:::.cipComputeMrCsAware(
         NULL,
         .cip_gwasDf(
@@ -1463,7 +1473,10 @@ test_that(".cipComputeMrCsAware: credible-set column found via the ^cs fallback"
         se = rep(0.05, 2),
         stringsAsFactors = FALSE
     )
-    local_mocked_bindings(.cipTopLociTable = function(x) tl, .package = "pecotmr")
+    local_mocked_bindings(
+        .cipTopLociTable = function(x) tl,
+        .package = "pecotmr"
+    )
     res <- pecotmr:::.cipComputeMrCsAware(
         NULL,
         .cip_gwasDf(sprintf("chr1:%d:A:G", 100L * (1:2)), c(2, -1.5)),
@@ -1472,7 +1485,48 @@ test_that(".cipComputeMrCsAware: credible-set column found via the ^cs fallback"
     expect_true(is.finite(res$waldRatio)) # cs_0.95 via grep("^cs")
 })
 
-test_that(".cipComputeMrCsAware: naResult on empty / missing-col / no-CS / no-overlap / low-cpip", {
+test_that("the MR paths abort naming the exposure columns they lack", {
+    g <- .cip_gwasDf(sprintf("chr1:%d:A:G", 100L * (1:4)))
+    local_mocked_bindings(
+        .cipTopLociTable = function(x, ...) {
+            data.frame(
+                variant_id = sprintf("chr1:%d:A:G", 100L * (1:4)),
+                pip = rep(0.9, 4)
+            )
+        },
+        .package = "pecotmr"
+    )
+    # Absent beta/se is a property of the whole table, so it would fail
+    # identically for every tuple -- it is named, not silently skipped.
+    expect_error(
+        pecotmr:::.cipComputeMr(NULL, g, 0.5),
+        "Wald-ratio path needs pip, beta, se.*has no beta, se"
+    )
+    expect_error(
+        pecotmr:::.cipComputeMrCsAware(NULL, g, 0.5),
+        "credible-set-aware path needs.*has no beta, se, cs\\."
+    )
+    # A table carrying everything but `cs` is usable for the Wald ratio and
+    # only the CS-aware path objects.
+    local_mocked_bindings(
+        .cipTopLociTable = function(x, ...) {
+            data.frame(
+                variant_id = sprintf("chr1:%d:A:G", 100L * (1:4)),
+                pip = rep(0.9, 4),
+                beta = rep(0.2, 4),
+                se = rep(0.05, 4)
+            )
+        },
+        .package = "pecotmr"
+    )
+    expect_true(is.finite(pecotmr:::.cipComputeMr(NULL, g, 0.5)$waldRatio))
+    expect_error(
+        pecotmr:::.cipComputeMrCsAware(NULL, g, 0.5),
+        "this result has no cs\\."
+    )
+})
+
+test_that(".cipComputeMrCsAware: naResult on empty / no-CS / no-overlap / low-cpip", {
     g <- .cip_gwasDf(sprintf("chr1:%d:A:G", 100L * (1:4)))
     isNa <- function(r) expect_true(is.na(r$waldRatio))
     local_mocked_bindings(
@@ -1480,19 +1534,6 @@ test_that(".cipComputeMrCsAware: naResult on empty / missing-col / no-CS / no-ov
         .package = "pecotmr"
     )
     isNa(pecotmr:::.cipComputeMrCsAware(NULL, g, 0.5)) # empty
-    local_mocked_bindings(
-        .cipTopLociTable = function(x) {
-            # no pip col
-            data.frame(
-                variant_id = sprintf("chr1:%d:A:G", 100L * (1:4)),
-                cs = rep(1L, 4),
-                beta = rep(0.2, 4),
-                se = rep(0.05, 4)
-            )
-        },
-        .package = "pecotmr"
-    )
-    isNa(pecotmr:::.cipComputeMrCsAware(NULL, g, 0.5))
     local_mocked_bindings(
         .cipTopLociTable = function(x) {
             # cs all 0

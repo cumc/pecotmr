@@ -15,8 +15,10 @@ fsusieCredibleBand(x, ...)
 \item{...}{Ignored.}
 }
 \value{
-A long \code{tibble}: \code{cs, chrom, pos, effect, lower, upper}
-  (the collection method additionally carries the entry identity columns).
+A long \code{tibble}: \code{cs, chrom, pos, effect, lower, upper,
+  halfwidth} -- \code{halfwidth} being \code{(upper - lower) / 2}, the
+  symmetric band half-width publication tables carry (the collection method
+  additionally carries the entry identity columns).
 }
 \description{
 For a functional-SuSiE (\code{fsusieR::susiF}) fine-mapping entry, returns
@@ -32,5 +34,6 @@ data(fsusieFineMappingExample)
 fsusieCredibleBand(fsusieFineMappingExample)
 }
 \seealso{
-\code{\link{fsusieAffectedRegions}}
+\code{\link{fsusieTraitEffects}},
+  \code{\link{fsusieAffectedRegions}}
 }

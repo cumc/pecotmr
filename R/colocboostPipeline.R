@@ -121,6 +121,16 @@
 #'   below its cutoffs is dropped before the LD matrix is built. The defaults
 #'   filter nothing. See the Details section for how these relate to the
 #'   individual-level cutoffs recorded on a \code{QtlDataset}.
+#' @param residualizationArgs Covariate residualization settings for
+#'   individual-level input, built with \code{\link{ResidualizationParam}}.
+#'   Reaches both \code{\link{residualizedGenotypes}} and
+#'   \code{\link{residualizedPhenotypes}}, so it governs what is regressed
+#'   out of each side and --- through \code{scaleResiduals} --- whether the
+#'   columns are scaled to unit variance. Previously absent, which left this
+#'   pipeline on the dataset's own settings with no per-call say, unlike
+#'   \code{\link{fineMappingPipeline}} and
+#'   \code{\link{twasWeightsPipeline}}. \strong{Ignored} on
+#'   \code{QtlSumStats} input, which has nothing to residualize.
 #' @param alleleFlip Logical, default \code{TRUE}. When TRUE, harmonize variants
 #'   across the individual X, sumstats, and LD by (chrom, pos) with ref/alt
 #'   swaps recognized (flipping z / residualized dosage / LD to a shared
@@ -297,7 +307,8 @@ setGeneric("colocboostPipeline", function(qtlData, gwasSumStats = NULL, ...) {
     region = NULL,
     cisWindow = NULL,
     samples = NULL,
-    pipCutoffToSkip = 0
+    pipCutoffToSkip = 0,
+    residualizationArgs = ResidualizationParam()
 ) {
     contexts <- .cbResolveBundleContexts(qd, contexts)
     p <- list(
@@ -306,7 +317,8 @@ setGeneric("colocboostPipeline", function(qtlData, gwasSumStats = NULL, ...) {
         region = region,
         cisWindow = cisWindow,
         samples = samples,
-        pipCutoffToSkip = pipCutoffToSkip
+        pipCutoffToSkip = pipCutoffToSkip,
+        residualizationArgs = residualizationArgs
     )
     built <- compact(map(contexts, .cbBuildContextXY, p = p))
     if (length(built) == 0L) {
@@ -356,7 +368,13 @@ setGeneric("colocboostPipeline", function(qtlData, gwasSumStats = NULL, ...) {
 # NULL when the context should be skipped.
 # @noRd
 .cbBuildContextXY <- function(ctx, p) {
-    rawY <- .cbResidualizedY(p$qd, ctx, p$traitId, p$region)
+    rawY <- .cbResidualizedY(
+        p$qd,
+        ctx,
+        p$traitId,
+        p$region,
+        p$residualizationArgs
+    )
     if (is.null(rawY) || ncol(rawY) == 0L) {
         return(NULL)
     }
@@ -366,7 +384,8 @@ setGeneric("colocboostPipeline", function(qtlData, gwasSumStats = NULL, ...) {
         p$traitId,
         p$region,
         p$cisWindow,
-        p$samples
+        p$samples,
+        p$residualizationArgs
     )
     if (is.null(rawX) || ncol(rawX) == 0L) {
         return(NULL)
@@ -401,13 +420,20 @@ setGeneric("colocboostPipeline", function(qtlData, gwasSumStats = NULL, ...) {
 
 # Residualized phenotypes for one context (message + NULL on failure).
 # @noRd
-.cbResidualizedY <- function(qd, ctx, traitId, region) {
+.cbResidualizedY <- function(
+    qd,
+    ctx,
+    traitId,
+    region,
+    residualizationArgs = ResidualizationParam()
+) {
     try_fetch(
         residualizedPhenotypes(
             qd,
             contexts = ctx,
             traitId = traitId,
-            region = region
+            region = region,
+            residualizationArgs = residualizationArgs
         ),
         error = function(cnd) {
             msg <- glue(
@@ -422,7 +448,15 @@ setGeneric("colocboostPipeline", function(qtlData, gwasSumStats = NULL, ...) {
 
 # Residualized genotypes for one context (message + NULL on failure).
 # @noRd
-.cbResidualizedX <- function(qd, ctx, traitId, region, cisWindow, samples) {
+.cbResidualizedX <- function(
+    qd,
+    ctx,
+    traitId,
+    region,
+    cisWindow,
+    samples,
+    residualizationArgs = ResidualizationParam()
+) {
     try_fetch(
         residualizedGenotypes(
             qd,
@@ -430,7 +464,8 @@ setGeneric("colocboostPipeline", function(qtlData, gwasSumStats = NULL, ...) {
             traitId = traitId,
             region = region,
             cisWindow = cisWindow,
-            samples = samples
+            samples = samples,
+            residualizationArgs = residualizationArgs
         ),
         error = function(cnd) {
             msg <- glue(
@@ -933,7 +968,10 @@ setGeneric("colocboostPipeline", function(qtlData, gwasSumStats = NULL, ...) {
     )
     runJoint <- .cbCanRun(jointGwas, hasSs, "jointGwas", ssNeeded)
     runSeparate <- .cbCanRun(
-        separateGwas, hasGwasSs, "separateGwas", "GWAS summary statistics"
+        separateGwas,
+        hasGwasSs,
+        "separateGwas",
+        "GWAS summary statistics"
     )
     compact(list(
         xqtl_coloc = if (runXqtl) {
@@ -1534,8 +1572,12 @@ setGeneric("colocboostPipeline", function(qtlData, gwasSumStats = NULL, ...) {
     # each QTL study as a focal GWAS in its own right.
     gwasKeys <- setdiff(names(harmonized$pairs), qtlKeys)
     gwasRunBundles <- set_names(
-        map(gwasKeys, .cbGwasRunBundle, pairs = harmonized$pairs,
-            qtlKeys = qtlKeys),
+        map(
+            gwasKeys,
+            .cbGwasRunBundle,
+            pairs = harmonized$pairs,
+            qtlKeys = qtlKeys
+        ),
         gwasKeys
     )
     .cbRunVariants(
@@ -1607,7 +1649,8 @@ setGeneric("colocboostPipeline", function(qtlData, gwasSumStats = NULL, ...) {
     panelFilterParam,
     signalScreenArgs,
     alleleFlip,
-    methodArgs
+    methodArgs,
+    residualizationArgs
 ) {
     screenSpec <- .screenResolve(signalScreenArgs)
     indBundle <- .cbIndividualBundle(
@@ -1617,7 +1660,8 @@ setGeneric("colocboostPipeline", function(qtlData, gwasSumStats = NULL, ...) {
         region = region,
         cisWindow = cisWindow,
         samples = samples,
-        pipCutoffToSkip = screenSpec
+        pipCutoffToSkip = screenSpec,
+        residualizationArgs = residualizationArgs
     )
     .cbDriver(
         indBundle,
@@ -1656,6 +1700,7 @@ setMethod(
         panelFilterParam = PanelFilterParam(),
         signalScreenArgs = SignalScreenParam(),
         alleleFlip = TRUE,
+        residualizationArgs = ResidualizationParam(),
         # `list()`, not ColocboostOptions(): the formal shadows the
         # constructor, so a constructor-call default is a recursive
         # reference. An empty list is the "no options" spelling
@@ -1679,7 +1724,8 @@ setMethod(
             panelFilterParam = panelFilterParam,
             signalScreenArgs = signalScreenArgs,
             alleleFlip = alleleFlip,
-            methodArgs = methodArgs
+            methodArgs = methodArgs,
+            residualizationArgs = residualizationArgs
         )
     }
 )
@@ -1748,6 +1794,7 @@ setMethod(
         panelFilterParam = PanelFilterParam(),
         signalScreenArgs = SignalScreenParam(),
         alleleFlip = TRUE,
+        residualizationArgs = ResidualizationParam(),
         # `list()`, not ColocboostOptions(): the formal shadows the
         # constructor, so a constructor-call default is a recursive
         # reference. An empty list is the "no options" spelling
@@ -1771,7 +1818,8 @@ setMethod(
             panelFilterParam = panelFilterParam,
             signalScreenArgs = signalScreenArgs,
             alleleFlip = alleleFlip,
-            methodArgs = methodArgs
+            methodArgs = methodArgs,
+            residualizationArgs = residualizationArgs
         )
     }
 )
@@ -1794,7 +1842,8 @@ setMethod(
     panelFilterParam,
     signalScreenArgs,
     alleleFlip,
-    methodArgs
+    methodArgs,
+    residualizationArgs
 ) {
     screenSpec <- .screenResolve(signalScreenArgs)
     indBundle <- .cbMultiStudyIndBundle(
@@ -1804,7 +1853,8 @@ setMethod(
         region = region,
         cisWindow = cisWindow,
         samples = samples,
-        screenSpec = screenSpec
+        screenSpec = screenSpec,
+        residualizationArgs = residualizationArgs
     )
     cutoffs <- .panelCutoffs(panelFilterParam)
     ss <- .cbMultiStudySumstats(
@@ -1844,7 +1894,8 @@ setMethod(
     region,
     cisWindow,
     samples,
-    screenSpec
+    screenSpec,
+    residualizationArgs = ResidualizationParam()
 ) {
     sub <- .cbIndividualBundle(
         qtlDatasets[[studyName]],
@@ -1853,7 +1904,8 @@ setMethod(
         region = region,
         cisWindow = cisWindow,
         samples = samples,
-        pipCutoffToSkip = screenSpec
+        pipCutoffToSkip = screenSpec,
+        residualizationArgs = residualizationArgs
     )
     if (is.null(sub)) {
         return(NULL)
@@ -1886,7 +1938,8 @@ setMethod(
     region,
     cisWindow,
     samples,
-    screenSpec
+    screenSpec,
+    residualizationArgs = ResidualizationParam()
 ) {
     qtlDatasets <- qtlDatasets(qtlData)
     subs <- compact(map(
@@ -1898,7 +1951,8 @@ setMethod(
         region = region,
         cisWindow = cisWindow,
         samples = samples,
-        screenSpec = screenSpec
+        screenSpec = screenSpec,
+        residualizationArgs = residualizationArgs
     ))
     if (length(subs) == 0L) {
         return(NULL)

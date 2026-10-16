@@ -355,9 +355,23 @@ key <- list(
 )
 w <- do.call(weights, c(list(tw), key))
 length(w)
-do.call(weightStandardized, c(list(tw), key)) # standardized or original scale
+do.call(weightStandardized, c(list(tw), key)) # TRUE from the pipeline
 do.call(weightsDataType, c(list(tw), key)) # tag carried through for reporting
 ```
+
+`weightStandardized()` is `TRUE` for anything the pipeline fitted: genotypes
+are centred and scaled to unit variance before every method runs, so all the
+weights are on one scale. That scaling lives in the `QtlDataset` accessors,
+not in the pipeline — `ResidualizationParam(scaleResiduals = FALSE)` opts out
+per call, and the dataset's own `scaleResiduals` slot is the default — so the
+recorded flag reports what was done rather than what you claimed. That is not bookkeeping. Every method here returns
+coefficients on the scale of the `X` it was handed — exactly so for glmnet,
+ncvreg, L0Learn, mr.ash, the Bayesian alphabet and `susieWeights()` — while
+the DPR samplers are not even scale-equivariant, so rescaling `X` changes
+their fit rather than just its units. Standardizing up front removes the
+question, and lands on the scale the LD correlations and z-scores behind a
+TWAS Z already use. `learnTwasWeights()` still takes `weightStandardized`,
+because there you supply `X` yourself.
 
 `weights()` returns a named numeric vector for univariate methods and a
 matrix for multivariate ones. The remaining payloads are keyed the same way:
@@ -366,6 +380,54 @@ cross-validation record (`rsq`, `r`, predicted values), and `methodFits()` for
 the full fit object when the pipeline kept fits (`fitRetention != "none"`).
 `resolveWeights()` returns the weights and their variant IDs together, which
 is the form the downstream TWAS and MR steps consume.
+
+## Publishing the weights
+
+The same two generics that export fine-mapping results export weights.
+`exportToVcf()` writes a GWAS-VCF-style file: one record per variant, one
+sample per fitted model, the weight in the `WGT` FORMAT field, and each
+model's identity in its own `##SAMPLE` header line. `exportToBed()` writes the
+same thing as a long table, one row per (variant, model).
+
+```{r tw-export, eval=FALSE}
+exportToVcf(tw, "weights.vcf.gz")
+exportToVcf(tw, "lasso_weights.vcf.gz", method = "lasso") # one model
+exportToBed(tw, "weights.bed.gz")
+```
+
+Both export the **full-data fit only**, and refuse an object that has none —
+`twasWeightsPipeline(fitFullData = FALSE)` produces rows holding nothing but
+cross-validation results, and those cannot be published: they describe
+held-out folds, and fold membership is sample-level information. For the same
+reason neither exporter writes CV metrics. Those stay on the object:
+
+```{r tw-cv, eval=FALSE}
+cv <- cvResult(tw, studyName = "s1", context = "brain", trait = "g1",
+               method = "susie")
+cv$performance # per-method metric matrix: corr, rsq, adj_rsq, pval, RMSE, MAE
+```
+
+Fine-mapping-derived rows (`susie`, `susie_inf`, `susie_ash`, `mvsusie`,
+`fsusie`) are skipped with a message by **both** exporters, because their
+"weights" are the fine-mapping posterior re-expressed — export the
+`FineMappingResult` instead, which carries the posterior, its standard error
+and the credible sets. Selecting only such a method, as in
+`method = "susie"`, is therefore an error rather than an empty file.
+
+`readTwasWeights()` reads either format back into a `TwasWeights`:
+
+```{r tw-read, eval=FALSE}
+tw <- readTwasWeights("weights.bed.gz")
+tw <- readTwasWeights("weights.bed.gz", region = "chr22:10e6-19e6")
+```
+
+A weight is all it requires, so a table converted from another tool reads with
+nothing but variant ids and a `WGT` column — plus the identity axes the
+collection is keyed by, which `studyName` / `context` / `trait` / `method`
+supply when the file does not record them. `weightStandardized` is required
+when the file does not say which genotype scale the weights are on: that is
+not recoverable from the numbers, since converting between the two rescales
+every variant by its own allele-frequency-dependent factor.
 
 ## Next steps
 
