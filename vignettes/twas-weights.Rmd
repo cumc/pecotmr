@@ -391,7 +391,7 @@ same thing as a long table, one row per (variant, model).
 
 ```{r tw-export, eval=FALSE}
 exportToVcf(tw, "weights.vcf.gz")
-exportToVcf(tw, "susie_weights.vcf.gz", method = "susie") # one model
+exportToVcf(tw, "lasso_weights.vcf.gz", method = "lasso") # one model
 exportToBed(tw, "weights.bed.gz")
 ```
 
@@ -407,10 +407,12 @@ cv <- cvResult(tw, studyName = "s1", context = "brain", trait = "g1",
 cv$performance # per-method metric matrix: corr, rsq, adj_rsq, pval, RMSE, MAE
 ```
 
-Fine-mapping-derived rows are skipped with a message, because their "weights"
-are the fine-mapping posterior re-expressed — export the `FineMappingResult`
-instead, which carries the posterior, its standard error and the credible
-sets.
+Fine-mapping-derived rows (`susie`, `susie_inf`, `susie_ash`, `mvsusie`,
+`fsusie`) are skipped with a message by **both** exporters, because their
+"weights" are the fine-mapping posterior re-expressed — export the
+`FineMappingResult` instead, which carries the posterior, its standard error
+and the credible sets. Selecting only such a method, as in
+`method = "susie"`, is therefore an error rather than an empty file.
 
 `readTwasWeights()` reads either format back into a `TwasWeights`:
 

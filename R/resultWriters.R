@@ -1288,6 +1288,19 @@ setMethod(
         if (length(rows) == 0L) {
             abort("exportToVcf: no rows match the supplied selectors.")
         }
+        # The same rule the BED path applies, and for the same reason: a
+        # fine-mapping method's "weights" are the posterior re-expressed, so
+        # the FineMappingResult says strictly more. This path used to publish
+        # them, which made the two formats disagree about what a weights file
+        # contains.
+        rows <- intersect(rows, .twbExportableRows(x, "exportToVcf"))
+        if (length(rows) == 0L) {
+            abort(str_c(
+                "exportToVcf: every selected row is fine-mapping-derived, so ",
+                "there is nothing to write as weights. Export the ",
+                "FineMappingResult."
+            ))
+        }
         .twvWriteSamples(
             x,
             .twvSampleSpecs(x, rows),
@@ -1985,6 +1998,13 @@ setMethod(
 # @noRd
 .pubCsPair <- function(lv) c(str_c("CS", lv), str_c("PUR", lv))
 
+# The available-levels phrase. `str_flatten(character(0))` is "", not NULL, so
+# a `%||%` fallback never fires and the message read "Available: ."
+# @noRd
+.pubLevelList <- function(have) {
+    if (length(have) == 0L) "<none>" else str_flatten(have, ", ")
+}
+
 # The coverage levels to publish: every `cs_<n>` column the view carries, or
 # the requested subset -- with a requested level the fit never computed an
 # error that names what IS available, rather than a silently empty column.
@@ -2003,8 +2023,7 @@ setMethod(
         abort(glue(
             "`coverage` asks for {str_flatten(absent, ', ')}, which this fit ",
             "did not compute; credible sets are fixed at fit time by ",
-            "CredibleSetParam. Available: ",
-            "{str_flatten(have, ', ') %||% '<none>'}."
+            "CredibleSetParam. Available: {.pubLevelList(have)}."
         ))
     }
     want
@@ -2150,7 +2169,6 @@ setMethod(
     bind_cols(out, select(tl, all_of(added)))
 }
 
-# The CS membership / purity values for the discovered column pairs.
 # The CS membership / purity values as a tibble, for binding into a block.
 # @noRd
 .pubFrameCs <- function(view, csCols) {
@@ -2228,11 +2246,17 @@ setMethod(
 # reader would then believe ES/SE were derived when they were recorded.
 # @noRd
 .pubEz <- function(view, n = NULL) {
-    supplied <- .pubCol(view, "z_supplied", n)
-    if (!any(isTRUE(as.logical(supplied)))) {
+    # `isTRUE()` is length-1 only: `isTRUE(c(TRUE, TRUE))` is FALSE, so the
+    # all-or-nothing test this used never fired for a view with more than one
+    # variant and EZ was never published at all. Per ROW anyway, matching
+    # `.vcfSuppliedZ()`: a file can hold a mix, and a derived z must not
+    # borrow a neighbour's provenance.
+    supplied <- as.logical(.pubCol(view, "z_supplied", n))
+    z <- as.numeric(.pubCol(view, "z", n))
+    if (!any(!is.na(supplied) & supplied)) {
         return(if (is.null(n)) NA_real_ else rep(NA_real_, n))
     }
-    .pubCol(view, "z", n)
+    replace(z, is.na(supplied) | !supplied, NA_real_)
 }
 
 # @noRd
@@ -2448,12 +2472,12 @@ setMethod(
 )
 
 # @noRd
-.twbExportableRows <- function(x) {
+.twbExportableRows <- function(x, label = "exportToBed") {
     methods <- .pubTupleColumn("method", x)
     skip <- which(is_in(methods, .TWB_FINE_MAPPING_METHODS))
     if (length(skip) > 0L) {
         inform(glue(
-            "exportToBed: skipping {length(skip)} fine-mapping-derived ",
+            "{label}: skipping {length(skip)} fine-mapping-derived ",
             "row(s) ({str_flatten(unique(methods[skip]), ', ')}). Those ",
             "weights are the fine-mapping posterior re-expressed -- export ",
             "the FineMappingResult instead, which carries the posterior, its ",

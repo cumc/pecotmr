@@ -1261,14 +1261,16 @@ test_that("exportToVcf writes TWAS weights with one sample per model", {
         "\t"
     )[[1L]]
     samples <- header[-seq_len(9L)]
-    expect_length(samples, 11L)
+    # Nine of the eleven rows: the two fine-mapping-derived ones are skipped,
+    # the same as on the BED path.
+    expect_length(samples, 9L)
     expect_true(all(str_detect(samples, "^s|protocol_example\\|bulk_rnaseq")))
     expect_true(any(str_detect(lines, "ID=WGT")))
     expect_identical(sum(!str_starts(lines, "#")), 168L)
     # the per-variant FORMAT column is the weight, one value per sample
     body <- str_split(lines[!str_starts(lines, "#")][[1L]], "\t")[[1L]]
     expect_identical(body[[9L]], "WGT")
-    expect_length(body, 9L + 11L)
+    expect_length(body, 9L + 9L)
 })
 
 test_that("the TWAS-weight VCF describes each model in a ##SAMPLE line", {
@@ -1276,7 +1278,7 @@ test_that("the TWAS-weight VCF describes each model in a ##SAMPLE line", {
     out <- withr::local_tempfile(fileext = ".vcf")
     exportToVcf(twasWeightsExample, out)
     sampleLines <- keep(readLines(out), str_starts, "##SAMPLE=")
-    expect_length(sampleLines, 11L)
+    expect_length(sampleLines, 9L)
     susie <- keep(sampleLines, str_detect, fixed("Method=lasso,"))[[1L]]
     expect_true(str_detect(susie, "Trait=ENSG00000130538"))
     expect_true(str_detect(susie, "TotalVariants=168"))
@@ -1287,7 +1289,7 @@ test_that("the TWAS-weight VCF describes each model in a ##SAMPLE line", {
 test_that("exportToVcf narrows TWAS models with the identity selectors", {
     data(twasWeightsExample)
     out <- withr::local_tempfile(fileext = ".vcf")
-    exportToVcf(twasWeightsExample, out, method = "susie")
+    exportToVcf(twasWeightsExample, out, method = "lasso")
     lines <- readLines(out)
     header <- str_split(
         lines[str_starts(lines, "#CHROM")][[1L]],
@@ -1297,6 +1299,16 @@ test_that("exportToVcf narrows TWAS models with the identity selectors", {
     expect_error(
         exportToVcf(twasWeightsExample, out, method = "nope"),
         "no rows match"
+    )
+    # Selecting a fine-mapping method leaves nothing exportable, which is a
+    # different refusal from "no rows match".
+    expect_error(
+        suppressMessages(exportToVcf(
+            twasWeightsExample,
+            out,
+            method = "susie"
+        )),
+        "every selected row is fine-mapping-derived"
     )
 })
 
@@ -1613,7 +1625,7 @@ test_that("the weight VCF header carries no cross-validation metrics", {
     out <- withr::local_tempfile(fileext = ".vcf")
     exportToVcf(twasWeightsExample, out)
     sampleLines <- keep(readLines(out), str_starts, "##SAMPLE=")
-    expect_length(sampleLines, 11L)
+    expect_length(sampleLines, 9L)
     expect_true(all(str_detect(sampleLines, "TotalVariants=")))
     expect_false(any(str_detect(sampleLines, "rsq=|corr=|pval=|CvRegions=")))
 })
@@ -1718,4 +1730,393 @@ test_that("a z-only GWAS-VCF reads without ES and SE", {
     expect_equal(back$Z, c(2.5, -1.2))
     expect_true(all(back$z_supplied))
     expect_false(is_in("BETA", names(back)))
+})
+
+# ---------------------------------------------------------------------------
+# `coverage =`: the dynamic credible-set levels
+#
+# Which coverages exist is a FIT-time decision (CredibleSetParam), and the
+# writers READ the stored cs_<n> columns rather than recomputing, so a writer
+# can restrict what it publishes but can never invent a level. The error says
+# what IS available instead of emitting a silently empty column.
+# ---------------------------------------------------------------------------
+
+test_that("coverage = selects a subset of the levels the fit computed", {
+    data(qtlFineMappingExample, envir = environment())
+    out <- withr::local_tempfile(fileext = ".bed")
+    exportToBed(qtlFineMappingExample, out, coverage = 0.95)
+    nms <- names(read.delim(out, check.names = FALSE))
+    expect_true(is_in("CS95", nms))
+    # The fit computed 70 and 50 as well; asking for 95 drops them.
+    expect_false(any(is_in(c("CS70", "CS50"), nms)))
+})
+
+test_that("coverage = names what the fit did compute, when asked for more", {
+    data(qtlFineMappingExample, envir = environment())
+    out <- withr::local_tempfile(fileext = ".bed")
+    expect_error(
+        exportToBed(qtlFineMappingExample, out, coverage = c(0.95, 0.8)),
+        "asks for 80, which this fit did not compute.*Available: 95, 70, 50"
+    )
+})
+
+test_that(".pubCsLevels reports the available set even when it is empty", {
+    # A view with no cs_<n> column at all: the message has to say "<none>"
+    # rather than interpolate an empty vector away.
+    expect_error(
+        .pubCsLevels(tibble(pip = 0.5), coverage = 0.95),
+        "Available: <none>"
+    )
+    expect_equal(.pubCsLevels(tibble(cs_95 = "susie_1")), "95")
+})
+
+test_that("the fsusie schema refuses a result with no credible-set column", {
+    expect_error(
+        .fmbPrimaryCsLevel(tibble(pip = 0.5), NULL),
+        "carries no credible-set column, so there are no rows to key on"
+    )
+})
+
+# ---------------------------------------------------------------------------
+# EZ on the fine-mapping path, and AF from the LD panel
+# ---------------------------------------------------------------------------
+
+test_that("a fine-mapping table publishes EZ when the source supplied z", {
+    # `.pubEz()` is the fine-mapping counterpart of the GwasSumStats rule: the
+    # z is published only where `marginal_z_supplied` says the source gave it,
+    # never where pecotmr derived it from beta/se.
+    tl <- data.frame(
+        variant_id = c("chr1:100:A:G", "chr1:200:C:T"),
+        chrom = "chr1",
+        pos = c(100L, 200L),
+        A1 = c("G", "T"),
+        A2 = c("A", "C"),
+        pip = c(0.9, 0.1),
+        posterior_mean = c(0.2, -0.1),
+        posterior_sd = c(0.05, 0.05),
+        marginal_beta = c(0.3, -0.2),
+        marginal_se = c(0.1, 0.1),
+        marginal_z = c(5.5, -2.5),
+        marginal_z_supplied = c(TRUE, TRUE),
+        stringsAsFactors = FALSE
+    )
+    row <- fineMappingRow(tl$variant_id, susieFit = list(), topLoci = tl)
+    res <- QtlFineMappingResult(
+        studyName = "s",
+        context = "c",
+        trait = "t",
+        method = "susie",
+        entry = list(row)
+    )
+    out <- withr::local_tempfile(fileext = ".bed")
+    exportToBed(res, out, signalCutoff = 0)
+    tbl <- read.delim(out, check.names = FALSE)
+    expect_equal(tbl$EZ, c(5.5, -2.5))
+    # Flip the flag and the column goes away entirely rather than publishing a
+    # z pecotmr computed itself.
+    tl$marginal_z_supplied <- c(FALSE, FALSE)
+    row2 <- fineMappingRow(tl$variant_id, susieFit = list(), topLoci = tl)
+    res2 <- QtlFineMappingResult(
+        studyName = "s",
+        context = "c",
+        trait = "t",
+        method = "susie",
+        entry = list(row2)
+    )
+    exportToBed(res2, out, signalCutoff = 0)
+    expect_false(is_in("EZ", names(read.delim(out, check.names = FALSE))))
+})
+
+test_that("a weights export takes AF from the collection's LD panel", {
+    # A TwasWeights element records only alleles and a weight, so the only
+    # frequency available is the panel's -- and AF is what a
+    # standardized-to-raw conversion would need, so its absence is worth
+    # seeing rather than faking.
+    data(twasWeightsExample, envir = environment())
+    expect_null(ldSketch(twasWeightsExample))
+    out <- withr::local_tempfile(fileext = ".bed")
+    suppressMessages(exportToBed(twasWeightsExample, out))
+    expect_false(is_in("AF", names(read.delim(out, check.names = FALSE))))
+})
+
+test_that("every weight row being fine-mapping-derived is an error", {
+    # Those weights are the fine-mapping posterior re-expressed, so there is
+    # nothing left to write once they are skipped.
+    data(twasWeightsExample, envir = environment())
+    fm <- twasWeightsExample[
+        is_in(
+            as.character(twasWeightsExample$method),
+            .TWB_FINE_MAPPING_METHODS
+        )
+    ]
+    expect_gt(nrow(fm), 0L)
+    out <- withr::local_tempfile(fileext = ".bed")
+    expect_error(
+        suppressMessages(exportToBed(fm, out)),
+        "every row is fine-mapping-derived"
+    )
+})
+
+test_that("the output path is left alone when no split flag is set", {
+    expect_equal(
+        .decorateOutputPath(
+            "out.vcf.bgz",
+            list(context = "brain"),
+            FALSE,
+            FALSE
+        ),
+        "out.vcf.bgz"
+    )
+})
+
+test_that("an identity-less view keys on nothing; an empty range has no id", {
+    # A bare single-entry view carries none of the identity axes, so the join
+    # key degenerates to one empty string per row -- which is the right join
+    # for one entry.
+    expect_equal(
+        .pubIdentityKey(tibble(pip = c(0.1, 0.2)), .PUB_ROW_COLS),
+        c("", "")
+    )
+    expect_equal(.pubRegionIds(GenomicRanges::GRanges()), character(0))
+    expect_equal(.pubRegionIds(NULL), character(0))
+})
+
+test_that("both formats skip fine-mapping-derived weight rows alike", {
+    # The BED path skipped them and the VCF path published them, so the two
+    # disagreed about what a weights file contains. The rule is the same in
+    # both: those weights are the fine-mapping posterior re-expressed, and the
+    # FineMappingResult says strictly more.
+    skip_if_not_installed("VariantAnnotation")
+    data(twasWeightsExample, envir = environment())
+    derived <- is_in(
+        as.character(twasWeightsExample$method),
+        .TWB_FINE_MAPPING_METHODS
+    )
+    expect_gt(sum(derived), 0L)
+    out <- withr::local_tempfile(fileext = ".vcf")
+    expect_message(
+        exportToVcf(twasWeightsExample, out),
+        "exportToVcf: skipping \\d+ fine-mapping-derived"
+    )
+    header <- keep(readLines(out), str_starts, "#CHROM")[[1L]]
+    samples <- str_split(header, "\t")[[1L]][-seq_len(9L)]
+    expect_length(samples, sum(!derived))
+    # None of the samples names a fine-mapping method.
+    expect_false(any(str_detect(
+        samples,
+        str_c("\\|", .TWB_FINE_MAPPING_METHODS, "$", collapse = "|")
+    )))
+})
+
+test_that("a VCF of only fine-mapping-derived weights is refused", {
+    skip_if_not_installed("VariantAnnotation")
+    data(twasWeightsExample, envir = environment())
+    fm <- twasWeightsExample[is_in(
+        as.character(twasWeightsExample$method),
+        .TWB_FINE_MAPPING_METHODS
+    )]
+    out <- withr::local_tempfile(fileext = ".vcf")
+    expect_error(
+        suppressMessages(exportToVcf(fm, out)),
+        "every selected row is fine-mapping-derived"
+    )
+})
+
+test_that("a weights export reads AF off the collection's LD panel", {
+    # A TwasWeights element records only alleles and a weight, so the panel is
+    # the only place a frequency can come from. This panel carries no `af`, so
+    # the column stays absent rather than being faked.
+    data(ctwasWeightsExample, twasWeightsExample, envir = environment())
+    panel <- ldSketch(ctwasWeightsExample)
+    expect_false(is.null(panel))
+    lasso <- twasWeightsExample[
+        as.character(twasWeightsExample$method) == "lasso"
+    ]
+    expect_equal(nrow(lasso), 1L)
+    withPanel <- TwasWeights(
+        studyName = as.character(lasso$study),
+        context = as.character(lasso$context),
+        trait = as.character(lasso$trait),
+        method = as.character(lasso$method),
+        entry = list(.twrRowParts(lasso, 1L)),
+        ldSketch = panel
+    )
+    out <- withr::local_tempfile(fileext = ".bed")
+    exportToBed(withPanel, out)
+    expect_false(is_in("AF", names(read.delim(out, check.names = FALSE))))
+})
+
+test_that("a sumstats collection with no Z publishes no EZ", {
+    skip_if_not_installed("VariantAnnotation")
+    gr <- GenomicRanges::GRanges(
+        "chr1",
+        IRanges::IRanges(c(100L, 200L), width = 1L)
+    )
+    gr <- S4Vectors::`mcols<-`(
+        gr,
+        value = S4Vectors::DataFrame(
+            SNP = c("chr1:100:A:G", "chr1:200:C:T"),
+            A1 = c("G", "T"),
+            A2 = c("A", "C"),
+            N = c(1000L, 1000L),
+            BETA = c(0.25, -0.12),
+            SE = c(0.1, 0.1)
+        )
+    )
+    ss <- GwasSumStats(
+        studyName = "s",
+        entry = list(gr),
+        genome = "hg38"
+    )
+    out <- withr::local_tempfile(fileext = ".vcf")
+    exportToVcf(ss, out)
+    expect_false(any(str_detect(readLines(out), "ID=EZ,")))
+})
+
+# ---------------------------------------------------------------------------
+# A joint (matrix-weight) model, and AF from the LD panel
+# ---------------------------------------------------------------------------
+
+# A multi-trait weight matrix on a panel that records allele frequency: the
+# two shapes the single-trait fixtures never exercise. `mr_mash` because the
+# matrix-weight fixture is a susie fit, which both exporters refuse as
+# fine-mapping-derived -- a joint TWAS fit is the case that reaches the
+# matrix paths at all.
+# @noRd
+.pbw_jointWeights <- function(nVariant = 6L) {
+    data(ctwasWeightsExample, envir = environment())
+    panel <- ldSketch(ctwasWeightsExample)
+    vids <- .grVariantIds(SummarizedExperiment::rowRanges(panel))
+    SummarizedExperiment::rowRanges(panel)$af <- seq(
+        0.05,
+        0.45,
+        length.out = length(vids)
+    )
+    w <- matrix(
+        c(0.1, -0.2, 0.3, 0, 0.05, -0.4, 0.2, 0.1, -0.1, 0.3, 0, 0.15),
+        nrow = 6L,
+        dimnames = list(NULL, c("tA", "tB"))
+    )
+    TwasWeights(
+        studyName = "S1",
+        context = "ctx",
+        trait = "tA",
+        method = "mr_mash",
+        entry = list(twasWeightsRow(
+            variantIds = vids[seq_len(nVariant)],
+            weights = w[seq_len(nVariant), , drop = FALSE]
+        )),
+        ldSketch = panel
+    )
+}
+
+test_that("a joint fit writes one BED row per (variant, trait)", {
+    tw <- .pbw_jointWeights()
+    out <- withr::local_tempfile(fileext = ".bed")
+    exportToBed(tw, out)
+    bed <- read.delim(out, check.names = FALSE)
+    # Six variants x two weight columns, and the matrix column label -- not
+    # the row's own trait -- is what each block is published under.
+    expect_equal(nrow(bed), 12L)
+    expect_equal(sort(unique(bed$trait)), c("tA", "tB"))
+    expect_equal(bed$WGT[bed$trait == "tB"][[1L]], 0.2)
+})
+
+test_that("AF is published from the LD panel when it records one", {
+    tw <- .pbw_jointWeights()
+    out <- withr::local_tempfile(fileext = ".bed")
+    exportToBed(tw, out)
+    bed <- read.delim(out, check.names = FALSE)
+    panel <- ldSketch(tw)
+    rr <- SummarizedExperiment::rowRanges(panel)
+    expected <- mcols(rr)$af[match(bed$ID, .grVariantIds(rr))]
+    expect_equal(bed$AF, expected)
+})
+
+test_that("a panel with no AF column publishes no AF at all", {
+    data(twasWeightsExample, envir = environment())
+    out <- withr::local_tempfile(fileext = ".bed")
+    exportToBed(twasWeightsExample[5], out)
+    # An all-NA column is dropped rather than written as a column of ".",
+    # so the absence of a frequency is visible in the file's shape.
+    expect_false(is_in("AF", names(read.delim(out, check.names = FALSE))))
+})
+
+test_that("a joint fit's VCF samples carry the weight-column label", {
+    skip_if_not_installed("VariantAnnotation")
+    tw <- .pbw_jointWeights()
+    out <- withr::local_tempfile(fileext = ".vcf")
+    exportToVcf(tw, out)
+    hdr <- readLines(out)
+    chrom <- hdr[str_starts(hdr, "#CHROM")]
+    # The label is appended to the row's identity, so two weight columns of
+    # one row stay two distinguishable samples.
+    expect_match(chrom, "S1\\|ctx\\|tA\\|mr_mash\\|tA")
+    expect_match(chrom, "S1\\|ctx\\|tA\\|mr_mash\\|tB")
+})
+
+test_that("a recorded data_source wins over the derived one", {
+    data(qtlFineMappingExample, envir = environment())
+    x <- qtlFineMappingExample
+    # These rows record where they came from. The collection carries no LD
+    # panel, so the value the writer would DERIVE is "individual" -- and a
+    # published file must report what the rows recorded instead of
+    # re-deriving it from the object it happens to be held in.
+    recorded <- QtlFineMappingResult(
+        studyName = as.character(x$study),
+        context = as.character(x$context),
+        trait = as.character(x$trait),
+        method = as.character(x$method),
+        entry = map(seq_len(nrow(x)), .fmrRowParts, x = x),
+        dataSource = rep("sumstat", nrow(x))
+    )
+    expect_equal(.pubDataSource(recorded), "individual")
+    out <- withr::local_tempfile(fileext = ".bed")
+    exportToBed(recorded, out)
+    bed <- read.delim(out, check.names = FALSE)
+    expect_equal(unique(bed$data_source), "sumstat")
+})
+
+test_that("columns= appends a hand-built row's own variant columns", {
+    # `twasWeightsRow()` writes exactly A1 / A2 / weight, which is the whole
+    # published source set -- so for a constructor-built collection there is
+    # nothing left for `columns` to add, as ?exportToBed says. A collection
+    # assembled by hand is the case the argument exists for: its variants
+    # carry fields pecotmr knows nothing about, and they travel into the file
+    # AFTER the published schema rather than displacing any of it.
+    vids <- sprintf("chr1:%d:A:G", 100L * (1:4))
+    gr <- .variantIdsToGRanges(vids, "variantIds")
+    mcols(gr)$weight <- c(0.1, -0.2, 0.3, 0)
+    mcols(gr)$n_fold <- rep(5L, 4L)
+    mcols(gr)$qc_note <- c("ok", "ok", "flipped", "ok")
+    row <- methods::new(
+        "TwasWeightsRow",
+        variants = gr,
+        weights = c(0.1, -0.2, 0.3, 0),
+        weightStandardized = FALSE
+    )
+    tw <- TwasWeights(
+        studyName = "S",
+        context = "c",
+        trait = "t",
+        method = "lasso",
+        entry = list(row)
+    )
+    out <- withr::local_tempfile(fileext = ".bed")
+    exportToBed(tw, out, columns = "all")
+    bed <- read.delim(out, check.names = FALSE)
+    expect_equal(bed$qc_note, c("ok", "ok", "flipped", "ok"))
+    expect_equal(bed$n_fold, rep(5L, 4L))
+    # The published columns still lead, and the weight is published as WGT
+    # rather than appearing a second time under its source name.
+    expect_equal(names(bed)[1:4], c("#chr", "start", "end", "ID"))
+    expect_false(is_in("weight", names(bed)))
+    # Naming one explicitly works the same way; naming a published one is an
+    # error rather than a duplicate column.
+    exportToBed(tw, out, columns = "qc_note")
+    expect_false(is_in("n_fold", names(read.delim(out, check.names = FALSE))))
+    expect_error(
+        exportToBed(tw, out, columns = "weight"),
+        "already writes"
+    )
 })

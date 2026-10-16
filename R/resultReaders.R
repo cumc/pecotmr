@@ -170,7 +170,16 @@ NULL
         samples <- as.character(sampleSelect)
     }
     if (length(samples) == 0L) {
-        return(list(table = tibble(), fits = list()))
+        # A sites-only VCF -- no FORMAT, no sample columns -- carries no
+        # per-variant statistics at all. Returning an empty table instead
+        # only defers the failure to whichever required column is missed
+        # first, which reported "no `PIP` column" for a file whose real
+        # problem is that it holds no results.
+        abort(glue(
+            "{label}: the VCF has no samples, so it carries no published ",
+            "results. A published file records each result as a sample ",
+            "with its own FORMAT fields."
+        ))
     }
     meta <- .prdVcfSampleMeta(vcf)
     pieces <- map(samples, .prdVcfSampleTable, vcf = vcf, meta = meta)
@@ -720,11 +729,11 @@ NULL
 # having it, for a file a user assembled themselves -- and a disagreement is
 # an error rather than a silent override, because one of the two is wrong and
 # the reader cannot tell which.
+# `supplied` is never NULL here: both callers build it with `compact()`, so
+# only the arguments the caller actually gave reach this function, and a
+# NULL-guard would be dead by construction.
 # @noRd
 .prdResolve <- function(fileValue, supplied, nm, label) {
-    if (is.null(supplied)) {
-        return(fileValue)
-    }
     sup <- as.character(supplied)[[1L]]
     if (!is.na(fileValue) && !identical(fileValue, sup)) {
         abort(glue(

@@ -673,3 +673,304 @@ test_that("an empty result survives an export and a read", {
     exportToBed(qtlFineMappingExample, path, signalCutoff = 2)
     expect_equal(nrow(readFineMappingResult(path)), 0L)
 })
+
+# ---------------------------------------------------------------------------
+# The VCF reader's edge paths
+# ---------------------------------------------------------------------------
+
+# A published VCF, bgzipped and tabix-indexed so it can be read by region.
+# @noRd
+.rdr_indexedVcf <- function(x, name, ...) {
+    plain <- .rdr_tmp(name)
+    exportToVcf(x, plain, ...)
+    gz <- Rsamtools::bgzip(plain, dest = str_c(plain, ".gz"), overwrite = TRUE)
+    Rsamtools::indexTabix(gz, format = "vcf")
+    gz
+}
+
+test_that("a tabix-indexed VCF can be read by region", {
+    skip_if_not_installed("VariantAnnotation")
+    data(qtlFineMappingExample, envir = environment())
+    gz <- .rdr_indexedVcf(
+        qtlFineMappingExample,
+        "region.vcf",
+        context = "context_1"
+    )
+    all <- readFineMappingResult(gz, weightStandardized = TRUE)
+    full <- topLoci(all, signalCutoff = 0)
+    window <- GenomicRanges::GRanges(
+        as.character(GenomicRanges::seqnames(full))[[1L]],
+        IRanges::IRanges(
+            start = GenomicRanges::start(full)[[1L]],
+            end = GenomicRanges::start(full)[[5L]]
+        )
+    )
+    part <- readFineMappingResult(
+        gz,
+        region = window,
+        weightStandardized = TRUE
+    )
+    expect_lt(length(variantIds(part)), length(variantIds(all)))
+    expect_true(all(is_in(variantIds(part), variantIds(all))))
+    # The window still carries the analysis region from the ##SAMPLE header,
+    # which is per-fit and does not shrink with the variants read.
+    expect_equal(genomicRegion(part), genomicRegion(all))
+})
+
+test_that("a region naming no seqname in the VCF reads as empty", {
+    skip_if_not_installed("VariantAnnotation")
+    data(qtlFineMappingExample, envir = environment())
+    gz <- .rdr_indexedVcf(
+        qtlFineMappingExample,
+        "noseq.vcf",
+        context = "context_1"
+    )
+    back <- readFineMappingResult(
+        gz,
+        region = "chrZZ:1-1000",
+        weightStandardized = TRUE,
+        studyName = "s",
+        context = "c",
+        trait = "t",
+        method = "susie"
+    )
+    expect_equal(nrow(back), 0L)
+})
+
+test_that("an un-indexed VCF ignores a region loudly", {
+    skip_if_not_installed("VariantAnnotation")
+    data(qtlFineMappingExample, envir = environment())
+    path <- .rdr_tmp("plain.vcf")
+    exportToVcf(qtlFineMappingExample, path, context = "context_1")
+    expect_warning(
+        readFineMappingResult(
+            path,
+            region = "chr22:1-1000000",
+            weightStandardized = TRUE
+        ),
+        "not bgzipped \\+ tabix-indexed"
+    )
+})
+
+test_that("a missing VCF names itself before VariantAnnotation is asked", {
+    skip_if_not_installed("VariantAnnotation")
+    expect_error(
+        readFineMappingResult(.rdr_tmp("absent_xyz.vcf")),
+        "does not exist"
+    )
+})
+
+test_that("sampleSelect picks fits out of a multi-sample VCF", {
+    skip_if_not_installed("VariantAnnotation")
+    data(qtlFineMappingLbfExample, envir = environment())
+    # Two rows -> two samples in one file, which is GWAS-VCF's own shape.
+    expect_equal(nrow(qtlFineMappingLbfExample), 2L)
+    path <- .rdr_tmp("multi.vcf")
+    exportToVcf(qtlFineMappingLbfExample, path)
+    both <- readFineMappingResult(path, weightStandardized = TRUE)
+    expect_equal(nrow(both), 2L)
+    samples <- VariantAnnotation::samples(
+        VariantAnnotation::scanVcfHeader(path)
+    )
+    one <- readFineMappingResult(
+        path,
+        sampleSelect = samples[[1L]],
+        weightStandardized = TRUE
+    )
+    expect_equal(nrow(one), 1L)
+    expect_error(
+        readFineMappingResult(path, sampleSelect = "not-a-sample"),
+        "sampleSelect names not-a-sample, which the VCF does not have"
+    )
+})
+
+test_that("a VCF with no ##SAMPLE block falls back to the sample name", {
+    skip_if_not_installed("VariantAnnotation")
+    data(qtlFineMappingExample, envir = environment())
+    path <- .rdr_tmp("nosample.vcf")
+    exportToVcf(qtlFineMappingExample, path, context = "context_1")
+    stripped <- .rdr_tmp("nosample_stripped.vcf")
+    lines <- readLines(path)
+    writeLines(lines[!str_starts(lines, "##SAMPLE=")], stripped)
+    # Without the header the file records no method either, so the reader asks
+    # for the one axis it cannot invent.
+    expect_error(
+        readFineMappingResult(stripped, weightStandardized = TRUE),
+        "does not record method"
+    )
+    back <- readFineMappingResult(
+        stripped,
+        method = "susie",
+        weightStandardized = TRUE
+    )
+    # Splitting the sample name into a tuple would be guesswork; taking it
+    # whole keeps each sample a result of its own.
+    expect_s4_class(back, "GwasFineMappingResult")
+    expect_match(studyName(back), "\\|")
+    # No header means no partial fit to restore either.
+    expect_null(susieFit(back))
+})
+
+# ---------------------------------------------------------------------------
+# Published-table edge paths
+# ---------------------------------------------------------------------------
+
+test_that("a table with start but no end still locates its variants", {
+    # `end` is the 1-based position of a half-open single-base record, and
+    # `start + 1` says the same thing -- a table carrying only `start` is
+    # still readable.
+    df <- data.frame(
+        `#chr` = "chr1",
+        start = 99L,
+        ID = "chr1:100:A:G",
+        PIP = 0.9,
+        study = "s",
+        context = "c",
+        trait = "t",
+        method = "susie",
+        check.names = FALSE
+    )
+    back <- readFineMappingResult(.rdr_writeTable(df, "startonly.bed"))
+    expect_equal(variantIds(back), "chr1:100:A:G")
+})
+
+test_that("an identity-less header-only file reads as an empty GWAS result", {
+    # No context or trait column at all, so the GWAS branch of the empty path.
+    writeLines(
+        str_flatten(c("#chr", "start", "end", "ID", "PIP"), "\t"),
+        .rdr_tmp("empty_gwas.bed")
+    )
+    back <- readFineMappingResult(.rdr_tmp("empty_gwas.bed"))
+    expect_s4_class(back, "GwasFineMappingResult")
+    expect_equal(nrow(back), 0L)
+})
+
+test_that("a weights file read with no WGT column points at the other reader", {
+    df <- data.frame(
+        `#chr` = "chr1",
+        start = 99L,
+        end = 100L,
+        ID = "chr1:100:A:G",
+        PIP = 0.9,
+        check.names = FALSE
+    )
+    expect_error(
+        readTwasWeights(.rdr_writeTable(df, "nowgt.bed")),
+        "no `WGT` column.*readFineMappingResult"
+    )
+})
+
+test_that("a region id with no underscores falls back to the variants' chrom", {
+    expect_equal(
+        .prdRegionChrom(
+            data.frame(
+                region_id = "noUnderscores",
+                `#chr` = "chr7",
+                check.names = FALSE
+            ),
+            1L,
+            "x"
+        ),
+        "chr7"
+    )
+    # Nothing to go on at all.
+    expect_true(is.na(.prdRegionChrom(data.frame(a = 1), 1L, "x")))
+})
+
+test_that("a packed header value unpacks, and an absent one is NULL", {
+    expect_equal(.prdUnpackNumeric(list("1;2;3")), c(1, 2, 3))
+    expect_null(.prdUnpackNumeric(NULL))
+    expect_null(.prdUnpackNumeric(list(NA_character_)))
+    expect_null(.prdUnpackNumeric(list("")))
+})
+
+# ---------------------------------------------------------------------------
+# Headers sparser than the writer's own
+# ---------------------------------------------------------------------------
+
+# A published VCF whose `##SAMPLE` block is replaced wholesale, keeping the
+# sample `ID` so the block still belongs to the sample. A file written by an
+# older pecotmr -- or by anything else following the GWAS-VCF spec -- carries
+# fewer keys than today's writer, and the reader has to work from whatever is
+# there rather than requiring the full set.
+# @noRd
+.rdr_reheaderedVcf <- function(name, keys) {
+    data(qtlFineMappingExample, envir = environment())
+    path <- .rdr_tmp(str_c(name, "_src.vcf"))
+    exportToVcf(qtlFineMappingExample, path, context = "context_1")
+    lines <- readLines(path)
+    at <- which(str_starts(lines, "##SAMPLE="))
+    expect_length(at, 1L)
+    id <- str_match(lines[[at]], "ID=([^,>]+)")[, 2L]
+    lines[[at]] <- str_c("##SAMPLE=<ID=", id, ",", keys, ">")
+    out <- .rdr_tmp(str_c(name, ".vcf"))
+    writeLines(lines, out)
+    list(path = out, sample = id)
+}
+
+test_that("a ##SAMPLE block with no identity keys reads as one study", {
+    skip_if_not_installed("VariantAnnotation")
+    f <- .rdr_reheaderedVcf("noident", "TotalVariants=3")
+    # Nothing in the header maps to an identity axis, so the sample name is
+    # the only study there is -- and method, which cannot be invented, has to
+    # be supplied.
+    expect_error(
+        readFineMappingResult(f$path, weightStandardized = TRUE),
+        "does not record method"
+    )
+    back <- readFineMappingResult(
+        f$path,
+        method = "susie",
+        weightStandardized = TRUE
+    )
+    expect_s4_class(back, "GwasFineMappingResult")
+    expect_equal(studyName(back), f$sample)
+    # A header carrying neither V nor CsIndex restores no partial fit.
+    expect_null(susieFit(back))
+})
+
+test_that("a ##SAMPLE block with no RegionStart still reads", {
+    skip_if_not_installed("VariantAnnotation")
+    f <- .rdr_reheaderedVcf(
+        "noregion",
+        "Study=s1,Context=c1,Trait=t1,Method=susie"
+    )
+    back <- readFineMappingResult(f$path, weightStandardized = TRUE)
+    expect_equal(as.character(back$study), "s1")
+    expect_equal(as.character(back$method), "susie")
+    # The window is the span of the variants the file holds, because the
+    # header recorded no analysis region to prefer over it.
+    rg <- genomicRegion(back)
+    expect_equal(start(rg), min(IRanges::start(back[[1L]])))
+    expect_null(susieFit(back))
+})
+
+# A header or data line trimmed to the eight fixed VCF columns.
+# @noRd
+.rdr_dropSampleColumns <- function(line) {
+    if (str_starts(line, "##")) {
+        return(line)
+    }
+    str_flatten(str_split_1(line, "\t")[1:8], "\t")
+}
+
+test_that("a VCF with no samples reads as an empty result", {
+    skip_if_not_installed("VariantAnnotation")
+    data(qtlFineMappingExample, envir = environment())
+    path <- .rdr_tmp("sites_src.vcf")
+    exportToVcf(qtlFineMappingExample, path, context = "context_1")
+    lines <- readLines(path)
+    keep <- !str_starts(lines, "##SAMPLE=") & !str_starts(lines, "##FORMAT=")
+    # A sites-only VCF: the eight fixed columns and no sample at all, which
+    # is a legal VCF and carries no results.
+    sites <- map_chr(lines[keep], .rdr_dropSampleColumns)
+    out <- .rdr_tmp("sites.vcf")
+    writeLines(sites, out)
+    # Naming the real problem: the earlier behaviour was to hand back an
+    # empty table, which failed further in with "no `PIP` column".
+    expect_error(
+        readFineMappingResult(out, method = "susie"),
+        "the VCF has no samples"
+    )
+    expect_error(readTwasWeights(out), "the VCF has no samples")
+})
