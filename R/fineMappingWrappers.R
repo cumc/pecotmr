@@ -4315,7 +4315,7 @@ extractTopPipInfo <- function(fmRow, sumstats) {
         # into the arg prep (not merged afterwards) so L_greedy is clamped to
         # min(#inf effects, L) rather than passed through raw.
         chainedArgs <- prepareSusieFromInfArgs(
-            .fmMergeUserArgs(list(), token, userArgs),
+            .fmMergeUserArgs(list(), userArgs),
             chainFromInf,
             refineDefault = if (token == "susie") TRUE else NULL,
             unmappableEffects = if (token == "susieAsh") "ash" else "none"
@@ -4329,7 +4329,6 @@ extractTopPipInfo <- function(fmRow, sumstats) {
     } else {
         .fmMergeUserArgs(
             list_assign(baseArgs, !!!.fmSusieTokenDefaults(token)),
-            token,
             userArgs
         )
     }
@@ -4442,7 +4441,7 @@ extractTopPipInfo <- function(fmRow, sumstats) {
     coverage
 ) {
     chainedArgs <- prepareSusieFromInfArgs(
-        .fmMergeUserArgs(list(), token, userArgs),
+        .fmMergeUserArgs(list(), userArgs),
         chainFromInf,
         refineDefault = if (token == "susie") TRUE else NULL,
         unmappableEffects = if (token == "susieAsh") "ash" else "none"
@@ -4460,7 +4459,6 @@ extractTopPipInfo <- function(fmRow, sumstats) {
 .fmRssNonChainedArgs <- function(baseArgs, token, userArgs) {
     .fmMergeUserArgs(
         list_assign(baseArgs, !!!.fmSusieTokenDefaults(token)),
-        token,
         userArgs
     )
 }
@@ -4486,7 +4484,6 @@ extractTopPipInfo <- function(fmRow, sumstats) {
 .fmFitSusieSer <- function(z, n, coverage = 0.95, userArgs = NULL) {
     baseArgs <- .fmMergeUserArgs(
         list(z = z, n = n, coverage = coverage),
-        "ser",
         userArgs
     )
     .setFinemappingFitClass(exec(susieR::susie_ser, !!!baseArgs), "susieRss")
@@ -5523,7 +5520,7 @@ extractTopPipInfo <- function(fmRow, sumstats) {
         baseArgs,
         !!!compact(list(residual_variance = mvPrior$residualVariance))
     )
-    mvArgs <- .fmMergeUserArgs(withPrior, "mvsusie", userArgs)
+    mvArgs <- .fmMergeUserArgs(withPrior, userArgs)
     fit <- exec(fitMvsusie, !!!.splitMethodArgs(fitMvsusie, mvArgs))
     raw <- as.matrix(mvsusieWeights(mvsusieFit = fit))
     W <- `rownames<-`(raw, rownames(raw) %||% colnames(Xtr))

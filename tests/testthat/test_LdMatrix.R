@@ -71,6 +71,51 @@ test_that("an unlabelled matrix without variants is refused", {
     expect_error(LdMatrix(bad), "not chrom:pos:A2:A1")
 })
 
+test_that("variant ids come from a variant_id column or the ranges' names", {
+    f <- .ldmFixture()
+    p <- parseVariantId(f$ids)
+    tbl <- data.frame(
+        chrom = p$chrom,
+        pos = p$pos,
+        A1 = p$A1,
+        A2 = p$A2,
+        variant_id = f$ids
+    )
+    expect_identical(variantIds(LdMatrix(unname(f$R), variants = tbl)), f$ids)
+    gr <- GenomicRanges::GRanges(
+        "22",
+        IRanges::IRanges(p$pos, width = 1L),
+        A1 = p$A1,
+        A2 = p$A2
+    )
+    named <- LdMatrix(unname(f$R), variants = `names<-`(gr, f$ids))
+    expect_identical(variantIds(named), f$ids)
+    expect_identical(rownames(ldMatrix(named)), f$ids)
+})
+
+test_that("variants that cannot describe the matrix are refused", {
+    f <- .ldmFixture()
+    p <- parseVariantId(f$ids)
+    expect_error(
+        LdMatrix(f$R, variants = "chr22"),
+        "must be a GRanges, a data frame or NULL \\(got character\\)"
+    )
+    expect_error(
+        LdMatrix(
+            unname(f$R),
+            variants = data.frame(chrom = p$chrom, pos = p$pos)
+        ),
+        "lacks column\\(s\\) A1, A2"
+    )
+    expect_error(
+        LdMatrix(
+            unname(f$R),
+            variants = .ldmTable(replace(f$ids, 2L, f$ids[[1L]]))
+        ),
+        "variant ids must be unique"
+    )
+})
+
 test_that("a matrix labelled differently from its variants is refused", {
     f <- .ldmFixture()
     tbl <- .ldmTable(rev(f$ids))
@@ -102,6 +147,31 @@ test_that("validity rejects a matrix that is not a correlation matrix", {
         LdMatrix(unname(f$R), variants = .ldmTable(f$ids, rep(2, 8))),
         "allele frequencies in \\[0, 1\\]"
     )
+})
+
+test_that("validity catches a part changed after construction", {
+    # The constructor never builds these, but `@<-` and `mcols<-` assign a
+    # part on its own, and validObject() is what catches the result.
+    f <- .ldmFixture()
+    ld <- LdMatrix(f$R, nSamples = 30)
+    noA1 <- ld
+    S4Vectors::mcols(noA1)$A1 <- NULL
+    expect_error(validObject(noA1), "carry no A1 column")
+    small <- ld
+    small@correlation <- f$R[1:2, 1:2]
+    expect_error(validObject(small), "is 2 x 2 but there are 8 variant")
+    relabelled <- ld
+    relabelled@correlation <- `dimnames<-`(f$R, list(rev(f$ids), rev(f$ids)))
+    expect_error(validObject(relabelled), "names must be the variant ids")
+    withNa <- ld
+    withNa@correlation[1, 2] <- NA
+    expect_error(validObject(withNa), "holds missing values")
+    noSize <- ld
+    noSize@nSamples <- 0L
+    expect_error(validObject(noSize), "one positive count")
+    mix <- LdMatrix(list(ld, ld), mixtureWeights = c(0.5, 0.5))
+    mix@mixtureWeights <- c(0.5, 0.6)
+    expect_error(validObject(mix), "non-negative and sum to 1")
 })
 
 test_that("subsetting an LdMatrix subsets its matrix with it", {

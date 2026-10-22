@@ -262,10 +262,16 @@ test_that("assembleCtwasInputs: allows twasWeights keys to be a subset of gwasSu
         extractBlockGenotypes = .ctp_mockExtractor(),
         .package = "pecotmr"
     )
-    # Two blocks supply zSnp; only block1 supplies TwasWeights.
-    inputs <- assembleCtwasInputs(
-        gwasSumStats = ss,
-        twasWeights = list(block1 = tw)
+    # Two blocks supply zSnp; only block1 supplies TwasWeights, whose panel
+    # shares block1's six variants of its twelve -- a partial overlap,
+    # reported once per session.
+    rlang::reset_warning_verbosity("pecotmrLdReferenceOverlap-ctwasPipeline")
+    expect_warning(
+        inputs <- assembleCtwasInputs(
+            gwasSumStats = ss,
+            twasWeights = list(block1 = tw)
+        ),
+        "share 6 variant"
     )
     # Both blocks appear in region_info / snp_map (SNP-only block2 contributes
     # its zSnp), but the weights list only has block1-keyed entries.
@@ -707,6 +713,37 @@ test_that(".ctwasLdPanelKey: errors when no candidate file exists", {
         pecotmr:::.ctwasLdPanelKey(ghost),
         "could not find the file behind the LD panel"
     )
+})
+
+test_that(".ctwasLdPanelKey: a mixture checks each panel; memory needs none", {
+    panel <- readGenotypes(test_path("test_data", "test_variants.bed"))
+    mix <- GenotypeMixture(
+        list(a = panel[, 1:40], b = panel[, 41:100]),
+        mixtureWeights = c(0.5, 0.5)
+    )
+    expect_null(pecotmr:::.ctwasLdPanelKey(mix))
+    # One panel whose file has gone fails the whole mixture.
+    dir <- withr::local_tempdir()
+    file.copy(
+        test_path(
+            "test_data",
+            str_c("test_variants", c(".bed", ".bim", ".fam"))
+        ),
+        dir
+    )
+    copy <- readGenotypes(file.path(dir, "test_variants.bed"))
+    gone <- GenotypeMixture(
+        list(a = copy[, 1:40], b = panel[, 41:100]),
+        mixtureWeights = c(0.5, 0.5)
+    )
+    file.remove(file.path(dir, "test_variants.bed"))
+    expect_error(
+        pecotmr:::.ctwasLdPanelKey(gone),
+        "could not find the file behind the LD panel"
+    )
+    # A panel held in memory reads no file, so there is none to find.
+    inMemory <- .ctp_mockExtractor()(.ctp_makeHandle(snp_n = 6L), 1:6)
+    expect_null(pecotmr:::.ctwasLdPanelKey(inMemory))
 })
 
 # ---------------------------------------------------------------------------
@@ -1698,6 +1735,11 @@ test_that(".ctwasPanelWeightLd: a panel's factor, or the R it carries", {
     withR <- pecotmr:::.ctwasPanelWeightLd(c(panel, list(R = full)), vids)
     expect_null(withR$F)
     expect_equal(withR$R, full[vids, vids])
+    # An LdMatrix has no factor to give: its matrix is read over vids.
+    ldPanel <- pecotmr:::.ctwasPanelFor(LdMatrix(full, nSamples = 30))
+    viaMatrix <- pecotmr:::.ctwasPanelWeightLd(ldPanel, vids)
+    expect_null(viaMatrix$F)
+    expect_equal(viaMatrix$R, full[vids, vids])
 })
 
 test_that(".ctwasLdMapRegionIds: falls back to positions without region_id", {
@@ -1793,6 +1835,25 @@ test_that(".ctwasGeneZ gives ctwas::compute_gene_z's gene z-scores", {
         ),
         "1 weight variant\\(s\\) of gene 'g1' have no GWAS z-score"
     )
+})
+
+test_that(".ctwasGeneZ: none without weights; an infinite z is dropped", {
+    expect_null(pecotmr:::.ctwasGeneZ(list(), data.frame()))
+    # A gene whose weights carry no variance in the panel has an infinite
+    # z, which ctwas's own compute_gene_z() drops too.
+    ids <- map_chr(1:2, .ctp_snpId)
+    wgt <- matrix(c(0.5, -0.2), ncol = 1L, dimnames = list(ids, "wgt"))
+    entry <- list(wgt = wgt, type = "c1", context = "c1", wgt_var = 1)
+    zSnp <- data.frame(id = ids, A1 = "A", A2 = "G", z = c(2, -1))
+    expect_warning(
+        out <- pecotmr:::.ctwasGeneZ(
+            list(g1 = entry, g2 = list_assign(entry, wgt_var = 0)),
+            zSnp
+        ),
+        "dropped 1 gene\\(s\\) with an infinite z-score"
+    )
+    expect_equal(out$id, "g1")
+    expect_equal(out$z, 0.5 * 2 + 0.2)
 })
 
 test_that(".ctwasBuildZGene: builds z_gene from a TWAS-Z GRanges", {
@@ -2443,12 +2504,16 @@ test_that("(real ctwas) prefit fallback skips a degenerate region fit_EM would r
         "ctwas_region_data_degenerate.rds"
     ))
     expect_length(region_data, 2L)
-    res <- .ctwasFitPrefitEm(
-        region_data,
-        niter = 3L,
-        groupPriorVarStructure = "shared_all",
-        thin = 1,
-        numThreads = 1L
+    # Three iterations keep the test quick, short of ctwas's convergence.
+    expect_warning(
+        res <- .ctwasFitPrefitEm(
+            region_data,
+            niter = 3L,
+            groupPriorVarStructure = "shared_all",
+            thin = 1,
+            numThreads = 1L
+        ),
+        "EM did not converge in 3 iterations"
     )
     # the prefit EM ran on the valid region only and returns finite real group priors
     expect_true("SNP" %in% names(res$group_prior))
@@ -3236,6 +3301,51 @@ test_that(".ctwasGetFinemapAux: no cs_95 column yields empty CS membership", {
     expect_equal(aux$pip[["chr1:200:A:G"]], 0.8)
 })
 
+test_that(".ctwasGetFinemapAux: a cs_95 column naming no set yields none", {
+    # A fit that found no credible set still reports its top loci, each one
+    # "in no set" (index 0).
+    tl <- data.frame(
+        variant_id = c("chr1:100:A:G", "chr1:200:A:G"),
+        pip = c(0.2, 0.3),
+        cs_95 = c("susie_0", "susie_0"),
+        stringsAsFactors = FALSE
+    )
+    fmr <- QtlFineMappingResult(
+        studyName = "Q1",
+        context = "c1",
+        trait = "t1",
+        method = "susie",
+        entry = list(fineMappingRow(tl$variant_id, NULL, tl))
+    )
+    aux <- pecotmr:::.ctwasGetFinemapAux(fmr, "Q1", "c1", "t1", "susie")
+    expect_length(aux$csMembers, 0L)
+    expect_identical(aux$csPurity, numeric(0))
+    expect_equal(aux$pip[["chr1:200:A:G"]], 0.3)
+})
+
+test_that(".ctwasRelabelFinemapAux: ids absent from the weights are kept", {
+    # Fine-mapping can cover variants the gene's weights do not; those keep
+    # their own labels.
+    aux <- list(
+        pip = c("chr1:900:G:A" = 0.4),
+        csMembers = list("chr1:900:G:A"),
+        csPurity = 0.9
+    )
+    expect_identical(
+        pecotmr:::.ctwasRelabelFinemapAux(aux, map_chr(1:3, .ctp_snpId)),
+        aux
+    )
+})
+
+test_that(".ctwasFixMolecularId: rows without a gene id are left alone", {
+    # SNP-background rows carry variant ids, which have no trait to restore.
+    snps <- data.frame(
+        id = map_chr(1:2, .ctp_snpId),
+        molecular_id = c("x", "y")
+    )
+    expect_identical(pecotmr:::.ctwasFixMolecularId(snps), snps)
+})
+
 test_that(".ctwasGetFinemapAux: NULL input, no-match tuple, and empty topLoci all return NULL", {
     expect_null(pecotmr:::.ctwasGetFinemapAux(NULL, "Q1", "c1", "t1", "susie"))
     tl <- data.frame(
@@ -3549,10 +3659,14 @@ test_that("resolving the LD token keeps the loader cache keys in step", {
 })
 
 test_that("an ordinary LD path is left alone", {
-    expect_equal(
-        pecotmr:::.resolveCtwasLdToken("/some/real/path.pgen"),
-        "/some/real/path.pgen"
+    # A token still on disk -- the caller's own file, or this session's
+    # sentinel -- needs nothing re-minted.
+    path <- withr::local_tempfile(fileext = ".ld")
+    file.create(path)
+    payload <- list(
+        LD_map = data.frame(region_id = "r1", LD_file = path, SNP_file = path)
     )
+    expect_identical(pecotmr:::.ctwasResolveLdPaths(payload), payload)
     noLdMap <- list(z_snp = NULL)
     expect_equal(pecotmr:::.ctwasResolveLdPaths(noLdMap), noLdMap)
     # Hand-built payloads reach the granular steps with an LD_map stub that is
@@ -3872,6 +3986,26 @@ test_that(".ctwasPrefitRegionFilter errors when nothing survives", {
         list()
     )
     expect_equal(names(kept), "r1")
+})
+
+test_that(".ctwasPrefitRegionFilter honours min_var = 0 and min_gene = 0", {
+    # The est_param options reach the prefit skip too: min_var = 0 keeps a
+    # region of any size, and min_gene = 0 one without a gene.
+    regionData <- list(
+        r1 = list(gid = "g1", sid = character(0)),
+        r2 = list(gid = character(0), sid = "s1")
+    )
+    expect_named(
+        pecotmr:::.ctwasPrefitRegionFilter(
+            regionData,
+            list(min_var = 0, min_gene = 0)
+        ),
+        c("r1", "r2")
+    )
+    expect_named(
+        pecotmr:::.ctwasPrefitRegionFilter(regionData, list(min_var = 0)),
+        "r1"
+    )
 })
 
 test_that(".ctwasBlockGrFromIds places unparseable ids on chrUn", {

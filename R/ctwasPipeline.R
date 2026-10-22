@@ -1328,13 +1328,8 @@ mergeCtwasBoundaryRegions <- function(
         # meant for a sibling step doesn't crash this one -- and so args
         # that fn would otherwise forward via its own `...` (e.g. into
         # susie_rss) don't bleed into incompatible downstream functions.
-        formalsFn <- try_fetch(names(formals(fn)), error = function(cnd) NULL)
-        usable <- if (is.null(formalsFn)) {
-            deduped
-        } else {
-            deduped[intersect(names(deduped), setdiff(formalsFn, "..."))]
-        }
-        args <- c(args, usable)
+        accepted <- setdiff(names(formals(fn)), "...")
+        args <- c(args, deduped[intersect(names(deduped), accepted)])
     }
     .ctwasQuietly(fn, args)
 }
@@ -1370,18 +1365,13 @@ mergeCtwasBoundaryRegions <- function(
     )
     prefit <- .ctwasInvoke(fitEm, fitArgs, extra)
     adj <- .ctwasApplyThin(prefit$group_prior, prefit$group_size, thin)
-    groupSize <- if (length(adj$groupPrior) > 0L) {
-        adj$groupSize[names(adj$groupPrior)]
-    } else {
-        adj$groupSize
-    }
     list(
         group_prior = adj$groupPrior,
         group_prior_var = prefit$group_prior_var,
         group_prior_iters = prefit$group_prior_iters,
         group_prior_var_iters = prefit$group_prior_var_iters,
         group_prior_var_structure = groupPriorVarStructure,
-        group_size = groupSize,
+        group_size = adj$groupSize[names(adj$groupPrior)],
         p_single_effect = data.frame(
             region_id = names(region_data),
             p_single_effect = NA_real_,
@@ -1427,12 +1417,9 @@ mergeCtwasBoundaryRegions <- function(
 }
 
 # Scale the "SNP" entry of a per-group vector, leaving the molecular groups
-# alone. A vector without a SNP group passes through unchanged.
+# alone. fit_EM always reports a SNP group.
 # @noRd
 .ctwasScaleSnpGroup <- function(groups, factor) {
-    if (!is_in("SNP", names(groups))) {
-        return(groups)
-    }
     replace(groups, "SNP", groups[["SNP"]] * factor)
 }
 
@@ -3395,10 +3382,10 @@ asCtwasResult <- function(finemapResult, keepSnps = FALSE) {
 
 # A cTWAS payload's `LD_file` token does double duty: ctwas asserts the file
 # exists, and pecotmr dispatches on the same string into the cached per-region
-# LD panels. Both make the token machine-specific, so a payload that was
-# serialised (the bundled ctwas*Example objects) carries a path from whatever
-# machine built it. Re-point it at this installation on the way in, using the
-# same "pecotmr://extdata/<path>" convention the genotype handles use.
+# LD panels. Each token is a sentinel in the session's tempdir
+# (.ctwasMintLdTokens()), so a payload that was serialised (the bundled
+# ctwas*Example objects) carries tokens a later session no longer has; they
+# are re-minted on the way in.
 #
 # The panels themselves travel with the closures and are never re-read, so
 # this only has to keep the token and the cache keys agreeing with each other.
@@ -3412,10 +3399,9 @@ asCtwasResult <- function(finemapResult, keepSnps = FALSE) {
         return(payload)
     }
     stored <- as.character(ldMap[["LD_file"]])
-    resolved <- map_chr(stored, .resolveCtwasLdToken)
     resolved <- .ctwasRemintMissingTokens(
-        resolved,
-        .ctwasLdMapRegionIds(ldMap, length(resolved))
+        stored,
+        .ctwasLdMapRegionIds(ldMap, length(stored))
     )
     if (identical(resolved, stored)) {
         return(payload)
@@ -3441,16 +3427,6 @@ asCtwasResult <- function(finemapResult, keepSnps = FALSE) {
         return(as.character(seq_len(n)))
     }
     as.character(rid)
-}
-
-# Only "pecotmr://" tokens move; an ordinary path is the caller's own and is
-# left alone (an unresolvable bundled reference is an error worth hearing).
-# @noRd
-.resolveCtwasLdToken <- function(token) {
-    if (!str_detect(token, "^pecotmr://")) {
-        return(token)
-    }
-    .resolveGenotypeResourcePath(token)
 }
 
 # Rebuild the loader closures over a cache re-keyed to the resolved tokens,
@@ -3602,7 +3578,7 @@ asCtwasResult <- function(finemapResult, keepSnps = FALSE) {
 # Sentinels live in the session tempdir, so a payload serialised in one
 # session carries tokens that no longer exist in the next -- and ctwas
 # asserts file.exists() on every one. Mint replacements; the caller re-keys
-# the cached panels onto them, exactly as it does for a "pecotmr://" move.
+# the cached panels onto them.
 # @noRd
 .ctwasRemintMissingTokens <- function(tokens, regionIds) {
     gone <- !file.exists(tokens)

@@ -395,7 +395,6 @@ setMethod(
             covLev = csp$coverage,
             minPurity = csp$minAbsCorr
         ),
-        "fsusie",
         args$methodArgs[["fsusie"]]
     )
     raw <- exec(fitFsusie, !!!.splitMethodArgs(fitFsusie, fitArgs))
@@ -582,11 +581,7 @@ setMethod(
         ),
         compact(list(residual_variance = mvPrior$residualVariance))
     )
-    fitArgs <- .fmMergeUserArgs(
-        mvBaseArgs,
-        "mvsusie",
-        args$methodArgs[["mvsusie"]]
-    )
+    fitArgs <- .fmMergeUserArgs(mvBaseArgs, args$methodArgs[["mvsusie"]])
     exec(fitMvsusie, !!!.splitMethodArgs(fitMvsusie, fitArgs)) |>
         .setFinemappingFitClass("mvsusie")
 }
@@ -743,11 +738,7 @@ setMethod(
         coverage = cfg$credibleSetParam$coverage
     ) |>
         c(compact(list(residual_variance = mvPrior$residualVariance)))
-    fitArgs <- .fmMergeUserArgs(
-        mvBaseArgs,
-        "mvsusie",
-        args$methodArgs[["mvsusie"]]
-    )
+    fitArgs <- .fmMergeUserArgs(mvBaseArgs, args$methodArgs[["mvsusie"]])
     fit <- exec(
         fitMvsusieRss,
         !!!.splitMethodArgs(fitMvsusieRss, fitArgs)

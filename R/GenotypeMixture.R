@@ -254,10 +254,21 @@ GenotypeMixture <- function(panels, mixtureWeights) {
 # mixture's are, and those positions are applied to all of them: the panels'
 # own ids can differ in allele order, so matching each on its own could cut
 # them to different variants.
-#' @importFrom MultiAssayExperiment subsetByRow
-setMethod("subsetByRow", c("GenotypeMixture", "ANY"), function(x, y, ...) {
+# @noRd
+.gmSubsetByRow <- function(x, y, ...) {
     .gmRowsAt(x, .gmRowIndex(x, y))
-})
+}
+
+# Registered for List and list as well as ANY: a GRanges is a List, and for
+# either MultiAssayExperiment's own methods would otherwise win the dispatch
+# and cut each panel on its own -- a GRanges by overlap with that panel, a
+# list by one index per panel, which can leave the panels holding different
+# variants.
+#' @importFrom MultiAssayExperiment subsetByRow
+#' @importClassesFrom S4Vectors List
+setMethod("subsetByRow", c("GenotypeMixture", "ANY"), .gmSubsetByRow)
+setMethod("subsetByRow", c("GenotypeMixture", "List"), .gmSubsetByRow)
+setMethod("subsetByRow", c("GenotypeMixture", "list"), .gmSubsetByRow)
 
 # The weights describe every panel, so none can be dropped.
 #' @importFrom MultiAssayExperiment subsetByAssay

@@ -1424,6 +1424,22 @@ test_that("extractBlockGenotypes returns SummarizedExperiment", {
     expect_true("A2" %in% names(S4Vectors::mcols(rr)))
 })
 
+test_that("extractBlockGenotypes mean-imputes a missing call on request", {
+    skip_if_not_installed("DBI")
+    skip_if_not_installed("RSQLite")
+    # The BGEN fixture flags sample 2 missing at variant 3.
+    handle <- readGenotypeHandle(.bgw_fixture()$path)
+    dosageOf <- function(meanImpute) {
+        se <- extractBlockGenotypes(handle, 1:5, meanImpute = meanImpute)
+        t(as.matrix(SummarizedExperiment::assay(se, "dosage")))
+    }
+    raw <- dosageOf(FALSE)
+    expect_true(is.na(raw[2L, 3L]))
+    imputed <- dosageOf(TRUE)
+    expect_equal(imputed[2L, 3L], mean(raw[-2L, 3L]))
+    expect_equal(imputed[-2L, ], raw[-2L, ])
+})
+
 # =============================================================================
 # adjustPips
 # =============================================================================
@@ -2276,6 +2292,24 @@ test_that("readGenotypes reaches the explicit-triplet source too", {
     expect_equal(dim(panel), dim(readGenotypes(stem, format = "plink1")))
 })
 
+test_that("readGenotypes reaches the explicit PLINK2 triplet source", {
+    skip_if_not_installed("pgenlibr")
+    stem <- test_path("test_data", "test_variants")
+    panel <- readGenotypes(
+        pgen = str_c(stem, ".pgen"),
+        pvar = str_c(stem, ".pvar"),
+        psam = str_c(stem, ".psam")
+    )
+    byPrefix <- readGenotypes(plink2Prefix = stem)
+    expect_s4_class(panel, "RangedSummarizedExperiment")
+    expect_equal(rownames(panel), rownames(byPrefix))
+    expect_equal(colnames(panel), colnames(byPrefix))
+    expect_equal(
+        as.matrix(SummarizedExperiment::assay(panel, "dosage")[1:5, ]),
+        as.matrix(SummarizedExperiment::assay(byPrefix, "dosage")[1:5, ])
+    )
+})
+
 # ===========================================================================
 # Format detection and handle/covariate helpers
 #
@@ -2580,6 +2614,78 @@ test_that("a BGEN file needs its .bgi index and a layout the spec defines", {
     expect_error(
         readGenotypes(header(1L, 2L)),
         "compressed with zstd, which the spec does not allow"
+    )
+})
+
+test_that("a corrupt BGEN header or sample block is refused", {
+    skip_if_not_installed("DBI")
+    skip_if_not_installed("RSQLite")
+    # The fixture's bytes: a 4-byte offset, the 20-byte header (its length,
+    # the variant and sample counts, the magic number, the flags), then the
+    # sample block (its length, the sample count again, the ids).
+    fx <- .bgw_fixture()
+    bytes <- readBin(fx$path, "raw", file.size(fx$path))
+    dir <- withr::local_tempdir()
+    rewritten <- function(name, bytes) {
+        path <- file.path(dir, str_c(name, ".bgen"))
+        writeBin(bytes, path)
+        file.copy(str_c(fx$path, ".bgi"), str_c(path, ".bgi"))
+        path
+    }
+    expect_error(
+        readGenotypes(rewritten("short", bytes[1:10])),
+        "too short to be a BGEN file"
+    )
+    expect_error(
+        readGenotypes(rewritten(
+            "magic",
+            replace(bytes, 17:20, charToRaw("bgex"))
+        )),
+        "no 'bgen' magic number"
+    )
+    # The first flag byte's low two bits are the compression; 3 is undefined.
+    expect_error(
+        readGenotypes(rewritten("flags", replace(bytes, 21L, as.raw(3L + 8L)))),
+        "unknown BGEN compression \\(3\\)"
+    )
+    expect_error(
+        readGenotypes(rewritten("count", replace(bytes, 29L, as.raw(7L)))),
+        "sample block's sample count disagrees with its header"
+    )
+})
+
+test_that("a BGEN file's sample ids and records must match its header", {
+    skip_if_not_installed("DBI")
+    skip_if_not_installed("RSQLite")
+    # A .sample file listing fewer samples than the header declares.
+    fx <- .bgw_fixture(storeIds = FALSE)
+    writeLines(
+        c(
+            "ID_1 ID_2 missing",
+            "0 0 0",
+            str_c(fx$ids[-1], fx$ids[-1], "0", sep = " ")
+        ),
+        str_c(str_remove(fx$path, "\\.bgen$"), ".sample")
+    )
+    expect_error(
+        readGenotypes(fx$path),
+        "declares 6 samples but 5 sample ids were found"
+    )
+    # A layout-1 record holding five samples' probabilities under a header
+    # that declares six: refused when its dosages are read.
+    path <- file.path(withr::local_tempdir(), "short.bgen")
+    .bgw_write(
+        path,
+        fx$variants[1L, ],
+        list(matrix(c(10000L, 20000L), 5L, 2L, byrow = TRUE)),
+        matrix(FALSE, 5L, 1L),
+        fx$ids,
+        layout = 1L
+    )
+    panel <- readGenotypes(path)
+    expect_error(
+        as.matrix(SummarizedExperiment::assay(panel, "dosage")),
+        "layout-1 BGEN record holds the wrong amount of data"
     )
 })
 

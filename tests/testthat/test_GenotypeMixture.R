@@ -150,6 +150,24 @@ test_that("subsetting a mixture's rows subsets every panel with it", {
     expect_equal(variantIds(mix[ids, ]), variantIds(sub))
     gr <- SummarizedExperiment::rowRanges(p$full)[2:4]
     expect_equal(pecotmr:::.ldRefNVariants(mix[gr, ]), 3L)
+    # A range is turned into positions like any other subscript: one naming
+    # no variant empties the panels as positions do, seeds and all.
+    none <- mix[GenomicRanges::GRanges("chr21", IRanges::IRanges(1L, 1L)), ]
+    expect_equal(pecotmr:::.ldRefNVariants(none), 0L)
+    expect_true(validObject(none))
+    expect_true(all(map_lgl(
+        map(
+            as.list(MultiAssayExperiment::experiments(none)),
+            pecotmr:::.panelSeed
+        ),
+        is.null
+    )))
+    # One index per panel could cut the panels to different variants, so
+    # such subscripts are refused, as is anything else that names no rows.
+    refused <- "subset by position, logical mask, variant id or GRanges"
+    expect_error(mix[list(a = 1:3, b = 1:2), ], refused)
+    expect_error(mix[IRanges::IntegerList(a = 1:3, b = 1:2), ], refused)
+    expect_error(mix[factor("x"), ], refused)
     # Emptying drops every panel's variants, and their seeds with them, but
     # keeps the samples the sampleMap names and what each panel was read
     # from.
@@ -192,8 +210,12 @@ test_that("a mixture's panels cannot be dropped", {
 test_that("a mixture is checked against other references by its panels", {
     p <- .gmPanels()
     mix <- GenotypeMixture(list(a = p$a, b = p$b), mixtureWeights = c(0.5, 0.5))
-    expect_no_error(
-        pecotmr:::.requireMatchingLdRefs(mix[1:200], mix[100:349], "pipe")
+    # Two QC'd subsets of one mixture pass, warning only that they overlap
+    # in part.
+    rlang::reset_warning_verbosity("pecotmrLdReferenceOverlap-pipe")
+    expect_warning(
+        pecotmr:::.requireMatchingLdRefs(mix[1:200], mix[100:349], "pipe"),
+        "share 101 variant"
     )
     reweighted <- GenotypeMixture(
         list(a = p$a, b = p$b),
@@ -269,6 +291,60 @@ test_that("GenotypeMixture refuses bad inputs", {
     expect_error(
         GenotypeMixture(list(a = p$a, b = p$b), mixtureWeights = c(0.5, 0.6)),
         "summing to 1"
+    )
+    expect_error(
+        GenotypeMixture(
+            list(a = p$a[1:10, ], b = p$b[11:20, ]),
+            mixtureWeights = c(0.5, 0.5)
+        ),
+        "share no variant to combine over"
+    )
+})
+
+test_that("an experiment added with c() leaves the mixture invalid", {
+    # The weights describe the panels the mixture was built over, so c()
+    # cannot extend it: whatever is added, validity refuses the result.
+    p <- .gmPanels()
+    mix <- GenotypeMixture(list(a = p$a, b = p$b), mixtureWeights = c(0.5, 0.5))
+    se <- SummarizedExperiment::SummarizedExperiment(
+        matrix(1, 2L, 2L, dimnames = list(c("r1", "r2"), colnames(p$a)[1:2]))
+    )
+    expect_error(c(mix, extra = se), "at least two genotype panels")
+    expect_error(
+        c(mix, extra = p$b[1:5, ]),
+        "every panel must hold exactly the mixture's variants"
+    )
+    expect_error(c(mix, extra = p$b), "must carry `mixtureSign`")
+    expect_error(c(mix, extra = p$b), "one weight per panel, named after it")
+    unnamed <- mix
+    S4Vectors::metadata(unnamed)$mixtureWeights <- c(0.5, 0.5)
+    expect_error(validObject(unnamed), "one weight per panel, named after it")
+})
+
+test_that("a mixture's allele frequency is its panels' weighted average", {
+    # A stochastic sketch records its A1 frequencies; the second half gets
+    # its own, so the weights matter.
+    sk <- readGenotypes(test_path("test_data", "test_harmonize_regions.pgen"))
+    half <- seq_len(ncol(sk) / 2)
+    a <- sk[, half]
+    b <- sk[, -half]
+    rd <- SummarizedExperiment::rowData(b)
+    rd$AF <- seq(0.1, 0.8, length.out = nrow(b))
+    SummarizedExperiment::rowData(b) <- rd
+    mix <- GenotypeMixture(list(a = a, b = b), mixtureWeights = c(0.25, 0.75))
+    expect_equal(
+        pecotmr:::.ldRefAf(mix),
+        0.25 * pecotmr:::.ldRefAf(a) + 0.75 * rd$AF
+    )
+    # A panel coding a variant the other way round contributes the
+    # frequency of the first panel's A1: the complement of its own.
+    expect_equal(
+        pecotmr:::.gmAlignedAf(
+            2L,
+            list(c(0.1, 0.2), c(0.3, 0.4)),
+            cbind(c(1, 1), c(1, -1))
+        ),
+        c(0.3, 0.6)
     )
 })
 

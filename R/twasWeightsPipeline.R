@@ -322,10 +322,6 @@ combineTwasWeights <- function(..., ldReference = NULL) {
         )
         return(.twasNormalizeListMethods(resolved$methodArgs))
     }
-    if (.isMethodOptions(methods)) {
-        # The retired TwasWeightsMethodsParam() record.
-        return(.twasNormalizeListMethods(map(as.list(methods), as.list)))
-    }
     msg <- glue(
         "`methods` must be a character vector, a preset string, a named ",
         "list of per-method options, or a TwasWeightsMethodsParam() record."
@@ -2255,12 +2251,6 @@ setMethod(
             "QtlSumStats"
         ))
     }
-    if (.isMethodOptions(methods)) {
-        return(list(
-            tokens = names(methods),
-            methodArgs = map(as.list(methods), as.list)
-        ))
-    }
     msg <- glue(
         "`methods` must be NULL, a character vector, a named list of ",
         "per-method options, or a TwasWeightsMethodsParam() record."
@@ -3389,7 +3379,6 @@ setMethod(
     if (.twasMethodsIsParam(methods)) {
         return(.methodsParamTokens(methods))
     }
-    methods <- .twasMethodsAsList(methods)
     if (is.character(methods)) {
         methods
     } else if (is.list(methods)) {
@@ -3397,14 +3386,6 @@ setMethod(
     } else {
         character(0)
     }
-}
-
-# A methods argument as an ordinary named list, whatever form it arrived in.
-# A MethodOptions record is a SimpleList, so `is.list()` is FALSE for it and the
-# helpers below would otherwise fall through to their "leave it alone" branch.
-# @noRd
-.twasMethodsAsList <- function(methods) {
-    if (.isMethodOptions(methods)) as.list(methods) else methods
 }
 
 # A MethodsSelectionParam keeps its structure through these helpers: the
@@ -3422,7 +3403,6 @@ setMethod(
     if (.twasMethodsIsParam(methods)) {
         return(.methodsParamDrop(methods, "mrmash"))
     }
-    methods <- .twasMethodsAsList(methods)
     if (is.character(methods)) {
         setdiff(methods, "mrmash")
     } else if (is.list(methods)) {
@@ -3441,7 +3421,6 @@ setMethod(
     if (.twasMethodsIsParam(methods)) {
         return(length(.methodsParamTokens(methods)) == 0L)
     }
-    methods <- .twasMethodsAsList(methods)
     (is.character(methods) || is.list(methods)) && length(methods) == 0L
 }
 

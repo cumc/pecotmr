@@ -386,16 +386,16 @@ test_that("FineMappingMethodsParam rejects unnamed and non-list entries", {
     )
 })
 
-test_that(".fmMergeUserArgs: user overrides win over capability defaults + base", {
+test_that(".fmMergeUserArgs: user overrides win over the base arguments", {
     # base sets convergence_method = "pip"; user overrides to "objective"
     out <- pecotmr:::.fmMergeUserArgs(
         list(z = 1:3, convergence_method = "pip"),
-        token = "susie",
         userArgs = list(convergence_method = "objective", L = 1)
     )
     expect_equal(out$convergence_method, "objective")
     expect_equal(out$L, 1)
     expect_identical(out$z, 1:3)
+    expect_identical(pecotmr:::.fmMergeUserArgs(list(a = 1)), list(a = 1))
 })
 
 # ===========================================================================
@@ -2382,6 +2382,36 @@ test_that("fineMappingPipeline(GwasSumStats): runs end-to-end with mocked RSS fi
     expect_setequal(methodNames(res), "susie")
 })
 
+test_that("fineMappingPipeline(GwasSumStats): opaque blockId, entry's span", {
+    local_mocked_bindings(
+        extractBlockGenotypes = .fmp_mockExtractor(),
+        .fmFitSusieRss = .fmp_mockFitRss(),
+        .fmPostprocessOne = .fmp_mockPostprocess(),
+        .package = "pecotmr"
+    )
+    regionOf <- function(blockId) {
+        gss <- GwasSumStats(
+            studyName = "G1",
+            entry = list(.fmp_makeSumstatsGr()),
+            genome = "hg19",
+            ldReference = .fmp_makeHandle(),
+            blockId = blockId,
+            qcInfo = list(step1 = "ok")
+        )
+        res <- suppressMessages(fineMappingPipeline(
+            gss,
+            methods = "susie",
+            initializeWithSusieInf = FALSE
+        ))
+        reg <- genomicRegion(res)
+        c(GenomicRanges::start(reg), GenomicRanges::end(reg))
+    }
+    # A blockId spelling coordinates is the region's boundary; an opaque
+    # label says nothing, so the region is the entry's own variant span.
+    expect_equal(regionOf("chr1_50_600"), c(50L, 600L))
+    expect_equal(regionOf("block1"), c(100L, 500L))
+})
+
 test_that("fineMappingPipeline(GwasSumStats): threads per-variant N", {
     # Regression for top_loci$N == 1. The RSS path must forward the per-variant
     # effective N (the entry's N column, aligned to the analysed variants) to
@@ -2494,6 +2524,22 @@ test_that("fineMappingPipeline(GwasSumStats): a PIP-screened region yields an em
     )
     expect_s4_class(res, "GwasFineMappingResult")
     expect_equal(nrow(res), 0L) # graceful skip, not stop("no ... tuples")
+    # An audit recording the skip but no reason gets the screen's own.
+    noReason <- GwasSumStats(
+        studyName = "G1",
+        entry = list(GenomicRanges::GRanges()),
+        genome = "hg19",
+        ldReference = .fmp_makeHandle(),
+        qcInfo = list(entryAudit = list(list(pipScreenSkipped = TRUE)))
+    )
+    expect_message(
+        fineMappingPipeline(
+            noReason,
+            methods = "susie",
+            initializeWithSusieInf = FALSE
+        ),
+        "skipped: no signal above the PIP pre-screen cutoff"
+    )
 })
 
 test_that("fineMappingPipeline(GwasSumStats): mixed screened + real keeps only the real region", {
@@ -3590,6 +3636,25 @@ test_that(".fmMergeEntries returns a single entry unchanged", {
     expect_identical(pecotmr:::.fmMergeEntries(list(e)), e)
 })
 
+test_that(".fmMergeEntries renumbers past a region with no cs column", {
+    # A region whose fit found no set reports its top loci without a cs_95
+    # column; it adds no sets, so the next region's numbering continues.
+    mk <- function(vids, cs95 = NULL) {
+        tl <- data.frame(variant_id = vids, pip = rep(0.5, length(vids)))
+        if (!is.null(cs95)) {
+            tl$cs_95 <- cs95
+        }
+        fineMappingRow(variantIds = vids, susieFit = NULL, topLoci = tl)
+    }
+    m <- pecotmr:::.fmMergeEntries(list(
+        mk("chr1:100:A:G", "susie_1"),
+        mk("chr1:200:A:G"),
+        mk("chr1:300:A:G", "susie_1")
+    ))
+    tl <- pecotmr:::.fmrPartsTopLoci(m)
+    expect_equal(tl$cs_95, c("susie_1", NA, "susie_2"))
+})
+
 test_that("fineMappingPipeline(QtlDataset): region + cisWindow is rejected", {
     qd <- .fmp_makeQtlDataset()
     expect_error(
@@ -3837,6 +3902,17 @@ test_that(".fmBuildMvsusiePriorCv: NULL CV -> NULL; NULL fold fits are skipped",
     expect_null(out[["2"]]) # NULL fold -> next (831)
 })
 
+test_that(".fmFoldFitAt finds a fold's fit by name, else by position", {
+    fn <- pecotmr:::.fmFoldFitAt
+    named <- list(fold_2 = "fit2", fold_1 = "fit1")
+    expect_equal(fn(1L, c(1, 2), named), "fit1")
+    # Fits not named fold_<id> are taken in fold order, and a fold beyond
+    # them has none.
+    unnamed <- list("first", "second")
+    expect_equal(fn(2L, c(1, 2), unnamed), "second")
+    expect_null(fn(3L, c(1, 2, 3), unnamed))
+})
+
 test_that(".fmTopPcScores: PCA scores for multi-trait Y; degenerate inputs -> NULL", {
     expect_null(pecotmr:::.fmTopPcScores(matrix(1, 5, 1), 2L)) # < 2 traits
     expect_null(pecotmr:::.fmTopPcScores(matrix(c(1, NA), 2, 2), 2L)) # < 2 complete
@@ -3966,6 +4042,53 @@ test_that("fineMappingPipeline(QtlSumStats): mvsusie-only jointSpec returns the 
     expect_setequal(as.character(res$method), "mvsusie") # 1843-1857
 })
 
+test_that("fineMappingPipeline(QtlSumStats): joint spec plus per-entry susie", {
+    # The joint spec consumes mvsusie; susie, asked for alongside it, still
+    # runs per entry, and the two results are combined.
+    ss <- .fmp_makeQtlSumStats()
+    jr <- QtlFineMappingResult(
+        studyName = "Q1",
+        context = "c1",
+        trait = "t1",
+        method = "mvsusie",
+        entry = list(fineMappingRow(
+            "chr1:100:A:G",
+            list(),
+            data.frame(variant_id = "chr1:100:A:G", pip = 0.9)
+        ))
+    )
+    local_mocked_bindings(
+        .fmDispatchJointSpecsQtlSumStats = function(...) jr,
+        extractBlockGenotypes = .fmp_mockExtractor(),
+        .fmFitSusieRss = .fmp_mockFitRss(),
+        .fmPostprocessOne = .fmp_mockPostprocess(),
+        .package = "pecotmr"
+    )
+    res <- suppressMessages(fineMappingPipeline(
+        ss,
+        methods = c("mvsusie", "susie"),
+        jointSpecification = "context"
+    ))
+    expect_s4_class(res, "QtlFineMappingResult")
+    expect_equal(sum(res$method == "mvsusie"), 1L)
+    expect_equal(sum(res$method == "susie"), nrow(ss))
+})
+
+test_that("fineMappingPipeline(QtlSumStats): no auto-joint fit is an error", {
+    # Without a joint spec mvsusie is fit by the automatic cross-context
+    # joint; with no other method to run, a joint that produces nothing
+    # leaves no result at all.
+    ss <- .fmp_makeMultiCtxQtlSumStats()
+    local_mocked_bindings(
+        .fmDispatchJointSpecsQtlSumStats = function(...) NULL,
+        .package = "pecotmr"
+    )
+    expect_error(
+        suppressMessages(fineMappingPipeline(ss, methods = "mvsusie")),
+        "no entries produced a result"
+    )
+})
+
 test_that("fineMappingPipeline(QtlSumStats): mvsusie-only jointSpec with no fits -> error", {
     ss <- .fmp_makeQtlSumStats()
     local_mocked_bindings(
@@ -4067,6 +4190,106 @@ test_that("fineMappingPipeline(MultiStudyQtlDataset): mvsusie-only jointSpec ret
     )
     expect_s4_class(res, "QtlFineMappingResult")
     expect_setequal(as.character(res$method), "mvsusie") # 1709-1726
+})
+
+test_that("fineMappingPipeline(MultiStudy): joint spec, rest per component", {
+    # The joint spec consumes mvsusie; susie, asked for alongside it, still
+    # runs on every component -- the study and the embedded sumstats.
+    mt <- .fmp_makeMultiStudy()
+    jr <- QtlFineMappingResult(
+        studyName = "study1",
+        context = "brain",
+        trait = "ENSG_A",
+        method = "mvsusie",
+        entry = list(fineMappingRow(
+            "chr1:100:A:G",
+            list(),
+            data.frame(variant_id = "chr1:100:A:G", pip = 0.9)
+        ))
+    )
+    local_mocked_bindings(
+        .fmDispatchJointSpecsMultiStudy = function(...) jr,
+        extractBlockGenotypes = .fmp_mockExtractor(),
+        .fmFitSusieIndiv = .fmp_mockFitIndiv(),
+        .fmFitSusieRss = .fmp_mockFitRss(),
+        .fmPostprocessOne = .fmp_mockPostprocess(),
+        .package = "pecotmr"
+    )
+    res <- suppressMessages(fineMappingPipeline(
+        mt,
+        methods = c("mvsusie", "susie"),
+        jointSpecification = "context",
+        cisWindow = 1000L,
+        initializeWithSusieInf = FALSE
+    ))
+    expect_s4_class(res, "QtlFineMappingResult")
+    expect_equal(sum(res$method == "mvsusie"), 1L)
+    expect_gt(sum(res$method == "susie"), 1L)
+})
+
+test_that("fineMappingPipeline(MultiStudy): an unselected component sits out", {
+    # One context vector applies to every component; one lacking it keeps
+    # none of its tuples and contributes no rows.
+    mt <- .fmp_makeMultiStudy()
+    local_mocked_bindings(
+        extractBlockGenotypes = .fmp_mockExtractor(),
+        .fmFitSusieIndiv = .fmp_mockFitIndiv(),
+        .fmFitSusieRss = .fmp_mockFitRss(),
+        .fmPostprocessOne = .fmp_mockPostprocess(),
+        .package = "pecotmr"
+    )
+    fit <- function(contexts) {
+        suppressMessages(fineMappingPipeline(
+            mt,
+            methods = "susie",
+            contexts = contexts,
+            cisWindow = 1000L,
+            initializeWithSusieInf = FALSE
+        ))
+    }
+    expect_warning(
+        sumstatsOnly <- fit("c1"),
+        "study 'study1' is missing requested context\\(s\\): c1"
+    )
+    expect_setequal(as.character(sumstatsOnly$study), "Q1")
+    expect_warning(
+        studyOnly <- fit("brain"),
+        "study 'Q1' is missing requested context\\(s\\): brain"
+    )
+    expect_setequal(as.character(studyOnly$study), "study1")
+})
+
+test_that("fineMappingPipeline(MultiStudy): joint rows record scale override", {
+    # The study's own slot scales its residuals; the per-call override says
+    # otherwise and wins, and the joint rows record what was used.
+    mt <- .fmp_makeMultiStudy()
+    jr <- QtlFineMappingResult(
+        studyName = "study1",
+        context = "brain",
+        trait = "ENSG_A",
+        method = "mvsusie",
+        entry = list(fineMappingRow(
+            "chr1:100:A:G",
+            list(),
+            data.frame(variant_id = "chr1:100:A:G", pip = 0.9)
+        ))
+    )
+    local_mocked_bindings(
+        .fmDispatchJointSpecsMultiStudy = function(...) jr,
+        .package = "pecotmr"
+    )
+    fit <- function(residualizationParam) {
+        suppressMessages(fineMappingPipeline(
+            mt,
+            methods = "mvsusie",
+            jointSpecification = "context",
+            residualizationParam = residualizationParam
+        ))
+    }
+    expect_true(fit(ResidualizationParam())$standardized)
+    expect_false(
+        fit(ResidualizationParam(scaleResiduals = FALSE))$standardized
+    )
 })
 
 # =============================================================================
@@ -4970,6 +5193,18 @@ test_that("mvsusie becomes checkable on the individual-level path", {
     )
 })
 
+test_that("a method with no engine for the input is left to the components", {
+    # A multi-study run checks against the summary-statistics engine, which
+    # fsusie lacks; its arguments are checked by the per-study recursion,
+    # whose engine is susiF.
+    expect_silent(
+        pecotmr:::.fmCheckMethodArgsForInput(
+            list(fsusie = list(anyName = 1)),
+            "MultiStudyQtlDataset"
+        )
+    )
+})
+
 test_that("pecotmr's own seeded arguments are not checked against the engine", {
     skip_if_not_installed("susieR")
     # L_greedy is a pecotmr concept seeded onto susie-family tokens; it is not
@@ -5537,7 +5772,6 @@ test_that(".fmBlockWindow falls back to the trait's own cis window", {
     tid <- rownames(molecularTraits(qtlDatasetExample, contexts = ctx))[[1L]]
     narrow <- .fmBlockWindow(NULL, ctx, tid, cfgNarrow)
     wide <- .fmBlockWindow(NULL, ctx, tid, cfgWide)
-    skip_if(is.null(narrow) || is.null(wide))
     expect_lt(GenomicRanges::start(wide), GenomicRanges::start(narrow))
     expect_gt(GenomicRanges::end(wide), GenomicRanges::end(narrow))
     expect_identical(
@@ -5665,28 +5899,19 @@ test_that("no pipeline takes a weight-scale declaration any more", {
 })
 
 test_that(".fmMsDataSource leaves a mixed collection's joint rows NA", {
-    mixed <- structure(list(), class = "fmprov_mixed")
-    local_mocked_bindings(
-        qtlDatasets = function(x, ...) list(1),
-        sumStats = function(x, ...) list(1),
-        .package = "pecotmr"
-    )
-    expect_true(is.na(pecotmr:::.fmMsDataSource(mixed)))
+    expect_true(is.na(pecotmr:::.fmMsDataSource(.fmp_makeMultiStudy())))
 })
 
-test_that(".fmMsDataSource derives a single-kind collection's joint rows", {
-    local_mocked_bindings(
-        qtlDatasets = function(x, ...) list(),
-        sumStats = function(x, ...) list(1),
-        .package = "pecotmr"
+test_that(".fmMsDataSource gives an individual-level collection's joint rows", {
+    # A collection always holds individual-level studies (its validity
+    # requires one), so without summary statistics its joint rows are those.
+    mt <- MultiStudyQtlDataset(
+        qtlDatasets = list(
+            A = .fmp_twoContextStudy("A"),
+            B = .fmp_twoContextStudy("B")
+        )
     )
-    expect_equal(pecotmr:::.fmMsDataSource(NULL), "sumstat")
-    local_mocked_bindings(
-        qtlDatasets = function(x, ...) list(1),
-        sumStats = function(x, ...) list(),
-        .package = "pecotmr"
-    )
-    expect_equal(pecotmr:::.fmMsDataSource(NULL), "individual")
+    expect_equal(pecotmr:::.fmMsDataSource(mt), "individual")
 })
 
 test_that("individual-level genotypes reach the fitter standardized", {
