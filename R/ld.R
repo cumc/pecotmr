@@ -119,20 +119,8 @@ extractFilePaths <- function(genomicData, intersectionRows, columnToExtract) {
     )
 }
 
-#' Find LD blocks overlapping a query region from a metadata TSV file.
-#'
-#' @param ldReferenceMetaFile TSV with columns chrom, start, end, path. The path
-#'   column may be comma-separated: "ld_file,bim_file".
-#' @param region "chr:start-end" string or data.frame with chrom/start/end.
-#' @param completeCoverageRequired If TRUE, error when the region extends beyond
-#'   available LD blocks.
-#' @return A list with: intersections (LD_file_paths, bimFilePaths), ldMetaData,
-#'   and parsed region.
-#' @importFrom stringr str_split
-#' @importFrom dplyr select
-#' @importFrom vroom vroom
-#' @noRd
 # Split the comma-joined path column into LD (+ optional bim) path columns.
+# @noRd
 .regionalLdParsePaths <- function(genomicData) {
     parts <- str_split(genomicData$path, ",", simplify = TRUE)
     pathNames <- if (ncol(parts) == 2) {
@@ -183,6 +171,19 @@ extractFilePaths <- function(genomicData, intersectionRows, columnToExtract) {
     )
 }
 
+#' Find LD blocks overlapping a query region from a metadata TSV file.
+#'
+#' @param ldReferenceMetaFile TSV with columns chrom, start, end, path. The path
+#'   column may be comma-separated: "ld_file,bim_file".
+#' @param region "chr:start-end" string or data.frame with chrom/start/end.
+#' @param completeCoverageRequired If TRUE, error when the region extends beyond
+#'   available LD blocks.
+#' @return A list with: intersections (LD_file_paths, bimFilePaths), ldMetaData,
+#'   and parsed region.
+#' @importFrom stringr str_split
+#' @importFrom dplyr select
+#' @importFrom vroom vroom
+#' @noRd
 regionalLdMeta <- function(
     ldReferenceMetaFile,
     region,
@@ -231,658 +232,11 @@ regionalLdMeta <- function(
     )
 }
 
-#' Read a pre-computed LD matrix (.cor.xz) and its bim file, returning a
-#' symmetric matrix with variants ordered by position.
-#' @importFrom dplyr mutate
-#' @importFrom utils read.table
-#' @importFrom stats setNames
-#' @noRd
-# Auto-detect the variant-metadata file (.bim / .pvar / .pvar.zst).
-.processLdSnpFile <- function(ldFilePath, snpFilePath) {
-    if (!is.null(snpFilePath)) {
-        return(snpFilePath)
-    }
-    candidates <- str_c(ldFilePath, c(".bim", ".pvar", ".pvar.zst"))
-    found <- candidates[file.exists(candidates)]
-    if (length(found) == 0) {
-        msg <- glue(
-            "No variant file found for: {ldFilePath} ",
-            "(tried .bim, .pvar, .pvar.zst)"
-        )
-        abort(msg)
-    }
-    found[1]
-}
-
-# Read + normalise the LD variant metadata (canonical chrom / variant id / GD).
-.processLdVariants <- function(snpFilePath) {
-    raw <- readVariantMetadata(snpFilePath)
-    isPvar <- !is_in("gpos", names(raw))
-    ldVariants <- mutate(
-        raw,
-        chrom = canonChrom(.data$chrom),
-        variants = normalizeVariantId(.data$id)
-    )
-    if (!isPvar) {
-        return(rename(ldVariants, GD = "gpos"))
-    }
-    # A .pvar carries no genetic distance, so GD and pos both take the
-    # position parsed back out of the variant id.
-    parsedPos <- map_int(ldVariants$variants, .ldVariantPos)
-    rename(ldVariants, GD = "pos") |>
-        mutate(GD = parsedPos, pos = parsedPos)
-}
-
-processLdMatrix <- function(ldFilePath, snpFilePath = NULL) {
-    ldFileCon <- xzfile(ldFilePath)
-    ldValues <- scan(ldFileCon, quiet = TRUE)
-    close(ldFileCon)
-    snpFilePath <- .processLdSnpFile(ldFilePath, snpFilePath)
-    rawVariants <- .processLdVariants(snpFilePath)
-    # Label and symmetrize the matrix.
-    labelled <- `dimnames<-`(
-        matrix(ldValues, ncol = sqrt(length(ldValues)), byrow = TRUE),
-        list(rawVariants$variants, rawVariants$variants)
-    )
-    # Only one triangle is stored on disk; mirror whichever one is empty.
-    lower <- lower.tri(labelled)
-    upper <- upper.tri(labelled)
-    ldMatrix <- if (all(labelled[lower] == 0)) {
-        replace(labelled, lower, t(labelled)[lower])
-    } else {
-        replace(labelled, upper, t(labelled)[upper])
-    }
-    # Order variants by genomic position.
-    posOrder <- order(map_int(rawVariants$variants, .ldVariantPos))
-    ldVariants <- slice(rawVariants, posOrder)
-    list(
-        ldMatrix = ldMatrix[ldVariants$variants, ldVariants$variants],
-        ldVariants = ldVariants
-    )
-}
-
-#' Subset an LD matrix and variant info to a genomic region, optionally further
-#' restricted to specific coordinates.
-#' @importFrom dplyr mutate select inner_join
-#' @noRd
-extractLdForRegion <- function(ldMatrix, variants, region, extractCoordinates) {
-    inRegion <- filter(
-        variants,
-        .data$chrom == region$chrom &
-            .data$pos >= region$start &
-            .data$pos <= region$end
-    )
-    extracted <- if (is.null(extractCoordinates)) {
-        inRegion
-    } else {
-        .ldRestrictToCoordinates(inRegion, extractCoordinates)
-    }
-    mat <- ldMatrix[extracted$variants, extracted$variants, drop = FALSE]
-    list(extractedLdMatrix = mat, extractedLdVariants = extracted)
-}
-
-# The region's variants restricted to an explicit (chrom, pos) list, keeping
-# only the variant-info columns the callers read back.
-# @noRd
-.ldRestrictToCoordinates <- function(inRegion, extractCoordinates) {
-    wanted <- extractCoordinates |>
-        mutate(chrom = canonChrom(.data$chrom)) |>
-        select("chrom", "pos")
-    joined <- inRegion |>
-        mutate(chrom = canonChrom(.data$chrom)) |>
-        inner_join(wanted, by = c("chrom", "pos"))
-    keepCols <- intersect(
-        c(
-            "chrom",
-            "variants",
-            "pos",
-            "GD",
-            "A1",
-            "A2",
-            "variance",
-            "allele_freq",
-            "n_nomiss"
-        ),
-        names(joined)
-    )
-    select(joined, all_of(keepCols))
-}
-
-# Concatenate per-block variant-id lists into one deduplicated vector, dropping
-# a repeated boundary variant shared between adjacent blocks.
-# @noRd
-.ldMergeVariants <- function(variantList) {
-    # Only the running tail decides whether a block's first id is a repeated
-    # boundary variant, so the merge is a fold.
-    reduce(variantList, .ldAppendBlockVariants, .init = character(0))
-}
-
-# @noRd
-.ldAppendBlockVariants <- function(merged, v) {
-    ids <- if (is.list(v) && !is.null(v$variants)) v$variants else v
-    if (length(ids) == 0) {
-        return(merged)
-    }
-    repeatsBoundary <- length(merged) > 0 && tail(merged, 1) == ids[1]
-    c(merged, if (repeatsBoundary) ids[-1] else ids)
-}
-
-#' Combine multiple block-level LD matrices into one, handling boundary
-#' overlaps.
-#' @importFrom utils tail
-#' @noRd
-createLdMatrix <- function(ldMatrices, variants) {
-    allVariants <- .ldMergeVariants(variants)
-    combined <- matrix(
-        0,
-        nrow = length(allVariants),
-        ncol = length(allVariants),
-        dimnames = list(allVariants, allVariants)
-    )
-
-    # Deliberate preallocate-and-scatter: `combined` is variants x variants,
-    # so building it by folding full-size copies would multiply the memory
-    # this function needs by the number of blocks.
-    for (i in seq_along(ldMatrices)) {
-        v <- rownames(ldMatrices[[i]])
-        idx <- match(v, allVariants)
-        combined[idx, idx] <- ldMatrices[[i]]
-    }
-    combined
-}
-
-# Dispatch to the genotype- or pre-computed-block LD loader for the source.
-.loadLdDispatch <- function(
-    source,
-    isGeno,
-    region,
-    extractCoordinates,
-    returnGenotype,
-    nSample
-) {
-    if (isGeno) {
-        genoPath <- resolveGenotypePathForRegion(source$metaPath, region)
-        return(loadLdFromGenotype(
-            genoPath,
-            region,
-            returnGenotype = returnGenotype,
-            nSample = nSample
-        ))
-    }
-    if (returnGenotype) {
-        msg <- glue(
-            "returnGenotype=TRUE requires genotype files, not ",
-            "pre-computed LD matrices."
-        )
-        abort(msg)
-    }
-    loadLdFromBlocks(
-        source$metaPath,
-        region,
-        extractCoordinates,
-        nSample = nSample
-    )
-}
-
-# Drop duplicate variant ids (boundary-overlap safety net).
-.loadLdDedup <- function(result) {
-    variantIds <- variantIds(result)
-    if (is.null(variantIds)) {
-        return(result)
-    }
-    dupIdx <- which(duplicated(variantIds))
-    if (length(dupIdx) == 0) {
-        return(result)
-    }
-    full <- ldMatrix(result)
-    corr <- if (is.null(full)) {
-        NULL
-    } else {
-        full[-dupIdx, -dupIdx, drop = FALSE]
-    }
-    LdData(
-        correlation = corr,
-        genotypeHandle = genotypeHandle(result),
-        snpIdx = snpIdx(result),
-        variants = variantInfo(result)[-dupIdx],
-        blockMetadata = blockMetadata(result),
-        nSamples = ldPanelNSamples(result)
-    )
-}
-
-#' Load and Process Linkage Disequilibrium (LD) Matrix
-#'
-#' Unified entry point for loading LD data from a metadata TSV file.
-#'
-#' The metadata TSV must have columns: chrom, start, end, path. Two formats:
-#' \itemize{
-#'   \item Pre-computed LD blocks: many rows per chromosome with block
-#'   boundaries
-#'     in start/end and path pointing to .cor.xz files (optionally
-#'     comma-separated
-#'     with a .bim path).
-#'   \item PLINK genotype files: one row per chromosome with start=0, end=0, and
-#'     path pointing to a per-chromosome PLINK prefix (.pgen/.pvar[.zst]/.psam
-#'     or
-#'     .bed/.bim/.fam). LD is computed on the fly via \code{computeLd()}.
-#' }
-#'
-#' @param ldMetaFilePath Path to the LD metadata TSV file.
-#' @param region Region of interest: "chr:start-end" string or data.frame with
-#'   chrom/start/end.
-#' @param block Integer block index (or vector of them), for sources that
-#'   carry no coordinates: an \code{ldInfo} table (the cTWAS \code{LD_map}
-#'   shape -- an \code{LD_file} column and optionally \code{SNP_file}), a
-#'   correlation or genotype matrix, or a list of either. Supply exactly one
-#'   of \code{region} and \code{block}.
-#' @param dropMonomorphic Logical. Drop variants with no variation, which
-#'   carry no LD and make a correlation undefined. Needs allele frequencies,
-#'   so it applies to genotype sources.
-#' @param materializeGenotypes Logical. Read the dosages once and keep them on
-#'   the returned object, so later access does no file I/O. Costs memory and
-#'   saves repeated reads.
-#' @param maxVariants Integer or \code{NULL}. Randomly thin any block larger
-#'   than this, to bound memory.
-#' @param seed Integer or \code{NULL}. Seeds the \code{maxVariants} draw,
-#'   offset by the block index so blocks are independent yet reproducible, via
-#'   a scoped \code{withr::local_seed} that leaves the session RNG alone.
-#' @param extractCoordinates Optional data.frame with columns "chrom" and "pos"
-#'   for specific coordinates extraction (only for pre-computed LD blocks).
-#' @param returnGenotype Controls what ldMatrix contains in the return value.
-#'   FALSE (default): always return correlation matrix R. TRUE: return genotype
-#'   matrix X (only valid for PLINK sources). "auto": return X for PLINK
-#'   sources, R for pre-computed sources.
-#' @param nSample Optional sample size for computing variance (=
-#'   2*p*(1-p)*n/(n-1)). If NULL, ref_panel will not include variance or
-#'   n_nomiss columns. Only used for PLINK genotype sources.
-#'
-#' @return A list with:
-#' \describe{
-#'   \item{ldVariants}{Character vector of variant IDs (canonical format).}
-#'   \item{ldMatrix}{LD correlation matrix R (or genotype matrix X when
-#'   returnGenotype is TRUE or "auto" with PLINK source).}
-#'   \item{ref_panel}{Data.frame with variant metadata (chrom, pos, A2, A1,
-#'   variant_id,
-#'     and optionally allele_freq, variance, n_nomiss).}
-#'   \item{is_genotype}{Logical: TRUE if ldMatrix contains genotype X, FALSE if
-#'   correlation R.}
-#'   \item{blockMetadata}{Data.frame with region/block info. For pre-computed
-#'   LD: one row per block.
-#'     For PLINK: a single row spanning the loaded region.}
-#' }
-#' @examples
-#' meta <- system.file("extdata", "ld_reference", "ld_meta_file.tsv",
-#'   package = "pecotmr")
-#' loadLdMatrix(ldMetaFilePath = meta, region = "chr22:16000000-18000000")
-#' # Several regions at once return one LdData per block.
-#' length(loadLdMatrix(meta, region = rep("chr22:16000000-18000000", 2)))
-#' @export
-loadLdMatrix <- function(
-    ldMetaFilePath,
-    region = NULL,
-    block = NULL,
-    extractCoordinates = NULL,
-    returnGenotype = FALSE,
-    dropMonomorphic = FALSE,
-    materializeGenotypes = FALSE,
-    maxVariants = NULL,
-    seed = NULL,
-    nSample = NULL
-) {
-    .ldLoadValidateAddress(ldMetaFilePath, region, block)
-    keys <- if (is.null(region)) block else region
-    # Only an atomic vector addresses several blocks. `region` also accepts a
-    # single data.frame / GRanges spec, whose length is its column count --
-    # treating that as many keys would map over the columns.
-    if (is.atomic(keys) && length(keys) > 1L) {
-        return(map(
-            keys,
-            .loadLdOne,
-            source = ldMetaFilePath,
-            byRegion = is.null(block),
-            extractCoordinates = extractCoordinates,
-            returnGenotype = returnGenotype,
-            dropMonomorphic = dropMonomorphic,
-            materializeGenotypes = materializeGenotypes,
-            maxVariants = maxVariants,
-            seed = seed,
-            nSample = nSample
-        ))
-    }
-    .loadLdOne(
-        keys,
-        ldMetaFilePath,
-        byRegion = is.null(block),
-        extractCoordinates = extractCoordinates,
-        returnGenotype = returnGenotype,
-        dropMonomorphic = dropMonomorphic,
-        materializeGenotypes = materializeGenotypes,
-        maxVariants = maxVariants,
-        seed = seed,
-        nSample = nSample
-    )
-}
-
-# A source is addressed either by genomic region (an LD meta file, which
-# carries coordinates) or by block index (an `ldInfo` table or in-memory
-# matrices, which do not). Exactly one addressing mode applies.
-# @noRd
-.ldLoadValidateAddress <- function(source, region, block) {
-    if (is.null(region) && is.null(block)) {
-        abort("loadLdMatrix: supply either `region` or `block`.")
-    }
-    if (!is.null(region) && !is.null(block)) {
-        abort("loadLdMatrix: supply `region` or `block`, not both.")
-    }
-    if (!is.null(region) && !is.character(source)) {
-        msg <- glue(
-            "loadLdMatrix: `region` addresses an LD meta file, but ",
-            "`ldMetaFilePath` is a {class(source)[[1L]]}. Coordinate-free ",
-            "sources (an `ldInfo` table, a matrix, or a list of matrices) ",
-            "are addressed with `block`."
-        )
-        abort(msg)
-    }
-    invisible(TRUE)
-}
-
-# One block, whatever the source. Everything that is not an LD meta file is
-# coordinate-free and indexed by `block`.
-# @noRd
-.loadLdOne <- function(
-    key,
-    source,
-    byRegion,
-    extractCoordinates,
-    returnGenotype,
-    dropMonomorphic,
-    materializeGenotypes,
-    maxVariants,
-    seed,
-    nSample
-) {
-    loaded <- if (byRegion) {
-        .loadLdFromMeta(
-            source,
-            key,
-            extractCoordinates,
-            returnGenotype,
-            nSample
-        )
-    } else {
-        .loadLdFromIndexed(source, key)
-    }
-    loaded |>
-        .loadLdDedup() |>
-        .ldApplyMonomorphic(dropMonomorphic) |>
-        .ldApplySubsample(maxVariants, seed, key) |>
-        .ldApplyMaterialize(materializeGenotypes)
-}
-
-# Coordinate-free sources, addressed by block index: an `ldInfo` table (the
-# cTWAS LD_map shape -- LD_file plus optional SNP_file, no coordinates), a
-# single in-memory matrix, or a list of them. Every source returns an LdData,
-# so callers never have to branch on what they loaded from.
-# @noRd
-.loadLdFromIndexed <- function(source, block) {
-    if (is.data.frame(source)) {
-        return(.ldInfoBlock(source, block))
-    }
-    mat <- if (is.list(source)) source[[block]] else source
-    if (!is.matrix(mat)) {
-        msg <- glue(
-            "loadLdMatrix: cannot address a {class(source)[[1L]]} by block. ",
-            "Supply an LD meta file path, an `ldInfo` data.frame, a matrix, ",
-            "or a list of matrices."
-        )
-        abort(msg)
-    }
-    .ldDataFromMatrix(mat, isGenotype = nrow(mat) > ncol(mat))
-}
-
-# One row of an `ldInfo` table. Genotype paths are read and correlated;
-# pre-computed .cor.xz blocks are read directly.
-# @noRd
-.ldInfoBlock <- function(ldInfo, block) {
-    if (!is_in("LD_file", colnames(ldInfo))) {
-        abort("loadLdMatrix: an `ldInfo` table needs an `LD_file` column.")
-    }
-    ldPath <- as.character(ldInfo$LD_file)[block]
-    if (isGenotypeSource(ldPath)) {
-        geno <- loadGenotypeRegion(ldPath)
-        return(.ldDataFromMatrix(geno, isGenotype = TRUE))
-    }
-    snpFile <- if (is_in("SNP_file", colnames(ldInfo))) {
-        as.character(ldInfo$SNP_file)[block]
-    } else {
-        NULL # processLdMatrix auto-detects the .bim / .pvar companion
-    }
-    .ldDataFromProcessed(processLdMatrix(ldPath, snpFile))
-}
-
-# Wrap processLdMatrix()'s (matrix, variants) pair as an LdData so BOTH
-# `ldInfo` sources return one type -- the contract .loadLdFromIndexed states
-# and the post-load chain (dedup / monomorphic / subsample) relies on.
-#
-# Not .ldDataFromMatrix(): that one is for a bare matrix with no metadata and
-# substitutes placeholder chrNA:1..n coordinates. A precomputed LD block comes
-# with its .bim/.pvar, so the real chrom/pos/alleles are carried through.
-# @noRd
-.ldDataFromProcessed <- function(proc) {
-    v <- proc$ldVariants
-    n <- nrow(v)
-    gr <- .refPanelToGranges(data.frame(
-        chrom = as.character(v$chrom),
-        pos = as.integer(v$pos),
-        variant_id = as.character(v$variants),
-        A1 = as.character(v$A1),
-        A2 = as.character(v$A2),
-        stringsAsFactors = FALSE
-    ))
-    LdData(
-        correlation = proc$ldMatrix,
-        variants = gr,
-        blockMetadata = tibble(
-            blockId = 1L,
-            size = n,
-            startIdx = 1L,
-            endIdx = n
-        ),
-        nSamples = 0L
-    )
-}
-
-# Wrap a bare matrix as an LdData so every source returns one type. Variant
-# identity comes from the dimnames when present.
-# @noRd
-.ldDataFromMatrix <- function(mat, isGenotype) {
-    n <- if (isGenotype) ncol(mat) else nrow(mat)
-    named <- if (isGenotype) colnames(mat) else rownames(mat)
-    ids <- named %||% str_c("v", seq_len(n))
-    gr <- S4Vectors::`mcols<-`(
-        GRanges(
-            seqnames = rep("chrNA", n),
-            ranges = IRanges::IRanges(start = seq_len(n), width = 1L)
-        ),
-        value = S4Vectors::DataFrame(variant_id = ids)
-    )
-    LdData(
-        correlation = if (isGenotype) NULL else mat,
-        genotypeHandle = if (isGenotype) mat else NULL,
-        variants = gr,
-        blockMetadata = tibble(blockId = 1L, size = n),
-        nSamples = if (isGenotype) nrow(mat) else 0L
-    )
-}
-
-# Drop variants with no variation. They carry no LD, and a zero-variance
-# column makes a correlation undefined.
-# @noRd
-.ldApplyMonomorphic <- function(ld, dropMonomorphic) {
-    if (!isTRUE(dropMonomorphic)) {
-        return(ld)
-    }
-    refPanel <- refPanel(ld)
-    if (is.null(refPanel) || !is_in("allele_freq", colnames(refPanel))) {
-        return(ld)
-    }
-    p <- refPanel$allele_freq
-    keep <- !is.na(p) & p > 0 & p < 1
-    if (all(keep)) {
-        return(ld)
-    }
-    .ldSubsetData(ld, which(keep))
-}
-
-# Randomly thin an oversized block, seeded per block so a run is reproducible
-# without disturbing the session RNG.
-# @noRd
-.ldApplySubsample <- function(ld, maxVariants, seed, key) {
-    if (is.null(maxVariants) || length(ld) <= maxVariants) {
-        return(ld)
-    }
-    if (!is.null(seed)) {
-        offset <- if (is.numeric(key)) as.integer(key) else 0L
-        withr::local_seed(as.integer(seed) + offset)
-    }
-    .ldSubsetData(ld, sort(sample(length(ld), maxVariants)))
-}
-
-# Read the dosages once and keep them on the object, so later access does no
-# file I/O.
-# @noRd
-.ldApplyMaterialize <- function(ld, materializeGenotypes) {
-    if (!isTRUE(materializeGenotypes) || !hasGenotypes(ld)) {
-        return(ld)
-    }
-    X <- genotypes(ld)
-    if (!is.matrix(X)) {
-        return(ld)
-    }
-    LdData(
-        correlation = NULL,
-        genotypeHandle = X,
-        snpIdx = NULL,
-        variants = variantInfo(ld),
-        blockMetadata = blockMetadata(ld),
-        nSamples = ldPanelNSamples(ld)
-    )
-}
-
-# Narrow an LdData to a subset of its variants, keeping correlation and
-# genotypes consistent with the ranges.
-# @noRd
-.ldSubsetData <- function(ld, idx) {
-    full <- ld@correlation
-    R <- if (!is.null(full) && is.matrix(full)) {
-        full[idx, idx, drop = FALSE]
-    } else {
-        full
-    }
-    raw <- ld@genotypeHandle
-    gh <- if (is.matrix(raw)) raw[, idx, drop = FALSE] else raw
-    snpIdx <- if (is.matrix(raw) || is.null(ld@snpIdx)) {
-        ld@snpIdx
-    } else {
-        ld@snpIdx[idx]
-    }
-    LdData(
-        correlation = R,
-        genotypeHandle = gh,
-        snpIdx = if (is.matrix(gh)) NULL else snpIdx,
-        variants = variantInfo(ld)[idx],
-        blockMetadata = blockMetadata(ld),
-        nSamples = ldPanelNSamples(ld)
-    )
-}
-
-# @noRd
-.loadLdFromMeta <- function(
-    ldMetaFilePath,
-    region,
-    extractCoordinates,
-    returnGenotype,
-    nSample
-) {
-    source <- resolveLdSource(ldMetaFilePath)
-    isGeno <- is_in(source$type, c("plink2", "plink1", "vcf", "gds"))
-    # "auto": return X for genotype sources, R for pre-computed.
-    if (identical(returnGenotype, "auto")) {
-        returnGenotype <- isGeno
-    }
-    .loadLdDispatch(
-        source,
-        isGeno,
-        region,
-        extractCoordinates,
-        returnGenotype,
-        nSample
-    )
-}
-
 # ---------- Internal: resolve LD source type ----------
 
-#' @noRd
-hasPlink2Files <- function(prefix) {
-    file.exists(str_c(prefix, ".pgen")) &&
-        (file.exists(str_c(prefix, ".pvar")) ||
-            file.exists(str_c(prefix, ".pvar.zst"))) &&
-        file.exists(str_c(prefix, ".psam"))
-}
-
-#' @noRd
-hasPlink1Files <- function(prefix) {
-    file.exists(str_c(prefix, ".bed")) &&
-        file.exists(str_c(prefix, ".bim")) &&
-        file.exists(str_c(prefix, ".fam"))
-}
-
-#' @noRd
-isVcfPath <- function(path) {
-    str_detect(path, "\\.(vcf|vcf\\.gz|bcf)$") && file.exists(path)
-}
-
-#' @noRd
-isGdsPath <- function(path) {
-    str_detect(path, "\\.gds$") && file.exists(path)
-}
-
-#' Check whether a path points to a genotype source (PLINK, VCF, or GDS).
-#' @noRd
-isGenotypeSource <- function(path) {
-    hasPlink2Files(path) ||
-        hasPlink1Files(path) ||
-        isVcfPath(path) ||
-        isGdsPath(path)
-}
-
-#' Resolve an LD source metadata TSV to its actual data type.
-#'
-#' The metadata TSV has columns: chrom, start, end, path. Three categories are
-#' supported:
-#' \itemize{
-#'   \item Pre-computed LD blocks (.cor.xz): many rows per chromosome, each with
-#'     specific start/end block boundaries and path pointing to .cor.xz files.
-#'   \item Genotype files (PLINK2, PLINK1, VCF, or GDS): one row per chromosome
-#'     with start=0, end=0, and path pointing to a per-chromosome genotype file
-#'     or prefix. The actual region filter is applied by the genotype loader.
-#' }
-#'
-#' This function peeks at the first row to determine the data type. The actual
-#' per-chromosome path is resolved later by
-#' \code{resolveGenotypePathForRegion()} at load time.
-#'
-#' @param path Path to a metadata TSV file with columns chrom, start, end, path.
-#' @return A list with:
-#'   \item{type}{"plink2", "plink1", "vcf", "gds", or "precomputed"}
-#'   \item{dataPath}{Genotype path from first row (for type detection only;
-#'   actual
-#'     per-chromosome path is resolved at load time)}
-#'   \item{metaPath}{The metadata TSV path (always set)}
-#' @importFrom vroom vroom
-#' @noRd
 # Read + validate the first row of an LD metadata TSV (>=4 columns).
 #' @importFrom checkmate checkFileExists
+# @noRd
 .resolveLdReadMeta <- function(path) {
     res <- checkFileExists(path, access = "r")
     if (!isTRUE(res)) {
@@ -907,24 +261,53 @@ isGenotypeSource <- function(path) {
     )
 }
 
-# Genotype source descriptor for the resolved path, or NULL if pre-computed.
+# Genotype source descriptor for the resolved path, or NULL when it is not a
+# genotype file or PLINK prefix, its format told as readGenotypes() tells it.
+# A PLINK source is described by its stem, which its readers take.
 .resolveLdGenotypeType <- function(resolved, path) {
-    if (hasPlink2Files(resolved)) {
-        return(list(type = "plink2", dataPath = resolved, metaPath = path))
+    format <- .genotypePathFormat(resolved)
+    if (is.null(format)) {
+        return(NULL)
     }
-    if (hasPlink1Files(resolved)) {
-        return(list(type = "plink1", dataPath = resolved, metaPath = path))
+    dataPath <- if (str_starts(format, "plink")) {
+        .genotypeStem(resolved)
+    } else {
+        resolved
     }
-    if (isVcfPath(resolved)) {
-        return(list(type = "vcf", dataPath = resolved, metaPath = path))
-    }
-    if (isGdsPath(resolved)) {
-        return(list(type = "gds", dataPath = resolved, metaPath = path))
-    }
-    NULL
+    list(type = format, dataPath = dataPath, metaPath = path)
 }
 
+#' Resolve an LD source metadata TSV to its genotype file type.
+#'
+#' The metadata TSV has columns: chrom, start, end, path, with one row per
+#' chromosome (start=0, end=0) whose path is a per-chromosome genotype file or
+#' prefix (PLINK2, PLINK1, VCF, GDS or BGEN). The actual region filter is
+#' applied by the genotype loader. pecotmr does not read pre-computed LD from
+#' disk, so a row pointing at anything else is an error.
+#'
+#' This function peeks at the first row to determine the data type. The actual
+#' per-chromosome path is resolved later by
+#' \code{resolveGenotypePathForRegion()} at load time.
+#'
+#' A path that is itself a genotype file or PLINK prefix is that source, with
+#' no metadata.
+#'
+#' @param path Path to a metadata TSV file with columns chrom, start, end,
+#'   path, or to a genotype file or PLINK prefix.
+#' @return A list with:
+#'   \item{type}{"plink2", "plink1", "vcf", "gds" or "bgen"}
+#'   \item{dataPath}{Genotype path from first row (for type detection only;
+#'   actual
+#'     per-chromosome path is resolved at load time)}
+#'   \item{metaPath}{The metadata TSV path, or NULL for a genotype source
+#'     given directly}
+#' @importFrom vroom vroom
+#' @noRd
 resolveLdSource <- function(path) {
+    direct <- .resolveLdGenotypeType(path, NULL)
+    if (!is.null(direct)) {
+        return(direct)
+    }
     meta <- .resolveLdReadMeta(path)
     # Strip the comma-separated bim path, then resolve relative to the meta dir.
     rawPath <- str_remove(meta$path[1], ",.*$")
@@ -933,22 +316,17 @@ resolveLdSource <- function(path) {
     if (!is.null(genoType)) {
         return(genoType)
     }
-    if (
-        !is.na(meta$start) &&
-            !is.na(meta$end) &&
-            meta$start == 0 &&
-            meta$end == 0
-    ) {
-        msg <- glue(
-            "Metadata has start=0, end=0 but path does not resolve to ",
-            "genotype files: {resolved}",
-            "\n  The 0:0 sentinel is only valid for whole-chromosome ",
-            "genotype files.",
-            .trim = FALSE
+    abort(c(
+        glue(
+            "The LD metadata's path does not resolve to genotype files: ",
+            "{resolved}"
+        ),
+        i = str_c(
+            "pecotmr reads LD only from genotypes (PLINK2, PLINK1, VCF, GDS, ",
+            "BGEN); ",
+            "wrap a pre-computed LD matrix in an LdMatrix instead."
         )
-        abort(msg)
-    }
-    list(type = "precomputed", metaPath = path)
+    ))
 }
 
 #' Resolve the correct genotype path for a given region from a metadata TSV.
@@ -975,174 +353,28 @@ resolveGenotypePathForRegion <- function(metaPath, region) {
     file.path(dirname(metaPath), rawPath)
 }
 
-# ---------- Internal: load LD from genotype files ----------
-
-#' Load genotype data and compute LD or return genotype matrix.
-#' @noRd
-# --- loadLdFromGenotype helpers ---------------------------------------------
-
-# Reference panel from variant ids + allele frequency (.afreq or dosage-derived)
-# + variance when a sample size is supplied.
-.loadLdGtRefPanel <- function(
-    X,
-    variantInfo,
-    variantIds,
-    genotypePath,
-    nSample
-) {
-    afreq <- readAfreq(genotypePath)
-    alleleFreq <- if (is.null(afreq)) {
-        colMeans(X, na.rm = TRUE) / 2
-    } else {
-        freqMatch <- match(variantInfo$id, afreq$id)
-        nUnmatched <- sum(is.na(freqMatch))
-        if (nUnmatched > 0) {
-            nFreq <- length(freqMatch)
-            msg <- glue(
-                "{nUnmatched} out of {nFreq} variants have no allele ",
-                "frequency in .afreq file."
-            )
-            warn(msg)
-        }
-        afreq$alt_freq[freqMatch]
-    }
-    mutate(
-        parseVariantId(variantIds),
-        variant_id = variantIds,
-        allele_freq = alleleFreq,
-        !!!.ldPanelSampleCols(alleleFreq, nSample)
-    )
-}
-
-# The panel's per-variant variance / non-missing count, which are only
-# derivable once the caller declares the sample size behind the frequencies.
-# @noRd
-.ldPanelSampleCols <- function(p, nSample) {
-    if (is.null(nSample)) {
-        return(list())
-    }
-    list(
-        variance = 2 * p * (1 - p) * nSample / (nSample - 1),
-        n_nomiss = nSample
-    )
-}
-
-# Single-block metadata spanning the loaded region.
-.loadLdGtBlockMeta <- function(variantInfo, variantIds) {
-    positions <- variantInfo$pos
-    tibble(
-        blockId = 1L,
-        chrom = as.character(variantInfo$chrom[1]),
-        blockStart = min(positions),
-        blockEnd = max(positions),
-        size = length(variantIds),
-        startIdx = 1L,
-        endIdx = length(variantIds)
-    )
-}
-
-# Lazy-genotype LdData result (handle + region snp index, no correlation).
-.loadLdGtGenotypeResult <- function(
-    genotypePath,
-    region,
-    variantsGr,
-    blockMetadata,
-    X
-) {
-    handle <- .readGenotypeHandle(genotypePath)
-    snpIdx <- .regionToSnpIdx(snpInfo(handle), region)
-    LdData(
-        correlation = NULL,
-        genotypeHandle = handle,
-        snpIdx = snpIdx,
-        variants = variantsGr,
-        blockMetadata = blockMetadata,
-        nSamples = as.integer(nrow(X))
-    )
-}
-
-loadLdFromGenotype <- function(
-    genotypePath,
-    region,
-    returnGenotype = FALSE,
-    nSample = NULL
-) {
-    result <- loadGenotypeRegion(
-        genotypePath,
-        region = region,
-        returnVariantInfo = TRUE
-    )
-    variantInfo <- result$variant_info
-    variantIds <- normalizeVariantId(formatVariantId(
-        variantInfo$chrom,
-        variantInfo$pos,
-        variantInfo$A2,
-        variantInfo$A1
-    ))
-    X <- `colnames<-`(result$X, variantIds)
-    refPanel <- .loadLdGtRefPanel(
-        X,
-        variantInfo,
-        variantIds,
-        genotypePath,
-        nSample
-    )
-    blockMetadata <- .loadLdGtBlockMeta(variantInfo, variantIds)
-    variantsGr <- .refPanelToGranges(refPanel)
-    if (returnGenotype) {
-        return(.loadLdGtGenotypeResult(
-            genotypePath,
-            region,
-            variantsGr,
-            blockMetadata,
-            X
-        ))
-    }
-    R <- computeLd(X, method = "sample")
-    LdData(
-        correlation = R,
-        genotypeHandle = NULL,
-        snpIdx = NULL,
-        variants = variantsGr,
-        blockMetadata = blockMetadata,
-        nSamples = as.integer(nrow(X))
-    )
-}
-
-# ---------- LD sketch: per-variant LD matrix ----------
-
-# Internal: build a sample-correlation LD matrix for a specified variant
-# subset of an `ldSketch` `GenotypeHandle`. Called directly by
-# twasWeightsPipeline, fineMappingPipeline, jointEngine,
-# causalInferencePipeline, colocboostPipeline and the coloc / summaryStatsQc
-# paths, which differ only in their error message prefix and in whether
-# variants absent from the panel raise an error or get silently dropped --
-# both of which are arguments here rather than a per-pipeline wrapper.
+# ---------- LD reference: what it is and how it is held ----------
 #
-# Arguments:
-#   ldSketch    A GenotypeHandle.
-#   variantIds  Character vector of SNP IDs to extract.
-#   label       Error-message prefix, e.g. "twasWeightsPipeline".
-#   onMissing   "error" (default) -> any unmatched id stops the call;
-#               "drop"           -> unmatched ids are silently filtered.
-#               When "drop" leaves no surviving variants the function
-#               returns NULL.
+# An LD reference is one of these, and every helper below answers for each:
 #
-# Returns:
-#   A `length(variantIds) x length(variantIds)` symmetric LD matrix with
-#   rows/cols named by the (possibly filtered) `variantIds`.
-#   With `onMissing = "drop"` the returned matrix carries an attribute
-#   `"keptVariantIds"` so callers can recover which ids survived.
-# Require a non-NULL GenotypeHandle ldSketch.
-# Normalise an LD-sketch input to the RangedSummarizedExperiment the slot
-# holds. Accepts a bare GenotypeHandle, which is what every caller has passed
-# until now, and wraps it -- so a sketch and QtlDataset's genotype experiment
-# end up being the same object with different provenance rather than two
-# spellings of one idea.
+#   a genotype panel  a RangedSummarizedExperiment over a GenotypeHandle,
+#                     read lazily from disk -- the same shape as QtlDataset's
+#                     genotype experiment. A bare GenotypeHandle, which objects
+#                     serialised before the slot became an RSE still carry, is
+#                     treated as one.
+#   a GenotypeMixture several genotype panels whose LD is averaged, still
+#                     lazy: each panel is read only for the variants asked
+#                     about, and answers for its own samples.
+#   an LdMatrix       a correlation matrix the caller built, held in memory.
+
+# Normalise an LD-reference input to the shape the slot holds: a panel or an
+# LdMatrix as given, a bare GenotypeHandle wrapped into a panel -- so a sketch
+# and QtlDataset's genotype experiment end up being the same object with
+# different provenance rather than two spellings of one idea.
 # @noRd
-.asLdSketch <- function(x) {
-    if (is.null(x)) {
-        return(NULL)
+.asLdRef <- function(x) {
+    if (is.null(x) || .ldIsMatrixRef(x) || .ldIsMixtureRef(x)) {
+        return(x)
     }
     if (methods::is(x, "RangedSummarizedExperiment")) {
         return(x)
@@ -1151,44 +383,151 @@ loadLdFromGenotype <- function(
         return(.genotypeExperiment(x))
     }
     abort(glue(
-        "`ldSketch` must be a genotype panel -- a ",
-        "RangedSummarizedExperiment or a GenotypeHandle (got ",
-        "{class(x)[[1L]]})."
+        "`ldReference` must be a genotype panel (see readGenotypes()), a ",
+        "GenotypeMixture or an LdMatrix (got {class(x)[[1L]]})."
     ))
 }
 
-# The GenotypeHandle a sketch reads through. The handle is the DelayedArray
-# seed of the dosage assay, so it stays reachable after the sketch is subset.
-# Tolerates a bare handle, which is what objects serialised before the slot
-# became an RSE still carry.
+# TRUE for an LD reference held as a matrix rather than as genotypes.
 # @noRd
-.ldSketchHandle <- function(x) {
-    if (is.null(x)) {
+.ldIsMatrixRef <- function(x) {
+    methods::is(x, "LdMatrix")
+}
+
+# TRUE for a mixture of genotype panels.
+# @noRd
+.ldIsMixtureRef <- function(x) {
+    methods::is(x, "GenotypeMixture")
+}
+
+# TRUE for an LD reference backed by genotypes: a panel or a mixture of them.
+# @noRd
+.ldIsGenotypeRef <- function(x) {
+    .ldIsPanel(x) || .ldIsMixtureRef(x)
+}
+
+# TRUE for anything that can serve as an LD reference.
+# @noRd
+.ldIsReference <- function(x) {
+    .ldIsGenotypeRef(x) || .ldIsMatrixRef(x)
+}
+
+# The GenotypeHandle a panel reads through, or NULL when it reads through
+# none: an LdMatrix, a mixture, or a panel whose dosages come from another
+# backend (a VCF, GDS or PLINK1 seed, or a matrix held in memory). The handle
+# is the DelayedArray seed of the dosage assay, so it stays reachable after
+# the panel is subset. Tolerates a bare handle, which is what objects
+# serialised before the slot became an RSE still carry.
+# @noRd
+.ldRefHandle <- function(x) {
+    if (is.null(x) || .ldIsMatrixRef(x) || .ldIsMixtureRef(x)) {
         return(NULL)
     }
     if (methods::is(x, "GenotypeHandle")) {
         return(x)
     }
-    .ghSeedHandle(
-        DelayedArray::seed(SummarizedExperiment::assay(x, "dosage"))
+    seed <- .panelSeed(x)
+    if (!methods::is(seed, "GhSeed")) {
+        return(NULL)
+    }
+    .ghSeedHandle(seed)
+}
+
+# The DelayedArray seed under a panel's dosage assay -- a GhSeed, or a
+# GenotypeDosageSeed for a VCF, GDS or PLINK1 panel -- or NULL for an assay
+# held in memory or combined from several seeds (a per-chromosome set of
+# those).
+# @noRd
+#' @importFrom rlang try_fetch
+.panelSeed <- function(panel) {
+    dosage <- SummarizedExperiment::assay(
+        panel,
+        "dosage",
+        withDimnames = FALSE
+    )
+    if (!methods::is(dosage, "DelayedArray")) {
+        return(NULL)
+    }
+    try_fetch(DelayedArray::seed(dosage), error = function(cnd) NULL)
+}
+
+# ---------- LD reference: where its genotypes come from ----------
+#
+# A panel records when it is built where its genotypes come from --
+# list(format, path, chromPaths) -- as metadata(panel)$genotypeSource. What
+# needs the file reads it there: a sketch's .afreq sidecar, a label, ctwas's
+# check that the payload exists, a per-chromosome manifest's shards. So a
+# panel need not read through a GenotypeHandle: a VCF, GDS or PLINK1 panel
+# reads through its own backend, and any RSE with a dosage assay can serve.
+
+# The record of a handle's genotype source.
+# @noRd
+.genotypeSourceRecord <- function(handle) {
+    list(
+        format = genotypeFormat(handle),
+        path = path(handle),
+        chromPaths = .genotypeChromPaths(handle)
     )
 }
 
-# Narrow a sketch to a variant subset. On an RSE this is ordinary subsetting,
-# which brings the DelayedArray's index bookkeeping with it; a legacy bare
-# handle falls back to the handle-level trim, which needs fileIdx to stay
-# read-safe.
+# An LD reference's genotype source: the record its panel carries -- or, for
+# a panel built before panels carried one and for a bare handle, its
+# handle's -- or NULL for a panel held in memory, an LdMatrix or a mixture.
 # @noRd
-.ldSketchSubset <- function(x, keep) {
+.ldRefSource <- function(x) {
+    if (is.null(x) || .ldIsMatrixRef(x) || .ldIsMixtureRef(x)) {
+        return(NULL)
+    }
+    if (methods::is(x, "RangedSummarizedExperiment")) {
+        recorded <- S4Vectors::metadata(x)$genotypeSource
+        if (!is.null(recorded)) {
+            return(recorded)
+        }
+    }
+    handle <- .ldRefHandle(x)
+    if (is.null(handle)) NULL else .genotypeSourceRecord(handle)
+}
+
+# @noRd
+.ldRefFormat <- function(x) {
+    .ldRefSource(x)$format
+}
+
+# The file an LD reference reads, resolved to a real path (a bundled
+# example's portable reference resolves under the installed package), or
+# NULL when it reads none.
+# @noRd
+.ldRefReadPath <- function(x) {
+    p <- .ldRefSource(x)$path
+    if (is.null(p)) NULL else .resolveGenotypeResourcePath(p)
+}
+
+# The per-chromosome files of a panel read from a manifest, named by
+# chromosome; empty for a panel read from one file.
+# @noRd
+.ldRefChromPaths <- function(x) {
+    .ldRefSource(x)$chromPaths %||% character(0)
+}
+
+# Narrow an LD reference to a variant subset. A panel is cut so that, where it
+# can, its seed sheds the dropped variants too (.panelSubsetRows()); an
+# LdMatrix subsets its matrix along with its variants; a legacy bare handle
+# falls back to the handle-level trim, which needs fileIdx to stay read-safe.
+# @noRd
+.ldRefSubset <- function(x, keep) {
     if (is.null(x)) {
         return(NULL)
+    }
+    if (.ldIsMatrixRef(x)) {
+        return(x[keep])
+    }
+    if (.ldIsMixtureRef(x)) {
+        return(.gmRowsAt(x, keep))
     }
     if (methods::is(x, "GenotypeHandle")) {
         return(.subsetGenotypeHandle(x, keep))
     }
-    # `drop = FALSE`: the fallback shape is the matrix sketch, which a
-    # one-variant `keep` would otherwise collapse to a vector.
-    x[keep, , drop = FALSE]
+    .panelSubsetRows(x, keep)
 }
 
 # A sketch trimmed to zero variants, every other property preserved. Used when
@@ -1197,26 +536,135 @@ loadLdFromGenotype <- function(
 # which on a real panel is ~135 MB of serialized dead weight per such entry.
 # NULL-safe and idempotent.
 # @noRd
-.emptySketch <- function(x) {
+.emptyLdRef <- function(x) {
     if (is.null(x)) {
         return(NULL)
+    }
+    if (.ldIsMatrixRef(x)) {
+        return(x[integer(0)])
+    }
+    if (.ldIsMixtureRef(x)) {
+        return(.gmRowsAt(x, integer(0)))
     }
     if (methods::is(x, "GenotypeHandle")) {
         return(.emptyGenotypeHandle(x))
     }
-    # A panel holds its handle TWICE -- as rowRanges and inside the dosage
-    # assay's DelayedArray seed. `x[integer(0), ]` drops the rows but leaves
-    # the seed carrying the whole panel's snpInfo, which is precisely the
-    # weight this exists to shed. Rebuild from an emptied handle so both go.
-    .genotypeExperiment(.emptyGenotypeHandle(.ldSketchHandle(x)))
+    .emptyPanel(x, keepSamples = FALSE)
+}
+
+# A panel cut to the variants `keep` marks (a mask or positions). A panel
+# whose rows are exactly its seed's, cut to an ordered subset, has the seed
+# cut too -- a GenotypeHandle trimmed, a VCF, GDS or PLINK1 seed cut to the
+# records the kept rows read -- so the cut panel's seed does not carry the
+# dropped variants' metadata (see .emptyPanel()); its rowRanges, samples,
+# colData and recorded metadata are its own, cut alike, so no sidecar is read
+# again. Any other cut -- of a panel that is itself a row subset, of one held
+# in memory or whose handle predates fileIdx, or one that reorders or repeats
+# rows -- is taken from its assay, which then reads only those rows.
+# @noRd
+.panelSubsetRows <- function(panel, keep) {
+    keepIdx <- if (is.logical(keep)) which(keep) else as.integer(keep)
+    dosage <- .panelCutDosage(panel, keepIdx)
+    if (is.null(dosage)) {
+        # `drop = FALSE`: a one-variant `keep` would otherwise collapse the
+        # assay to a vector.
+        return(panel[keep, , drop = FALSE])
+    }
+    SummarizedExperiment::SummarizedExperiment(
+        assays = list(dosage = dosage[, colnames(panel), drop = FALSE]),
+        rowRanges = SummarizedExperiment::rowRanges(panel)[keepIdx],
+        colData = SummarizedExperiment::colData(panel),
+        metadata = S4Vectors::metadata(panel)
+    )
+}
+
+# The dosage assay of a panel cut to rows `keepIdx`, over a seed cut alike,
+# or NULL when the seed cannot be cut so (see .panelSubsetRows()).
+# @noRd
+.panelCutDosage <- function(panel, keepIdx) {
+    if (
+        length(keepIdx) >= nrow(panel) ||
+            is.unsorted(keepIdx, strictly = TRUE)
+    ) {
+        return(NULL)
+    }
+    seed <- .panelSeed(panel)
+    if (
+        methods::is(seed, "GenotypeDosageSeed") &&
+            identical(rownames(panel), dimnames(seed)[[1L]])
+    ) {
+        return(DelayedArray::DelayedArray(.gdSeedRows(seed, keepIdx)))
+    }
+    handle <- .ldRefHandle(panel)
+    if (is.null(handle) || !.panelRowsAreHandle(panel, handle)) {
+        return(NULL)
+    }
+    genotypeDelayedArray(.subsetGenotypeHandle(handle, keepIdx))
+}
+
+# A panel's dimensions before any subsetting: its dosage seed's, or its own
+# when it holds its dosages in memory.
+# @noRd
+.panelFullDims <- function(panel) {
+    seed <- .panelSeed(panel)
+    if (is.null(seed)) dim(panel) else dim(seed)
+}
+
+# TRUE when a panel's rows are its handle's own, in order, and the handle can
+# be trimmed (it records each variant's file position).
+# @noRd
+.panelRowsAreHandle <- function(panel, handle) {
+    si <- snpInfo(handle)
+    is_in("fileIdx", names(si)) &&
+        identical(rownames(panel), normalizeVariantId(as.character(si$SNP)))
+}
+
+# A panel with no variants, held in memory. `x[integer(0), ]` would drop the
+# rows but keep the dosage seed -- a handle carrying every variant's
+# metadata, or a backend over the whole file -- which is precisely the
+# weight an empty panel exists to shed, so no seed is kept. Where it came
+# from stays recorded (.ldRefSource()). `keepSamples` keeps its samples and
+# their colData, as a mixture's sampleMap needs; otherwise they go too.
+# @noRd
+.emptyPanel <- function(panel, keepSamples) {
+    cols <- if (keepSamples) seq_len(ncol(panel)) else integer(0)
+    SummarizedExperiment::SummarizedExperiment(
+        assays = list(
+            dosage = matrix(
+                numeric(0),
+                0L,
+                length(cols),
+                dimnames = list(NULL, colnames(panel)[cols])
+            )
+        ),
+        rowRanges = SummarizedExperiment::rowRanges(panel)[integer(0)],
+        colData = SummarizedExperiment::colData(panel)[cols, , drop = FALSE],
+        metadata = list_assign(
+            S4Vectors::metadata(panel),
+            genotypeSource = .ldRefSource(panel)
+        )
+    )
 }
 
 # "format @ path" for show methods, which describe where a panel came from
-# rather than what is in it.
+# rather than what is in it. An LdMatrix came from no file, so it is
+# described by its size instead.
 # @noRd
-.ldSketchLabel <- function(x) {
-    handle <- .ldSketchHandle(x)
-    glue("{genotypeFormat(handle)} @ {path(handle)}")
+.ldRefLabel <- function(x) {
+    if (.ldIsMatrixRef(x)) {
+        return(glue("LdMatrix of {length(x)} variants"))
+    }
+    if (.ldIsMixtureRef(x)) {
+        return(glue(
+            "GenotypeMixture of {length(.gmComponents(x))} panels: ",
+            "{str_flatten(map_chr(.gmComponents(x), .ldRefLabel), '; ')}"
+        ))
+    }
+    source <- .ldRefSource(x)
+    if (is.null(source)) {
+        return(glue("genotype panel of {ncol(x)} samples held in memory"))
+    }
+    glue("{source$format} @ {source$path}")
 }
 
 # TRUE for anything that can serve as an LD panel. A bare GenotypeHandle
@@ -1228,49 +676,60 @@ loadLdFromGenotype <- function(
         methods::is(x, "GenotypeHandle")
 }
 
-# The handle behind an already-open genotype source, or NULL when the value is
-# not one. Callers that accept "a panel, a bare handle, or a spec to resolve"
-# use this to separate the first two -- which are ready to use -- from the
-# third. A panel is the public shape (readGenotypes()); a bare handle is what
-# internal callers and objects serialised before the change still carry.
+# An already-open genotype source -- a panel, or a bare handle -- as given,
+# or NULL when the value is not one. Callers that accept "a panel, a bare
+# handle, or a spec to resolve" use this to separate the first two, which are
+# ready to use, from the third. A panel is the public shape (readGenotypes());
+# a bare handle is what internal callers and objects serialised before the
+# change still carry.
 # @noRd
-.openGenotypeHandle <- function(x) {
-    if (!.ldIsPanel(x)) {
-        return(NULL)
-    }
-    .ldSketchHandle(x)
+.openGenotypeSource <- function(x) {
+    if (.ldIsPanel(x)) x else NULL
 }
 
-# ---------- LD sketch: the panel's own view of itself ----------
+# ---------- LD reference: its own view of itself ----------
 #
-# These read the panel through the SummarizedExperiment interface rather than
+# These read a panel through the SummarizedExperiment interface rather than
 # reaching past it to the GenotypeHandle. The handle is the DelayedArray's
 # seed -- the READ PATH -- and unwrapping it for metadata leaks that seed into
 # callers that only ever wanted chrom/pos/alleles or a sample count, which the
-# RSE already answers. Reaching for `.ldSketchHandle()` is now reserved for
+# RSE already answers. Reaching for `.ldRefHandle()` is now reserved for
 # what genuinely lives on the handle: file format/path, chromosome shard
 # routing, the `.afreq` sidecar, and building or pruning the seed itself.
 #
 # A bare GenotypeHandle -- what objects serialised before the slot became an
 # RSE carry -- is projected exactly the way `.genotypeExperiment()` projects
-# one, so both shapes answer identically.
+# one, so both shapes answer identically. An LdMatrix is itself the GRanges
+# of its variants, with the same SNP / A1 / A2 columns.
 
-# The panel's variant ranges: seqnames = chromosome (chr-prefixed), start =
-# position, mcols = SNP / A1 / A2.
+# The reference's variant ranges: seqnames = chromosome (chr-prefixed), start =
+# position, mcols = SNP / A1 / A2 (and AF on an LdMatrix that records it).
 # @noRd
-.ldSketchRanges <- function(x, label = "LD sketch") {
+.ldRefRanges <- function(x, label = "LD reference") {
     # The chokepoint every panel accessor funnels through, so the guard lives
     # here rather than being repeated at each entry point. Without it a NULL
     # or non-panel sketch surfaces as "unable to find an inherited method for
     # 'snpInfo'" from whichever accessor happened to touch it first, which
     # says nothing about the LD reference being the problem. Callers that
-    # validate with their own label (`.ldFromSketch`, the ctwas assembler) do
+    # validate with their own label (`.ldFromRef`, the ctwas assembler) do
     # so first, so their message wins.
-    .ldFromSketchValidate(x, label)
+    .ldFromRefValidate(x, label)
+    if (.ldIsMatrixRef(x)) {
+        return(as(x, "GRanges"))
+    }
+    if (.ldIsMixtureRef(x)) {
+        return(.gmRanges(x))
+    }
     if (methods::is(x, "RangedSummarizedExperiment")) {
         return(SummarizedExperiment::rowRanges(x))
     }
     .genotypeSnpRanges(x, normalizeVariantId(as.character(snpInfo(x)$SNP)))
+}
+
+# How many variants an LD reference covers.
+# @noRd
+.ldRefNVariants <- function(x) {
+    length(.ldRefRanges(x))
 }
 
 # The panel's variant ids in the panel's OWN labelling. This is the mcols
@@ -1278,23 +737,23 @@ loadLdFromGenotype <- function(
 # the panel FILE -- the `.afreq` sidecar, the ctwas snp_map -- has to see the
 # panel's raw labels.
 # @noRd
-.ldSketchVariantIds <- function(x) {
-    as.character(S4Vectors::mcols(.ldSketchRanges(x))$SNP)
+.ldRefVariantIds <- function(x) {
+    as.character(S4Vectors::mcols(.ldRefRanges(x))$SNP)
 }
 
 # The panel's variant ids as MATCHING keys: the raw labels, with any id whose
 # allele slot holds a tag rather than an allele (chr21:13988152:INS:T) re-
 # rendered from the panel's own A1 / A2 columns, which are correct. Use this
 # wherever a panel id is matched against summary statistics or another id set,
-# and `.ldSketchVariantIds()` only where the file's literal label is wanted.
+# and `.ldRefVariantIds()` only where the file's literal label is wanted.
 #
 # The repair is what lets an untidily-named panel entry be MATCHED rather than
 # discarded: harmonization re-keys a surviving variant to the reference-allele
 # id, so the panel side has to speak the same form or every later id lookup
 # misses the variant it just harmonized.
 # @noRd
-.ldSketchMatchIds <- function(x) {
-    mc <- S4Vectors::mcols(.ldSketchRanges(x))
+.ldRefMatchIds <- function(x) {
+    mc <- S4Vectors::mcols(.ldRefRanges(x))
     ids <- as.character(mc$SNP)
     if (is.null(mc$A1) || is.null(mc$A2)) {
         return(ids)
@@ -1304,21 +763,214 @@ loadLdFromGenotype <- function(
 
 # Per-variant chromosome, canonical (no chr prefix).
 # @noRd
-.ldSketchChrom <- function(x) {
-    canonChrom(as.character(GenomicRanges::seqnames(.ldSketchRanges(x))))
+.ldRefChrom <- function(x) {
+    canonChrom(as.character(GenomicRanges::seqnames(.ldRefRanges(x))))
 }
 
+# A panel's sample ids. An LdMatrix has no samples, so asking is a bug in the
+# caller rather than something to answer with an empty vector.
 # @noRd
-.ldSketchSampleIds <- function(x) {
+.ldRefSampleIds <- function(x) {
+    if (.ldIsMatrixRef(x) || .ldIsMixtureRef(x)) {
+        abort(
+            "Only a single genotype panel has one sample set.",
+            .internal = TRUE
+        )
+    }
     if (methods::is(x, "RangedSummarizedExperiment")) {
         return(as.character(colnames(x)))
     }
     as.character(sampleIds(x))
 }
 
+# A panel's column count -- its samples, or a sketch's pseudo-samples -- or
+# the size an LdMatrix records (NA when it records none).
 # @noRd
-.ldSketchNSamples <- function(x) {
-    length(.ldSketchSampleIds(x))
+.ldRefNSamples <- function(x) {
+    if (.ldIsMatrixRef(x)) {
+        return(nSamples(x))
+    }
+    if (.ldIsMixtureRef(x)) {
+        return(.gmPooledN(x, .ldRefNSamples))
+    }
+    length(.ldRefSampleIds(x))
+}
+
+# The number of real people behind an LD reference, for statistics that count
+# them -- a MAC cutoff's allele counts, DENTIST's truncation rank. A genotype
+# panel's columns are its samples. A stochastic sketch's columns are B
+# pseudo-samples projected from n real ones (the projection cannot raise the
+# rank of their LD above n), so its n is the one its projection record holds.
+# An LdMatrix records its size, or NA.
+# @noRd
+.ldRefRealNSamples <- function(x) {
+    if (.ldIsMatrixRef(x)) {
+        return(nSamples(x))
+    }
+    if (.ldIsMixtureRef(x)) {
+        return(sum(map_int(.gmComponents(x), .ldRefRealNSamples)))
+    }
+    .ldRefProjection(x)$nSamples %||% .ldRefNSamples(x)
+}
+
+# The number of independent samples a reference's LD is worth, for the
+# estimators that correct for LD-estimation noise (ldsc's unbiased r^2, HDL's
+# finite reference). A stochastic sketch's LD carries the noise of its n real
+# samples and of its B pseudo-samples, so it is worth 1 / (1/n + 1/B). An
+# LdMatrix records this directly.
+# @noRd
+.ldRefNoiseN <- function(x) {
+    if (.ldIsMatrixRef(x)) {
+        return(nSamples(x))
+    }
+    if (.ldIsMixtureRef(x)) {
+        return(.gmPooledN(x, .ldRefNoiseN))
+    }
+    nCols <- .ldRefNSamples(x)
+    n <- .ldRefProjection(x)$nSamples
+    if (is.null(n)) {
+        return(nCols)
+    }
+    as.integer(round(1 / (1 / n + 1 / nCols)))
+}
+
+# Each of the reference's variants' A1 frequency, or NULL when it records
+# none. An LdMatrix and a stochastic sketch carry an `AF` column; a bare
+# sketch handle (an object serialised before the slot became an RSE) answers
+# from its sidecar. A panel of real genotypes measures frequencies from its
+# dosages instead, so it answers NULL here.
+# @noRd
+.ldRefAf <- function(x) {
+    if (.ldIsMixtureRef(x)) {
+        return(.gmAf(x))
+    }
+    af <- S4Vectors::mcols(.ldRefRanges(x))$AF
+    if (!is.null(af) || !methods::is(x, "GenotypeHandle")) {
+        return(af)
+    }
+    record <- .ldRefProjection(x)
+    if (is.null(record)) {
+        return(NULL)
+    }
+    as.numeric(record$af$alt_freq)[match(.ldRefVariantIds(x), record$af$id)]
+}
+
+# The real sample size a step needs, or an error naming the step when the
+# reference cannot say -- an LdMatrix built without `nSamples`.
+# @noRd
+.ldRefRequireNSamples <- function(x, step) {
+    n <- .ldRefRealNSamples(x)
+    if (is.na(n)) {
+        abort(c(
+            glue("{step} needs the LD reference's sample size."),
+            i = "Record it with LdMatrix(nSamples = )."
+        ))
+    }
+    n
+}
+
+# A stochastic sketch's projection record -- list(nSamples, af) -- or NULL for
+# a panel of real genotypes and for an LdMatrix. A panel built by
+# .genotypeExperiment() carries it from construction (see .withLdProjection);
+# a bare handle, which only objects serialised before the slot became an RSE
+# carry, is read from its sidecar on demand.
+# @noRd
+.ldRefProjection <- function(x) {
+    if (is.null(x) || .ldIsMatrixRef(x) || .ldIsMixtureRef(x)) {
+        return(NULL)
+    }
+    if (methods::is(x, "RangedSummarizedExperiment")) {
+        return(S4Vectors::metadata(x)$ldProjection)
+    }
+    .sketchProjectionRecord(.ldRefHandle(x))
+}
+
+# TRUE for a stochastic sketch: a panel whose columns are pseudo-samples
+# projected from real ones, so its dosages are not genotypes and say nothing
+# about allele frequency or missingness.
+# @noRd
+.ldRefIsProjection <- function(x) {
+    !is.null(.ldRefProjection(x))
+}
+
+# Read a stochastic sketch's sidecar: its real sample count -- the largest
+# OBS_CT, halved (OBS_CT counts alleles, two per diploid sample; variants with
+# missing calls count fewer) -- and each variant's real A1 frequency. NULL
+# when the handle is not a sketch, i.e. carries no PLINK2-style .afreq beside
+# it (in any genotype format) with U_MIN / U_MAX and OBS_CT.
+# @noRd
+.sketchProjectionRecord <- function(handle) {
+    if (is.null(handle)) {
+        return(NULL)
+    }
+    .afreqProjectionRecord(.genotypeSourceRecord(handle), snpInfo(handle)$CHR)
+}
+
+# .sketchProjectionRecord() for a genotype source and the chromosomes its
+# panel spans, for a panel that reads through no handle.
+# @noRd
+.afreqProjectionRecord <- function(source, chroms) {
+    tbls <- compact(map(.afreqPrefixes(source, chroms), .afreqIfStochastic))
+    if (length(tbls) == 0L) {
+        return(NULL)
+    }
+    af <- list_rbind(tbls)
+    list(
+        nSamples = as.integer(max(as.numeric(af$obs_ct), na.rm = TRUE) %/% 2),
+        af = select(af, all_of(c("id", "alt_freq")))
+    )
+}
+
+# Record a stochastic sketch's real sample count and allele frequencies on the
+# panel built over it: the count in metadata, the frequencies as an `AF`
+# column of rowRanges (the frequency of A1, which PLINK2 writes as ALT). Done
+# once, at construction, so nothing downstream re-reads the sidecar -- or,
+# worse, measures frequencies off the projected dosages.
+# @noRd
+.withLdProjection <- function(panel, record) {
+    if (is.null(record)) {
+        return(panel)
+    }
+    rr <- SummarizedExperiment::rowRanges(panel)
+    mc <- S4Vectors::mcols(rr)
+    mc$AF <- as.numeric(record$af$alt_freq)[
+        match(as.character(mc$SNP), record$af$id)
+    ]
+    withAf <- SummarizedExperiment::`rowRanges<-`(
+        panel,
+        value = S4Vectors::`mcols<-`(rr, value = mc)
+    )
+    S4Vectors::`metadata<-`(
+        withAf,
+        value = c(
+            S4Vectors::metadata(withAf),
+            list(ldProjection = list(nSamples = record$nSamples))
+        )
+    )
+}
+
+# .withLdProjection() for a panel that reads through no handle -- a VCF or
+# GDS panel, or a per-chromosome set of them -- its sidecar found from the
+# genotype source the panel records.
+# @noRd
+.withSourceProjection <- function(panel) {
+    .withLdProjection(
+        panel,
+        .afreqProjectionRecord(.ldRefSource(panel), .ldRefChrom(panel))
+    )
+}
+
+# The .afreq at `prefix` when it is a stochastic sketch's (it carries U_MIN /
+# U_MAX) and records OBS_CT, else NULL. A malformed sidecar reads as absent,
+# as it does for the panel filter.
+# @noRd
+#' @importFrom rlang try_fetch
+.afreqIfStochastic <- function(prefix) {
+    af <- try_fetch(readAfreq(prefix), error = function(cnd) NULL)
+    if (is.null(af) || !all(is_in(c("u_min", "obs_ct"), colnames(af)))) {
+        return(NULL)
+    }
+    af
 }
 
 # Dosage for a variant subset, samples x variants.
@@ -1329,9 +981,15 @@ loadLdFromGenotype <- function(
 # delegates to that same function with `meanImpute = FALSE`, so imputation is
 # layered on here rather than pushed down.
 # @noRd
-.ldSketchDosage <- function(x, snpIdx, meanImpute = TRUE) {
-    # The other primitive that does not pass through `.ldSketchRanges()`.
-    .ldFromSketchValidate(x, "LD sketch")
+.ldRefDosage <- function(x, snpIdx, meanImpute = TRUE) {
+    # The other primitive that does not pass through `.ldRefRanges()`.
+    .ldFromRefValidate(x, "LD reference")
+    if (.ldIsMatrixRef(x) || .ldIsMixtureRef(x)) {
+        abort(
+            "Only a single genotype panel has dosages to read.",
+            .internal = TRUE
+        )
+    }
     if (!methods::is(x, "RangedSummarizedExperiment")) {
         return(.dosageMatrix(x, snpIdx, meanImpute = meanImpute))
     }
@@ -1341,39 +999,43 @@ loadLdFromGenotype <- function(
     if (meanImpute) .qtlMeanImpute(dosage) else dosage
 }
 
-.ldFromSketchValidate <- function(ldSketch, label) {
-    if (is.null(ldSketch)) {
+# Require a non-NULL LD reference: a genotype panel (a
+# RangedSummarizedExperiment, or a bare GenotypeHandle) or an LdMatrix.
+# @noRd
+.ldFromRefValidate <- function(ldReference, label) {
+    if (is.null(ldReference)) {
         msg <- glue(
-            "{label}: the SumStats/collection carries no ldSketch ",
-            "(ldSketch = NULL); this step needs an LD reference."
+            "{label}: the SumStats/collection carries no ldReference ",
+            "(ldReference = NULL); this step needs an LD reference."
         )
         abort(msg)
     }
     # A bare GenotypeHandle is still accepted: that is what objects
     # serialised before the slot became an RSE carry.
-    if (!.ldIsPanel(ldSketch)) {
+    if (!.ldIsReference(ldReference)) {
         msg <- glue(
-            "{label}: ldSketch must be a genotype panel ",
-            "(RangedSummarizedExperiment or GenotypeHandle)."
+            "{label}: ldReference must be a genotype panel ",
+            "(RangedSummarizedExperiment or GenotypeHandle), a ",
+            "GenotypeMixture or an LdMatrix."
         )
         abort(msg)
     }
 }
 
 # Match requested ids to the panel; NULL if none match. Returns kept ids/order.
-.ldFromSketchMatch <- function(ldSketch, variantIds, label, onMissing) {
+.ldFromRefMatch <- function(ldReference, variantIds, label, onMissing) {
     # Match by (chrom, pos, allele) tuple with an exact id-string fallback for
     # rsID panels; the caller's original ids and order are preserved.
     m <- matchVariants(
         variantIds,
-        .ldSketchMatchIds(ldSketch),
+        .ldRefMatchIds(ldReference),
         removeStrandAmbiguous = FALSE
     )
     nMissing <- length(variantIds) - length(m$idxA)
     if (nMissing > 0L && onMissing == "error") {
         msg <- glue(
             "{label}: {nMissing} variant id(s) not present in the LD ",
-            "sketch panel."
+            "reference."
         )
         abort(msg)
     }
@@ -1388,23 +1050,44 @@ loadLdFromGenotype <- function(
     )
 }
 
-.ldFromSketch <- function(
-    ldSketch,
+# The LD matrix over a specified variant subset of an LD reference: computed
+# from a genotype panel's dosages, or read out of an LdMatrix. Called directly
+# by
+# twasWeightsPipeline, fineMappingPipeline, jointEngine,
+# causalInferencePipeline, colocboostPipeline and the coloc / summaryStatsQc
+# paths, which differ only in their error message prefix and in whether
+# variants absent from the panel raise an error or get silently dropped --
+# both of which are arguments here rather than a per-pipeline wrapper.
+#
+# Arguments:
+#   ldReference A genotype panel (RangedSummarizedExperiment, or a bare
+#               GenotypeHandle) or an LdMatrix.
+#   variantIds  Character vector of SNP IDs to extract.
+#   label       Error-message prefix, e.g. "twasWeightsPipeline".
+#   onMissing   "error" (default) -> any unmatched id stops the call;
+#               "drop"           -> unmatched ids are silently filtered.
+#               When "drop" leaves no surviving variants the function
+#               returns NULL.
+#
+# Returns:
+#   A `length(variantIds) x length(variantIds)` symmetric LD matrix with
+#   rows/cols named by the (possibly filtered) `variantIds`.
+#   With `onMissing = "drop"` the returned matrix carries an attribute
+#   `"keptVariantIds"` so callers can recover which ids survived.
+# @noRd
+.ldFromRef <- function(
+    ldReference,
     variantIds,
-    label = ".ldFromSketch",
+    label = ".ldFromRef",
     onMissing = c("error", "drop")
 ) {
-    .ldFromSketchValidate(ldSketch, label)
+    .ldFromRefValidate(ldReference, label)
     onMissing <- arg_match(onMissing)
-    matched <- .ldFromSketchMatch(ldSketch, variantIds, label, onMissing)
+    matched <- .ldFromRefMatch(ldReference, variantIds, label, onMissing)
     if (is.null(matched)) {
         return(NULL)
     }
-    ldMat <- computeLd(
-        ldSketch,
-        method = "sample",
-        snpIdx = matched$idx
-    )
+    ldMat <- .ldRefLdAt(ldReference, matched$idx)
     # The match above is allele-aware, so a panel entry whose alleles are
     # swapped relative to the caller's id still matches -- but the dosage it
     # returns counts the OTHER allele, which negates every correlation that
@@ -1424,7 +1107,238 @@ loadLdFromGenotype <- function(
     named
 }
 
-# ---------- LD sketch: per-variant panel statistics and filtering ----------
+# The factor of a genotype reference's LD over `variantIds` (see
+# .ldRefFactor()), matched and allele-aligned exactly as .ldFromRef() does:
+# columns follow the caller's ids and are named by them, and a column whose
+# panel alleles are swapped is negated, so crossprod(F) / (nrow(F) - 1) is
+# .ldFromRef()'s matrix. An LdMatrix has no factor, so callers send it down
+# the matrix path instead.
+# @noRd
+.ldFactorFromRef <- function(
+    ldReference,
+    variantIds,
+    label = ".ldFactorFromRef",
+    onMissing = c("error", "drop")
+) {
+    .ldFromRefValidate(ldReference, label)
+    onMissing <- arg_match(onMissing)
+    matched <- .ldFromRefMatch(ldReference, variantIds, label, onMissing)
+    if (is.null(matched)) {
+        return(NULL)
+    }
+    factor <- .ldRefFactor(ldReference, matched$idx)
+    signed <- if (any(matched$sign < 0)) {
+        sweep(factor, 2L, matched$sign, `*`)
+    } else {
+        factor
+    }
+    named <- `dimnames<-`(signed, list(NULL, matched$keptIds))
+    if (onMissing == "drop") {
+        return(`attr<-`(named, "keptVariantIds", matched$keptIds))
+    }
+    named
+}
+
+# The LD among the reference's variants at `idx`, in the reference's own
+# allele coding: the sample correlation of a panel's dosages, or the
+# corresponding block of an LdMatrix.
+# @noRd
+.ldRefLdAt <- function(ldReference, idx) {
+    if (.ldIsMatrixRef(ldReference)) {
+        return(unname(ldMatrix(ldReference)[idx, idx, drop = FALSE]))
+    }
+    if (.ldIsMixtureRef(ldReference)) {
+        return(.gmLdAt(ldReference, idx))
+    }
+    computeLd(ldReference, method = "sample", snpIdx = idx)
+}
+
+# A factor F of a genotype reference's LD over `idx`: a matrix with
+# zero-mean columns whose crossprod(F) / (nrow(F) - 1) is exactly the LD
+# .ldRefLdAt() returns, so every computation on that LD -- quadratic forms,
+# products, columns, eigenvectors -- can run on F without forming the p x p
+# matrix. Its rows behave as samples, so an engine that correlates them
+# itself recovers the same LD. A panel's factor is its standardized dosages;
+# a mixture's stacks its panels' (.gmFactor()).
+# @noRd
+.ldRefFactor <- function(ldReference, idx) {
+    if (.ldIsMixtureRef(ldReference)) {
+        return(.gmFactor(ldReference, idx))
+    }
+    .ldFactorFromDosage(.ldRefDosage(ldReference, idx, meanImpute = TRUE))
+}
+
+# A panel's mean-imputed, standardized dosages over `idx`, with a monomorphic
+# column left at zero: the blocks a mixture's factor is stacked from.
+# @noRd
+.ldRefStandardized <- function(ldReference, idx) {
+    .ldStandardize(.ldRefDosage(ldReference, idx, meanImpute = TRUE))
+}
+
+# The factor of a dosage matrix's (samples x variants) LD, under
+# .ldRefFactor()'s contract. A monomorphic variant is independent of every
+# other with unit variance in computeLd()'s LD, while its standardized
+# column is all zero; two padding rows of +/- sqrt((m - 1) / 2) restore its
+# variance without correlating it with anything or moving any column's mean,
+# and the other rows are rescaled for the m rows the factor then has.
+# @noRd
+.ldFactorFromDosage <- function(X) {
+    standardized <- .ldStandardize(X)
+    dead <- which(colSums(standardized^2) == 0)
+    if (length(dead) == 0L) {
+        return(standardized)
+    }
+    n <- nrow(standardized)
+    m <- n + 2L * length(dead)
+    rbind(
+        standardized * sqrt((m - 1) / (n - 1)),
+        .ldPaddingRows(dead, ncol(standardized), sqrt((m - 1) / 2))
+    )
+}
+
+# Mean-imputed columns, centred and scaled to unit variance (n - 1
+# denominator), as scale() would make them, except that a constant column
+# stays zero rather than turning into NaN.
+# @noRd
+.ldStandardize <- function(X) {
+    imputed <- if (anyNA(X)) .ldMeanImputeColumns(X) else X
+    centred <- sweep(imputed, 2L, colMeans(imputed))
+    sds <- sqrt(colSums(centred^2) / (nrow(centred) - 1))
+    sweep(centred, 2L, replace(sds, sds == 0, 1), `/`)
+}
+
+# Two rows per column in `cols`, holding +value and -value in that column
+# and zero elsewhere. They add 2 value^2 to the column's sum of squares and
+# nothing to its mean or to any crossproduct.
+# @noRd
+.ldPaddingRows <- function(cols, p, value) {
+    rows <- matrix(0, 2L * length(cols), p)
+    i <- seq_along(cols)
+    rows[cbind(2L * i - 1L, cols)] <- value
+    rows[cbind(2L * i, cols)] <- -value
+    rows
+}
+
+# The eigendecomposition of the LD R = crossprod(F) / (m - 1), from the thin
+# SVD of its factor F (m x p) rather than from R: the eigenvalues d^2 / (m - 1)
+# and the right singular vectors, for the min(m, p) directions the SVD
+# returns, largest first. R's other p - min(m, p) eigenvalues are exactly
+# zero; `nNull` counts them, for an estimator that counts every direction.
+# @noRd
+.ldFactorEigen <- function(F) {
+    s <- svd(F, nu = 0L)
+    list(
+        values = s$d^2 / (nrow(F) - 1),
+        vectors = s$v,
+        nNull = ncol(F) - length(s$d)
+    )
+}
+
+# ---------- LD rows a stripe at a time ----------
+#
+# An LD source is one block's LD in any of three forms: the matrix itself,
+# list(R = ); a factor of it, list(F = ) with R = crossprod(F) / (m - 1); or
+# an eigendecomposition, list(vectors = , values = ) with R = V diag(values)
+# V'. The helpers below read R's rows from any of them, so a computation over
+# R's rows never needs the matrix whole.
+
+# How many of R's rows a stripe holds.
+# @noRd
+.ldStripeSize <- function() 256L
+
+# The number of variants an LD source covers.
+# @noRd
+.ldSourceSize <- function(ld) {
+    if (!is.null(ld$R)) {
+        return(nrow(ld$R))
+    }
+    if (!is.null(ld$F)) {
+        return(ncol(ld$F))
+    }
+    nrow(ld$vectors)
+}
+
+# Rows `rows` of an LD source's R, without forming the rest.
+# @noRd
+.ldSourceRows <- function(ld, rows) {
+    if (!is.null(ld$R)) {
+        return(ld$R[rows, , drop = FALSE])
+    }
+    if (!is.null(ld$F)) {
+        return(
+            crossprod(ld$F[, rows, drop = FALSE], ld$F) / (nrow(ld$F) - 1)
+        )
+    }
+    scaled <- sweep(ld$vectors[rows, , drop = FALSE], 2L, ld$values, "*")
+    tcrossprod(scaled, ld$vectors)
+}
+
+# (R o R) A -- R squared element-wise, times A -- for an LD source: column a
+# of the result is the LD score sum_k r^2_jk a_k. The element-wise square
+# does not inherit a factor's low rank (R has rank below m, R o R is in
+# general full rank), so no product through the factor serves every column
+# of A at once: one Gram matrix F diag(a) F' per column would cost m^2 p for
+# each. Instead R's rows are formed a stripe at a time, squared, and
+# multiplied by all of A, which costs p^2 (m + ncol(A)) and holds one stripe.
+# A stored matrix is used as it is.
+# @noRd
+.ldSquaredProduct <- function(ld, A) {
+    if (!is.null(ld$R)) {
+        return((ld$R^2) %*% A)
+    }
+    p <- .ldSourceSize(ld)
+    starts <- seq.int(1L, p, by = .ldStripeSize())
+    stripes <- map(starts, .ldSquaredProductStripe, ld = ld, A = A, p = p)
+    exec(rbind, !!!stripes)
+}
+
+# @noRd
+.ldSquaredProductStripe <- function(start, ld, A, p) {
+    rows <- seq.int(start, min(start + .ldStripeSize() - 1L, p))
+    .ldSourceRows(ld, rows)^2 %*% A
+}
+
+# `ldReference` cut to the variants `variantIds` names (matched as
+# .ldFromRef() matches them), for a caller that reads the same block's LD
+# several times: a panel's dosage is read from its files once, here, and held
+# in memory, rather than read again by every reader. An LdMatrix is cut to
+# those variants, and a GenotypeMixture is cut with its panels left to read
+# as they are needed.
+# @noRd
+.ldRefInMemory <- function(ldReference, variantIds, label) {
+    .ldFromRefValidate(ldReference, label)
+    matched <- .ldFromRefMatch(ldReference, variantIds, label, "error")
+    rows <- sort(unique(matched$idx))
+    if (!methods::is(ldReference, "RangedSummarizedExperiment")) {
+        if (methods::is(ldReference, "GenotypeHandle")) {
+            return(ldReference)
+        }
+        return(ldReference[rows])
+    }
+    block <- ldReference[rows, ]
+    SummarizedExperiment::`assay<-`(
+        block,
+        "dosage",
+        withDimnames = FALSE,
+        value = as.matrix(SummarizedExperiment::assay(
+            block,
+            "dosage",
+            withDimnames = FALSE
+        ))
+    )
+}
+
+# b' R b for each column b of B, from an LD matrix or a factor of it:
+# ||F b||^2 / (m - 1), never forming R.
+# @noRd
+.ldQuadForms <- function(ld, B) {
+    if (!is.null(ld$R)) {
+        return(colSums(B * (ld$R %*% B)))
+    }
+    colSums((ld$F %*% B)^2) / (nrow(ld$F) - 1)
+}
+
+# ---------- LD reference: per-variant statistics and filtering ----------
 
 # Per-variant minor allele frequency and missingness rate from panel dosage.
 #
@@ -1459,19 +1373,23 @@ loadLdFromGenotype <- function(
     max(mafCutoff, macAsMaf)
 }
 
-# The .afreq stems to read for a panel: the handle's own stem, or one per
-# chromosome the panel actually spans. A sharded handle lists every
-# chromosome in its manifest, and reading the shards the summary statistics
-# never touch is the cost per-chromosome sketch trimming exists to avoid.
+# The .afreq stems to read for a genotype source: its file's, or one per
+# chromosome of `chroms` (those its panel spans) for a per-chromosome
+# manifest. A manifest lists every chromosome, and reading the shards the
+# summary statistics never touch is the cost per-chromosome sketch trimming
+# exists to avoid. None for a panel that reads no file.
 # @noRd
-.panelAfreqPrefixes <- function(handle) {
-    chromPaths <- .genotypeChromPaths(handle)
-    if (length(chromPaths) == 0L) {
-        return(.genotypeReadPath(handle))
+.afreqPrefixes <- function(source, chroms) {
+    if (is.null(source)) {
+        return(character(0))
     }
-    spanned <- unique(canonChrom(as.character(snpInfo(handle)$CHR)))
+    chromPaths <- source$chromPaths %||% character(0)
+    if (length(chromPaths) == 0L) {
+        return(.genotypeStem(.resolveGenotypeResourcePath(source$path)))
+    }
+    spanned <- unique(canonChrom(as.character(chroms)))
     paths <- unname(chromPaths[is_in(names(chromPaths), spanned)])
-    map_chr(paths, .resolveGenotypeResourcePath)
+    .genotypeStem(map_chr(paths, .resolveGenotypeResourcePath))
 }
 
 # One shard's id/alt_freq pairs, or NULL when the sidecar is missing or does
@@ -1487,18 +1405,16 @@ loadLdFromGenotype <- function(
     select(af, all_of(c("id", "alt_freq")))
 }
 
-# Panel minor allele frequency for `variantIds` read from the PLINK2 .afreq
-# sidecar, or NULL when the sidecar cannot answer for every id.
+# Panel minor allele frequency for `variantIds` read from the PLINK2-style
+# .afreq sidecar beside the panel's file, in any genotype format, or NULL
+# when the sidecar cannot answer for every id.
 #
 # Refusing a PARTIAL sidecar is deliberate: the dosage path treats a variant
 # it cannot measure as a drop, so a fast path that quietly kept the ids
 # .afreq happens to omit would disagree with it about the same variant.
 # @noRd
-.panelAfreqMaf <- function(handle, variantIds) {
-    if (genotypeFormat(handle) != "plink2") {
-        return(NULL)
-    }
-    tbls <- compact(map(.panelAfreqPrefixes(handle), .panelAfreqTable))
+.panelAfreqMaf <- function(source, chroms, variantIds) {
+    tbls <- compact(map(.afreqPrefixes(source, chroms), .panelAfreqTable))
     if (length(tbls) == 0L) {
         return(NULL)
     }
@@ -1511,54 +1427,160 @@ loadLdFromGenotype <- function(
     pmin(altFreq, 1 - altFreq)
 }
 
-# TRUE for each matched panel variant that fails the cutoffs.
-#
-# Allele frequency alone answers MAF and MAC, so with no missingness cutoff
-# set the .afreq sidecar decides the whole mask without materializing panel
-# dosage -- which is what makes the filter affordable on a panel far larger
-# than the analysed variant set. Missingness is not derivable from the
-# sidecar (its observation count is an ALLELE count, whose ploidy the mask
-# would have to guess), so an imissCutoff always takes the dosage path.
+# TRUE for each matched variant of the LD reference that fails the cutoffs.
+# The statistics come from `.ldRefVariantStats()`, which knows where each
+# kind of reference keeps them truthfully; missingness is only asked for when
+# a missingness cutoff is set.
 # @noRd
-.panelDropMask <- function(ldSketch, matched, panelFilterParam) {
+.panelDropMask <- function(ldReference, matched, panelFilterParam) {
     imissCutoff <- panelFilterParam$imissCutoff
-    if (imissCutoff >= 1) {
-        # Keyed on the PANEL's own variant labels, not the caller's: .afreq
-        # carries the .pvar ids, while `keptIds` is whatever id form the
-        # caller asked in (normalized, most often).
-        panelIds <- .ldSketchVariantIds(ldSketch)[matched$idx]
-        # The handle stays for this one read: the sidecar is a file beside
-        # the genotypes, which only the seed knows how to find.
-        maf <- .panelAfreqMaf(.ldSketchHandle(ldSketch), panelIds)
-        if (!is.null(maf)) {
-            effMaf <- .panelEffectiveMaf(
-                panelFilterParam$mafCutoff,
-                panelFilterParam$macCutoff,
-                .ldSketchNSamples(ldSketch)
-            )
-            return(is.na(maf) | maf < effMaf)
-        }
-    }
-    dosage <- .ldSketchDosage(ldSketch, matched$idx, meanImpute = FALSE)
-    stats <- .panelVariantStats(dosage)
+    stats <- .ldRefVariantStats(
+        ldReference,
+        matched$idx,
+        needMissing = imissCutoff < 1,
+        step = "The LD-panel filter"
+    )
     effMaf <- .panelEffectiveMaf(
         panelFilterParam$mafCutoff,
         panelFilterParam$macCutoff,
-        nrow(dosage)
+        .ldRefMacSamples(ldReference, panelFilterParam$macCutoff)
     )
-    is.na(stats$maf) | stats$maf < effMaf | stats$missRate > imissCutoff
+    fails <- is.na(stats$maf) | stats$maf < effMaf
+    if (is.null(stats$missRate)) {
+        return(fails)
+    }
+    fails | stats$missRate > imissCutoff
+}
+
+# Per-variant MAF -- and missingness, when `needMissing` -- for the
+# reference's variants at `idx`, from wherever the reference records them
+# truthfully:
+#
+#   genotype panel  the .afreq sidecar when it answers for every variant and
+#                   no missingness is wanted (no dosage need be read, which is
+#                   what keeps the filter affordable on a panel far larger
+#                   than the analysed variant set); the dosages otherwise
+#   sketch          the real frequencies its projection record holds. Its
+#                   dosages are projections taken after mean-filling, so they
+#                   carry neither frequencies nor missingness
+#   LdMatrix        its AF column; it has no genotypes to be missing
+#
+# `step` names the caller in the error when the reference cannot answer.
+# @noRd
+.ldRefVariantStats <- function(ldReference, idx, needMissing, step) {
+    if (.ldIsMixtureRef(ldReference)) {
+        return(.gmVariantStats(ldReference, idx, needMissing, step))
+    }
+    if (.ldIsMatrixRef(ldReference) || .ldRefIsProjection(ldReference)) {
+        return(.ldRefRecordedStats(ldReference, idx, needMissing, step))
+    }
+    if (!needMissing) {
+        # Keyed on the PANEL's own variant labels: .afreq carries the .pvar
+        # ids. The handle stays for this one read, since the sidecar is a
+        # file beside the genotypes, which only the seed knows how to find.
+        panelIds <- .ldRefVariantIds(ldReference)[idx]
+        maf <- .panelAfreqMaf(
+            .ldRefSource(ldReference),
+            .ldRefChrom(ldReference),
+            panelIds
+        )
+        if (!is.null(maf)) {
+            return(list(maf = maf, missRate = NULL))
+        }
+    }
+    .panelVariantStats(.ldRefDosage(ldReference, idx, meanImpute = FALSE))
+}
+
+# Frequencies from a reference that records them rather than measuring them:
+# an LdMatrix or a stochastic sketch. Neither can say how often a genotype is
+# missing, so a missingness cutoff is refused rather than silently skipped.
+# @noRd
+.ldRefRecordedStats <- function(ldReference, idx, needMissing, step) {
+    what <- if (.ldIsMatrixRef(ldReference)) {
+        "an LdMatrix, which has no genotypes"
+    } else {
+        "a stochastic sketch, whose dosages are projections"
+    }
+    if (needMissing) {
+        abort(c(
+            glue(
+                "{step} needs genotype missingness, and the LD reference is ",
+                "{what}."
+            ),
+            i = "Leave its missingness cutoff unset."
+        ))
+    }
+    af <- .ldRefAf(ldReference)
+    if (is.null(af)) {
+        abort(c(
+            glue(
+                "{step} needs allele frequencies, and the LD reference ",
+                "records none."
+            ),
+            i = "Give the LdMatrix's variants an `AF` column."
+        ))
+    }
+    af <- as.numeric(af)[idx]
+    list(maf = pmin(af, 1 - af), missRate = NULL)
+}
+
+# Per-variant genotype variance at `idx`, for scaling non-standardized weights
+# to the correlation scale. A panel of real genotypes measures it on its
+# (mean-imputed) dosages. A sketch or an LdMatrix has no genotypes to measure,
+# so it gives 2p(1 - p) from its recorded A1 frequency -- the dosage variance
+# under Hardy-Weinberg -- or NA when it records none.
+# @noRd
+.ldRefVariance <- function(ldReference, idx) {
+    if (.ldIsMixtureRef(ldReference)) {
+        return(.gmVariance(ldReference, idx))
+    }
+    if (.ldIsMatrixRef(ldReference) || .ldRefIsProjection(ldReference)) {
+        af <- .ldRefAf(ldReference)
+        if (is.null(af)) {
+            return(rep(NA_real_, length(idx)))
+        }
+        af <- as.numeric(af)[idx]
+        return(2 * af * (1 - af))
+    }
+    geno <- .ldRefDosage(ldReference, idx, meanImpute = TRUE)
+    apply(geno, 2, stats::var, na.rm = TRUE)
+}
+
+# The real sample count a MAC cutoff divides by, or 0 when no MAC cutoff is
+# set (which .panelEffectiveMaf() reads as "no MAC term"). A mixture of
+# panels has no single count, so a MAC cutoff on one is refused.
+# @noRd
+.ldRefMacSamples <- function(ldReference, macCutoff) {
+    if (macCutoff <= 0) {
+        return(0L)
+    }
+    # A mixture's statistics are its panels' worst (see .gmVariantStats()), so
+    # its counts are judged against its smallest panel.
+    if (.ldIsMixtureRef(ldReference)) {
+        return(min(map_int(.gmComponents(ldReference), .ldRefRealNSamples)))
+    }
+    if (.ldIsMatrixRef(ldReference) && !is.null(mixtureWeights(ldReference))) {
+        abort(c(
+            str_c(
+                "A MAC cutoff counts one panel's alleles, and the LdMatrix ",
+                "is a mixture."
+            ),
+            i = "Use `mafCutoff` instead."
+        ))
+    }
+    .ldRefRequireNSamples(ldReference, "A MAC cutoff")
 }
 
 # The subset of `variantIds` whose LD-panel genotypes clear the cutoffs,
 # returned in the caller's order.
 #
 # Variants absent from the panel are passed through untouched. Whether a
-# missing variant is an error or is silently dropped belongs to `.ldFromSketch`
+# missing variant is an error or is silently dropped belongs to `.ldFromRef`
 # (its `onMissing`), and deciding it a second time here would let the two
 # disagree about the same variant.
 # @noRd
 .panelVariantFilter <- function(
-    ldSketch,
+    ldReference,
     variantIds,
     panelFilterParam = PanelFilterParam(),
     label = ".panelVariantFilter"
@@ -1569,25 +1591,25 @@ loadLdFromGenotype <- function(
     if (is.null(cutoffs)) {
         return(variantIds)
     }
-    if (is.null(ldSketch) || length(variantIds) == 0L) {
+    if (is.null(ldReference) || length(variantIds) == 0L) {
         return(variantIds)
     }
-    matched <- .ldFromSketchMatch(ldSketch, variantIds, label, "drop")
+    matched <- .ldFromRefMatch(ldReference, variantIds, label, "drop")
     if (is.null(matched)) {
         return(variantIds)
     }
-    drop <- .panelDropMask(ldSketch, matched, cutoffs)
+    drop <- .panelDropMask(ldReference, matched, cutoffs)
     variantIds[!is_in(variantIds, matched$keptIds[drop])]
 }
 
 # Row mask for the variants clearing the LD-panel cutoffs, reporting how many
 # were dropped. A no-op when no cutoff is set.
 # @noRd
-.panelKeepMask <- function(variantIds, ldSketch, cutoffs, label) {
-    if (is.null(ldSketch) || is.null(cutoffs)) {
+.panelKeepMask <- function(variantIds, ldReference, cutoffs, label) {
+    if (is.null(ldReference) || is.null(cutoffs)) {
         return(rep(TRUE, length(variantIds)))
     }
-    kept <- .panelVariantFilter(ldSketch, variantIds, cutoffs, label = label)
+    kept <- .panelVariantFilter(ldReference, variantIds, cutoffs, label = label)
     keep <- is_in(variantIds, kept)
     nDropped <- sum(!keep)
     if (nDropped > 0L) {
@@ -1615,11 +1637,12 @@ loadLdFromGenotype <- function(
     }
     list(mafCutoff = maf, macCutoff = mac, imissCutoff = imiss)
 }
-# ---------- LD sketch: cross-pipeline LD-panel compatibility check ----------
+# ---------- LD reference: cross-pipeline compatibility check ----------
 
-# Internal: assert that two LD sketches describe the same reference panel --
-# the same samples, and the same allele coding (A1/A2 in the same orientation)
-# on the variants they share. The SNP label is not compared, so a pure
+# Internal: assert that two LD references describe the same reference panel --
+# the same samples (for genotype panels) or the same LD (for LdMatrix
+# objects), and the same allele coding (A1/A2 in the same orientation) on the
+# variants they share. The SNP label is not compared, so a pure
 # chr-prefix difference does not fail; an allele swap still does, since it
 # means the two panels code their LD in opposite directions.
 #
@@ -1642,11 +1665,11 @@ loadLdFromGenotype <- function(
 # "twasWeights" or "fineMappingResult"); it is woven into the error
 # messages when provided. `pipelineName` prefixes every error so the
 # failure source remains discoverable.
-# --- .requireMatchingLdSketches helpers -------------------------------------
+# --- .requireMatchingLdRefs helpers -------------------------------------
 
 # Null handling: TRUE if the caller should return early (qtl NULL, or gwas NULL
 # under a lenient policy); errors when a non-NULL qtl faces a NULL gwas sketch.
-.ldSketchNullGuard <- function(qtlLd, gwasLd, pipelineName, label, nullPolicy) {
+.ldRefNullGuard <- function(qtlLd, gwasLd, pipelineName, label, nullPolicy) {
     if (is.null(qtlLd)) {
         return(TRUE)
     }
@@ -1655,12 +1678,12 @@ loadLdFromGenotype <- function(
             return(TRUE)
         }
         labelPart <- if (!is.null(label)) {
-            glue("ldSketch on `{label}` is non-NULL ")
+            glue("ldReference on `{label}` is non-NULL ")
         } else {
-            "qtl ldSketch is non-NULL "
+            "qtl ldReference is non-NULL "
         }
         msg <- glue(
-            "{pipelineName}: {labelPart}but the GWAS ldSketch is NULL."
+            "{pipelineName}: {labelPart}but the GWAS ldReference is NULL."
         )
         abort(msg)
     }
@@ -1670,22 +1693,44 @@ loadLdFromGenotype <- function(
 # Both must be genotype panels. Panel SIZE is deliberately NOT compared: two
 # objects that share one LD sketch stop carrying identical variant sets as soon
 # as they are QC'd separately, because each object's sketch is trimmed to its
-# own position span at load (`.subsetSketchToRange`) and to its own surviving
-# variants at the end of QC (`.subsetSketchToIds`). A QTL and a GWAS collection
+# own position span at load (`.subsetLdRefToRange`) and to its own surviving
+# variants at the end of QC (`.subsetLdRefToIds`). A QTL and a GWAS collection
 # put through `summaryStatsQc` independently therefore diverge by construction,
 # which is the normal case rather than a mistake. Every downstream LD lookup
-# matches by variant id (`.ldFromSketch`), never by position in the panel, so
+# matches by variant id (`.ldFromRef`), never by position in the panel, so
 # divergent variant sets cost only the variants one side lacks. What would not
 # be harmless -- two genuinely different reference panels -- is what
-# `.ldSketchCheckContent` catches, by sample set and by allele coding.
-.ldSketchCheckShape <- function(qtlLd, gwasLd, pipelineName, between) {
-    if (!.ldIsPanel(qtlLd) || !.ldIsPanel(gwasLd)) {
+# `.ldRefCheckContent` catches, by sample set and by allele coding.
+.ldRefCheckShape <- function(qtlLd, gwasLd, pipelineName, between) {
+    if (!.ldIsReference(qtlLd) || !.ldIsReference(gwasLd)) {
         msg <- glue(
-            "{pipelineName}: ldSketch slots{between} must both be genotype ",
-            "panels for the cross-pipeline LD reference check."
+            "{pipelineName}: ldReference slots{between} must both be genotype ",
+            "panels or LdMatrix objects for the cross-pipeline LD reference ",
+            "check."
         )
         abort(msg)
     }
+    kinds <- c(.ldRefKind(qtlLd), .ldRefKind(gwasLd))
+    if (kinds[[1L]] != kinds[[2L]]) {
+        msg <- glue(
+            "{pipelineName}: one side's ldReference is {kinds[[1L]]} and ",
+            "the other's {kinds[[2L]]}{between}; use the same LD reference ",
+            "on both."
+        )
+        abort(msg)
+    }
+}
+
+# What kind of LD reference `x` is, in words, for messages that compare two.
+# @noRd
+.ldRefKind <- function(x) {
+    if (.ldIsMatrixRef(x)) {
+        return("an LdMatrix")
+    }
+    if (.ldIsMixtureRef(x)) {
+        return("a GenotypeMixture")
+    }
+    "a genotype panel"
 }
 
 # The (chrom, position, allele-pair) key the two panels are compared on. The
@@ -1694,8 +1739,8 @@ loadLdFromGenotype <- function(
 # two unrelated variants that happen not to overlap. A panel carrying no allele
 # columns falls back to chrom:position, which is all it can be keyed on.
 # @noRd
-.ldSketchVariantKeys <- function(x) {
-    gr <- .ldSketchRanges(x)
+.ldRefVariantKeys <- function(x) {
+    gr <- .ldRefRanges(x)
     mc <- S4Vectors::mcols(gr)
     stem <- str_c(
         canonChrom(as.character(GenomicRanges::seqnames(gr))),
@@ -1717,8 +1762,8 @@ loadLdFromGenotype <- function(
 # The panel's A1 (effect / counted) allele, which fixes the sign of every
 # correlation the variant takes part in.
 # @noRd
-.ldSketchA1 <- function(x) {
-    as.character(S4Vectors::mcols(.ldSketchRanges(x))$A1)
+.ldRefA1 <- function(x) {
+    as.character(S4Vectors::mcols(.ldRefRanges(x))$A1)
 }
 
 # A shared variant whose A1/A2 are swapped between the panels is the same
@@ -1726,7 +1771,7 @@ loadLdFromGenotype <- function(
 # in sign wherever it appears. That is a different reference, not a trimming
 # difference, and it is an error.
 # @noRd
-.ldSketchCheckAlleleCoding <- function(
+.ldRefCheckAlleleCoding <- function(
     qtlLd,
     gwasLd,
     qIdx,
@@ -1734,18 +1779,18 @@ loadLdFromGenotype <- function(
     pipelineName,
     between
 ) {
-    qA1 <- .ldSketchA1(qtlLd)[qIdx]
-    gA1 <- .ldSketchA1(gwasLd)[gIdx]
+    qA1 <- .ldRefA1(qtlLd)[qIdx]
+    gA1 <- .ldRefA1(gwasLd)[gIdx]
     if (length(qA1) == 0L || length(gA1) == 0L) {
         return(invisible(NULL))
     }
     nSwapped <- sum(qA1 != gA1, na.rm = TRUE)
     if (nSwapped > 0L) {
         msg <- glue(
-            "{pipelineName}: {nSwapped} variant(s) present in both ldSketch ",
-            "panels carry swapped A1/A2 alleles{between}, so the two panels ",
-            "code their LD in opposite directions; use the same ldSketch on ",
-            "both."
+            "{pipelineName}: {nSwapped} variant(s) present in both ",
+            "ldReference panels carry swapped A1/A2 alleles{between}, so the ",
+            "two panels code their LD in opposite directions; use the same ",
+            "ldReference on both."
         )
         abort(msg)
     }
@@ -1756,20 +1801,21 @@ loadLdFromGenotype <- function(
 # so it is reported once per session rather than on every call: ctwasPipeline
 # and colocboostPipeline run this check once per region / per bundle.
 # @noRd
-.ldSketchReportOverlap <- function(nQ, nG, nShared, pipelineName, between) {
+.ldRefReportOverlap <- function(nQ, nG, nShared, pipelineName, between) {
     if (nShared == nQ && nShared == nG) {
         return(invisible(NULL))
     }
     msg <- glue(
-        "{pipelineName}: the two ldSketch panels share {nShared} variant(s) ",
-        "of {nQ} (QTL side) and {nG} (GWAS side){between}. LD is looked up ",
-        "per variant, so only the shared ones contribute. Differing variant ",
-        "sets are expected when the two sides were QC'd separately."
+        "{pipelineName}: the two ldReference panels share {nShared} ",
+        "variant(s) of {nQ} (QTL side) and {nG} (GWAS side){between}. LD is ",
+        "looked up per variant, so only the shared ones contribute. ",
+        "Differing variant sets are expected when the two sides were QC'd ",
+        "separately."
     )
     warn(
         msg,
         .frequency = "once",
-        .frequency_id = str_c("pecotmrLdSketchOverlap-", pipelineName)
+        .frequency_id = str_c("pecotmrLdReferenceOverlap-", pipelineName)
     )
     invisible(NULL)
 }
@@ -1778,9 +1824,9 @@ loadLdFromGenotype <- function(
 # fails is no overlap at all (two unrelated panels) or a shared variant whose
 # alleles are swapped.
 # @noRd
-.ldSketchCheckOverlap <- function(qtlLd, gwasLd, pipelineName, between) {
-    qKey <- .ldSketchVariantKeys(qtlLd)
-    gKey <- .ldSketchVariantKeys(gwasLd)
+.ldRefCheckOverlap <- function(qtlLd, gwasLd, pipelineName, between) {
+    qKey <- .ldRefVariantKeys(qtlLd)
+    gKey <- .ldRefVariantKeys(gwasLd)
     # An emptied panel -- what a zero-variant object carries, since it
     # references no LD -- contradicts nothing, so there is nothing to compare.
     if (length(qKey) == 0L || length(gKey) == 0L) {
@@ -1790,13 +1836,13 @@ loadLdFromGenotype <- function(
     shared <- which(!is.na(idx))
     if (length(shared) == 0L) {
         msg <- glue(
-            "{pipelineName}: the two ldSketch panels share no variant",
+            "{pipelineName}: the two ldReference panels share no variant",
             "{between} ({length(qKey)} vs {length(gKey)} variants); they ",
             "describe different LD references."
         )
         abort(msg)
     }
-    .ldSketchCheckAlleleCoding(
+    .ldRefCheckAlleleCoding(
         qtlLd,
         gwasLd,
         shared,
@@ -1804,32 +1850,96 @@ loadLdFromGenotype <- function(
         pipelineName,
         between
     )
-    .ldSketchReportOverlap(
+    .ldRefReportOverlap(
         length(qKey),
         length(gKey),
         length(shared),
         pipelineName,
         between
     )
+    invisible(list(qIdx = shared, gIdx = idx[shared]))
 }
 
-# Panels must describe the same reference panel: the same samples, and the same
-# allele coding on the variants they share. Their variant SETS need not agree
-# -- see `.ldSketchCheckShape` for why.
-.ldSketchCheckContent <- function(qtlLd, gwasLd, pipelineName, between) {
-    qIds <- .ldSketchSampleIds(qtlLd)
-    gIds <- .ldSketchSampleIds(gwasLd)
-    if (!identical(qIds, gIds)) {
+# Two LdMatrix objects describe the same LD reference when they agree on the
+# LD among the variants they share -- what two QC'd subsets of one matrix do,
+# and two unrelated matrices do not. Checked on an evenly spaced subset of the
+# shared variants, as validity checks symmetry, so the cost does not grow with
+# the overlap.
+# @noRd
+.ldRefCheckSameLd <- function(qtlLd, gwasLd, shared, pipelineName, between) {
+    if (is.null(shared)) {
+        return(invisible(NULL))
+    }
+    if (!.ldmAgreesOn(qtlLd, gwasLd, shared$qIdx, shared$gIdx)) {
         msg <- glue(
-            "{pipelineName}: ldSketch panels have different sample sets",
-            "{between}; use the same ldSketch on both."
+            "{pipelineName}: the two LdMatrix references disagree on the LD ",
+            "among the variants they share{between}; they describe different ",
+            "LD references."
         )
         abort(msg)
     }
-    .ldSketchCheckOverlap(qtlLd, gwasLd, pipelineName, between)
+    invisible(NULL)
 }
 
-.requireMatchingLdSketches <- function(
+# Two mixtures describe the same LD reference when they average the same
+# panels (by their samples) with the same weights.
+# @noRd
+.ldRefCheckSameMixture <- function(qtlLd, gwasLd, pipelineName, between) {
+    if (!.gmSameMixture(qtlLd, gwasLd)) {
+        msg <- glue(
+            "{pipelineName}: the two GenotypeMixture references{between} ",
+            "average different panels or weight them differently; use the ",
+            "same LD reference on both."
+        )
+        abort(msg)
+    }
+    invisible(NULL)
+}
+
+# TRUE when two LdMatrix objects hold the same LD among the variants at
+# `xIdx` in one and `yIdx` in the other (matched pairs, same allele coding).
+# Compared on an evenly spaced subset, so the cost does not grow with the
+# overlap.
+# @noRd
+.ldmAgreesOn <- function(x, y, xIdx, yIdx, tol = 1e-6) {
+    n <- length(xIdx)
+    if (n == 0L) {
+        return(TRUE)
+    }
+    probe <- unique(round(seq(1, n, length.out = min(n, 200L))))
+    xR <- ldMatrix(x)[xIdx[probe], xIdx[probe], drop = FALSE]
+    yR <- ldMatrix(y)[yIdx[probe], yIdx[probe], drop = FALSE]
+    max(abs(xR - yR)) <= tol
+}
+
+# Panels must describe the same reference panel: the same samples, and the same
+# allele coding on the variants they share. Two LdMatrix objects must agree on
+# the LD they share instead, having no samples to compare. Their variant SETS
+# need not agree -- see `.ldRefCheckShape` for why.
+.ldRefCheckContent <- function(qtlLd, gwasLd, pipelineName, between) {
+    if (.ldIsMatrixRef(qtlLd)) {
+        shared <- .ldRefCheckOverlap(qtlLd, gwasLd, pipelineName, between)
+        return(
+            .ldRefCheckSameLd(qtlLd, gwasLd, shared, pipelineName, between)
+        )
+    }
+    if (.ldIsMixtureRef(qtlLd)) {
+        .ldRefCheckSameMixture(qtlLd, gwasLd, pipelineName, between)
+        return(.ldRefCheckOverlap(qtlLd, gwasLd, pipelineName, between))
+    }
+    qIds <- .ldRefSampleIds(qtlLd)
+    gIds <- .ldRefSampleIds(gwasLd)
+    if (!identical(qIds, gIds)) {
+        msg <- glue(
+            "{pipelineName}: ldReference panels have different sample sets",
+            "{between}; use the same ldReference on both."
+        )
+        abort(msg)
+    }
+    .ldRefCheckOverlap(qtlLd, gwasLd, pipelineName, between)
+}
+
+.requireMatchingLdRefs <- function(
     qtlLd,
     gwasLd,
     pipelineName,
@@ -1837,7 +1947,7 @@ loadLdFromGenotype <- function(
     nullPolicy = c("qtl-required", "lenient")
 ) {
     nullPolicy <- arg_match(nullPolicy)
-    if (.ldSketchNullGuard(qtlLd, gwasLd, pipelineName, label, nullPolicy)) {
+    if (.ldRefNullGuard(qtlLd, gwasLd, pipelineName, label, nullPolicy)) {
         return(invisible(NULL))
     }
     between <- if (!is.null(label)) {
@@ -1845,206 +1955,12 @@ loadLdFromGenotype <- function(
     } else {
         ""
     }
-    .ldSketchCheckShape(qtlLd, gwasLd, pipelineName, between)
-    .ldSketchCheckContent(qtlLd, gwasLd, pipelineName, between)
+    .ldRefCheckShape(qtlLd, gwasLd, pipelineName, between)
+    .ldRefCheckContent(qtlLd, gwasLd, pipelineName, between)
     invisible(NULL)
 }
 
-# ---------- LD sketch: genotype loading ----------
-
-#' HWE-based standardization of a genotype matrix
-#'
-#' Centers by 2*alleleFreq, scales by sqrt(2*alleleFreq*(1-alleleFreq)). Assumes
-#' monomorphic variants have already been removed.
-#'
-#' @param X Numeric genotype matrix (n x p).
-#' @param alleleFreq Numeric vector of allele frequencies (length p).
-#' @return Standardized matrix (n x p).
-#' @noRd
-standardizeGenotypeHwe <- function(X, alleleFreq) {
-    Xstd <- sweep(X, 2, 2 * alleleFreq)
-    sweep(Xstd, 2, sqrt(2 * alleleFreq * (1 - alleleFreq)), "/")
-}
-
-
-# ---------- Internal: load LD from pre-computed blocks ----------
-
-#' Load pre-computed LD from block-based metadata files.
-#' @importFrom purrr map_chr map_int map_dbl
-#' @noRd
-# --- loadLdFromBlocks helpers -----------------------------------------------
-
-# One block's record: the region-extracted matrix, its variants, and the
-# chromosome it sits on (falling back to the requested region's when the
-# block contributed nothing).
-#
-# A RECORD rather than a position in three parallel lists: the filter and the
-# metadata builder below would otherwise have to keep four sequences in the
-# same order by hand, and a slip there would silently attach one block's
-# chromosome to another block's variants.
-# @noRd
-.loadLdOneBlock <- function(
-    j,
-    ldFilePaths,
-    bimFilePaths,
-    intersectedLdFiles,
-    extractCoordinates
-) {
-    proc <- processLdMatrix(ldFilePaths[[j]], bimFilePaths[[j]])
-    extracted <- extractLdForRegion(
-        ldMatrix = proc$ldMatrix,
-        variants = proc$ldVariants,
-        region = intersectedLdFiles$region,
-        extractCoordinates = extractCoordinates
-    )
-    blockVariants <- extracted$extractedLdVariants
-    list(
-        matrix = extracted$extractedLdMatrix,
-        variants = blockVariants,
-        chrom = if (nrow(blockVariants) > 0) {
-            as.character(blockVariants$chrom[[1L]])
-        } else {
-            as.character(intersectedLdFiles$region$chrom)
-        }
-    )
-}
-
-# Load + region-extract each LD block, one record per block.
-.loadLdBlocksLoop <- function(
-    ldFilePaths,
-    bimFilePaths,
-    intersectedLdFiles,
-    extractCoordinates
-) {
-    map(
-        seq_along(ldFilePaths),
-        .loadLdOneBlock,
-        ldFilePaths = ldFilePaths,
-        bimFilePaths = bimFilePaths,
-        intersectedLdFiles = intersectedLdFiles,
-        extractCoordinates = extractCoordinates
-    )
-}
-
-# Drop blocks with no variants in the region (error if none remain).
-.loadLdFilterEmpty <- function(blocks) {
-    nonEmpty <- map_lgl(map(blocks, "variants"), .ldBlockHasVariants)
-    if (!any(nonEmpty)) {
-        abort("No variants found in any LD block for the specified region.")
-    }
-    if (any(!nonEmpty)) {
-        nEmpty <- sum(!nonEmpty)
-        msg <- glue(
-            "Removing {nEmpty} empty LD block(s) with no variants in ",
-            "the region."
-        )
-        inform(msg)
-    }
-    blocks[nonEmpty]
-}
-
-# Per-block metadata (id, chrom, span, size, index range in the merged matrix).
-.loadLdBlockMetadata <- function(blocks, ldVariants) {
-    variants <- map(blocks, "variants")
-    blockVariants <- map(variants, "variants")
-    blockPositions <- map(variants, "pos")
-    tibble(
-        blockId = seq_along(blocks),
-        chrom = map_chr(blocks, "chrom"),
-        blockStart = map_dbl(blockPositions, min),
-        blockEnd = map_dbl(blockPositions, max),
-        size = map_int(blockVariants, length),
-        startIdx = map_int(
-            blockVariants,
-            .ldBlockStartIdx,
-            ldVariants = ldVariants
-        ),
-        endIdx = map_int(
-            blockVariants,
-            .ldBlockEndIdx,
-            ldVariants = ldVariants
-        )
-    )
-}
-
-# Build the reference panel: variant ids + merged per-variant annotations,
-# deriving variance from nSample + allele_freq when it is otherwise absent.
-# One annotation column aligned to the panel's variant order.
-# @noRd
-.ldAnnotationColumn <- function(col, mergedVariantList, ids) {
-    mergedVariantList[[col]][match(ids, mergedVariantList$variants)]
-}
-
-.loadLdRefPanel <- function(ldMatrix, extractedLdVariantsList, nSample) {
-    ids <- rownames(ldMatrix)
-    mergedVariantList <- bind_rows(extractedLdVariantsList)
-    annotations <- intersect(
-        c("allele_freq", "variance", "n_nomiss"),
-        colnames(mergedVariantList)
-    )
-    panel <- mutate(
-        parseVariantId(ids),
-        variant_id = ids,
-        !!!set_names(
-            map(
-                annotations,
-                .ldAnnotationColumn,
-                mergedVariantList = mergedVariantList,
-                ids = ids
-            ),
-            annotations
-        )
-    )
-    needVar <- !is_in("variance", colnames(panel)) || all(is.na(panel$variance))
-    if (
-        is.null(nSample) ||
-            !needVar ||
-            !is_in("allele_freq", colnames(panel))
-    ) {
-        return(panel)
-    }
-    p <- panel$allele_freq
-    mutate(
-        panel,
-        variance = 2 * p * (1 - p) * nSample / (nSample - 1),
-        n_nomiss = nSample
-    )
-}
-
-loadLdFromBlocks <- function(
-    ldMetaFilePath,
-    region,
-    extractCoordinates = NULL,
-    nSample = NULL
-) {
-    intersectedLdFiles <- regionalLdMeta(ldMetaFilePath, region)
-    ldFilePaths <- intersectedLdFiles$intersections$LD_file_paths
-    bimFilePaths <- intersectedLdFiles$intersections$bimFilePaths
-    blocks <- .loadLdBlocksLoop(
-        ldFilePaths,
-        bimFilePaths,
-        intersectedLdFiles,
-        extractCoordinates
-    )
-    kept <- .loadLdFilterEmpty(blocks)
-    keptVariants <- map(kept, "variants")
-    ldMatrix <- createLdMatrix(
-        ldMatrices = map(kept, "matrix"),
-        variants = keptVariants
-    )
-    ldVariants <- rownames(ldMatrix)
-    blockMetadata <- .loadLdBlockMetadata(kept, ldVariants)
-    refPanel <- .loadLdRefPanel(ldMatrix, keptVariants, nSample)
-    variantsGr <- .refPanelToGranges(refPanel)
-    LdData(
-        correlation = ldMatrix,
-        genotypeHandle = NULL,
-        snpIdx = NULL,
-        variants = variantsGr,
-        blockMetadata = blockMetadata,
-        nSamples = if (is.null(nSample)) 0L else as.integer(nSample)
-    )
-}
+# ---------- Variant lookups against an LD reference on disk ----------
 
 #' Filter variants by LD Reference
 #'
@@ -2108,390 +2024,7 @@ filterVariantsByLdReference <- function(
     list(data = variantIds[keepIndices], idx = keepIndices)
 }
 
-#' Partition LD Matrix into Block-Specific Matrices
-#'
-#' This function takes the output from loadLdMatrix and partitions the combined
-#' LD matrix into a list of smaller matrices based on the block_indices, making
-#' it easier to work with large LD matrices that span multiple blocks.
-#'
-#' @param ldData An \code{LdData} S4 object as returned by
-#'   \code{loadLdMatrix()}.
-#' @param mergeSmallBlocks Logical, whether to merge blocks smaller than
-#'   minMergedBlockSize (default: TRUE).
-#' @param minMergedBlockSize Integer, minimum number of variants for a block
-#'   after merging (default: 500).
-#' @param maxMergedBlockSize Integer, maximum number of variants in a block
-#'   after merging (default: 10000).
-#'
-#' @return returns a list containing:
-#' \describe{
-#' \item{ldMatrices}{A list of matrices, each representing LD for a specific
-#' block.}
-#' \item{variantIndices}{A data frame that maps variant IDs to their
-#' corresponding block.}
-#' \item{blockMetadata}{Information about each block including size,
-#' chromosome, start and end positions.}
-#' }
-#' @noRd
-# --- partitionLdMatrix helpers ----------------------------------------------
-
-# Reject empty/NULL matrices; align row/col names to the variant ids.
-.partitionValidateMatrix <- function(combinedMatrix, variantIds) {
-    if (
-        is.null(combinedMatrix) ||
-            nrow(combinedMatrix) == 0 ||
-            ncol(combinedMatrix) == 0
-    ) {
-        abort("Empty or NULL LD matrix provided.")
-    }
-    wanted <- list(variantIds, variantIds)
-    if (!identical(dimnames(combinedMatrix), wanted)) {
-        return(`dimnames<-`(combinedMatrix, wanted))
-    }
-    combinedMatrix
-}
-
-# Drop blocks with invalid/out-of-range indices; renumber the survivors.
-.partitionFilterBlocks <- function(blockMetadata, nVariants) {
-    validBlocks <- map_lgl(
-        seq_along(blockMetadata),
-        .ldBlockValid,
-        blockMetadata = blockMetadata,
-        nVariants = nVariants
-    )
-    if (!any(validBlocks)) {
-        msg <- glue(
-            "No valid LD blocks found. All block indices are out of ",
-            "range or empty."
-        )
-        abort(msg)
-    }
-    if (any(!validBlocks)) {
-        nInvalid <- sum(!validBlocks)
-        msg <- glue(
-            "Removing {nInvalid} LD block(s) with invalid or ",
-            "out-of-range indices."
-        )
-        inform(msg)
-        kept <- blockMetadata[validBlocks]
-        kept$blockId <- seq_along(kept)
-        return(kept)
-    }
-    blockMetadata
-}
-
-#' @importFrom checkmate assertClass
-partitionLdMatrix <- function(
-    ldData,
-    mergeSmallBlocks = TRUE,
-    minMergedBlockSize = 500,
-    maxMergedBlockSize = 10000
-) {
-    assertClass(ldData, "LdData")
-    variantIds <- variantIds(ldData)
-    combinedMatrix <- .partitionValidateMatrix(
-        ldMatrix(ldData),
-        variantIds
-    )
-    # The slot is always a GRanges now, so no flattening: every consumer
-    # below reads it as one (mcols via `$`, blocks via `[` and length()).
-    blocks <- .partitionFilterBlocks(
-        blockMetadata(ldData),
-        length(variantIds)
-    )
-    # Validate the block structure of the matrix (skip if only one block).
-    if (length(blocks) > 1) {
-        validateBlockStructure(combinedMatrix, blocks, variantIds)
-    }
-    merging <- mergeSmallBlocks &&
-        any(blocks$size < minMergedBlockSize) &&
-        length(blocks) > 1
-    blockMetadata <- if (merging) {
-        mergeBlocks(blocks, minMergedBlockSize, maxMergedBlockSize)
-    } else {
-        blocks
-    }
-    extractBlockMatrices(combinedMatrix, blockMetadata, variantIds)
-}
-
-# Blocks must not overlap. The merge logic only ever considers i - 1 and
-# i + 1, so a block's position in the table has to mean its position on the
-# chromosome; that held by convention -- the loaders sort by position -- but
-# nothing checked it, and a violation would silently merge non-neighbours.
-# As a GRanges it is one call. Width-0 blocks are skipped: they mark an
-# out-of-range index range that .partitionFilterBlocks() drops anyway.
-# @noRd
-.ldBlockOrderAssert <- function(blockMetadata) {
-    spanned <- blockMetadata[GenomicRanges::width(blockMetadata) > 0L]
-    if (length(spanned) < 2L || GenomicRanges::isDisjoint(spanned)) {
-        return(invisible(NULL))
-    }
-    abort(
-        "LD blocks overlap: each block must cover a span of its own."
-    )
-}
-
-# Every (i, j) block pair with i < j.
-# @noRd
-.ldUpperPairs <- function(nBlocks) {
-    grid <- expand.grid(i = seq_len(nBlocks), j = seq_len(nBlocks))
-    grid[grid$i < grid$j, , drop = FALSE]
-}
-
-# @noRd
-.blockPairMessagesAt <- function(
-    k,
-    pairs,
-    blockMetadata,
-    matrix,
-    variantIds,
-    n
-) {
-    .blockPairMessages(
-        pairs$i[[k]],
-        pairs$j[[k]],
-        blockMetadata,
-        matrix,
-        variantIds,
-        n
-    )
-}
-
-# Concatenate per-item message vectors, empty-safe.
-# @noRd
-.ldConcatChr <- function(pieces) {
-    if (length(pieces) == 0L) {
-        return(character(0))
-    }
-    as.character(list_c(pieces))
-}
-
-#' Validate that cross-block entries are zero (excluding boundary variants).
-#' @noRd
-validateBlockStructure <- function(matrix, blockMetadata, variantIds) {
-    .ldBlockOrderAssert(blockMetadata)
-    n <- length(variantIds)
-    pairs <- .ldUpperPairs(length(blockMetadata))
-    msgs <- .ldConcatChr(map(
-        seq_len(nrow(pairs)),
-        .blockPairMessagesAt,
-        pairs = pairs,
-        blockMetadata = blockMetadata,
-        matrix = matrix,
-        variantIds = variantIds,
-        n = n
-    ))
-    if (length(msgs) > 0) {
-        msgList <- str_flatten(msgs, collapse = "\n")
-        msg <- glue(
-            "Matrix lacks expected block structure:\n{msgList}",
-            .trim = FALSE
-        )
-        abort(msg)
-    }
-}
-
-# Overlap-consistency messages for one block pair (i, j): out-of-range indices,
-# or non-zero cross-block correlation with boundary variants excluded. Returns a
-# (possibly empty) character vector.
-# @noRd
-.blockPairMessages <- function(i, j, blockMetadata, matrix, variantIds, n) {
-    si <- blockMetadata$startIdx[i]
-    ei <- blockMetadata$endIdx[i]
-    sj <- blockMetadata$startIdx[j]
-    ej <- blockMetadata$endIdx[j]
-    if (si > n || ei > n || sj > n || ej > n) {
-        return(str_c(
-            "Block indices out of range for blocks",
-            i,
-            "and",
-            j,
-            sep = " "
-        ))
-    }
-    # Exclude boundary variants (potential overlaps)
-    vi <- variantIds[si:(ei - 1)]
-    vj <- variantIds[(sj + 1):ej]
-    maxVal <- max(abs(matrix[vi, vj, drop = FALSE]))
-    if (maxVal <= 1e-10) {
-        return(character(0))
-    }
-    str_c(
-        "Non-zero correlation between blocks",
-        i,
-        "and",
-        j,
-        "- max:",
-        maxVal,
-        sep = " "
-    )
-}
-
-#' Can blocks `i` and `j` of `blockMetadata` merge (same chrom, combined size
-#' within `maxSize`)? Indexes the columns directly rather than slicing rows.
-#' @noRd
-canMerge <- function(blockMetadata, i, j, maxSize) {
-    chrom <- as.character(GenomicRanges::seqnames(blockMetadata))
-    chrom[i] == chrom[j] &&
-        (blockMetadata$size[i] + blockMetadata$size[j]) <= maxSize
-}
-
-#' @noRd
-mergeTwoBlocks <- function(blockMetadata, idx1, idx2) {
-    if (idx1 > idx2) {
-        tmp <- idx1
-        idx1 <- idx2
-        idx2 <- tmp
-    }
-    merged <- blockMetadata
-    merged$endIdx[idx1] <- blockMetadata$endIdx[idx2]
-    merged$size[idx1] <- blockMetadata$size[idx1] +
-        blockMetadata$size[idx2]
-    # The merged block spans both, so its RANGE has to grow with its index
-    # range. While this was a data.frame the two could drift apart unnoticed,
-    # because nothing read blockStart / blockEnd.
-    GenomicRanges::end(merged)[idx1] <-
-        GenomicRanges::end(blockMetadata)[idx2]
-    merged <- merged[-idx2]
-    merged$blockId <- seq_along(merged)
-    merged
-}
-
-#' Find blocks below minSize and identify the best neighbor to merge with.
-#' @noRd
-findMergeCandidates <- function(blockMetadata, minSize, maxSize) {
-    found <- compact(map(
-        seq_along(blockMetadata),
-        .ldMergeCandidateFor,
-        blockMetadata = blockMetadata,
-        minSize = minSize,
-        maxSize = maxSize
-    ))
-    if (length(found) == 0L) {
-        return(tibble(block_idx = integer(), merge_with = integer()))
-    }
-    bind_rows(found)
-}
-
-# Which neighbour block `i` should merge into (the smaller one when both
-# qualify), or NULL when it is big enough already or neither neighbour can
-# take it.
-# @noRd
-.ldMergeCandidateFor <- function(i, blockMetadata, minSize, maxSize) {
-    if (blockMetadata$size[i] >= minSize) {
-        return(NULL)
-    }
-    prevOk <- i > 1 && canMerge(blockMetadata, i, i - 1, maxSize)
-    nextOk <- i < length(blockMetadata) &&
-        canMerge(blockMetadata, i, i + 1, maxSize)
-    mergeWith <- if (prevOk && nextOk) {
-        if (blockMetadata$size[i - 1] <= blockMetadata$size[i + 1]) {
-            i - 1
-        } else {
-            i + 1
-        }
-    } else if (prevOk) {
-        i - 1
-    } else if (nextOk) {
-        i + 1
-    } else {
-        return(NULL)
-    }
-    tibble(block_idx = i, merge_with = mergeWith)
-}
-
-#' Iteratively merge blocks below minSize with their smallest neighbor.
-#' @noRd
-mergeBlocks <- function(blockMetadata, minSize, maxSize) {
-    if (length(blockMetadata) <= 1) {
-        return(blockMetadata)
-    }
-    candidates <- findMergeCandidates(blockMetadata, minSize, maxSize)
-    if (nrow(candidates) == 0) {
-        return(blockMetadata)
-    }
-    # Each merge changes which blocks are still too small, so this is a fixed
-    # point: recurse on the merged metadata rather than rebinding it.
-    mergeBlocks(
-        mergeTwoBlocks(
-            blockMetadata,
-            candidates$block_idx[1],
-            candidates$merge_with[1]
-        ),
-        minSize,
-        maxSize
-    )
-}
-
-# Helper function to extract block matrices
-# Extract one block's submatrix + mapping (NULL to skip empty/OOB blocks).
-.extractOneBlock <- function(matrix, variantIds, startIdx, endIdx, i) {
-    if (endIdx < startIdx) {
-        return(NULL)
-    }
-    if (startIdx > length(variantIds) || endIdx > length(variantIds)) {
-        msg <- glue(
-            "Block {i} has indices outside the range of variantIds. ",
-            "Skipping."
-        )
-        warn(msg)
-        return(NULL)
-    }
-    blockVariants <- variantIds[startIdx:endIdx]
-    list(
-        matrix = matrix[blockVariants, blockVariants, drop = FALSE],
-        mapping = tibble(
-            variant_id = blockVariants,
-            blockId = i
-        )
-    )
-}
-
-# @noRd
-.ldExtractBlockAt <- function(i, matrix, variantIds, blockMetadata) {
-    .extractOneBlock(
-        matrix,
-        variantIds,
-        blockMetadata$startIdx[i],
-        blockMetadata$endIdx[i],
-        i
-    )
-}
-
-# `x[[i]] <- v` in a loop never extends past the last assigned position, so
-# trailing skipped blocks leave no entry at all.
-# @noRd
-.ldTrimTrailingNull <- function(xs) {
-    filled <- which(!map_lgl(xs, is.null))
-    if (length(filled) == 0L) {
-        return(list())
-    }
-    xs[seq_len(max(filled))]
-}
-
-extractBlockMatrices <- function(matrix, blockMetadata, variantIds) {
-    blocks <- map(
-        seq_along(blockMetadata),
-        .ldExtractBlockAt,
-        matrix = matrix,
-        variantIds = variantIds,
-        blockMetadata = blockMetadata
-    )
-    kept <- compact(blocks)
-    mappings <- map(kept, "mapping")
-    list(
-        # A skipped block leaves a hole, as `ldMatrices[[i]] <- ...` did:
-        # positions stay aligned with blockMetadata rows.
-        ldMatrices = .ldTrimTrailingNull(map(blocks, "matrix")),
-        variantIndices = if (length(mappings) == 0L) {
-            tibble(variant_id = character(), blockId = integer())
-        } else {
-            bind_rows(mappings)
-        },
-        blockMetadata = blockMetadata
-    )
-}
-
+# ---------- LD matrix checks and repair ----------
 
 # The PSD repair `method` asks for, or the matrix unchanged when it is
 # already positive definite. Returns list(R, methodApplied).
@@ -2610,19 +2143,18 @@ checkLd <- function(
     )
 }
 
-# hclust (single-linkage) LD pruning: keep one representative per |cor| cluster.
+# Single-linkage LD pruning: keep one representative per |cor| cluster.
+# Single-linkage clusters cut at 1 - corThres are the connected components
+# of the graph joining columns with |cor| >= corThres, so they are found from
+# the columns' correlations a stripe of rows at a time
+# (ldThresholdComponents()), never the full matrix.
 .ldPruneHclust <- function(X, corThres, verbose) {
-    # Engine-call exception: Rfast::cora is a fast drop-in for base cor(), a
-    # numeric primitive rather than an analysis engine.
     p <- ncol(X)
-    if (requireNamespace("Rfast", quietly = TRUE)) {
-        cor.X <- Rfast::cora(X, large = TRUE)
-    } else {
-        cor.X <- cor(X)
-    }
-    Sigma.distance <- as.dist(1 - abs(cor.X))
-    fit <- hclust(Sigma.distance, method = "single")
-    clusters <- cutree(fit, h = 1 - corThres)
+    clusters <- ldThresholdComponents(
+        .ldStandardize(X),
+        corThres,
+        .ldStripeSize()
+    )
     # Keep the first member of each cluster and drop the rest -- which is
     # exactly the entries that repeat a cluster already seen.
     ind.delete <- which(duplicated(clusters))
@@ -2695,9 +2227,12 @@ LdPruningOptions <- function(...) {
 #' Prune columns by pairwise correlation (LD-style prune)
 #'
 #' Performs LD pruning using one of two backends. The default \code{"hclust"}
-#' backend computes the full correlation matrix, builds a single-linkage
-#' hierarchical clustering on the distance (1 - |cor|), and keeps one
-#' representative column per cluster. The \code{"snprelate"} backend delegates
+#' backend groups the columns as single-linkage hierarchical clustering on the
+#' distance (1 - |cor|), cut at 1 - \code{corThres}, would, and keeps the
+#' first column of each group. Those groups are the connected components
+#' of the graph joining columns with |cor| >= \code{corThres}, found from the
+#' correlations a stripe of rows at a time, so the full correlation matrix is
+#' never formed. The \code{"snprelate"} backend delegates
 #' to \code{SNPRelate::snpgdsLDpruning}, which performs a sliding-window greedy
 #' prune directly on a temporary GDS file.
 #'
@@ -2709,11 +2244,13 @@ LdPruningOptions <- function(...) {
 #' @param backend Character, one of \code{"hclust"} (default) or
 #'   \code{"snprelate"}. Controls the pruning algorithm:
 #'   \describe{
-#'     \item{\code{"hclust"}}{Uses the internal hierarchical-clustering approach
-#'       with \code{Rfast::cora} (if available) or base \code{cor()}.}
+#'     \item{\code{"hclust"}}{Single-linkage groups, found as the connected
+#'       components of the |cor| >= \code{corThres} graph.}
 #'     \item{\code{"snprelate"}}{Requires \pkg{SNPRelate} and \pkg{gdsfmt}.
 #'       Creates a temporary GDS file and runs
-#'       \code{SNPRelate::snpgdsLDpruning(method = "corr")}.}
+#'       \code{SNPRelate::snpgdsLDpruning(method = "corr")}. GDS stores
+#'       genotypes as the integer codes 0, 1 and 2, so fractional dosages are
+#'       refused rather than rounded.}
 #'   }
 #' @param verbose Logical. If TRUE, print progress messages. Default FALSE.
 #' @param methodArgs Extra arguments for
@@ -2737,7 +2274,7 @@ LdPruningOptions <- function(...) {
 #' res <- ldPruneByCorrelation(X, corThres = 0.9)
 #' ncol(res$X.new)
 #'
-#' @importFrom stats as.dist hclust cutree cor
+#' @importFrom stats cor
 #' @export
 ldPruneByCorrelation <- function(
     X,
@@ -2782,9 +2319,9 @@ ldPruneByCorrelation <- function(
     }
 }
 
-# Write X (rounded to integer genotype codes) to a temporary GDS for SNPRelate.
+# Write X, integer genotype codes, to a temporary GDS for SNPRelate.
 .ldPruneSnprelateCreateGds <- function(tmpGds, X, snpNames, p) {
-    genoInt <- `storage.mode<-`(round(X), "integer")
+    genoInt <- `storage.mode<-`(X, "integer")
     SNPRelate::snpgdsCreateGeno(
         gds.fn = tmpGds,
         genmat = t(genoInt),
@@ -2799,6 +2336,7 @@ ldPruneByCorrelation <- function(
 
 .ldPruneSnprelate <- function(X, corThres, verbose, methodArgs) {
     .ldPruneSnprelateDeps()
+    .ldRequireIntegerGenotypes(X, "snprelate", "hclust")
     p <- ncol(X)
     snpNames <- colnames(X) %||% str_c("snp", seq_len(p))
     tmpGds <- tempfile(fileext = ".gds")
@@ -2827,43 +2365,8 @@ ldPruneByCorrelation <- function(
     list(X.new = X.new, filter.id = keepIds)
 }
 
-#' Drop collinear columns from a design matrix by a chosen strategy
-#'
-#' Given a numeric matrix \code{X} and a set of column names known to be
-#' involved in linear dependencies, remove one column using one of three
-#' strategies. Designed to be called iteratively by
-#' \code{\link{enforceDesignFullRank}}, but can be used standalone.
-#'
-#' @param X Numeric matrix. Must have column names covering
-#'   \code{problematicCols}.
-#' @param problematicCols Character vector of column names in \code{X} that are
-#'   candidates for removal. If empty, \code{X} is returned unchanged.
-#' @param strategy One of \code{"correlation"} (remove the column with the
-#'   largest sum of absolute pairwise correlations among the candidates; when
-#'   only two candidates, one is picked at random), \code{"variance"} (remove
-#'   the lowest-variance candidate), or \code{"responseCorrelation"} (remove
-#'   the candidate whose correlation with \code{response} has the smallest
-#'   magnitude).
-#' @param response Numeric vector required when \code{strategy =
-#'   "responseCorrelation"}; the outcome to correlate against.
-#' @param verbose Logical. If TRUE, print which column was removed. Default
-#'   FALSE.
-#'
-#' @return \code{X} with exactly one column removed (or unchanged if
-#'   \code{problematicCols} is empty).
-#'
-#' @examples
-#' set.seed(1)
-#' X <- matrix(rnorm(100 * 3), 100, 3)
-#' X[, 3] <- X[, 1] + X[, 2]
-#' colnames(X) <- c("a", "b", "c")
-#' dropCollinearColumns(X, problematicCols = c("a", "b", "c"),
-#'                        strategy = "variance")
-#'
-#' @importFrom stats var cor
-#' @keywords internal
-#' @noRd
 # Correlation strategy: drop the most-connected column (random tie-break at 2).
+# @noRd
 .dropCollinearPickCor <- function(X, problematicCols, verbose, seed = NULL) {
     corMatrix <- `diag<-`(
         abs(cor(X[, problematicCols, drop = FALSE])),
@@ -2937,6 +2440,42 @@ ldPruneByCorrelation <- function(
     colToRemove
 }
 
+#' Drop collinear columns from a design matrix by a chosen strategy
+#'
+#' Given a numeric matrix \code{X} and a set of column names known to be
+#' involved in linear dependencies, remove one column using one of three
+#' strategies. Designed to be called iteratively by
+#' \code{\link{enforceDesignFullRank}}, but can be used standalone.
+#'
+#' @param X Numeric matrix. Must have column names covering
+#'   \code{problematicCols}.
+#' @param problematicCols Character vector of column names in \code{X} that are
+#'   candidates for removal. If empty, \code{X} is returned unchanged.
+#' @param strategy One of \code{"correlation"} (remove the column with the
+#'   largest sum of absolute pairwise correlations among the candidates; when
+#'   only two candidates, one is picked at random), \code{"variance"} (remove
+#'   the lowest-variance candidate), or \code{"responseCorrelation"} (remove
+#'   the candidate whose correlation with \code{response} has the smallest
+#'   magnitude).
+#' @param response Numeric vector required when \code{strategy =
+#'   "responseCorrelation"}; the outcome to correlate against.
+#' @param verbose Logical. If TRUE, print which column was removed. Default
+#'   FALSE.
+#'
+#' @return \code{X} with exactly one column removed (or unchanged if
+#'   \code{problematicCols} is empty).
+#'
+#' @examples
+#' set.seed(1)
+#' X <- matrix(rnorm(100 * 3), 100, 3)
+#' X[, 3] <- X[, 1] + X[, 2]
+#' colnames(X) <- c("a", "b", "c")
+#' dropCollinearColumns(X, problematicCols = c("a", "b", "c"),
+#'                        strategy = "variance")
+#'
+#' @importFrom stats var cor
+#' @keywords internal
+#' @noRd
 dropCollinearColumns <- function(
     X,
     problematicCols,
@@ -3314,34 +2853,6 @@ ldClumpByScore <- function(
     keep
 }
 
-
-# =============================================================================
-# Block-wise LD loaders
-# -----------------------------------------------------------------------------
-# High-level helpers that sit on top of `loadLdMatrix` / `processLdMatrix`
-# to retrieve per-block LD or genotype matrices on demand. Used by
-# downstream pipelines (cTWAS, etc.) that need to walk many LD blocks
-# without materializing them all in memory at once.
-# =============================================================================
-
-#' Extract the LD or genotype matrix from an LdData S4 object.
-#' @param ld An LdData object.
-#' @param wantGenotype Logical; if TRUE, extract the genotype matrix (via
-#'   \code{genotypes()}).
-#' @return A matrix.
-#' @importFrom checkmate assertClass
-#' @noRd
-extractLdMatrix <- function(ld, wantGenotype = FALSE) {
-    assertClass(ld, "LdData")
-    if (wantGenotype && hasGenotypes(ld)) {
-        return(genotypes(ld))
-    }
-    ldMatrix(ld)
-}
-
-
-# ---- Per-block helpers ------------------------------------------------------
-
 # =============================================================================
 # LD correlation matrix from a dosage matrix
 # -----------------------------------------------------------------------------
@@ -3354,10 +2865,10 @@ extractLdMatrix <- function(ld, wantGenotype = FALSE) {
 
 # LD for a block of a genotype panel: read the dosages, then correlate them.
 #
-# The guards are the reason this is a function rather than two lines at the
-# call site. A backend that cannot read the block returns NULL, and a
-# single-variant block has no correlation structure; both mean "identity",
-# and open-coding that in every caller is how one of them ends up omitting it.
+# The guard is the reason this is a function rather than two lines at the
+# call site: a single-variant block has no correlation structure, so its LD
+# is the identity, and open-coding that in every caller is how one of them
+# ends up omitting it.
 # @noRd
 .computeLdFromPanel <- function(
     panel,
@@ -3368,14 +2879,11 @@ extractLdMatrix <- function(ld, wantGenotype = FALSE) {
     shrinkage
 ) {
     idx <- if (is.null(snpIdx)) {
-        seq_along(.ldSketchRanges(panel))
+        seq_along(.ldRefRanges(panel))
     } else {
         snpIdx
     }
-    geno <- .ldSketchDosage(panel, idx)
-    if (is.null(geno)) {
-        return(diag(length(idx)))
-    }
+    geno <- .ldRefDosage(panel, idx)
     if (ncol(geno) < 2L) {
         return(diag(length(idx)))
     }
@@ -3425,21 +2933,30 @@ extractLdMatrix <- function(ld, wantGenotype = FALSE) {
             "already in memory, which is what onDisk exists to avoid."
         ))
     }
-    fmt <- genotypeFormat(.ldSketchHandle(X))
+    fmt <- .ldRefFormat(X) %||% "held in memory"
     if (fmt != "gds") {
         abort(glue(
             "computeLd(onDisk = TRUE) needs a GDS-backed panel; this one is ",
             "'{fmt}'. Only GDS exposes an on-disk LD routine."
         ))
     }
+    if (.withGdsFile(.ldRefReadPath(X), .gdsFileFormat) != "SNP_ARRAY") {
+        abort(glue(
+            "computeLd(onDisk = TRUE) reads SNPRelate's SNP GDS files; ",
+            "{.ldRefReadPath(X)} is a SeqArray GDS file. Use ",
+            "computeLd(onDisk = FALSE), which reads its dosages."
+        ))
+    }
     idx <- if (is.null(snpIdx)) {
-        seq_along(.ldSketchRanges(X))
+        seq_along(.ldRefRanges(X))
     } else {
         snpIdx
     }
-    # The handle stays here on purpose: the GDS on-disk LD routine reads the
-    # file directly, which is a seed-level operation with no assay equivalent.
-    R <- .ldCleanCorrelation(.computeBlockLdGds(.ldSketchHandle(X), idx))
+    # The GDS on-disk LD routine reads the file directly, which has no assay
+    # equivalent: it is handed the file and the variants' own ids.
+    R <- .ldCleanCorrelation(
+        .computeBlockLdGds(.ldRefReadPath(X), .ldRefVariantIds(X)[idx])
+    )
     .ldShrinkToIdentity(R, shrinkage)
 }
 
@@ -3581,7 +3098,10 @@ extractLdMatrix <- function(ld, wantGenotype = FALSE) {
 #'   \code{cor()} without it) and is both the fastest and the default;
 #'   \code{"snprelate"} and \code{"snpstats"} exist to cross-check it and do
 #'   strictly more work, since each converts the same matrix into its own
-#'   representation first.
+#'   representation first. Both store genotypes as the integer codes 0, 1 and
+#'   2, so they refuse fractional dosages (imputed, or a stochastic sketch's)
+#'   rather than round them; \code{"internal"} correlates dosages as they
+#'   are.
 #' @param X A numeric dosage matrix (samples x variants), or a genotype panel
 #'   -- a \code{RangedSummarizedExperiment} whose dosage assay reads through
 #'   a genotype handle.
@@ -3611,7 +3131,7 @@ extractLdMatrix <- function(ld, wantGenotype = FALSE) {
 #'   \code{dimnames} taken from the block where available.
 #' @examples
 #' data(qtlSumStatsExample)
-#' panel <- ldSketch(qtlSumStatsExample)
+#' panel <- ldReference(qtlSumStatsExample)
 #' R <- computeLd(panel, snpIdx = 1:5)
 #' dim(R)
 #' # A dosage matrix already in memory is correlated directly.
@@ -3673,6 +3193,28 @@ computeLd <- function(
     `dimnames<-`(R, list(nms, nms))
 }
 
+# SNPRelate (GDS) and snpStats (SnpMatrix) hold a genotype as a 2-bit code,
+# so a dosage outside 0, 1 and 2 -- an imputed or projected one -- would be
+# rounded, and its LD changed, without a word. They take genotype codes only;
+# dosages go to the backend that correlates them as they are.
+# @noRd
+.ldRequireIntegerGenotypes <- function(X, backend, instead) {
+    bad <- !is.na(X) & !is_in(X, c(0, 1, 2))
+    if (!any(bad)) {
+        return(invisible(TRUE))
+    }
+    abort(c(
+        glue(
+            "backend = \"{backend}\" stores genotypes as the codes 0, 1 and ",
+            "2, and {sum(bad)} value(s) here are not one of them."
+        ),
+        i = glue(
+            "Rounding them would change their LD. Use backend = ",
+            "\"{instead}\", which takes dosages as they are."
+        )
+    ))
+}
+
 #' Compute LD via SNPRelate (creates a temporary GDS file from the dosage
 #' matrix).
 #' @param X Numeric genotype matrix (samples x SNPs).
@@ -3686,12 +3228,12 @@ computeLd <- function(
         abort("Package 'gdsfmt' is required for backend='snprelate'")
     }
 
+    .ldRequireIntegerGenotypes(X, "snprelate", "internal")
     tmpGds <- tempfile(fileext = ".gds")
     on.exit(unlink(tmpGds), add = TRUE)
 
-    # Round to integer dosage for GDS (0/1/2)
-    # 3L is the GDS missing code.
-    X_int <- replace(`storage.mode<-`(round(X), "integer"), is.na(X), 3L)
+    # Integer genotype codes 0/1/2, with 3L, the GDS missing code, for NA.
+    X_int <- replace(`storage.mode<-`(X, "integer"), is.na(X), 3L)
 
     snpIds <- colnames(X) %||% seq_len(ncol(X))
     sampleIds <- rownames(X) %||% seq_len(nrow(X))
@@ -3726,59 +3268,16 @@ computeLd <- function(
     if (!requireNamespace("snpStats", quietly = TRUE)) {
         abort("Package 'snpStats' is required for backend='snpstats'")
     }
+    .ldRequireIntegerGenotypes(X, "snpstats", "internal")
 
     # snpStats expects counts of the B allele as raw codes: 1=AA, 2=AB, 3=BB,
     # 0=NA pecotmr dosage is ALT count (0/1/2), so map: 0->1, 1->2, 2->3, NA->0
-    shifted <- round(X) + 1L
-    coded <- pmin(replace(shifted, is.na(X) | shifted < 1L, 0L), 3L)
+    coded <- replace(X + 1L, is.na(X), 0L)
     sm <- new("SnpMatrix", `storage.mode<-`(coded, "raw"))
 
     raw <- as.matrix(snpStats::ld(sm, stats = "R", depth = ncol(X) - 1L))
     # snpStats::ld returns a sparse-like matrix; ensure full dense
     .ldCleanCorrelation(raw)
-}
-
-# ---- map/apply helpers (lambda-free callbacks) ---------------------------
-
-# The integer BP position parsed from a "chrom:pos:a1:a2" variant id.
-# @noRd
-.ldVariantPos <- function(v) {
-    as.integer(str_split(v, ":")[[1L]][2])
-}
-
-# TRUE when a per-block variant table has at least one row.
-# @noRd
-.ldBlockHasVariants <- function(v) {
-    nrow(v) > 0
-}
-
-# The first index of a block's variants in the merged variant order.
-# @noRd
-.ldBlockStartIdx <- function(v, ldVariants) {
-    min(match(v, ldVariants))
-}
-
-# The last index of a block's variants in the merged variant order.
-# @noRd
-.ldBlockEndIdx <- function(v, ldVariants) {
-    max(match(v, ldVariants))
-}
-
-# TRUE when block `i`'s index range is present, finite, and within
-# [1, nVariants].
-# @noRd
-.ldBlockValid <- function(i, blockMetadata, nVariants) {
-    s <- blockMetadata$startIdx[i]
-    e <- blockMetadata$endIdx[i]
-    sz <- blockMetadata$size[i]
-    !is.na(s) &&
-        !is.na(e) &&
-        is.finite(s) &&
-        is.finite(e) &&
-        sz > 0 &&
-        s >= 1 &&
-        e >= s &&
-        e <= nVariants
 }
 
 #' @rdname PanelFilterParam
@@ -3802,8 +3301,9 @@ setClass(
 #'   missingness default is \code{1} (no filter) rather than \code{0}.
 #' @param mafCutoff Minor-allele-frequency floor. Default \code{0}.
 #' @param macCutoff Minor-allele-count floor; the stricter of this and
-#'   \code{mafCutoff} applies, using the panel's own sample count. Default
-#'   \code{0}.
+#'   \code{mafCutoff} applies, using the panel's real sample count -- for a
+#'   stochastic LD sketch, the one its \code{.afreq} records, not its
+#'   pseudo-samples. Default \code{0}.
 #' @param imissCutoff Per-variant missingness ceiling. Default \code{1}, which
 #'   filters nothing and lets the allele-frequency sidecar be read instead of
 #'   materializing dosage.

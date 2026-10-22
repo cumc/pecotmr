@@ -17,18 +17,6 @@ test_that("readBim dummy data works", {
     expect_equal(nrow(res), 100)
 })
 
-test_that("readFam dummy data works", {
-    example_path <- "test_data/protocol_example.genotype.bed"
-    res <- pecotmr:::readFam(example_path)
-    expect_equal(nrow(res), 100)
-})
-
-test_that("openBed dummy data works", {
-    example_path <- "test_data/protocol_example.genotype.bed"
-    res <- pecotmr:::openBed(example_path)
-    expect_equal(res$class, "pgen")
-})
-
 test_that("findValidFilePath works", {
     ref_path <- "test_data/protocol_example.genotype.bed"
     expect_error(
@@ -60,7 +48,6 @@ test_that("findValidFilePath works", {
         "test_data/protocol_example.genotype.bim"
     )
 })
-
 
 dummyGenoData <- function(
     number_of_samples = 10,
@@ -212,7 +199,6 @@ dummyCovarData <- function(
     return(covar)
 }
 
-
 test_that("Test loadGenotypeRegion", {
     res <- loadGenotypeRegion(
         "test_data/protocol_example.genotype"
@@ -317,7 +303,7 @@ test_that("Test loadGenotypeRegion with region and no indels", {
 test_that("loadGenotypeRegion errors on missing genotype files", {
     expect_error(
         loadGenotypeRegion("/nonexistent/geno"),
-        "Genotype files not found"
+        "neither a genotype file nor a PLINK prefix"
     )
 })
 
@@ -352,6 +338,17 @@ test_that("findStochasticMeta finds sidecar from GDS path", {
     ))
     expect_true(!is.null(result))
     expect_true(grepl("\\.(afreq|stochastic_meta\\.tsv)$", result))
+})
+
+test_that("findStochasticMeta finds the sidecar of a BGEN or .vcf.bgz file", {
+    dir <- withr::local_tempdir()
+    file.create(file.path(dir, "sketch.afreq"))
+    for (file in c("sketch.bgen", "sketch.vcf.bgz", "sketch.VCF.GZ")) {
+        expect_equal(
+            pecotmr:::findStochasticMeta(file.path(dir, file)),
+            file.path(dir, "sketch.afreq")
+        )
+    }
 })
 
 test_that("findStochasticMeta returns NULL when no sidecar exists", {
@@ -485,7 +482,6 @@ test_that("loadGenotypeRegion applies stochastic inversion with explicit sidecar
     expect_false(all(res$X == round(res$X), na.rm = TRUE))
 })
 
-
 # ===========================================================================
 # readBim vroom-based tests
 # ===========================================================================
@@ -505,22 +501,6 @@ test_that("readBim returns correct columns and types", {
     expect_equal(res$pos, c(50000, 60000, 70000))
     file.remove(bim_path)
 })
-
-# ===========================================================================
-# tabixRegion
-# ===========================================================================
-
-# ===========================================================================
-# extractPhenotypeCoordinates
-# ===========================================================================
-
-# ===========================================================================
-# loadTsvRegion
-# ===========================================================================
-
-# ===========================================================================
-# batchLoadTwasWeights
-# ===========================================================================
 
 # ===========================================================================
 # .colocFilterCsByConcentration
@@ -559,64 +539,6 @@ test_that(".colocFilterCsByConcentration returns numeric index vector", {
 # ===========================================================================
 # refVariantInfo
 # ===========================================================================
-
-test_that("refVariantInfo processes precomputed bim with 6 columns", {
-    td <- test_path("test_data")
-    meta_file <- file.path(td, "ld_meta_refinfo_6col_tmp.tsv")
-    on.exit(unlink(meta_file), add = TRUE)
-    writeLines(paste("chrom", "start", "end", "path", sep = "\t"), meta_file)
-    cat(
-        paste(
-            "1",
-            "1000",
-            "1200",
-            "LD_block_1.chr1_1000_1200.float16.txt.xz,LD_block_1.chr1_1000_1200.float16.bim",
-            sep = "\t"
-        ),
-        "\n",
-        file = meta_file,
-        append = TRUE
-    )
-    result <- refVariantInfo(meta_file, "chr1:1000-1190")
-    expect_true(is.data.frame(result))
-    expect_true(all(c("chrom", "id", "pos", "A2", "A1") %in% colnames(result)))
-    expect_equal(nrow(result), 5L)
-})
-
-test_that("refVariantInfo processes precomputed bim with 9 columns", {
-    td <- test_path("test_data")
-    meta_file <- file.path(td, "ld_meta_refinfo_9col_tmp.tsv")
-    on.exit(unlink(meta_file), add = TRUE)
-    writeLines(paste("chrom", "start", "end", "path", sep = "\t"), meta_file)
-    cat(
-        paste(
-            "1",
-            "1000",
-            "1200",
-            "LD_block_1.chr1_1000_1200.float16.txt.xz,LD_block_1.chr1_1000_1200.float16.9col.bim",
-            sep = "\t"
-        ),
-        "\n",
-        file = meta_file,
-        append = TRUE
-    )
-    result <- refVariantInfo(meta_file, "chr1:1000-1190")
-    expect_true(all(
-        c(
-            "chrom",
-            "id",
-            "pos",
-            "A2",
-            "A1",
-            "variance",
-            "allele_freq",
-            "n_nomiss"
-        ) %in%
-            colnames(result)
-    ))
-    expect_equal(nrow(result), 5L)
-    expect_equal(result$allele_freq, c(0.3, 0.4, 0.2, 0.5, 0.15))
-})
 
 # ---- invertMinmaxScaling ----
 
@@ -680,20 +602,23 @@ test_that("invertMinmaxScaling errors on mismatched lengths", {
 })
 
 # ===========================================================================
-# batchLoadTwasWeights (additional coverage)
-# ===========================================================================
-
-# ===========================================================================
-# loadCovariateData with real fixture
-# ===========================================================================
-
-# ===========================================================================
-# loadTsvRegion with real tabix-indexed fixture
-# ===========================================================================
-
-# ===========================================================================
 # refVariantInfo with PLINK2 fixture
 # ===========================================================================
+
+test_that("refVariantInfo reads a genotype file or prefix given directly", {
+    # It used to read every source as LD metadata, so a direct path failed
+    # whatever its format.
+    stem <- str_remove(
+        system.file("extdata", "toy_ref.bed", package = "pecotmr"),
+        "\\.bed$"
+    )
+    bim <- read.table(str_c(stem, ".bim"))
+    plink1 <- refVariantInfo(stem)
+    expect_equal(nrow(plink1), nrow(bim))
+    expect_equal(plink1$pos, bim[[4L]])
+    vcf <- refVariantInfo(test_path("test_data", "test_variants.vcf.gz"))
+    expect_equal(nrow(vcf), 349L)
+})
 
 test_that("refVariantInfo returns variant info for PLINK2 source", {
     skip_if_not_installed("pgenlibr")
@@ -955,59 +880,6 @@ test_that("matchVariantsToKeep returns all FALSE for non-matching variants", {
 })
 
 # ===========================================================================
-# readVariantMetadata
-# ===========================================================================
-
-test_that("readVariantMetadata reads 6-column bim file", {
-    tmp <- tempfile(fileext = ".bim")
-    on.exit(unlink(tmp), add = TRUE)
-    writeLines(
-        c(
-            "1\trs1\t0\t100\tA\tG",
-            "1\trs2\t0\t200\tC\tT"
-        ),
-        tmp
-    )
-    res <- pecotmr:::readVariantMetadata(tmp)
-    expect_equal(nrow(res), 2)
-    expect_true("gpos" %in% names(res))
-    expect_equal(as.character(res$chrom), c("1", "1"))
-    expect_equal(res$pos, c(100L, 200L))
-})
-
-test_that("readVariantMetadata reads 9-column bim file", {
-    tmp <- tempfile(fileext = ".bim")
-    on.exit(unlink(tmp), add = TRUE)
-    writeLines(
-        c(
-            "1\trs1\t0\t100\tA\tG\t0.5\t0.3\t100",
-            "1\trs2\t0\t200\tC\tT\t0.4\t0.2\t99"
-        ),
-        tmp
-    )
-    res <- pecotmr:::readVariantMetadata(tmp)
-    expect_equal(nrow(res), 2)
-    expect_true(all(c("variance", "allele_freq", "n_nomiss") %in% names(res)))
-})
-
-test_that("readVariantMetadata delegates to readPvar for .pvar files", {
-    pvar_path <- test_path("test_data", "test_variants.pvar")
-    res <- pecotmr:::readVariantMetadata(pvar_path)
-    expect_true(all(c("chrom", "id", "pos", "A1", "A2") %in% names(res)))
-    expect_false("gpos" %in% names(res))
-})
-
-test_that("readVariantMetadata errors on unexpected column count", {
-    tmp <- tempfile(fileext = ".bim")
-    on.exit(unlink(tmp), add = TRUE)
-    writeLines(c("1\trs1\t0\t100\tA"), tmp)
-    expect_error(
-        pecotmr:::readVariantMetadata(tmp),
-        "Unexpected number of columns"
-    )
-})
-
-# ===========================================================================
 # matchVariantsToKeep (additional coverage)
 # ===========================================================================
 
@@ -1051,10 +923,6 @@ test_that("matchVariantsToKeep uses position-only matching when no alleles", {
     expect_true(mask[1])
     expect_true(mask[5])
 })
-
-# ===========================================================================
-# standardiseSumstatsColumns
-# ===========================================================================
 
 # ===========================================================================
 # readGenotypes + extractblockgenotypes: plink2 tests (replacing load_plink2_data)
@@ -1158,10 +1026,6 @@ test_that("readGenotypes plink2 sample names match psam IIDs", {
     expect_equal(length(unique(sampleIds(handle))), 100L)
 })
 
-# ===========================================================================
-# loadPhenotypeData with real BED-style tabix-indexed fixture
-# ===========================================================================
-
 # =============================================================================
 # Removed during the post-S4-refactor cleanup
 # -----------------------------------------------------------------------------
@@ -1227,7 +1091,7 @@ test_that("format detection supports dotted PLINK2 prefixes", {
     )
     on.exit(unlink(paste0(prefix, c(".pgen", ".pvar", ".psam"))), add = TRUE)
 
-    expect_equal(pecotmr:::.h2DetectFormat(prefix), "plink2")
+    expect_equal(pecotmr:::.genotypePathFormat(prefix), "plink2")
 })
 
 # Shared helper: validate the output structure from loadGenotypeRegion
@@ -1261,19 +1125,20 @@ checkGenotypeResult <- function(
     )
 }
 
-# --- readGenotypes: PLINK1 (snpStats) ----------------------------------------
+# --- readGenotypes: PLINK1 (PlinkMatrix) -------------------------------------
 
-test_that("readGenotypes creates plink1 handle", {
-    skip_if_not_installed("snpStats")
-    handle <- readGenotypeHandle(plink_prefix, format = "plink1")
-    expect_s4_class(handle, "GenotypeHandle")
-    expect_equal(genotypeFormat(handle), "plink1")
-    expect_equal(nSamples(handle), n_samples)
-    expect_equal(nrow(snpInfo(handle)), n_variants)
+test_that("readGenotypes reads a PLINK1 fileset as a panel", {
+    skip_if_not_installed("PlinkMatrix")
+    panel <- readGenotypes(plink1Prefix = plink_prefix)
+    expect_s4_class(panel, "RangedSummarizedExperiment")
+    expect_equal(dim(panel), c(n_variants, n_samples))
+    expect_equal(S4Vectors::metadata(panel)$genotypeSource$format, "plink1")
+    expect_s4_class(pecotmr:::.panelSeed(panel), "GenotypeDosageSeed")
+    expect_null(pecotmr:::.ldRefHandle(panel))
 })
 
 test_that("loadGenotypeRegion loads plink1 via dispatch", {
-    skip_if_not_installed("snpStats")
+    skip_if_not_installed("PlinkMatrix")
     # Use .genotype suffix plink1 files tested elsewhere in test_file_utils
     plink1_path <- file.path(test_data_dir, "protocol_example.genotype")
     skip_if(
@@ -1339,13 +1204,15 @@ test_that("loadGenotypeRegion errors on empty region for plink2", {
 
 # --- readGenotypes: VCF (VariantAnnotation) -----------------------------------
 
-test_that("readGenotypes creates vcf handle", {
+test_that("readGenotypes reads a VCF as a panel over its own seed", {
     skip_if_not_installed("VariantAnnotation")
-    handle <- readGenotypeHandle(vcf_path, format = "vcf")
-    expect_s4_class(handle, "GenotypeHandle")
-    expect_equal(genotypeFormat(handle), "vcf")
-    expect_equal(nSamples(handle), n_samples)
-    expect_equal(nrow(snpInfo(handle)), n_variants)
+    panel <- readGenotypes(vcf_path)
+    expect_s4_class(panel, "RangedSummarizedExperiment")
+    expect_equal(dim(panel), c(n_variants, n_samples))
+    # No handle: the panel reads through a GenotypeDosageSeed, and records
+    # where it came from itself.
+    expect_null(pecotmr:::.ldRefHandle(panel))
+    expect_equal(S4Vectors::metadata(panel)$genotypeSource$format, "vcf")
 })
 
 test_that("loadGenotypeRegion loads VCF via dispatch", {
@@ -1386,14 +1253,14 @@ test_that("loadGenotypeRegion filters VCF indels", {
 
 # --- readGenotypes: GDS (SNPRelate) -------------------------------------------
 
-test_that("readGenotypes creates gds handle", {
-    skip_if_not_installed("SNPRelate")
+test_that("readGenotypes reads a GDS file as a panel over its own seed", {
     skip_if_not_installed("gdsfmt")
-    handle <- readGenotypeHandle(gds_path, format = "gds")
-    expect_s4_class(handle, "GenotypeHandle")
-    expect_equal(genotypeFormat(handle), "gds")
-    expect_equal(nSamples(handle), n_samples)
-    expect_equal(nrow(snpInfo(handle)), n_variants)
+    skip_if_not_installed("GDSArray")
+    panel <- readGenotypes(gds_path)
+    expect_s4_class(panel, "RangedSummarizedExperiment")
+    expect_equal(dim(panel), c(n_variants, n_samples))
+    expect_null(pecotmr:::.ldRefHandle(panel))
+    expect_equal(S4Vectors::metadata(panel)$genotypeSource$format, "gds")
 })
 
 test_that("loadGenotypeRegion loads GDS via dispatch", {
@@ -1440,12 +1307,16 @@ test_that("loadGenotypeRegion errors on empty region for GDS", {
 # --- Cross-format consistency -------------------------------------------------
 
 test_that("all formats return same dimensions and positions via loadGenotypeRegion", {
-    skip_if_not_installed("snpStats")
+    skip_if_not_installed("PlinkMatrix")
     skip_if_not_installed("pgenlibr")
     skip_if_not_installed("VariantAnnotation")
     skip_if_not_installed("SNPRelate")
 
     p2 <- loadGenotypeRegion(plink_prefix, returnVariantInfo = TRUE)
+    p1 <- loadGenotypeRegion(
+        paste0(plink_prefix, ".bed"),
+        returnVariantInfo = TRUE
+    )
     vcf <- suppressWarnings(loadGenotypeRegion(
         vcf_path,
         returnVariantInfo = TRUE
@@ -1453,22 +1324,31 @@ test_that("all formats return same dimensions and positions via loadGenotypeRegi
     gds <- loadGenotypeRegion(gds_path, returnVariantInfo = TRUE)
 
     # Same dimensions
+    expect_equal(dim(p2$X), dim(p1$X))
     expect_equal(dim(p2$X), dim(vcf$X))
     expect_equal(dim(p2$X), dim(gds$X))
 
     # Same positions
+    expect_equal(p2$variant_info$pos, p1$variant_info$pos)
     expect_equal(p2$variant_info$pos, vcf$variant_info$pos)
     expect_equal(p2$variant_info$pos, gds$variant_info$pos)
 })
 
 test_that("PLINK1 and PLINK2 readGenotypes return consistent alleles", {
-    skip_if_not_installed("snpStats")
+    skip_if_not_installed("PlinkMatrix")
     skip_if_not_installed("pgenlibr")
-    h1 <- readGenotypeHandle(plink_prefix, format = "plink1")
-    h2 <- readGenotypeHandle(plink_prefix, format = "plink2")
-
-    expect_equal(snpInfo(h1)$A1, snpInfo(h2)$A1)
-    expect_equal(snpInfo(h1)$A2, snpInfo(h2)$A2)
+    # The fixture's two PLINK copies hold the same variants and calls, read
+    # by different readers: PlinkMatrix and pgenlibr.
+    p1 <- readGenotypes(plink1Prefix = plink_prefix)
+    p2 <- readGenotypes(plink2Prefix = plink_prefix)
+    rr1 <- S4Vectors::mcols(SummarizedExperiment::rowRanges(p1))
+    rr2 <- S4Vectors::mcols(SummarizedExperiment::rowRanges(p2))
+    expect_equal(rr1$A1, rr2$A1)
+    expect_equal(rr1$A2, rr2$A2)
+    expect_equal(
+        as.matrix(SummarizedExperiment::assay(p1, "dosage")),
+        as.matrix(SummarizedExperiment::assay(p2, "dosage"))
+    )
 })
 
 # --- loadGenotypeRegion (dispatch) -----------------------------------------
@@ -1514,7 +1394,10 @@ test_that("loadGenotypeRegion applies region filter", {
 })
 
 test_that("loadGenotypeRegion errors on unrecognized format", {
-    expect_error(loadGenotypeRegion("/nonexistent/file.xyz"), "not found")
+    expect_error(
+        loadGenotypeRegion("/nonexistent/file.xyz"),
+        "loadGenotypeRegion: .* is neither a genotype file nor a PLINK prefix"
+    )
 })
 
 # ===========================================================================
@@ -1541,6 +1424,22 @@ test_that("extractBlockGenotypes returns SummarizedExperiment", {
     expect_true("A2" %in% names(S4Vectors::mcols(rr)))
 })
 
+test_that("extractBlockGenotypes mean-imputes a missing call on request", {
+    skip_if_not_installed("DBI")
+    skip_if_not_installed("RSQLite")
+    # The BGEN fixture flags sample 2 missing at variant 3.
+    handle <- readGenotypeHandle(.bgw_fixture()$path)
+    dosageOf <- function(meanImpute) {
+        se <- extractBlockGenotypes(handle, 1:5, meanImpute = meanImpute)
+        t(as.matrix(SummarizedExperiment::assay(se, "dosage")))
+    }
+    raw <- dosageOf(FALSE)
+    expect_true(is.na(raw[2L, 3L]))
+    imputed <- dosageOf(TRUE)
+    expect_equal(imputed[2L, 3L], mean(raw[-2L, 3L]))
+    expect_equal(imputed[-2L, ], raw[-2L, ])
+})
+
 # =============================================================================
 # adjustPips
 # =============================================================================
@@ -1550,7 +1449,11 @@ test_that("extractBlockGenotypes returns SummarizedExperiment", {
 .makeAdjustEntry <- function(vids, maxNumSingleEffects = 2L) {
     p <- length(vids)
     set.seed(11L)
-    lbf <- matrix(rnorm(maxNumSingleEffects * p), nrow = maxNumSingleEffects, ncol = p)
+    lbf <- matrix(
+        rnorm(maxNumSingleEffects * p),
+        nrow = maxNumSingleEffects,
+        ncol = p
+    )
     colnames(lbf) <- vids
     alpha <- lbfToAlpha(lbf)
     pip <- as.numeric(1 - apply(1 - alpha, 2, prod))
@@ -1588,22 +1491,10 @@ test_that("extractBlockGenotypes returns SummarizedExperiment", {
 }
 
 # Per-backend single-file constructor + per-chromosome genoMeta payloads.
+# Each payload names its file: the fixtures ship a .bed and a .pgen at one
+# stem, and a bare stem with both is read as PLINK2. A PLINK1 set is not a
+# sharded handle but stacked panels, tested with the VCF and GDS sets.
 .shardBackends <- list(
-    plink1 = list(
-        pkg = "snpStats",
-        ref = function(sfx) {
-            GenotypeHandle(
-                plink1Prefix = file.path(
-                    test_data_dir,
-                    paste0("test_variants", sfx)
-                )
-            )
-        },
-        p21 = file.path(test_data_dir, "test_variants"),
-        p22 = file.path(test_data_dir, "test_variants_chr22")
-    ),
-    # PLINK2 payloads carry the .pgen extension because the fixtures also ship a
-    # .bed at the same stem; an explicit extension (or format=) disambiguates.
     plink2 = list(
         pkg = "pgenlibr",
         ref = function(sfx) {
@@ -1616,32 +1507,6 @@ test_that("extractBlockGenotypes returns SummarizedExperiment", {
         },
         p21 = file.path(test_data_dir, "test_variants.pgen"),
         p22 = file.path(test_data_dir, "test_variants_chr22.pgen")
-    ),
-    vcf = list(
-        pkg = "VariantAnnotation",
-        ref = function(sfx) {
-            GenotypeHandle(
-                path = file.path(
-                    test_data_dir,
-                    paste0("test_variants", sfx, ".vcf.gz")
-                )
-            )
-        },
-        p21 = file.path(test_data_dir, "test_variants.vcf.gz"),
-        p22 = file.path(test_data_dir, "test_variants_chr22.vcf.gz")
-    ),
-    gds = list(
-        pkg = "SNPRelate",
-        ref = function(sfx) {
-            GenotypeHandle(
-                path = file.path(
-                    test_data_dir,
-                    paste0("test_variants", sfx, ".gds")
-                )
-            )
-        },
-        p21 = file.path(test_data_dir, "test_variants.gds"),
-        p22 = file.path(test_data_dir, "test_variants_chr22.gds")
     )
 )
 
@@ -1700,12 +1565,12 @@ for (.bk in names(.shardBackends)) {
 }
 
 test_that("single-shard sharded handle equals the single-file handle", {
-    skip_if_not_installed("snpStats")
+    skip_if_not_installed("pgenlibr")
     ref <- GenotypeHandle(
-        plink1Prefix = file.path(test_data_dir, "test_variants")
+        plink2Prefix = file.path(test_data_dir, "test_variants")
     )
     sh <- GenotypeHandle(
-        genoMeta = c("21" = file.path(test_data_dir, "test_variants"))
+        genoMeta = c("21" = file.path(test_data_dir, "test_variants.pgen"))
     )
     expect_equal(length(chromPaths(sh)), 1L)
     expect_equal(nrow(snpInfo(sh)), nrow(snpInfo(ref)))
@@ -1713,7 +1578,7 @@ test_that("single-shard sharded handle equals the single-file handle", {
 })
 
 test_that("readGenotypes(genoMeta=) forwards `format` to the shard reader", {
-    skip_if_not_installed("snpStats")
+    skip_if_not_installed("pgenlibr")
     # Regression: the path = "missing" method bound `format` to its own formal
     # and then called GenotypeHandle(...) without it, so an explicit format was
     # silently dropped and every shard fell back to extension probing.
@@ -1722,34 +1587,34 @@ test_that("readGenotypes(genoMeta=) forwards `format` to the shard reader", {
     local_mocked_bindings(
         .resolveGenotypeShard = function(p, format = NULL) {
             seen$fmt <- if (is.null(format)) "<NULL>" else format
-            pecotmr:::.makePlink1Handle(p)
+            pecotmr:::.makePlink2Handle(p)
         },
         .package = "pecotmr"
     )
     readGenotypes(
-        genoMeta = c("21" = file.path(test_data_dir, "test_variants")),
-        format = "plink1"
+        genoMeta = c("21" = file.path(test_data_dir, "test_variants.pgen")),
+        format = "plink2"
     )
-    expect_identical(seen$fmt, "plink1")
+    expect_identical(seen$fmt, "plink2")
 })
 
 test_that("genoMeta meta-file form matches the named-vector form", {
-    skip_if_not_installed("snpStats")
+    skip_if_not_installed("pgenlibr")
     td_abs <- normalizePath(test_data_dir)
     metafile <- tempfile(fileext = ".tsv")
     writeLines(
         c(
             "#chr\tpath",
-            paste0("21\t", file.path(td_abs, "test_variants")),
-            paste0("22\t", file.path(td_abs, "test_variants_chr22"))
+            paste0("21\t", file.path(td_abs, "test_variants.pgen")),
+            paste0("22\t", file.path(td_abs, "test_variants_chr22.pgen"))
         ),
         metafile
     )
     hFile <- GenotypeHandle(genoMeta = metafile)
     hVec <- GenotypeHandle(
         genoMeta = c(
-            "21" = file.path(td_abs, "test_variants"),
-            "22" = file.path(td_abs, "test_variants_chr22")
+            "21" = file.path(td_abs, "test_variants.pgen"),
+            "22" = file.path(td_abs, "test_variants_chr22.pgen")
         )
     )
     expect_equal(nrow(snpInfo(hFile)), nrow(snpInfo(hVec)))
@@ -1763,7 +1628,7 @@ test_that("genoMeta meta-file form matches the named-vector form", {
 # ===========================================================================
 # Coverage top-ups for R/genotypeIo.R: dispatch/handle error stops, empty- and
 # missing-chromosome block paths, format-specific extractor edge cases, the
-# GDS LD path, .h2DetectFormat / .plinkStem branches, resolvePlink2Paths
+# GDS LD path, format detection / stem branches, resolvePlink2Paths
 # validation, readAfreq zstd guard, readStochasticMeta validation, the plink1
 # refVariantInfo path with a multi-row region, and the non-integer-dosage
 # warning in loadGenotypeRegion.
@@ -1778,61 +1643,25 @@ test_that("readGenotypes errors on unsupported format", {
     )
 })
 
-test_that(".makeGdsHandle errors when GDS file is absent", {
-    skip_if_not_installed("SNPRelate")
-    skip_if_not_installed("gdsfmt")
+test_that("a PLINK1 panel errors when its trio is absent", {
+    skip_if_not_installed("PlinkMatrix")
     expect_error(
-        pecotmr:::.makeGdsHandle("/no/such/file.gds"),
-        "GDS file.*File does not exist"
-    )
-})
-
-test_that(".makeVcfHandle errors when VCF file is absent", {
-    skip_if_not_installed("VariantAnnotation")
-    expect_error(
-        pecotmr:::.makeVcfHandle("/no/such/file.vcf.gz"),
-        "VCF file.*File does not exist"
-    )
-})
-
-test_that(".makePlink1Handle errors when plink1 trio is absent", {
-    skip_if_not_installed("snpStats")
-    expect_error(
-        pecotmr:::.makePlink1Handle(file.path(
-            tempdir(),
-            "missingPlink1Prefix"
-        )),
+        readGenotypes(
+            plink1Prefix = file.path(tempdir(), "missingPlink1Prefix")
+        ),
         "Plink file.*File does not exist"
     )
-})
-
-# --- extractBlockGenotypes: NULL-from-extractor guard (line 237) -------------
-
-test_that("extractBlockGenotypes returns NULL when extractor yields NULL", {
-    skip_if_not_installed("VariantAnnotation")
-    td <- test_path("test_data")
-    handle <- readGenotypeHandle(
-        file.path(td, "test_variants.vcf.gz"),
-        format = "vcf"
-    )
-    # Force the format-specific extractor to return NULL so the early-return
-    # guard in extractBlockGenotypes is exercised.
-    testthat::local_mocked_bindings(
-        .extractBlockVcf = function(handle, snpIdx) NULL,
-        .package = "pecotmr"
-    )
-    expect_null(extractBlockGenotypes(handle, 1:3))
 })
 
 # --- .extractBlockSharded: empty block + missing-chromosome stop -------------
 
 test_that("extractBlockGenotypes on a sharded handle handles an empty block", {
-    skip_if_not_installed("snpStats")
+    skip_if_not_installed("pgenlibr")
     td <- test_path("test_data")
     shard <- GenotypeHandle(
         genoMeta = c(
-            "21" = file.path(td, "test_variants"),
-            "22" = file.path(td, "test_variants_chr22")
+            "21" = file.path(td, "test_variants.pgen"),
+            "22" = file.path(td, "test_variants_chr22.pgen")
         )
     )
     se <- extractBlockGenotypes(shard, integer(0))
@@ -1844,12 +1673,12 @@ test_that("extractBlockGenotypes on a sharded handle handles an empty block", {
 })
 
 test_that("sharded extraction errors for a chromosome with no payload", {
-    skip_if_not_installed("snpStats")
+    skip_if_not_installed("pgenlibr")
     td <- test_path("test_data")
     shard <- GenotypeHandle(
         genoMeta = c(
-            "21" = file.path(td, "test_variants"),
-            "22" = file.path(td, "test_variants_chr22")
+            "21" = file.path(td, "test_variants.pgen"),
+            "22" = file.path(td, "test_variants_chr22.pgen")
         )
     )
     # Drop the chr22 payload but keep its variants in @snpInfo, so routing a
@@ -1860,101 +1689,6 @@ test_that("sharded extraction errors for a chromosome with no payload", {
         extractBlockGenotypes(shard, idx22),
         "no per-chromosome file for chromosome"
     )
-})
-
-# --- .extractBlockGds: NULL/empty result guard (line 336) --------------------
-
-test_that(".extractBlockGds returns NULL when snpgdsGetGeno yields NULL", {
-    skip_if_not_installed("SNPRelate")
-    skip_if_not_installed("gdsfmt")
-    td <- test_path("test_data")
-    handle <- readGenotypeHandle(
-        file.path(td, "test_variants.gds"),
-        format = "gds"
-    )
-    testthat::local_mocked_bindings(
-        snpgdsGetGeno = function(...) NULL,
-        .package = "SNPRelate"
-    )
-    expect_null(pecotmr:::.extractBlockGds(handle, 1:3))
-})
-
-# --- .extractBlockVcf: missing-genotype ("./.") parsing (line 361) -----------
-
-.gioMakeMissingGtVcf <- function() {
-    dir <- tempfile("gioVcf_")
-    dir.create(dir)
-    plain <- file.path(dir, "mini.vcf")
-    writeLines(
-        c(
-            "##fileformat=VCFv4.2",
-            "##contig=<ID=21>",
-            "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">",
-            paste(
-                "#CHROM",
-                "POS",
-                "ID",
-                "REF",
-                "ALT",
-                "QUAL",
-                "FILTER",
-                "INFO",
-                "FORMAT",
-                "S1",
-                "S2",
-                "S3",
-                sep = "\t"
-            ),
-            paste(
-                "21",
-                "1000",
-                "chr1:100:A:G",
-                "A",
-                "G",
-                ".",
-                ".",
-                ".",
-                "GT",
-                "0/1",
-                "./.",
-                "1/1",
-                sep = "\t"
-            ),
-            paste(
-                "21",
-                "2000",
-                "chr1:200:A:G",
-                "C",
-                "T",
-                ".",
-                ".",
-                ".",
-                "GT",
-                "0|0",
-                "1|1",
-                "./.",
-                sep = "\t"
-            )
-        ),
-        plain
-    )
-    bg <- Rsamtools::bgzip(plain, paste0(plain, ".gz"), overwrite = TRUE)
-    Rsamtools::indexTabix(bg, format = "vcf")
-    bg
-}
-
-test_that(".extractBlockVcf parses missing genotypes as NA", {
-    skip_if_not_installed("VariantAnnotation")
-    skip_if_not_installed("Rsamtools")
-    bg <- .gioMakeMissingGtVcf()
-    handle <- readGenotypeHandle(bg, format = "vcf")
-    expect_equal(nrow(snpInfo(handle)), 2L)
-    # meanImpute=FALSE keeps the "./." dosages as NA
-    se <- extractBlockGenotypes(handle, 1:2, meanImpute = FALSE)
-    dosage <- SummarizedExperiment::assay(se, "dosage")
-    expect_true(any(is.na(dosage)))
-    # Exactly the two "./." entries become NA (one per variant)
-    expect_equal(sum(is.na(dosage)), 2L)
 })
 
 # --- .extractBlockPlink2: stale-pointer reopen path (lines 402-403) ----------
@@ -1989,34 +1723,15 @@ test_that("computeLd on a GDS panel uses the in-memory path", {
     # The native SNPRelate route is no longer chosen implicitly by format:
     # it applies a different missing-data policy, so it is opt-in via
     # onDisk = TRUE rather than a silent consequence of the panel's format.
-    skip_if_not_installed("SNPRelate")
     skip_if_not_installed("gdsfmt")
-    td <- test_path("test_data")
-    handle <- readGenotypeHandle(
-        file.path(td, "test_variants.gds"),
-        format = "gds"
-    )
-    R <- computeLd(handle, snpIdx = 1:6, backend = "internal")
+    skip_if_not_installed("GDSArray")
+    panel <- readGenotypes(test_path("test_data", "test_variants.gds"))
+    R <- computeLd(panel, snpIdx = 1:6, backend = "internal")
     expect_equal(dim(R), c(6L, 6L))
     expect_true(all(is.finite(R)))
     expect_false(anyNA(R))
     expect_equal(unname(diag(R)), rep(1, 6), tolerance = 1e-6)
-    expect_identical(rownames(R), snpInfo(handle)$SNP[1:6])
-})
-
-test_that("computeLd returns identity when extraction is NULL", {
-    skip_if_not_installed("pgenlibr")
-    td <- test_path("test_data")
-    handle <- readGenotypeHandle(
-        file.path(td, "test_variants"),
-        format = "plink2"
-    )
-    testthat::local_mocked_bindings(
-        extractBlockGenotypes = function(...) NULL,
-        .package = "pecotmr"
-    )
-    R <- computeLd(handle, snpIdx = 1:4, backend = "internal")
-    expect_equal(R, diag(4))
+    expect_identical(rownames(R), rownames(panel)[1:6])
 })
 
 test_that("computeLd returns identity for a single-variant block", {
@@ -2042,49 +1757,74 @@ test_that("computeLd on a panel computes via the general path", {
     expect_equal(unname(diag(R)), rep(1, 5), tolerance = 1e-6)
 })
 
-# --- .h2DetectFormat branches ------------------------------------------------
+# --- genotype format detection ----------------------------------------------
 
-test_that(".h2DetectFormat detects .annot.gz as ldsc_annot", {
-    expect_equal(pecotmr:::.h2DetectFormat("something.annot.gz"), "ldsc_annot")
-})
-
-test_that(".h2DetectFormat detects a plink1 prefix by .bed sidecar", {
+test_that("a PLINK prefix is told by the PLINK file beside it", {
     td <- test_path("test_data")
-    # protocol_example.genotype has .bed/.bim/.fam but no .pgen
+    # protocol_example.genotype has .bed/.bim/.fam but no .pgen.
     expect_equal(
-        pecotmr:::.h2DetectFormat(file.path(td, "protocol_example.genotype")),
+        pecotmr:::.genotypePathFormat(
+            file.path(td, "protocol_example.genotype")
+        ),
         "plink1"
     )
-})
-
-test_that(".h2DetectFormat detects a gds-only prefix", {
+    # test_variants has both: PLINK2, which can hold dosages, wins.
+    expect_equal(
+        pecotmr:::.genotypePathFormat(file.path(td, "test_variants")),
+        "plink2"
+    )
+    # A GDS file is named by its own path, never by a stem beside it.
     stem <- tempfile("gioGdsStem_")
     file.create(paste0(stem, ".gds"))
     on.exit(unlink(paste0(stem, ".gds")), add = TRUE)
-    expect_equal(pecotmr:::.h2DetectFormat(stem), "gds")
+    expect_null(pecotmr:::.genotypePathFormat(stem))
 })
 
-test_that(".h2DetectFormat errors on an unknown extension", {
+test_that("a path naming no genotype format is refused by its caller", {
+    for (path in file.path(tempdir(), c("thing.qzx", "noSuchStemXyz"))) {
+        expect_error(
+            pecotmr:::.requireGenotypeFormat(path, "caller"),
+            "caller: .* is neither a genotype file nor a PLINK prefix"
+        )
+    }
     expect_error(
-        pecotmr:::.h2DetectFormat(file.path(tempdir(), "thing.qzx")),
-        "Cannot detect format from extension"
+        readGenotypes(file.path(tempdir(), "thing.qzx")),
+        "readGenotypes: .* is neither a genotype file nor a PLINK prefix"
     )
 })
 
-test_that(".h2DetectFormat errors on an extensionless path with no sidecars", {
-    expect_error(
-        pecotmr:::.h2DetectFormat(file.path(tempdir(), "noSuchStemXyz")),
-        "Cannot detect genotype format for path"
-    )
-})
+# --- .genotypeStem strips the extension naming a format -----------------------
 
-# --- .plinkStem strips a recognized plink extension --------------------------
-
-test_that(".plinkStem strips a known plink extension", {
-    td <- test_path("test_data")
+test_that(".genotypeStem strips the extension naming a format", {
     expect_equal(
-        pecotmr:::.plinkStem(file.path(td, "test_variants.bed")),
-        file.path(td, "test_variants")
+        pecotmr:::.genotypeStem(c(
+            "a/x.vcf.gz",
+            "x.VCF.BGZ",
+            "x.bcf",
+            "x.gds",
+            "x.bgen",
+            "x.bed",
+            "x.bim",
+            "x.pgen",
+            "x.pvar.zst",
+            "x.Psam",
+            "plink/stem",
+            "dotted.prefix.chr21"
+        )),
+        c(
+            "a/x",
+            "x",
+            "x",
+            "x",
+            "x",
+            "x",
+            "x",
+            "x",
+            "x",
+            "x",
+            "plink/stem",
+            "dotted.prefix.chr21"
+        )
     )
 })
 
@@ -2210,24 +1950,23 @@ test_that("refVariantInfo applies a multi-row data.frame region filter", {
     expect_true(all(info$pos >= 17513228 & info$pos <= 17592874))
 })
 
-# --- loadGenotypeRegion: non-integer dosages without a sidecar (warning) -----
+# --- loadGenotypeRegion: non-integer dosages without a sidecar --------------
 
-test_that("loadGenotypeRegion warns on non-integer dosages without a sidecar", {
+test_that("loadGenotypeRegion keeps imputed dosages without a sidecar", {
     skip_if_not_installed("pgenlibr")
     td <- test_path("test_data")
     # dummy_data is a plink2 fixture with no .afreq / .stochastic_meta sidecar.
-    # Inject fractional dosages via the extractor so the no-sidecar branch sees
-    # non-integer values and emits its warning.
+    # A dosage need not be a whole number, so fractional dosages without a
+    # sidecar are an imputed file's, not a sketch's: returned untouched, and
+    # without a warning about restoring a scale they never had.
     testthat::local_mocked_bindings(
         .extractBlockPlink2 = function(handle, snpIdx) {
             matrix(0.5, nrow = nSamples(handle), ncol = length(snpIdx))
         },
         .package = "pecotmr"
     )
-    expect_warning(
-        loadGenotypeRegion(file.path(td, "dummy_data")),
-        "Non-integer genotype values detected"
-    )
+    expect_no_warning(X <- loadGenotypeRegion(file.path(td, "dummy_data")))
+    expect_true(all(X == 0.5))
 })
 
 # ---- fileIdx + snpInfo subsetting (memory-safe LD-sketch trimming) -----------
@@ -2273,7 +2012,6 @@ test_that(".subsetGenotypeHandle is NULL-safe and a no-op when nothing dropped",
     )
 })
 
-
 # ---------------------------------------------------------------------------
 # extractBlockGenotypes: an unsorted request must not mislabel the block.
 #
@@ -2298,27 +2036,45 @@ test_that(".subsetGenotypeHandle is NULL-safe and a no-op when nothing dropped",
     expect_equal(unname(aP), unname(a6[perm, , drop = FALSE]))
 }
 
-test_that("extractBlockGenotypes honours request order (plink1)", {
-    .gio_orderCheck("plink1", test_path("test_data", "test_variants"))
-})
-
 test_that("extractBlockGenotypes honours request order (plink2)", {
     skip_if_not_installed("pgenlibr")
     .gio_orderCheck("plink2", test_path("test_data", "test_variants"))
 })
 
-test_that("extractBlockGenotypes honours request order (gds)", {
-    skip_if_not_installed("SNPRelate")
+test_that("a PLINK1 panel honours request order", {
+    # snpStats returned file order when it read PLINK1; the panel's seed
+    # reads each block in file order and lays it out as asked.
+    skip_if_not_installed("PlinkMatrix")
+    panel <- readGenotypes(
+        plink1Prefix = test_path("test_data", "test_variants")
+    )
+    a <- SummarizedExperiment::assay(panel, "dosage")
+    perm <- c(4L, 1L, 6L, 2L, 5L, 3L)
+    expect_equal(
+        unname(as.matrix(a[perm, 1:4])),
+        unname(as.matrix(a[1:6, 1:4])[perm, , drop = FALSE])
+    )
+})
+
+test_that("a GDS panel honours request order", {
     skip_if_not_installed("gdsfmt")
-    .gio_orderCheck("gds", test_path("test_data", "test_variants.gds"))
+    skip_if_not_installed("GDSArray")
+    panel <- readGenotypes(test_path("test_data", "test_variants.gds"))
+    a <- SummarizedExperiment::assay(panel, "dosage")
+    perm <- c(4L, 1L, 6L, 2L, 5L, 3L)
+    expect_equal(
+        unname(as.matrix(a[perm, 1:4])),
+        unname(as.matrix(a[1:6, 1:4])[perm, , drop = FALSE])
+    )
 })
 
 test_that("a delayed read honours request order too", {
     # DelayedArray hands the index straight to extract_array(), so the seed
     # inherits whatever the reader does.
+    skip_if_not_installed("pgenlibr")
     handle <- readGenotypeHandle(
         test_path("test_data", "test_variants"),
-        format = "plink1"
+        format = "plink2"
     )
     a <- genotypeDelayedArray(handle)
     perm <- c(4L, 1L, 6L, 2L, 5L, 3L)
@@ -2329,14 +2085,15 @@ test_that("a delayed read honours request order too", {
 })
 
 test_that("LD from a sketch does not depend on the request order", {
+    skip_if_not_installed("pgenlibr")
     handle <- readGenotypeHandle(
         test_path("test_data", "test_variants"),
-        format = "plink1"
+        format = "plink2"
     )
     ids <- snpInfo(handle)$SNP[1:6]
     shuffled <- ids[c(4L, 1L, 6L, 2L, 5L, 3L)]
-    sorted <- pecotmr:::.ldFromSketch(handle, ids, label = "t")
-    mixed <- pecotmr:::.ldFromSketch(handle, shuffled, label = "t")
+    sorted <- pecotmr:::.ldFromRef(handle, ids, label = "t")
+    mixed <- pecotmr:::.ldFromRef(handle, shuffled, label = "t")
     expect_identical(rownames(mixed), shuffled)
     expect_equal(sorted[ids, ids], mixed[ids, ids])
 })
@@ -2350,7 +2107,6 @@ test_that(".restoreRequestedOrder refuses a short block", {
     )
 })
 
-
 # ---------------------------------------------------------------------------
 # computeLd(onDisk = TRUE): read the correlation off the GDS without ever
 # materialising dosages. The dosage matrix scales with samples x variants
@@ -2360,10 +2116,8 @@ test_that(".restoreRequestedOrder refuses a short block", {
 
 test_that("onDisk LD matches the in-memory path on complete data", {
     skip_if_not_installed("SNPRelate")
-    handle <- readGenotypeHandle(
-        test_path("test_data", "test_variants.gds"),
-        format = "gds"
-    )
+    skip_if_not_installed("GDSArray")
+    handle <- readGenotypes(test_path("test_data", "test_variants.gds"))
     idx <- c(4L, 1L, 6L, 2L, 5L, 3L)
     onDisk <- computeLd(
         handle,
@@ -2379,26 +2133,25 @@ test_that("onDisk LD matches the in-memory path on complete data", {
 
 test_that("onDisk LD labels and orders by the request", {
     skip_if_not_installed("SNPRelate")
-    handle <- readGenotypeHandle(
-        test_path("test_data", "test_variants.gds"),
-        format = "gds"
-    )
+    skip_if_not_installed("GDSArray")
+    handle <- readGenotypes(test_path("test_data", "test_variants.gds"))
     idx <- c(4L, 1L, 6L, 2L, 5L, 3L)
     R <- computeLd(handle, snpIdx = idx, backend = "snprelate", onDisk = TRUE)
     # snpgdsLDMat() returns file order and labels nothing; both are corrected.
-    expect_identical(rownames(R), snpInfo(handle)$SNP[idx])
+    expect_identical(
+        rownames(R),
+        SummarizedExperiment::rowRanges(handle)$SNP[idx]
+    )
     expect_identical(colnames(R), rownames(R))
 })
 
 test_that("onDisk LD is refused where it cannot be honoured", {
     skip_if_not_installed("SNPRelate")
-    gds <- readGenotypeHandle(
-        test_path("test_data", "test_variants.gds"),
-        format = "gds"
-    )
-    plink <- readGenotypeHandle(
-        test_path("test_data", "test_variants"),
-        format = "plink1"
+    skip_if_not_installed("GDSArray")
+    skip_if_not_installed("PlinkMatrix")
+    gds <- readGenotypes(test_path("test_data", "test_variants.gds"))
+    plink <- readGenotypes(
+        plink1Prefix = test_path("test_data", "test_variants")
     )
     expect_error(
         computeLd(plink, backend = "snprelate", onDisk = TRUE),
@@ -2422,9 +2175,10 @@ test_that("ordering uses FILE position, not the snpInfo row number", {
     # A row-subset handle's snpInfo rows are no longer file positions, so
     # sorting the request by row number would ask the backend for the wrong
     # ascending order. fileIdx carries the real mapping.
+    skip_if_not_installed("pgenlibr")
     handle <- readGenotypeHandle(
         test_path("test_data", "test_variants"),
-        format = "plink1"
+        format = "plink2"
     )
     keep <- c(9L, 2L, 7L, 4L)
     sub <- pecotmr:::.subsetGenotypeHandle(handle, keep)
@@ -2440,7 +2194,6 @@ test_that("ordering uses FILE position, not the snpInfo row number", {
     expect_equal(unname(got), unname(want))
 })
 
-
 # ---------------------------------------------------------------------------
 # readGenotypes(): the exported entry point returns a genotype PANEL.
 #
@@ -2450,14 +2203,15 @@ test_that("ordering uses FILE position, not the snpInfo row number", {
 # ---------------------------------------------------------------------------
 
 test_that("readGenotypes returns a panel, not a handle", {
+    skip_if_not_installed("pgenlibr")
     panel <- readGenotypes(
         test_path("test_data", "test_variants"),
-        format = "plink1"
+        format = "plink2"
     )
     expect_s4_class(panel, "RangedSummarizedExperiment")
     handle <- readGenotypeHandle(
         test_path("test_data", "test_variants"),
-        format = "plink1"
+        format = "plink2"
     )
     # variants x samples, the Bioconductor orientation.
     expect_equal(nrow(panel), nrow(snpInfo(handle)))
@@ -2472,20 +2226,23 @@ test_that("readGenotypes returns a panel, not a handle", {
 })
 
 test_that("the panel's assay is delayed and its seed is the handle", {
+    skip_if_not_installed("pgenlibr")
     panel <- readGenotypes(
         test_path("test_data", "test_variants"),
-        format = "plink1"
+        format = "plink2"
     )
     a <- SummarizedExperiment::assay(panel, "dosage")
     expect_s4_class(a, "DelayedMatrix")
     handle <- readGenotypeHandle(
         test_path("test_data", "test_variants"),
-        format = "plink1"
+        format = "plink2"
     )
-    expect_identical(pecotmr:::.ldSketchHandle(panel), handle)
+    # Equal, not identical: each read opens its own pgen pointer.
+    expect_equal(pecotmr:::.ldRefHandle(panel), handle)
 })
 
 test_that("a panel answers panel questions without the handle", {
+    skip_if_not_installed("PlinkMatrix")
     panel <- readGenotypes(
         test_path("test_data", "test_variants"),
         format = "plink1"
@@ -2500,6 +2257,7 @@ test_that("a panel answers panel questions without the handle", {
 })
 
 test_that("computeLd accepts the panel readGenotypes returns", {
+    skip_if_not_installed("PlinkMatrix")
     panel <- readGenotypes(
         test_path("test_data", "test_variants"),
         format = "plink1"
@@ -2513,6 +2271,7 @@ test_that("readGenotypes names a panel by keyword when path is missing", {
     # GenotypeHandle is internal now, so its source vocabulary (prefixes,
     # explicit triplets, genoMeta) has to stay reachable from the public
     # entry point or it is gone from the API entirely.
+    skip_if_not_installed("PlinkMatrix")
     stem <- test_path("test_data", "test_variants")
     byPath <- readGenotypes(stem, format = "plink1")
     byPrefix <- readGenotypes(plink1Prefix = stem)
@@ -2522,6 +2281,7 @@ test_that("readGenotypes names a panel by keyword when path is missing", {
 })
 
 test_that("readGenotypes reaches the explicit-triplet source too", {
+    skip_if_not_installed("PlinkMatrix")
     stem <- test_path("test_data", "test_variants")
     panel <- readGenotypes(
         bed = str_c(stem, ".bed"),
@@ -2532,6 +2292,23 @@ test_that("readGenotypes reaches the explicit-triplet source too", {
     expect_equal(dim(panel), dim(readGenotypes(stem, format = "plink1")))
 })
 
+test_that("readGenotypes reaches the explicit PLINK2 triplet source", {
+    skip_if_not_installed("pgenlibr")
+    stem <- test_path("test_data", "test_variants")
+    panel <- readGenotypes(
+        pgen = str_c(stem, ".pgen"),
+        pvar = str_c(stem, ".pvar"),
+        psam = str_c(stem, ".psam")
+    )
+    byPrefix <- readGenotypes(plink2Prefix = stem)
+    expect_s4_class(panel, "RangedSummarizedExperiment")
+    expect_equal(rownames(panel), rownames(byPrefix))
+    expect_equal(colnames(panel), colnames(byPrefix))
+    expect_equal(
+        as.matrix(SummarizedExperiment::assay(panel, "dosage")[1:5, ]),
+        as.matrix(SummarizedExperiment::assay(byPrefix, "dosage")[1:5, ])
+    )
+})
 
 # ===========================================================================
 # Format detection and handle/covariate helpers
@@ -2541,23 +2318,26 @@ test_that("readGenotypes reaches the explicit-triplet source too", {
 # ===========================================================================
 
 test_that("every file extension maps to its genotype format", {
-    f <- pecotmr:::.h2FormatFromExt
-    expect_equal(f("vcf"), "vcf")
-    expect_equal(f("bcf"), "vcf")
-    expect_equal(f("bed"), "plink1")
-    expect_equal(f("bim"), "plink1")
-    expect_equal(f("fam"), "plink1")
-    expect_equal(f("pgen"), "plink2")
-    expect_equal(f("pvar"), "plink2")
-    expect_equal(f("psam"), "plink2")
-    expect_equal(f("gds"), "gds")
-    expect_equal(f("rds"), "rds")
-    expect_equal(f("rdata"), "rds")
-    expect_equal(f("annot"), "ldsc_annot")
-    expect_equal(f("bw"), "bigwig")
-    expect_equal(f("bigwig"), "bigwig")
-    # An unrecognised extension is NULL, not an error: the caller decides.
-    expect_null(f("zzz"))
+    f <- function(path) pecotmr:::.genotypeFileFormat(path) %||% "none"
+    paths <- c(
+        vcf = "x.vcf",
+        vcf = "x.vcf.gz",
+        vcf = "x.VCF.BGZ",
+        vcf = "x.bcf",
+        gds = "x.gds",
+        bgen = "x.bgen",
+        plink1 = "x.bed",
+        plink1 = "x.bim",
+        plink1 = "x.fam",
+        plink2 = "x.pgen",
+        plink2 = "x.pvar",
+        plink2 = "x.pvar.zst",
+        plink2 = "x.psam",
+        # An unrecognised extension is NULL, not an error: the caller decides.
+        none = "x.zzz",
+        none = "x.annot.gz"
+    )
+    expect_equal(purrr::map_chr(unname(paths), f), names(paths))
 })
 
 test_that("the unsupported-format signaller names its context when given one", {
@@ -2582,8 +2362,8 @@ test_that("a legacy handle without fileIdx is not subset", {
     # mis-indexed.
     h <- new(
         "GenotypeHandle",
-        path = "/tmp/x.gds",
-        format = "gds",
+        path = "/tmp/x",
+        format = "plink2",
         snpInfo = data.frame(
             SNP = c("a", "b", "c"),
             CHR = "1",
@@ -2618,7 +2398,6 @@ test_that("covariate colData aligns to the panel's samples", {
     )
 })
 
-
 test_that("a panel with no covariates gets an empty colData", {
     prefix <- sub(
         "\\.bed$",
@@ -2639,8 +2418,8 @@ test_that("block extraction rejects a format it has no reader for", {
     # to catch.
     h <- new(
         "GenotypeHandle",
-        path = "/tmp/x.gds",
-        format = "gds",
+        path = "/tmp/x",
+        format = "plink2",
         snpInfo = data.frame(
             SNP = "a",
             CHR = "1",
@@ -2725,4 +2504,687 @@ test_that("readGenotypes names its keyword sources, not `...`", {
             label = nm
         )
     }
+})
+
+# ===========================================================================
+# The BGEN reader (and src/bgen.cpp). Synthetic files come from the writer in
+# helper-bgen.R; complex.bgen and haplotypes.bgen are bgen's own examples
+# (test_data/bgen, Boost Software License 1.0). A BGEN file is read through
+# its .bgi index, an SQLite database, so every test reading one needs DBI and
+# RSQLite.
+# ===========================================================================
+
+.bgenPanelDosage <- function(panel) {
+    t(as.matrix(SummarizedExperiment::assay(panel, "dosage")))
+}
+
+test_that("a BGEN file reads as the dosages its probabilities give", {
+    skip_if_not_installed("DBI")
+    skip_if_not_installed("RSQLite")
+    # Every compression and a bit depth that does not fill bytes: the
+    # dosage is the expected count of the second allele, NA where a sample
+    # is flagged missing.
+    for (compression in 0:2) {
+        for (bits in c(3L, 8L, 16L)) {
+            fx <- .bgw_fixture(bits = bits, compression = compression)
+            panel <- readGenotypes(fx$path)
+            label <- str_c("compression ", compression, ", bits ", bits)
+            expect_equal(dim(panel), c(5L, 6L), label = label)
+            expect_equal(colnames(panel), fx$ids, label = label)
+            expect_equal(
+                unname(.bgenPanelDosage(panel)),
+                fx$dosage,
+                tolerance = 1e-12,
+                label = label
+            )
+        }
+    }
+})
+
+test_that("a BGEN file's variants read as pecotmr's convention", {
+    skip_if_not_installed("DBI")
+    skip_if_not_installed("RSQLite")
+    # A2 the first allele, A1 the second; the record's rsid as its id when
+    # it has one, else chr:pos:A2:A1; a zero-padded chromosome is canonical.
+    fx <- .bgw_fixture()
+    handle <- pecotmr:::.readGenotypeHandle(fx$path)
+    si <- snpInfo(handle)
+    expect_equal(genotypeFormat(handle), "bgen")
+    expect_equal(si$A2, rep("A", 5L))
+    expect_equal(si$A1, rep("G", 5L))
+    expect_equal(si$CHR, rep("1", 5L))
+    expect_equal(si$SNP, c("chr1:100:A:G", sprintf("rs%d", 1:4)))
+    expect_equal(si$BP, 100L * (1:5))
+})
+
+test_that("a BGEN file without sample ids reads them from its .sample", {
+    skip_if_not_installed("DBI")
+    skip_if_not_installed("RSQLite")
+    fx <- .bgw_fixture(storeIds = FALSE)
+    panel <- readGenotypes(fx$path)
+    expect_equal(colnames(panel), fx$ids)
+    expect_equal(unname(.bgenPanelDosage(panel)), fx$dosage, tolerance = 1e-12)
+    file.remove(str_c(str_remove(fx$path, "\\.bgen$"), ".sample"))
+    expect_error(readGenotypes(fx$path), "stores no sample ids")
+})
+
+test_that("a BGEN 1.1 (layout 1) file reads as its probabilities give", {
+    skip_if_not_installed("DBI")
+    skip_if_not_installed("RSQLite")
+    # Diploid and biallelic, three 16-bit probabilities per sample out of
+    # 32768, zlib-compressed or not; a sample stored as all zeros is missing.
+    for (compression in 0:1) {
+        fx <- .bgw_fixture(compression = compression, layout = 1L)
+        panel <- readGenotypes(fx$path)
+        label <- str_c("layout 1, compression ", compression)
+        expect_equal(colnames(panel), fx$ids, label = label)
+        expect_equal(
+            unname(.bgenPanelDosage(panel)),
+            fx$dosage,
+            tolerance = 1e-12,
+            label = label
+        )
+    }
+})
+
+test_that("a BGEN file needs its .bgi index and a layout the spec defines", {
+    skip_if_not_installed("DBI")
+    skip_if_not_installed("RSQLite")
+    fx <- .bgw_fixture()
+    file.remove(str_c(fx$path, ".bgi"))
+    expect_error(readGenotypes(fx$path), "is read through its .bgi index")
+    # The header is refused before any record is read.
+    header <- function(layout, compression) {
+        path <- withr::local_tempfile(
+            fileext = ".bgen",
+            .local_envir = parent.frame()
+        )
+        .bgw_write(
+            path,
+            fx$variants[0L, ],
+            list(),
+            matrix(FALSE, 6L, 0L),
+            fx$ids,
+            compression = compression,
+            layout = layout
+        )
+        path
+    }
+    expect_error(readGenotypes(header(3L, 1L)), "BGEN layout 3")
+    expect_error(
+        readGenotypes(header(1L, 2L)),
+        "compressed with zstd, which the spec does not allow"
+    )
+})
+
+test_that("a corrupt BGEN header or sample block is refused", {
+    skip_if_not_installed("DBI")
+    skip_if_not_installed("RSQLite")
+    # The fixture's bytes: a 4-byte offset, the 20-byte header (its length,
+    # the variant and sample counts, the magic number, the flags), then the
+    # sample block (its length, the sample count again, the ids).
+    fx <- .bgw_fixture()
+    bytes <- readBin(fx$path, "raw", file.size(fx$path))
+    dir <- withr::local_tempdir()
+    rewritten <- function(name, bytes) {
+        path <- file.path(dir, str_c(name, ".bgen"))
+        writeBin(bytes, path)
+        file.copy(str_c(fx$path, ".bgi"), str_c(path, ".bgi"))
+        path
+    }
+    expect_error(
+        readGenotypes(rewritten("short", bytes[1:10])),
+        "too short to be a BGEN file"
+    )
+    expect_error(
+        readGenotypes(rewritten(
+            "magic",
+            replace(bytes, 17:20, charToRaw("bgex"))
+        )),
+        "no 'bgen' magic number"
+    )
+    # The first flag byte's low two bits are the compression; 3 is undefined.
+    expect_error(
+        readGenotypes(rewritten("flags", replace(bytes, 21L, as.raw(3L + 8L)))),
+        "unknown BGEN compression \\(3\\)"
+    )
+    expect_error(
+        readGenotypes(rewritten("count", replace(bytes, 29L, as.raw(7L)))),
+        "sample block's sample count disagrees with its header"
+    )
+})
+
+test_that("a BGEN file's sample ids and records must match its header", {
+    skip_if_not_installed("DBI")
+    skip_if_not_installed("RSQLite")
+    # A .sample file listing fewer samples than the header declares.
+    fx <- .bgw_fixture(storeIds = FALSE)
+    writeLines(
+        c(
+            "ID_1 ID_2 missing",
+            "0 0 0",
+            str_c(fx$ids[-1], fx$ids[-1], "0", sep = " ")
+        ),
+        str_c(str_remove(fx$path, "\\.bgen$"), ".sample")
+    )
+    expect_error(
+        readGenotypes(fx$path),
+        "declares 6 samples but 5 sample ids were found"
+    )
+    # A layout-1 record holding five samples' probabilities under a header
+    # that declares six: refused when its dosages are read.
+    path <- file.path(withr::local_tempdir(), "short.bgen")
+    .bgw_write(
+        path,
+        fx$variants[1L, ],
+        list(matrix(c(10000L, 20000L), 5L, 2L, byrow = TRUE)),
+        matrix(FALSE, 5L, 1L),
+        fx$ids,
+        layout = 1L
+    )
+    panel <- readGenotypes(path)
+    expect_error(
+        as.matrix(SummarizedExperiment::assay(panel, "dosage")),
+        "layout-1 BGEN record holds the wrong amount of data"
+    )
+})
+
+test_that("bgen's complex example reads as its VCF gives it", {
+    skip_if_not_installed("DBI")
+    skip_if_not_installed("RSQLite")
+    # Haploid and diploid samples, phased and unphased records, multi-
+    # allelic records split one variant per non-first allele, and records
+    # of ploidy above 2.
+    path <- test_path("test_data", "bgen", "complex.bgen")
+    expect_warning(
+        handle <- pecotmr:::.readGenotypeHandle(path),
+        "carry more than two alleles"
+    )
+    si <- snpInfo(handle)
+    m4 <- which(si$BP == 4L)
+    expect_equal(si$A1[m4], c("G", "T"))
+    dosageOf <- function(rows) {
+        pecotmr:::.extractBlockBgen(handle, rows)
+    }
+    # V1, V2: unphased, haploid sample 1; V3: phased; M4: G and T.
+    want <- cbind(
+        V1 = c(0, 0, 0, 1),
+        V2 = c(0, 0, 0, 1),
+        V3 = c(0, 2, 0, 1),
+        M4G = c(0, 0, 1, 0),
+        M4T = c(0, 0, 0, 1)
+    )
+    rows <- c(which(si$BP %in% 1:3), m4)
+    expect_equal(unname(dosageOf(rows)), unname(want))
+    # M5: phased, ploidies 1, 3, 3 and 2 (0, 0|0|0, 0|0|1, 0|1); M10:
+    # unphased tetraploid (0/0/0/0 to 0/1/1/1). A dosage runs from 0 to the
+    # sample's ploidy.
+    expect_equal(
+        unname(dosageOf(which(si$BP %in% c(5L, 10L)))),
+        cbind(c(0, 0, 1, 1), c(0, 1, 2, 3))
+    )
+})
+
+test_that("bgen's haplotype example reads as its .haps gives it", {
+    skip_if_not_installed("DBI")
+    skip_if_not_installed("RSQLite")
+    path <- test_path("test_data", "bgen", "haplotypes.bgen")
+    panel <- readGenotypes(path)
+    # Columns: chromosome, id, rsid, position, the two alleles, then two
+    # haplotypes per sample.
+    haps <- read.table(test_path("test_data", "bgen", "haplotypes.haps"))
+    alleles <- as.matrix(haps[, -(1:6)])
+    want <- alleles[, c(TRUE, FALSE)] + alleles[, c(FALSE, TRUE)]
+    expect_equal(
+        unname(as.matrix(SummarizedExperiment::assay(panel, "dosage"))),
+        unname(want)
+    )
+})
+
+test_that("a BGEN file reads as bigsnpr reads it", {
+    skip_if_not_installed("DBI")
+    skip_if_not_installed("RSQLite")
+    # An independent reader of the UK Biobank layout (8-bit zlib, biallelic),
+    # which rounds its dosages to two decimals.
+    skip_if_not_installed("bigsnpr")
+    fx <- .bgw_fixture(n = 40L, nVar = 12L, bits = 8L, compression = 1L)
+    ours <- .bgenPanelDosage(readGenotypes(fx$path))
+    ids <- str_c(
+        fx$variants$chrom,
+        fx$variants$pos,
+        fx$variants$a1,
+        fx$variants$a2,
+        sep = "_"
+    )
+    rds <- bigsnpr::snp_readBGEN(
+        fx$path,
+        backingfile = withr::local_tempfile(),
+        list_snp_id = list(ids),
+        read_as = "dosage",
+        ncores = 1
+    )
+    theirs <- bigsnpr::snp_attach(rds)$genotypes[]
+    expect_equal(is.na(theirs), unname(is.na(ours)))
+    present <- !is.na(ours)
+    expect_lt(max(abs(unname(ours)[present] - theirs[present])), 0.005 + 1e-9)
+})
+
+test_that("a BGEN file serves every genotype route", {
+    skip_if_not_installed("DBI")
+    skip_if_not_installed("RSQLite")
+    # The format is one of the GenotypeHandle's, so every route that reads
+    # genotypes reads it: a file, a per-chromosome manifest, an LD-meta
+    # table, the region loader, LD, and a mixture of cohorts.
+    fx <- .bgw_fixture(n = 30L, nVar = 8L, bits = 16L)
+    want <- fx$dosage
+    panel <- readGenotypes(fx$path)
+    sharded <- readGenotypes(genoMeta = c(`1` = fx$path))
+    expect_equal(unname(.bgenPanelDosage(sharded)), want, tolerance = 1e-12)
+    meta <- withr::local_tempfile(fileext = ".tsv")
+    writeLines(
+        c("#chr\tstart\tend\tpath", str_c("chr1\t1\t10000\t", fx$path)),
+        meta
+    )
+    viaMeta <- readGenotypes(ldMeta = meta, region = "chr1:1-10000")
+    expect_equal(unname(.bgenPanelDosage(viaMeta)), want, tolerance = 1e-12)
+    loaded <- loadGenotypeRegion(fx$path, region = "chr1:1-10000")
+    expect_equal(unname(loaded), want, tolerance = 1e-12)
+    expect_equal(
+        refVariantInfo(fx$path)$pos,
+        fx$variants$pos
+    )
+    # LD is the samples' correlation, the missing call imputed with the
+    # variant's mean as everywhere else.
+    imputed <- want
+    imputed[is.na(imputed)] <- colMeans(want, na.rm = TRUE)[
+        col(want)[is.na(want)]
+    ]
+    expect_equal(unname(computeLd(panel)), cor(imputed), tolerance = 1e-10)
+    mix <- GenotypeMixture(
+        list(a = panel[, 1:15], b = panel[, 16:30]),
+        mixtureWeights = c(0.5, 0.5)
+    )
+    expect_equal(pecotmr:::.ldRefNVariants(mix), 8L)
+})
+
+test_that("the BGEN dosage kernel checks what it is given", {
+    expect_error(
+        pecotmr:::bgenDosageCpp(as.raw(1:5), 1L, 2L),
+        "truncated"
+    )
+    # A record claiming more genotypes than its data could hold is refused
+    # before they are enumerated: ploidy 63 with 65535 alleles, one byte.
+    corrupt <- as.raw(c(1, 0, 0, 0, 255, 255, 63, 63, 63, 0, 8, 0))
+    expect_error(pecotmr:::bgenDosageCpp(corrupt, 1L, 1L), "truncated")
+})
+
+test_that("the BGEN dosage kernel reads any ploidy and allele count", {
+    # One unphased triploid sample with three alleles: ten genotypes in colex
+    # order -- (3,0,0) (2,1,0) (1,2,0) (0,3,0) (2,0,1) (1,1,1) (0,2,1)
+    # (1,0,2) (0,1,2) (0,0,3) -- the last one's probability implied.
+    triploid <- function(genotype) {
+        stored <- integer(9L)
+        if (genotype <= 9L) {
+            stored[[genotype]] <- 255L
+        }
+        as.raw(c(1, 0, 0, 0, 3, 0, 3, 3, 3, 0, 8, stored))
+    }
+    # All the mass on (0,2,1): two copies of allele 2, one of allele 3.
+    expect_equal(
+        pecotmr:::bgenDosageCpp(triploid(7L), 1L, c(2L, 3L)),
+        matrix(c(2, 1), 1L)
+    )
+    # On the implied last genotype, (0,0,3).
+    expect_equal(
+        pecotmr:::bgenDosageCpp(triploid(10L), 1L, c(1L, 3L)),
+        matrix(c(0, 3), 1L)
+    )
+})
+
+# ===========================================================================
+# The VCF and GDS panel builders: what a VCF or GDS panel's variants are
+# called, what is refused before anything is read, and how a per-chromosome
+# set stacks. The seed's reads are tested in test_GenotypeDosageSeed.R.
+# ===========================================================================
+
+samples3 <- c("s1", "s2", "s3")
+
+.dose <- function(panel) {
+    unname(as.matrix(SummarizedExperiment::assay(panel, "dosage")))
+}
+
+# A GDS file built node by node with gdsfmt, of root format `fileFormat`
+# (NULL records none), by `build(gds)`.
+.writeTestGds <- function(fileFormat, build) {
+    f <- tempfile(fileext = ".gds")
+    gds <- gdsfmt::createfn.gds(f)
+    if (!is.null(fileFormat)) {
+        gdsfmt::put.attr.gdsn(gds$root, "FileFormat", fileFormat)
+    }
+    build(gds)
+    gdsfmt::closefn.gds(gds)
+    f
+}
+
+# A minimal SeqArray file of one biallelic record and two samples, all REF
+# calls: its genotype calls stored as `storage`, with `nExtra` calls stored
+# beyond its ploidy, and no annotation/id.
+.writeFakeSeqArray <- function(storage = "bit2", nExtra = 0L) {
+    .writeTestGds("SEQ_ARRAY", function(gds) {
+        gdsfmt::add.gdsn(gds, "sample.id", c("a", "b"))
+        gdsfmt::add.gdsn(gds, "variant.id", 1L)
+        gdsfmt::add.gdsn(gds, "position", 100L)
+        gdsfmt::add.gdsn(gds, "chromosome", "1")
+        gdsfmt::add.gdsn(gds, "allele", "A,G")
+        geno <- gdsfmt::addfolder.gdsn(gds, "genotype")
+        gdsfmt::add.gdsn(
+            geno,
+            "data",
+            array(0L, c(2L, 2L, 1L)),
+            storage = storage
+        )
+        gdsfmt::add.gdsn(geno, "@data", 1L, storage = "uint8", visible = FALSE)
+        gdsfmt::add.gdsn(
+            geno,
+            "extra.index",
+            matrix(1L, 3L, nExtra),
+            storage = "int32"
+        )
+    })
+}
+
+# ---- VCF -------------------------------------------------------------------
+
+test_that("a VCF panel names its variants and records where it came from", {
+    skip_if_not_installed("VariantAnnotation")
+    vcf <- .writeTestVcf(.vcfGtOnly(.vcfOverlapRecords()), samples3)
+    expect_warning(
+        panel <- readGenotypes(vcf),
+        "1 VCF record\\(s\\) of .* carry more than one ALT allele"
+    )
+    rr <- SummarizedExperiment::rowRanges(panel)
+    # A record keeps its own ID when it has one and a single ALT allele;
+    # every other row is named by its alleles.
+    expect_equal(
+        rr$SNP,
+        c(
+            "chr22:100:A:G",
+            "rs2",
+            "rs3",
+            "rs4",
+            "rs4",
+            "chr22:400:A:C",
+            "chr22:400:A:G"
+        )
+    )
+    expect_equal(rr$A1, c("G", "A", "T", "T", "G", "C", "G"))
+    expect_equal(rr$A2, c("A", "ACGTA", "G", "C", "C", "A", "A"))
+    expect_equal(as.character(GenomicRanges::seqnames(rr)), rep("chr22", 7L))
+    expect_equal(colnames(panel), samples3)
+    expect_equal(
+        S4Vectors::metadata(panel)$genotypeSource,
+        list(
+            format = "vcf",
+            path = normalizePath(vcf),
+            chromPaths = character(0)
+        )
+    )
+})
+
+test_that("a VCF record with no ALT allele holds no variant", {
+    skip_if_not_installed("VariantAnnotation")
+    records <- data.frame(
+        CHROM = "22",
+        POS = c(100L, 500L),
+        ID = c("rs1", "rs5"),
+        REF = "A",
+        ALT = c("G", "."),
+        s1 = c("0/1", "0/0"),
+        s2 = c("1/1", "0/0"),
+        s3 = c("0/0", "0/0"),
+        stringsAsFactors = FALSE
+    )
+    panel <- readGenotypes(.writeTestVcf(records, samples3))
+    expect_equal(rownames(panel), "rs1")
+    expect_equal(.dose(panel), matrix(c(1, 2, 0), 1L))
+})
+
+test_that("vcfArgs reach the read of the records", {
+    skip_if_not_installed("VariantAnnotation")
+    vcf <- .writeTestVcf(.vcfGtOnly(.vcfOverlapRecords()), samples3)
+    # Read without row names, no record has an ID of its own.
+    panel <- suppressWarnings(
+        readGenotypes(vcf, vcfArgs = list(row.names = FALSE))
+    )
+    expect_equal(
+        SummarizedExperiment::rowRanges(panel)$SNP[2:3],
+        c("chr22:200:ACGTA:A", "chr22:202:G:T")
+    )
+})
+
+test_that("a VCF that cannot be read lazily is refused before any read", {
+    skip_if_not_installed("VariantAnnotation")
+    expect_error(
+        readGenotypes("/no/such/file.vcf.gz"),
+        "VCF file.*File does not exist"
+    )
+    vcf <- .writeTestVcf(.vcfGtOnly(.vcfOverlapRecords()), samples3)
+    unindexed <- file.path(tempfile("vcf_"), "copy.vcf.gz")
+    dir.create(dirname(unindexed))
+    file.copy(vcf, unindexed)
+    expect_error(readGenotypes(unindexed), "tabix index")
+    bcf <- tempfile(fileext = ".bcf")
+    file.copy(vcf, bcf)
+    expect_error(readGenotypes(bcf), "BCF file")
+})
+
+test_that("a VCF's dosage field must be one pecotmr can read", {
+    skip_if_not_installed("VariantAnnotation")
+    records <- .vcfOverlapRecords()
+    perGenotype <- .writeTestVcf(
+        records,
+        samples3,
+        format = c("GT", "DS"),
+        ds = "G"
+    )
+    expect_error(readGenotypes(perGenotype), "FORMAT/DS with Number=G")
+    noGenotypes <- .writeTestVcf(
+        .vcfGtOnly(records),
+        samples3,
+        format = "AD",
+        gt = FALSE
+    )
+    expect_error(
+        suppressWarnings(readGenotypes(noGenotypes)),
+        "neither FORMAT/DS nor FORMAT/GT"
+    )
+})
+
+test_that("a sketch's .afreq beside a VCF is recorded on its panel", {
+    skip_if_not_installed("VariantAnnotation")
+    vcf <- .writeTestVcf(.vcfGtOnly(.vcfOverlapRecords())[2:3, ], samples3)
+    writeLines(
+        c(
+            "#CHROM\tID\tREF\tALT\tALT_FREQS\tOBS_CT\tU_MIN\tU_MAX",
+            "22\trs2\tACGTA\tA\t0.25\t40\t-1\t1",
+            "22\trs3\tG\tT\t0.5\t38\t-1\t1"
+        ),
+        sub("\\.vcf\\.gz$", ".afreq", vcf)
+    )
+    panel <- readGenotypes(vcf)
+    expect_equal(SummarizedExperiment::rowRanges(panel)$AF, c(0.25, 0.5))
+    expect_equal(S4Vectors::metadata(panel)$ldProjection$nSamples, 20L)
+})
+
+# ---- GDS -------------------------------------------------------------------
+
+test_that("a GDS file that holds no genotypes pecotmr reads is refused", {
+    skip_if_not_installed("gdsfmt")
+    skip_if_not_installed("GDSArray")
+    expect_error(
+        readGenotypes("/no/such/file.gds"),
+        "GDS file.*File does not exist"
+    )
+    bare <- .writeTestGds(NULL, function(gds) {
+        gdsfmt::add.gdsn(gds, "x", 1L)
+    })
+    expect_error(readGenotypes(bare), "GDS file of format 'unknown'")
+})
+
+test_that("a SNPRelate GDS whose genotypes disagree with its SNPs is refused", {
+    skip_if_not_installed("gdsfmt")
+    skip_if_not_installed("GDSArray")
+    f <- .writeTestGds("SNP_ARRAY", function(gds) {
+        gdsfmt::add.gdsn(gds, "sample.id", c("a", "b", "c"))
+        gdsfmt::add.gdsn(gds, "snp.id", c("v1", "v2"))
+        gdsfmt::add.gdsn(gds, "snp.position", c(10L, 20L))
+        gdsfmt::add.gdsn(gds, "snp.chromosome", c(1L, 1L))
+        gdsfmt::add.gdsn(gds, "snp.allele", c("A/G", "C/T"))
+        node <- gdsfmt::add.gdsn(
+            gds,
+            "genotype",
+            matrix(0L, 3L, 3L),
+            storage = "bit2"
+        )
+        gdsfmt::put.attr.gdsn(node, "sample.order")
+    })
+    expect_error(
+        readGenotypes(f),
+        "genotype matrix of .* is 3 x 3, but the file lists 2 SNPs"
+    )
+})
+
+test_that("a SeqArray GDS without IDs names its variants by their alleles", {
+    skip_if_not_installed("gdsfmt")
+    skip_if_not_installed("GDSArray")
+    panel <- readGenotypes(.writeFakeSeqArray())
+    expect_equal(rownames(panel), "chr1:100:A:G")
+    expect_equal(.dose(panel), matrix(0, 1L, 2L))
+})
+
+test_that("SeqArray calls stored otherwise than as read are refused", {
+    skip_if_not_installed("gdsfmt")
+    skip_if_not_installed("GDSArray")
+    expect_error(
+        readGenotypes(.writeFakeSeqArray(storage = "int8")),
+        "stores its genotype calls as Int8"
+    )
+    expect_error(
+        readGenotypes(.writeFakeSeqArray(nExtra = 1L)),
+        "1 genotype call\\(s\\) beyond its ploidy"
+    )
+})
+
+test_that("a SeqArray FORMAT/DS of another Number is refused", {
+    skip_if_not_installed("SeqArray")
+    skip_if_not_installed("GDSArray")
+    vcf <- .writeTestVcf(
+        .vcfOverlapRecords(),
+        samples3,
+        format = c("GT", "DS"),
+        ds = "A"
+    )
+    gds <- .writeTestSeqArray(vcf, ds = TRUE)
+    opened <- gdsfmt::openfn.gds(gds, readonly = FALSE)
+    gdsfmt::put.attr.gdsn(
+        gdsfmt::index.gdsn(opened, "annotation/format/DS"),
+        "Number",
+        "G"
+    )
+    gdsfmt::closefn.gds(opened)
+    expect_error(readGenotypes(gds), "stores FORMAT/DS with Number=G")
+})
+
+# ---- PLINK1 ----------------------------------------------------------------
+
+test_that("a PLINK1 panel reads the dosages snpStats reads", {
+    # toy_ref has missing calls. snpStats counts the .bim's sixth allele, so
+    # its count of A1, the fifth, is two minus that.
+    skip_if_not_installed("PlinkMatrix")
+    skip_if_not_installed("snpStats")
+    stem <- str_remove(
+        system.file("extdata", "toy_ref.bed", package = "pecotmr"),
+        "\\.bed$"
+    )
+    sm <- snpStats::read.plink(
+        str_c(stem, ".bed"),
+        str_c(stem, ".bim"),
+        str_c(stem, ".fam")
+    )
+    want <- t(2 - methods::as(sm$genotypes, "numeric"))
+    panel <- readGenotypes(plink1Prefix = stem)
+    expect_true(anyNA(want))
+    expect_equal(.dose(panel), unname(want))
+    expect_identical(rownames(panel), normalizeVariantId(sm$map$snp.name))
+    expect_identical(colnames(panel), as.character(sm$fam$member))
+    expect_identical(
+        S4Vectors::metadata(panel)$genotypeSource$path,
+        file.path(normalizePath(dirname(stem)), basename(stem))
+    )
+})
+
+test_that("a PLINK1 panel cut to a few variants keeps only those", {
+    # Its seed is cut with it, so a saved panel carries the kept variants'
+    # metadata only, and reads them back from the file.
+    skip_if_not_installed("PlinkMatrix")
+    panel <- readGenotypes(plink1Prefix = plink_prefix)
+    cut <- pecotmr:::.panelSubsetRows(panel, c(3L, 10L, 200L))
+    expect_equal(dim(pecotmr:::.panelSeed(cut)), c(3L, n_samples))
+    expect_equal(.dose(cut), .dose(panel)[c(3L, 10L, 200L), ])
+    saved <- tempfile(fileext = ".rds")
+    saveRDS(cut, saved)
+    expect_equal(.dose(readRDS(saved)), .dose(cut))
+})
+
+# ---- Per-chromosome sets ---------------------------------------------------
+
+test_that("a per-chromosome VCF, GDS or PLINK1 set stacks into one panel", {
+    skip_if_not_installed("VariantAnnotation")
+    skip_if_not_installed("GDSArray")
+    skip_if_not_installed("PlinkMatrix")
+    for (ext in c(".vcf.gz", ".gds", ".bed")) {
+        p21 <- file.path(test_data_dir, paste0("test_variants", ext))
+        p22 <- file.path(test_data_dir, paste0("test_variants_chr22", ext))
+        one21 <- readGenotypes(p21)
+        one22 <- readGenotypes(p22)
+        stacked <- readGenotypes(genoMeta = c("21" = p21, "22" = p22))
+        expect_equal(dim(stacked), c(nrow(one21) + nrow(one22), ncol(one21)))
+        expect_equal(.dose(stacked), rbind(.dose(one21), .dose(one22)))
+        source <- S4Vectors::metadata(stacked)$genotypeSource
+        # A PLINK1 file is recorded by its stem, as a PLINK prefix is.
+        recorded <- str_remove(normalizePath(c(p21, p22)), "\\.bed$")
+        expect_equal(
+            source$chromPaths,
+            c("21" = recorded[[1L]], "22" = recorded[[2L]])
+        )
+        # A stacked panel has no single seed to read through.
+        expect_null(pecotmr:::.panelSeed(stacked))
+        # Only the files of the chromosomes asked for are read.
+        only22 <- readGenotypes(
+            genoMeta = c("21" = p21, "22" = p22),
+            chroms = "22"
+        )
+        expect_equal(.dose(only22), .dose(one22))
+    }
+})
+
+test_that("a set's shards hold the same samples, one chromosome each", {
+    skip_if_not_installed("VariantAnnotation")
+    records <- .vcfGtOnly(.vcfOverlapRecords())
+    chr22 <- .writeTestVcf(records, samples3)
+    other <- .writeTestVcf(
+        `[<-`(records, "CHROM", value = "21")[c(names(records)[1:5], "s1")],
+        "s1"
+    )
+    expect_error(
+        suppressWarnings(readGenotypes(
+            genoMeta = c("22" = chr22, "21" = other)
+        )),
+        "identical sample IDs"
+    )
+    again <- .writeTestVcf(records, samples3)
+    expect_error(
+        suppressWarnings(readGenotypes(genoMeta = c(a = chr22, b = again))),
+        "appears in more than one per-chromosome file"
+    )
 })

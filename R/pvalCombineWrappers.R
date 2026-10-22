@@ -132,7 +132,33 @@ pvalPoolr <- function(pvals, method, R, methodArgs = PoolrOptions()) {
         invchisq = poolr::invchisq,
         .abortUnknownMethod("poolr", method)
     )
-    exec(fn, pvals, R = R, !!!as.list(methodArgs))$p
+    args <- as.list(methodArgs)
+    exec(fn, pvals, R = .poolrDependence(R, method, args), !!!args)$p
+}
+
+# `R` in the form poolr's adjustment reads it. `R` holds the correlations
+# among the test statistics. The generalized adjustment wants the covariances
+# among each test's transformed statistic (-2 log p for Fisher, z for
+# Stouffer, the 1-df chi-square for invchisq), and the effective-number
+# adjustments want the correlations among the p-values; mvnconv() converts to
+# both. "empirical" simulates from the statistics' own correlations.
+# @noRd
+.poolrDependence <- function(R, method, args) {
+    adjust <- args$adjust %||% "none"
+    if (is.null(R) || is_in(adjust, c("none", "empirical"))) {
+        return(R)
+    }
+    side <- args$side %||% 2
+    if (identical(adjust, "generalized")) {
+        target <- switch(
+            method,
+            fisher = "m2lp",
+            stouffer = "z",
+            invchisq = "chisq1"
+        )
+        return(poolr::mvnconv(R, side = side, target = target))
+    }
+    poolr::mvnconv(R, side = side, target = "p", cov2cor = TRUE)
 }
 
 pvalGbj <- function(zScores, R, method, methodArgs = GbjOptions()) {
@@ -290,8 +316,14 @@ pvalAspu <- function(
 
 # Internal: compute one method's combined p-value. Assumes inputs have
 # already been validity-filtered (positive, finite, < 1) and aligned with R.
-.combinePvalSingle <- function(method, pvals, zScores, R, methodArgs = list()) {
-    args <- .combinePvalMethodArgs(methodArgs, method)
+.combinePvalSingle <- function(
+    method,
+    pvals,
+    zScores,
+    R,
+    pvalMethodsParam = list()
+) {
+    args <- .combinePvalMethodArgs(pvalMethodsParam, method)
     switch(
         method,
         acat = pvalAcat(pvals),
@@ -327,8 +359,8 @@ pvalAspu <- function(
 # constructor's result rather than list() keeps each engine's pecotmr
 # defaults -- poolr's `adjust = "generalized"` -- in force either way.
 # @noRd
-.combinePvalMethodArgs <- function(methodArgs, method) {
-    entries <- .pvalMethodEntriesOf(methodArgs)
+.combinePvalMethodArgs <- function(pvalMethodsParam, method) {
+    entries <- .pvalMethodEntriesOf(pvalMethodsParam)
     i <- match(method, names(entries))
     if (!is.na(i)) {
         return(entries[[i]])
@@ -340,11 +372,11 @@ pvalAspu <- function(
 # The per-method entries, whether they arrived in a PvalMethodsParam or as
 # the bare list() that still means "no settings".
 # @noRd
-.pvalMethodEntriesOf <- function(methodArgs) {
-    if (is(methodArgs, "PvalMethodsParam")) {
-        return(slot(methodArgs, "methods") %||% list())
+.pvalMethodEntriesOf <- function(pvalMethodsParam) {
+    if (is(pvalMethodsParam, "PvalMethodsParam")) {
+        return(slot(pvalMethodsParam, "methods") %||% list())
     }
-    methodArgs %||% list()
+    pvalMethodsParam %||% list()
 }
 
 #' Combine P-values via Any of a Menu of Methods
@@ -379,11 +411,12 @@ pvalAspu <- function(
 #' @param zScores Optional numeric vector of signed z-scores.
 #' @param methods Character vector of combination method names; see above for
 #'   the menu (lowercase).
-#' @param R Optional correlation matrix aligned to \code{pvals} /
+#' @param R Optional correlation matrix among the test statistics (for
+#'   variant-level tests, their LD), aligned to \code{pvals} /
 #'   \code{zScores}. Required for the correlation-adjusted methods.
 #' @param naRm Logical; if \code{TRUE} (default), drop NA p-values before
 #'   combination.
-#' @param methodArgs Per-method engine options, built with
+#' @param pvalMethodsParam Per-method engine options, built with
 #'   \code{\link{PvalMethodsParam}} -- for example
 #'   \code{PvalMethodsParam(aspu = AspuOptions(n.perm = 5000))}. Configuring
 #'   a method that \code{methods} does not request is an error rather than a
@@ -407,12 +440,12 @@ combinePValues <- function(
     methods,
     R = NULL,
     naRm = TRUE,
-    methodArgs = PvalMethodsParam()
+    pvalMethodsParam = PvalMethodsParam()
 ) {
     assertFlag(naRm)
-    .assertMethodParam(methodArgs, "PvalMethodsParam", "methodArgs")
+    .assertMethodParam(pvalMethodsParam, "PvalMethodsParam")
     methods <- .combinePvalCheckMethods(methods)
-    .combinePvalCheckMethodArgs(methodArgs, methods)
+    .combinePvalCheckMethodArgs(pvalMethodsParam, methods)
     nPvalsIn <- if (is.null(pvals)) 0L else length(pvals)
     nZScoresIn <- if (is.null(zScores)) 0L else length(zScores)
     .combinePvalCheckPrereqs(methods, zScores, R)
@@ -435,7 +468,7 @@ combinePValues <- function(
         filt$pvalsK,
         filt$zScoresK,
         Raligned,
-        methodArgs
+        pvalMethodsParam
     )
     .combinePvalResult(perMethod, input)
 }
@@ -462,14 +495,14 @@ combinePValues <- function(
 # Options for a method that was not requested would be dropped in silence --
 # exactly the failure the constructors exist to prevent -- so say so instead.
 # @noRd
-.combinePvalCheckMethodArgs <- function(methodArgs, methods) {
-    configured <- names(.pvalMethodEntriesOf(methodArgs))
+.combinePvalCheckMethodArgs <- function(pvalMethodsParam, methods) {
+    configured <- names(.pvalMethodEntriesOf(pvalMethodsParam))
     unused <- setdiff(configured, methods)
     if (length(unused) == 0L) {
         return(invisible(NULL))
     }
     msg <- glue(
-        "combinePValues: `methodArgs` configures ",
+        "combinePValues: `pvalMethodsParam` configures ",
         "{str_flatten(unused, ', ')}, which `methods` does not request ",
         "({str_flatten(methods, ', ')}), so those options would be ignored."
     )
@@ -584,7 +617,7 @@ combinePValues <- function(
     pvalsK,
     zScoresK,
     Raligned,
-    methodArgs
+    pvalMethodsParam
 ) {
     set_names(
         map(
@@ -593,7 +626,7 @@ combinePValues <- function(
             pvalsK = pvalsK,
             zScoresK = zScoresK,
             Raligned = Raligned,
-            methodArgs = methodArgs
+            pvalMethodsParam = pvalMethodsParam
         ),
         methods
     )
@@ -601,14 +634,20 @@ combinePValues <- function(
 
 # @noRd
 #' @importFrom rlang try_fetch
-.combinePvalRunOne <- function(m, pvalsK, zScoresK, Raligned, methodArgs) {
+.combinePvalRunOne <- function(
+    m,
+    pvalsK,
+    zScoresK,
+    Raligned,
+    pvalMethodsParam
+) {
     p <- try_fetch(
         .combinePvalSingle(
             m,
             pvals = pvalsK,
             zScores = zScoresK,
             R = Raligned,
-            methodArgs = methodArgs
+            pvalMethodsParam = pvalMethodsParam
         ),
         error = function(cnd) {
             msg <- glue("combinePValues: method '{m}' failed")
@@ -740,7 +779,12 @@ AspuOptions <- function(...) {
 #'   \code{m}, \code{size}, \code{threshold}, \code{side}, \code{batchsize}
 #'   and \code{nearpd}. The \pkg{poolr} signatures end in \code{...}, so
 #'   names cannot be checked here and a misspelling is passed through.
-#'   \code{p} and \code{R} are supplied by pecotmr and refused.
+#'   \code{p} and \code{R} are supplied by pecotmr and refused: \code{R} is
+#'   the caller's correlation among the test statistics, which pecotmr
+#'   converts with \code{poolr::mvnconv()} into the form the adjustment
+#'   reads (the covariances of each test's transformed statistic for
+#'   \code{"generalized"}, the correlations among the p-values for the
+#'   effective-number adjustments, unchanged for \code{"empirical"}).
 #' @return A \code{MethodOptions} record for
 #'   \code{\link{PvalMethodsParam}}.
 #' @seealso \code{\link{combinePValues}}

@@ -8,8 +8,12 @@
 # orchestrate joint or per-study analyses across multiple cohorts.
 # =============================================================================
 
-#' @include QtlDataset.R
+#' @include QtlDataset.R qtlSumStats.R
 NULL
+
+# The summary-statistic-only studies: a QtlSumStats, or NULL when there are
+# none. The slot type refuses anything else when the object is built.
+setClassUnion("QtlSumStats_OR_NULL", c("QtlSumStats", "NULL"))
 
 #' @title Multi-Study QTL Dataset
 #' @description S4 container for a multi-study QTL analysis: a collection of
@@ -34,7 +38,7 @@ setClass(
     "MultiStudyQtlDataset",
     representation(
         qtlDatasets = "list",
-        sumStats = "ANY"
+        sumStats = "QtlSumStats_OR_NULL"
     ),
     validity = function(object) .validateMultiStudyQtlDataset(object)
 )
@@ -46,10 +50,7 @@ setClass(
     # Each stage only makes sense once the previous one holds: the study count
     # reads slots the type checks just validated, and trait consistency reads
     # across the studies the count check just confirmed.
-    slotErrors <- c(
-        .msqdCheckDatasets(object@qtlDatasets),
-        .msqdCheckSumStats(object@sumStats)
-    )
+    slotErrors <- .msqdCheckDatasets(object@qtlDatasets)
     if (length(slotErrors) > 0L) {
         return(slotErrors)
     }
@@ -83,14 +84,6 @@ setClass(
 # @noRd
 .msqdIsQtlDataset <- function(d) {
     methods::is(d, "QtlDataset")
-}
-
-# @noRd
-.msqdCheckSumStats <- function(sumStats) {
-    if (!is.null(sumStats) && !methods::is(sumStats, "QtlSumStats")) {
-        return("'sumStats' must be a QtlSumStats object or NULL")
-    }
-    NULL
 }
 
 # At least 2 studies in total (individual-level + summary-statistic).

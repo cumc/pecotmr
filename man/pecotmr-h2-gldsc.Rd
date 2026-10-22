@@ -7,10 +7,15 @@
 Estimate heritability and functional enrichment by feasible
   generalized least squares (FGLS) on LD scores (Xiong et al. 2024). The
   response \eqn{Z_j^2 - 1} is regressed on stratified LD scores
-  \eqn{\ell_{ja} = \sum_k R^2_{jk} A_{ka}} (with a confounding intercept)
-  using the full residual covariance
+  \eqn{\ell_{ja} = \sum_k R^2_{jk} A_{ka}} (with a confounding intercept;
+  the raw sample \eqn{R^2}, as the original gLDSC implementation forms
+  them, not the unbiased \eqn{r^2} of the S-LDSC scores) using the full
+  residual covariance
   \eqn{\Omega = (\hat{N\tau}\, R D_a R + R)^2} (elementwise), inverted per LD
-  block via a 99\%-eigenvalue-mass truncation. \eqn{\hat{N\tau} = \sum(Z^2-1)
+  block via a 99\%-eigenvalue-mass truncation. Each block's \eqn{\Omega}
+  is formed, decomposed and dropped in turn; for a reference read from a
+  genotype panel it is formed from the panel's factor, never from the
+  block's \eqn{R}. \eqn{\hat{N\tau} = \sum(Z^2-1)
   / \sum \ell} is a method-of-moments plug-in;
   \eqn{D_a = diag(\sum_a A_{ja})}.
   Coefficients are \eqn{\tau = (X'\Omega^{-1}X)^{-1} X'\Omega^{-1} y / N} and

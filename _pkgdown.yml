@@ -124,8 +124,9 @@ reference:
       - GwasFineMappingResult-class
       - GwasSumStats-class
       - H2Estimate-class
-      - LdData-class
+      - GenotypeMixture-class
       - LdEigen-class
+      - LdMatrix-class
       - LdScore-class
       - LdStatistic-class
       - MashPrior-class
@@ -155,8 +156,9 @@ reference:
       - fineMappingRow
       - GwasFineMappingResult
       - GwasSumStats
-      - LdData
+      - GenotypeMixture-constructor
       - LdEigen
+      - LdMatrix-constructor
       - LdScore
       - MashPrior
       - MultiStudyQtlDataset
@@ -301,7 +303,7 @@ reference:
       - credibleSetSummary
       - credibleSets
       - lbf
-      - ldSketch
+      - ldReference
       - marginalEffects
       - methodNames
       - genomicRegion
@@ -346,14 +348,14 @@ reference:
       - colocViews
       - colocBoostOutcomes
       - computingTime
-      - ldSketch
+      - ldReference
       - regionVcp
 
   - subtitle: "SumStatsBase"
     contents:
       - af
       - coef
-      - ldSketch
+      - ldReference
       - maf
       - nSamples
       - variantColumnReplace
@@ -393,7 +395,7 @@ reference:
       - cvResult
       - weightsDataType
       - methodFits
-      - ldSketch
+      - ldReference
       - methodNames
       - genomicRegion
       - weightStandardized
@@ -447,18 +449,13 @@ reference:
       - annotationJackknifeCoefs
       - traitNames
 
-  - subtitle: "LdData"
+  - subtitle: "LdMatrix / GenotypeMixture"
     contents:
-      - blockMetadata
       - ldMatrix
-      - genotypes
       - mixtureWeights
       - ldPanelNSamples
-      - refPanel
-      - snpIdx
       - variantIds
-      - variantInfo
-      - hasGenotypes
+      - genotypes
 
   - subtitle: "LdEigen"
     contents:
@@ -561,10 +558,9 @@ reference:
 
   - title: "LD infrastructure"
     desc: >
-      Computing, loading, and manipulating LD matrices, plus
-      design-matrix conditioning utilities.
+      Computing and checking LD matrices, plus design-matrix conditioning
+      utilities.
     contents:
-      - loadLdMatrix
       - computeLd
       - checkLd
       - enforceDesignFullRank
@@ -647,7 +643,6 @@ reference:
       - glmnetWeights
       - lassoWeights
       - enetWeights
-      - lassosumRss
       - lassosumRssWeights
       - mcpWeights
       - mcpRssWeights
@@ -655,7 +650,6 @@ reference:
       - scadRssWeights
       - l0learnWeights
       - l0learnRssWeights
-      - penalizedRss
 
   - subtitle: "Bayesian alphabet"
     contents:
@@ -667,9 +661,7 @@ reference:
       - bayesNWeights
       - bayesRWeights
       - bLassoWeights
-      - prsCs
       - prsCsWeights
-      - sdpr
       - sdprWeights
       - dprWeights
 

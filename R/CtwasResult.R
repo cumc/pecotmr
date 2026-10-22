@@ -8,7 +8,7 @@
 # run, so genes live inside the payload. Optional joint columns (jointStudies,
 # jointContexts) tag rows born from a multi-study / multi-context cTWAS run and
 # participate in the uniqueness key, exactly as in the TwasWeights /
-# FineMappingResult families.
+# FineMappingResultBase families.
 # =============================================================================
 
 #' @include AllGenerics.R tupleSelectors.R

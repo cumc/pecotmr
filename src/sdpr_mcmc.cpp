@@ -4,7 +4,7 @@
 // (https://github.com/eldronzhou/SDPR), which used GSL + x86 SSE intrinsics.
 //
 // Translation strategy:
-//   GSL gsl_blas_dsymv  -> arma::symmatu(M) * v
+//   GSL gsl_blas_dsymv  -> M * v, with M symmetrized once when it is built
 //   GSL gsl_blas_dgemv  -> A.t() * v
 //   GSL gsl_blas_dgemm  -> A * B
 //   GSL gsl_blas_dtrsv  -> arma::solve(trimatl(L), v)
@@ -22,6 +22,10 @@
 // (arma::log, arma::exp, arma::max, arma::accu) which delegate to
 // platform-optimal SIMD (NEON on ARM, SSE/AVX on x86) through the
 // underlying BLAS/compiler auto-vectorization.
+//
+// The sampler reads each LD block through a block type (sdpr_mcmc.h): the
+// dense matrices SDPR itself precomputes (sdpr_dense_blocks()), or their
+// low-rank form from a factor of the LD (sdpr_factor_block()).
 
 #include <cpp11.hpp>
 #include <cpp11armadillo.hpp>
@@ -40,7 +44,9 @@ using std::thread; using std::ref;
 using std::vector; using std::ofstream;
 using std::string; using std::min;
 
-#define square(x) ((x)*(x))
+// A function rather than the original macro, which would also expand inside
+// arma::square().
+static inline double square(double x) { return x * x; }
 
 // ---------------------------------------------------------------------------
 // sample_sigma2: Sample cluster variances from inverse-gamma posterior
@@ -72,20 +78,20 @@ void MCMC_state::sample_sigma2() {
 //   gsl_blas_dsymv(CblasUpper, -eta*eta, B, beta, eta*eta, b)
 //   gsl_blas_daxpy(eta, calc_b_tmp, b)
 // ---------------------------------------------------------------------------
+template <class Block>
 void MCMC_state::calc_b(size_t j, const mcmc_data &dat,
-                        const ldmat_data &ldmat_dat) {
+                        const std::vector<Block> &blocks) {
     size_t start_i = dat.boundary[j].first;
     size_t end_i   = dat.boundary[j].second;
 
     arma::vec beta_j = beta.subvec(start_i, end_i - 1);
-    arma::vec diag_B = ldmat_dat.B[j].diag();
 
     // Original GSL: b = eta^2 * diag(B)*beta;
     //               b = eta^2*b - eta^2 * B*beta  (via dsymv with alpha=-eta^2, beta=eta^2)
     //               b += eta * calc_b_tmp
-    arma::vec b_j = eta * eta * (diag_B % beta_j
-                    - arma::symmatu(ldmat_dat.B[j]) * beta_j)
-                    + eta * ldmat_dat.calc_b_tmp[j];
+    arma::vec b_j = eta * eta * (blocks[j].diag_B % beta_j
+                    - blocks[j].B_times(beta_j))
+                    + eta * blocks[j].calc_b_tmp;
 
     b.subvec(start_i, end_i - 1) = b_j;
 }
@@ -103,8 +109,9 @@ void MCMC_state::calc_b(size_t j, const mcmc_data &dat,
 //   C_k = eta^2 * N * B[i,i] * var_k + 1
 //   log P(z_i=k) = -0.5*log(C_k) + log(p_k) + (N*b_i)^2 * var_k / (2*C_k)
 // ---------------------------------------------------------------------------
+template <class Block>
 void MCMC_state::sample_assignment(size_t j, const mcmc_data &dat,
-                                   const ldmat_data &ldmat_dat) {
+                                   const std::vector<Block> &blocks) {
     size_t start_i   = dat.boundary[j].first;
     size_t end_i     = dat.boundary[j].second;
     size_t n_snp_blk = end_i - start_i;
@@ -124,7 +131,7 @@ void MCMC_state::sample_assignment(size_t j, const mcmc_data &dat,
     }
 
     for (size_t i = 0; i < n_snp_blk; i++) {
-        float Bjj_i = static_cast<float>(ldmat_dat.B[j](i, i));
+        float Bjj_i = static_cast<float>(blocks[j].diag_B(i));
         float bj_i  = static_cast<float>(b(start_i + i));
         float rnd_i = unif(r);
 
@@ -249,8 +256,9 @@ void MCMC_state::sample_alpha() {
 // Original: mcmc.cpp lines 239-329
 //   Uses gsl_linalg_cholesky_decomp1, gsl_blas_dtrsv for forward/back-solve
 // ---------------------------------------------------------------------------
+template <class Block>
 void MCMC_state::sample_beta(size_t j, const mcmc_data &dat,
-                             ldmat_data &ldmat_dat) {
+                             const std::vector<Block> &blocks) {
     size_t start_i = dat.boundary[j].first;
     size_t end_i   = dat.boundary[j].second;
 
@@ -266,8 +274,8 @@ void MCMC_state::sample_beta(size_t j, const mcmc_data &dat,
     beta.subvec(start_i, end_i - 1).zeros();
 
     if (causal_list.empty()) {
-        ldmat_dat.num[j]   = 0;
-        ldmat_dat.denom[j] = 0;
+        num[j]   = 0;
+        denom[j] = 0;
         return;
     }
 
@@ -276,15 +284,14 @@ void MCMC_state::sample_beta(size_t j, const mcmc_data &dat,
     if (causal_list.size() == 1) {
         double var_k = cluster_var[cls_assgn[causal_list[0]]];
         double bj    = b(causal_list[0]);
-        double Bjj   = ldmat_dat.B[j](causal_list[0] - start_i,
-                                       causal_list[0] - start_i);
+        double Bjj   = blocks[j].diag_B(causal_list[0] - start_i);
         // C = var_k / (N * var_k * eta^2 * Bjj + 1)
         double C_val = var_k / (N * var_k * square(eta) * Bjj + 1.0);
         std::normal_distribution<double> dist(0.0, std::sqrt(C_val));
         double rv = dist(r) + C_val * N * bj;
         beta(causal_list[0]) = rv;
-        ldmat_dat.num[j]   = bj * rv;
-        ldmat_dat.denom[j] = square(rv) * Bjj;
+        num[j]   = bj * rv;
+        denom[j] = square(rv) * Bjj;
         return;
     }
 
@@ -298,22 +305,15 @@ void MCMC_state::sample_beta(size_t j, const mcmc_data &dat,
 
     // Build precision matrix B_gamma and A_vec
     // Original: mcmc.cpp lines 278-289
-    arma::mat B_gamma(nc, nc);
+    arma::uvec causal_idx(nc);
     for (size_t i = 0; i < nc; i++) {
-        size_t idx_i = causal_list[i] - start_i;
-        A_vec(i) = N * eta * ldmat_dat.calc_b_tmp[j](idx_i);
-
-        for (size_t k = 0; k < nc; k++) {
-            size_t idx_k = causal_list[k] - start_i;
-            if (i != k) {
-                // Off-diagonal: eta^2 * N * B[i,k]
-                B_gamma(i, k) = C_coeff * ldmat_dat.B[j](idx_i, idx_k);
-            } else {
-                // Diagonal: eta^2 * N * B[i,i] + 1/var_k
-                B_gamma(i, k) = C_coeff * ldmat_dat.B[j](idx_i, idx_i)
-                    + 1.0 / cluster_var[cls_assgn[causal_list[i]]];
-            }
-        }
+        causal_idx(i) = causal_list[i] - start_i;
+        A_vec(i) = N * eta * blocks[j].calc_b_tmp(causal_idx(i));
+    }
+    // Off-diagonal: eta^2 * N * B[i,k]; diagonal: eta^2 * N * B[i,i] + 1/var_k
+    arma::mat B_gamma = C_coeff * blocks[j].B_sub(causal_idx);
+    for (size_t i = 0; i < nc; i++) {
+        B_gamma(i, i) += 1.0 / cluster_var[cls_assgn[causal_list[i]]];
     }
 
     arma::vec A_vec2 = A_vec;  // Save for eta computation
@@ -344,17 +344,16 @@ void MCMC_state::sample_beta(size_t j, const mcmc_data &dat,
     // Original: mcmc.cpp lines 312-321
     // Restore diagonal of B_gamma to eta^2 * N * B[i,i] (without 1/var_k)
     for (size_t i = 0; i < nc; i++) {
-        size_t idx_i = causal_list[i] - start_i;
-        B_gamma(i, i) = C_coeff * ldmat_dat.B[j](idx_i, idx_i);
+        B_gamma(i, i) = C_coeff * blocks[j].diag_B(causal_idx(i));
     }
 
     // num = A_vec2^T * beta_c / eta
-    ldmat_dat.num[j] = arma::dot(A_vec2, beta_c) / eta;
+    num[j] = arma::dot(A_vec2, beta_c) / eta;
 
     // denom = beta_c^T * B_gamma * beta_c / eta^2
     // Original: gsl_blas_dsymv(CblasUpper, 1.0, &B, beta_c, 0, A_vec)
-    arma::vec tmp = arma::symmatu(B_gamma) * beta_c;
-    ldmat_dat.denom[j] = arma::dot(beta_c, tmp) / square(eta);
+    arma::vec tmp = B_gamma * beta_c;
+    denom[j] = arma::dot(beta_c, tmp) / square(eta);
 
     // Write sampled betas back
     for (size_t i = 0; i < nc; i++) {
@@ -366,15 +365,16 @@ void MCMC_state::sample_beta(size_t j, const mcmc_data &dat,
 // compute_h2: Compute heritability h2 = sum_j beta_j^T * R_j * beta_j
 // Original: mcmc.cpp lines 331-343
 // ---------------------------------------------------------------------------
-void MCMC_state::compute_h2(const mcmc_data &dat) {
+template <class Block>
+void MCMC_state::compute_h2(const mcmc_data &dat,
+                            const std::vector<Block> &blocks) {
     h2 = 0;
-    for (size_t j = 0; j < dat.ref_ld_mat.size(); j++) {
+    for (size_t j = 0; j < blocks.size(); j++) {
         size_t start_i = dat.boundary[j].first;
         size_t end_i   = dat.boundary[j].second;
         arma::vec beta_j = beta.subvec(start_i, end_i - 1);
         // Original: gsl_blas_dsymv(CblasUpper, 1.0, ref_ld_mat, beta, 0, tmp)
-        arma::vec tmp = arma::symmatu(dat.ref_ld_mat[j]) * beta_j;
-        h2 += arma::dot(tmp, beta_j);
+        h2 += blocks[j].R_quad(beta_j);
     }
 }
 
@@ -383,11 +383,9 @@ void MCMC_state::compute_h2(const mcmc_data &dat) {
 //   eta ~ N(num_sum/denom_sum, 1/denom_sum)
 // Original: mcmc.cpp lines 345-352
 // ---------------------------------------------------------------------------
-void MCMC_state::sample_eta(const ldmat_data &ldmat_dat) {
-    double num_sum   = std::accumulate(ldmat_dat.num.begin(),
-                                       ldmat_dat.num.end(), 0.0);
-    double denom_sum = std::accumulate(ldmat_dat.denom.begin(),
-                                       ldmat_dat.denom.end(), 0.0);
+void MCMC_state::sample_eta() {
+    double num_sum   = std::accumulate(num.begin(), num.end(), 0.0);
+    double denom_sum = std::accumulate(denom.begin(), denom.end(), 0.0);
     denom_sum += 1e-6;
 
     std::normal_distribution<double> dist(num_sum / denom_sum,
@@ -396,68 +394,86 @@ void MCMC_state::sample_eta(const ldmat_data &ldmat_dat) {
 }
 
 // ---------------------------------------------------------------------------
-// solve_ldmat: Precompute LD-derived matrices A, B, L for each block
-//   opt_llk=1: B = (R + aI); A = B^{-1} R * sz; B = R*A; L = R.*R
-//   opt_llk=2: Multi-array with eigenvalue correction
+// sdpr_llk2_matrix: The optLlk = 2 matrix B2 from one block's LD
+//   Each pair's LD is scaled by min(N_i, N_j) / (1.1 * N_i * N_j) and zeroed
+//   between arrays 1 and 2; the diagonal is then set to 1 / N_i, raised by
+//   1.1 times the scaled matrix's most negative eigenvalue, if any, to keep
+//   B2 positive definite.
 //
-// Original: mcmc.cpp lines 354-431
-//   Uses gsl_linalg_cholesky_decomp1, gsl_blas_dtrsm for matrix solves
+// Original: mcmc.cpp lines 368-402
 // ---------------------------------------------------------------------------
-void solve_ldmat(const mcmc_data &dat, ldmat_data &ldmat_dat,
-                 const double a, unsigned sz, int opt_llk) {
-    for (size_t i = 0; i < dat.ref_ld_mat.size(); i++) {
-        size_t blk_size = dat.boundary[i].second - dat.boundary[i].first;
-        arma::mat A = dat.ref_ld_mat[i];
-        arma::mat B = dat.ref_ld_mat[i];
-        arma::mat L = dat.ref_ld_mat[i];  // Will become R .* R (element-wise square)
+static arma::mat sdpr_llk2_matrix(arma::mat B, const mcmc_data &dat,
+                                  size_t start) {
+    size_t blk_size = B.n_rows;
+    for (size_t j = 0; j < blk_size; j++) {
+        for (size_t k = 0; k < blk_size; k++) {
+            size_t idx1 = j + start;
+            size_t idx2 = k + start;
+            if ((dat.array[idx1] == 1 && dat.array[idx2] == 2) ||
+                (dat.array[idx1] == 2 && dat.array[idx2] == 1)) {
+                B(j, k) = 0;
+            } else {
+                B(j, k) *= min(dat.sz[idx1], dat.sz[idx2])
+                           / (1.1 * dat.sz[idx1] * dat.sz[idx2]);
+            }
+        }
+    }
 
+    // Force positive definite via eigenvalue correction. Only the smallest
+    // eigenvalue is read, so no eigenvectors are computed.
+    double eval_min = arma::eig_sym(B).min();
+
+    // Restore exact symmetry before the diagonal is reset
+    B = arma::symmatu(B);
+
+    // Add to diagonal to ensure PD
+    for (size_t j = 0; j < blk_size; j++) {
+        double diag_val = 1.0 / dat.sz[j + start];
+        if (eval_min < 0) diag_val -= 1.1 * eval_min;
+        B(j, j) = diag_val;
+    }
+    return B;
+}
+
+// ---------------------------------------------------------------------------
+// sdpr_dense_blocks: Precompute LD-derived matrices B and A' beta_mrg for
+// each block
+//   opt_llk=1: B0 = R + aI; A = B0^{-1} R * sz; B = R * A
+//   opt_llk=2: B0 = sdpr_llk2_matrix(R); A = B0^{-1} R; B = R * A
+//
+// Original: mcmc.cpp lines 354-431 (solve_ldmat)
+//   Uses gsl_linalg_cholesky_decomp1, gsl_blas_dtrsm for matrix solves. The
+//   original also kept A and R .* R per block, which nothing reads after
+//   this, so neither is kept here.
+// ---------------------------------------------------------------------------
+std::vector<SdprDenseBlock> sdpr_dense_blocks(const mcmc_data &dat,
+                                              std::vector<arma::mat> ref_ld_mat,
+                                              double a, unsigned sz,
+                                              int opt_llk) {
+    std::vector<SdprDenseBlock> blocks;
+    for (size_t i = 0; i < ref_ld_mat.size(); i++) {
+        size_t start    = dat.boundary[i].first;
+        size_t blk_size = dat.boundary[i].second - start;
+        const arma::mat &R = ref_ld_mat[i];
+
+        arma::mat B0;
         if (opt_llk == 1) {
-            // B = R + a*I  (diagonal shrinkage)
+            // B0 = R + a*I  (diagonal shrinkage)
             // Original: gsl_vector_add_constant(&diag.vector, a)
-            B.diag() += a;
-        }
-        else {
-            // Multi-array: scale by min(N_i, N_j) / (1.1 * N_i * N_j)
-            // Original: mcmc.cpp lines 368-402
-            for (size_t j = 0; j < blk_size; j++) {
-                for (size_t k = 0; k < blk_size; k++) {
-                    size_t idx1 = j + dat.boundary[i].first;
-                    size_t idx2 = k + dat.boundary[i].first;
-                    if ((dat.array[idx1] == 1 && dat.array[idx2] == 2) ||
-                        (dat.array[idx1] == 2 && dat.array[idx2] == 1)) {
-                        B(j, k) = 0;
-                    } else {
-                        B(j, k) *= min(dat.sz[idx1], dat.sz[idx2])
-                                   / (1.1 * dat.sz[idx1] * dat.sz[idx2]);
-                    }
-                }
-            }
-
-            // Force positive definite via eigenvalue correction
-            arma::vec eval;
-            arma::mat evec;
-            arma::eig_sym(eval, evec, B);
-            double eval_min = eval.min();
-
-            // Restore symmetry (eig_sym may modify lower triangle)
-            B = arma::symmatu(B);
-
-            // Add to diagonal to ensure PD
-            for (size_t j = 0; j < blk_size; j++) {
-                double diag_val = 1.0 / dat.sz[j + dat.boundary[i].first];
-                if (eval_min < 0) diag_val -= 1.1 * eval_min;
-                B(j, j) = diag_val;
-            }
+            B0 = R;
+            B0.diag() += a;
+        } else {
+            B0 = sdpr_llk2_matrix(R, dat, start);
         }
 
-        // Cholesky: B = L_chol * L_chol^T
+        // Cholesky: B0 = L_chol * L_chol^T
         // Original: gsl_linalg_cholesky_decomp1(B)
-        arma::mat L_chol = arma::chol(B, "lower");
+        arma::mat L_chol = arma::chol(B0, "lower");
 
-        // A = B^{-1} * R  via forward then back-solve
+        // A = B0^{-1} * R  via forward then back-solve
         // Original: gsl_blas_dtrsm(Left, Lower, NoTrans, NonUnit, 1.0, B, A)
         //           gsl_blas_dtrsm(Left, Lower, Trans,   NonUnit, 1.0, B, A)
-        A = arma::solve(arma::trimatl(L_chol), A);
+        arma::mat A = arma::solve(arma::trimatl(L_chol), R);
         A = arma::solve(arma::trimatu(L_chol.t()), A);
 
         // Scale by sample size for opt_llk=1
@@ -465,68 +481,195 @@ void solve_ldmat(const mcmc_data &dat, ldmat_data &ldmat_dat,
             A *= sz;
         }
 
-        // B = R * A  (overwrite B with the product)
-        // Original: gsl_blas_dgemm(NoTrans, NoTrans, 1.0, L, A, 0, B)
-        // Note: L still holds the original R at this point
-        B = L * A;
-
-        // L = R .* R  (element-wise square)
-        // Original: gsl_matrix_mul_elements(L, L)
-        L %= L;
-
         // Precompute A^T * beta_mrg for calc_b()
         // Original: gsl_blas_dgemv(CblasTrans, 1.0, A, beta_mrg, 0, b_tmp)
         arma::vec beta_mrg(blk_size);
         for (size_t j = 0; j < blk_size; j++) {
-            beta_mrg(j) = dat.beta_mrg[j + dat.boundary[i].first];
+            beta_mrg(j) = dat.beta_mrg[j + start];
         }
-        arma::vec b_tmp = A.t() * beta_mrg;
 
-        ldmat_dat.A.push_back(A);
-        ldmat_dat.B.push_back(B);
-        ldmat_dat.L.push_back(L);
-        ldmat_dat.calc_b_tmp.push_back(b_tmp);
-        ldmat_dat.beta_mrg.push_back(beta_mrg);
-        ldmat_dat.denom.push_back(0);
-        ldmat_dat.num.push_back(0);
+        SdprDenseBlock blk;
+        // B = R * A. The sampler reads it as symmetric (the original through
+        // dsymv), so it is symmetrized once here rather than on every product.
+        // Original: gsl_blas_dgemm(NoTrans, NoTrans, 1.0, L, A, 0, B)
+        blk.B          = arma::symmatu(R * A);
+        blk.diag_B     = blk.B.diag();
+        blk.calc_b_tmp = A.t() * beta_mrg;
+        blk.R          = arma::symmatu(R);
+        blocks.push_back(std::move(blk));
     }
+    return blocks;
+}
+
+// ---------------------------------------------------------------------------
+// sdpr_factor_root: R = Z Z' for the factor F (m x p) of R = F'F / (m - 1)
+//   Z (p x r) has orthogonal columns with Z'Z = diag(lambda), lambda the
+//   nonzero eigenvalues of R, from the eigendecomposition of the smaller of
+//   G G' and G'G (G = F / sqrt(m - 1)). Eigenvalues at the rounding level of
+//   that decomposition are dropped.
+// ---------------------------------------------------------------------------
+static arma::mat sdpr_factor_root(const arma::mat &F) {
+    arma::mat G = F / std::sqrt(static_cast<double>(F.n_rows) - 1.0);
+    bool wide = G.n_rows <= G.n_cols;
+    arma::mat gram = wide ? arma::mat(G * G.t()) : arma::mat(G.t() * G);
+    arma::vec lam;
+    arma::mat Q;
+    arma::eig_sym(lam, Q, gram);
+    double tol = lam.is_empty() ? 0.0
+        : lam.max() * gram.n_rows * arma::datum::eps;
+    arma::uvec keep = arma::find(lam > tol);
+    if (wide) {
+        return G.t() * Q.cols(keep);
+    }
+    return Q.cols(keep) * arma::diagmat(arma::sqrt(lam(keep)));
+}
+
+// ---------------------------------------------------------------------------
+// sdpr_llk2_solve: B2^{-1} rhs for the block R = Z Z', with B2 as
+// sdpr_llk2_matrix() builds it, without forming B2 while it has a narrow
+// low-rank part
+//   B2 = T - diag(T) + D0 with T = R .* S .* Mask, D0 = diag(1 / N) + fix.
+//   S_ij = 1 / (1.1 max(N_i, N_j)) is a sum over the K distinct sample sizes
+//   n_1 < ... < n_K,
+//     S = sum_l Delta_l 1_l 1_l' / 1.1,   1_l = [N_i <= n_l],
+//     Delta_l = 1 / n_l - 1 / n_(l+1)  (1 / n_K for l = K),
+//   so R .* S = U_S U_S' with U_S = [sqrt(Delta_l / 1.1) diag(1_l) Z]_l.
+//   The array mask keeps the pairs within arrays {0, 1} and within {0, 2},
+//   which counts the pairs within array 0 twice, so T = U Sigma U' with
+//   U = [P01 U_S, P02 U_S, P0 U_S] and Sigma = diag(I, I, -I).
+//   While U is narrower than p, T is singular, its most negative eigenvalue
+//   is that of the small (U'U)^(1/2) Sigma (U'U)^(1/2), and the Woodbury
+//   identity solves B2 = U Sigma U' + D through an inner matrix as wide as U.
+//   Otherwise B2 is formed exactly as the dense route forms it.
+// ---------------------------------------------------------------------------
+static arma::mat sdpr_llk2_solve(const mcmc_data &dat, const arma::mat &Z,
+                                 const arma::mat &rhs) {
+    size_t p = Z.n_rows;
+    size_t r = Z.n_cols;
+    arma::vec sz(dat.sz);
+    arma::ivec arr = arma::conv_to<arma::ivec>::from(dat.array);
+    arma::vec levels = arma::unique(sz);
+    size_t K = levels.n_elem;
+    bool masked = arma::any(arr == 1) && arma::any(arr == 2);
+    size_t width = (masked ? 3 : 1) * K * r;
+
+    if (width >= p) {
+        arma::mat L_chol = arma::chol(sdpr_llk2_matrix(Z * Z.t(), dat, 0),
+                                      "lower");
+        arma::mat Y = arma::solve(arma::trimatl(L_chol), rhs);
+        return arma::solve(arma::trimatu(L_chol.t()), Y);
+    }
+
+    arma::mat U_S(p, K * r);
+    for (size_t l = 0; l < K; l++) {
+        double next = (l + 1 < K) ? 1.0 / levels(l + 1) : 0.0;
+        double delta = 1.0 / levels(l) - next;
+        arma::vec in_l = arma::conv_to<arma::vec>::from(sz <= levels(l));
+        U_S.cols(l * r, (l + 1) * r - 1) =
+            std::sqrt(delta / 1.1) * (Z.each_col() % in_l);
+    }
+
+    arma::mat U = U_S;
+    arma::vec sigma(width, arma::fill::ones);
+    // Unmasked, T = U_S U_S' is positive semidefinite (and singular), so its
+    // smallest eigenvalue is 0 and B2 needs no fix.
+    double eval_min = 0.0;
+    if (masked) {
+        arma::vec p01 = arma::conv_to<arma::vec>::from(arr != 2);
+        arma::vec p02 = arma::conv_to<arma::vec>::from(arr != 1);
+        arma::vec p0  = arma::conv_to<arma::vec>::from(arr == 0);
+        U = arma::join_rows(U_S.each_col() % p01, U_S.each_col() % p02,
+                            U_S.each_col() % p0);
+        sigma.tail(K * r).fill(-1.0);
+        arma::vec omega;
+        arma::mat P;
+        arma::eig_sym(omega, P, U.t() * U);
+        arma::mat root = P
+            * arma::diagmat(arma::sqrt(arma::clamp(omega, 0.0,
+                                                   arma::datum::inf)))
+            * P.t();
+        arma::vec small = arma::eig_sym(root * arma::diagmat(sigma) * root);
+        eval_min = std::min(0.0, small.min());
+    }
+
+    // D: 1 / N_i in place of T's own diagonal R_ii / (1.1 N_i), plus the fix.
+    arma::vec d = 1.0 / sz - arma::sum(arma::square(Z), 1) / (1.1 * sz);
+    if (eval_min < 0) d -= 1.1 * eval_min;
+
+    arma::mat UD    = U.each_col() / d;
+    arma::mat D_rhs = rhs.each_col() / d;
+    arma::mat inner = arma::diagmat(sigma) + U.t() * UD;
+    return D_rhs - UD * arma::solve(inner, U.t() * D_rhs);
+}
+
+// ---------------------------------------------------------------------------
+// sdpr_factor_block: The one block's B and A' beta_mrg from a factor of R
+//   With R = Z Z' = V diag(lambda) V':
+//   opt_llk=1: A = n (R + aI)^{-1} R = n V diag(lambda / (lambda + a)) V' and
+//              B = R A = W W', W = sqrt(n) V diag(lambda / sqrt(lambda + a)).
+//   opt_llk=2: A = B2^{-1} R and B = R A = Z H Z', H = Z' B2^{-1} Z (r x r),
+//              so W = Z H^(1/2) and B2^{-1} is needed only on Z and beta_mrg.
+// ---------------------------------------------------------------------------
+SdprFactorBlock sdpr_factor_block(const mcmc_data &dat, const arma::mat &F,
+                                  double a, unsigned sz, int opt_llk) {
+    SdprFactorBlock blk;
+    blk.Z = sdpr_factor_root(F);
+    const arma::mat &Z = blk.Z;
+    size_t p = Z.n_rows;
+    size_t r = Z.n_cols;
+    arma::vec beta_mrg(dat.beta_mrg);
+
+    if (r == 0) {
+        // No LD at all (every variant monomorphic): B and A vanish.
+        blk.W.zeros(p, 0);
+        blk.calc_b_tmp.zeros(p);
+    } else if (opt_llk == 1) {
+        double n = static_cast<double>(sz);
+        arma::vec lam = arma::sum(arma::square(Z), 0).t();
+        arma::mat V = Z.each_row() / arma::sqrt(lam).t();
+        blk.W = std::sqrt(n)
+            * (V.each_row() % (lam / arma::sqrt(lam + a)).t());
+        blk.calc_b_tmp = n * (V * ((lam / (lam + a)) % (V.t() * beta_mrg)));
+    } else {
+        arma::mat Y = sdpr_llk2_solve(dat, Z, arma::join_rows(Z, beta_mrg));
+        arma::mat H = Z.t() * Y.head_cols(r);
+        H = 0.5 * (H + H.t());
+        arma::vec h;
+        arma::mat Q;
+        arma::eig_sym(h, Q, H);
+        blk.W = Z * Q
+            * arma::diagmat(arma::sqrt(arma::clamp(h, 0.0, arma::datum::inf)));
+        blk.calc_b_tmp = Z * (Z.t() * Y.col(r));
+    }
+    blk.diag_B = arma::sum(arma::square(blk.W), 1);
+    return blk;
 }
 
 // ---------------------------------------------------------------------------
 // mcmc: Main MCMC loop
 // Original: mcmc.cpp lines 434-513
 // ---------------------------------------------------------------------------
+template <class Block>
 std::unordered_map<std::string, arma::vec> mcmc(
-    mcmc_data& data,
-    unsigned   sz,
-    double     a,
-    double     c,
-    size_t     M,
-    double     a0k,
-    double     b0k,
-    int        iter,
-    int        burn,
-    int        thin,
-    unsigned   n_threads,
-    int        opt_llk,
-    bool       verbose,
-    unsigned int seed
+    const mcmc_data&          data,
+    const std::vector<Block>& blocks,
+    size_t                    M,
+    double                    a0k,
+    double                    b0k,
+    int                       iter,
+    int                       burn,
+    int                       thin,
+    unsigned                  n_threads,
+    bool                      verbose,
+    unsigned int              seed
     ) {
 
     int n_pst = (iter - burn) / thin;
 
-    ldmat_data ldmat_dat;
-
-    MCMC_state state(data.beta_mrg.size(), M, a0k, b0k, sz, seed);
-
-    // Deflation correction
-    for (size_t i = 0; i < data.beta_mrg.size(); i++) {
-        data.beta_mrg[i] /= c;
-    }
+    MCMC_state state(data.beta_mrg.size(), M, blocks.size(), a0k, b0k, seed);
 
     MCMC_samples samples(data.beta_mrg.size());
 
-    solve_ldmat(data, ldmat_dat, a, sz, opt_llk);
     state.update_suffstats();
 
     Function_pool func_pool(n_threads);
@@ -534,8 +677,8 @@ std::unordered_map<std::string, arma::vec> mcmc(
     for (int j = 1; j < iter + 1; j++) {
         state.sample_sigma2();
 
-        for (size_t i = 0; i < data.ref_ld_mat.size(); i++) {
-            state.calc_b(i, data, ldmat_dat);
+        for (size_t i = 0; i < blocks.size(); i++) {
+            state.calc_b(i, data, blocks);
         }
 
         // sample_assignment dispatched to thread pool across LD blocks.
@@ -544,9 +687,10 @@ std::unordered_map<std::string, arma::vec> mcmc(
         // (eldronzhou/SDPR) which has the same issue with gsl_rng. The
         // default n_threads=1 avoids the race. For safe parallelism, each
         // block would need its own RNG seeded from the shared one.
-        for (size_t i = 0; i < data.ref_ld_mat.size(); i++) {
-            func_pool.push(std::bind(&MCMC_state::sample_assignment,
-                                     &state, i, ref(data), ref(ldmat_dat)));
+        for (size_t i = 0; i < blocks.size(); i++) {
+            func_pool.push(std::bind(&MCMC_state::sample_assignment<Block>,
+                                     &state, i, std::cref(data),
+                                     std::cref(blocks)));
         }
         func_pool.waitFinished();
 
@@ -555,21 +699,21 @@ std::unordered_map<std::string, arma::vec> mcmc(
         state.update_p();
         state.sample_alpha();
 
-        for (size_t i = 0; i < data.ref_ld_mat.size(); i++) {
-            state.sample_beta(i, data, ldmat_dat);
+        for (size_t i = 0; i < blocks.size(); i++) {
+            state.sample_beta(i, data, blocks);
         }
 
-        state.sample_eta(ldmat_dat);
+        state.sample_eta();
 
         // Collect posterior samples
         if ((j > burn) && (j % thin == 0)) {
-            state.compute_h2(data);
+            state.compute_h2(data, blocks);
             samples.h2   += state.h2 * square(state.eta) / n_pst;
             samples.beta += state.eta / n_pst * state.beta;
         }
 
         if (verbose && j % 100 == 0) {
-            state.compute_h2(data);
+            state.compute_h2(data, blocks);
             Rprintf("%d iter. h2: %g max beta: %g\n",
                     j, state.h2 * square(state.eta),
                     arma::max(state.beta) * state.eta);
@@ -586,3 +730,10 @@ std::unordered_map<std::string, arma::vec> mcmc(
 
     return results;
 }
+
+template std::unordered_map<std::string, arma::vec> mcmc<SdprDenseBlock>(
+    const mcmc_data&, const std::vector<SdprDenseBlock>&, size_t, double,
+    double, int, int, int, unsigned, bool, unsigned int);
+template std::unordered_map<std::string, arma::vec> mcmc<SdprFactorBlock>(
+    const mcmc_data&, const std::vector<SdprFactorBlock>&, size_t, double,
+    double, int, int, int, unsigned, bool, unsigned int);

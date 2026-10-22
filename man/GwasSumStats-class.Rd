@@ -13,7 +13,7 @@ S4 collection of GWAS summary statistics keyed by the identity
 \details{
 Required column: \code{study}, unique across rows. The class-level
   slots inherited from \code{\linkS4class{SumStatsBase}} --
-  \code{ldSketch}, \code{genome} and \code{qcInfo} -- apply uniformly to
+  \code{ldReference}, \code{genome} and \code{qcInfo} -- apply uniformly to
   every row.
 }
 \seealso{

@@ -4,7 +4,7 @@
 # DFrame-subclass collection keyed by the identity tuple (study). Each
 # row holds a per-study GRanges of GWAS summary statistics covering a
 # single LD block; build a separate collection per block when sweeping
-# the genome. Class-level slots ldSketch + genome + qcInfo apply
+# the genome. Class-level slots ldReference + genome + qcInfo apply
 # uniformly across rows.
 # =============================================================================
 
@@ -18,7 +18,7 @@ NULL
 #'   block when sweeping the genome.
 #' @details Required column: \code{study}, unique across rows. The class-level
 #'   slots inherited from \code{\linkS4class{SumStatsBase}} --
-#'   \code{ldSketch}, \code{genome} and \code{qcInfo} -- apply uniformly to
+#'   \code{ldReference}, \code{genome} and \code{qcInfo} -- apply uniformly to
 #'   every row.
 #' @seealso \code{\link{GwasSumStats}} for the constructor and
 #'   \code{\linkS4class{QtlSumStats}} for the QTL counterpart.
@@ -28,7 +28,7 @@ setClass(
     "GwasSumStats",
     contains = "SumStatsBase",
     validity = function(object) {
-        # The ldSketch slot's class union enforces its type.
+        # The ldReference slot's class union enforces its type.
         coll <- makeAssertCollection()
         assertNames(
             colnames(mcols(object)) %||% character(0),
@@ -65,13 +65,13 @@ setMethod("show", "GwasSumStats", function(object) {
         "genome build {GenomeInfoDb::genome(object)}\n",
         .trim = FALSE
     ))
-    ld <- object@ldSketch
+    ld <- object@ldReference
     ldSrc <- if (is.null(ld)) {
         "none (LD-free)"
     } else {
-        .ldSketchLabel(ld)
+        .ldRefLabel(ld)
     }
-    cat(glue("  LD sketch: {ldSrc}\n", .trim = FALSE))
+    cat(glue("  LD reference: {ldSrc}\n", .trim = FALSE))
 })
 
 
@@ -107,7 +107,7 @@ NULL
 #' @title Create a GwasSumStats Collection Object
 #' @description Construct a \code{GwasSumStats} S4 DFrame-subclass collection
 #'   from per-study tuple vectors and a list of \code{GRanges} entries (one per
-#'   study), plus a single LD sketch handle and a single genome build that apply
+#'   study), plus a single LD reference and a single genome build that apply
 #'   to the whole collection.
 #'
 #' Each \code{GRanges} entry must carry per-variant statistics in its mcols (at
@@ -118,9 +118,10 @@ NULL
 #'   study.
 #' @param genome Single character string giving the genome build (e.g.,
 #'   \code{"hg19"}, \code{"hg38"}). Uniform across the collection because all
-#'   entries share the same LD sketch.
-#' @param ldSketch A genotype panel (see \code{\link{readGenotypes}})
-#'   carrying the LD reference.
+#'   entries share the same LD reference.
+#' @param ldReference The LD reference: a genotype panel (see
+#'   \code{\link{readGenotypes}}), a \code{\link{GenotypeMixture}} or an
+#'   \code{\link{LdMatrix}}.
 #' @param varY Optional numeric vector of per-study phenotype variances
 #'   (\code{NA_real_} entries allowed). Used by the sufficient-statistic
 #'   interface; z-score RSS analyses should leave entries as NA.
@@ -137,10 +138,9 @@ NULL
 #'   no per-variant \code{N} column and no case/control counts. Named
 #'   \code{nSample} to avoid clashing with \code{nSamples()} (the LD-panel
 #'   sample size).
-#' @param ldBlocks Optional LD-block specification: an \code{LdBlocks}, a
-#'   \code{GRanges}, a data.frame with \code{chrom}/\code{start}/\code{end}
-#'   (plus an optional \code{blockId}), or a path to such a table. When
-#'   supplied, each
+#' @param ldBlocks Optional LD-block specification: a \code{GRanges}, a
+#'   data.frame with \code{chrom}/\code{start}/\code{end} (plus an optional
+#'   \code{blockId}), or a path to such a table. When supplied, each
 #'   study's variants are split into one element per block rather than one per
 #'   chromosome, and \code{blockId} takes the block's key (its \code{names},
 #'   else a \code{blockId} metadata column, else its coordinates). cTWAS needs
@@ -170,13 +170,13 @@ NULL
 #' S4Vectors::mcols(gr) <- S4Vectors::DataFrame(SNP = paste0("rs", 1:3),
 #'   A1 = "A", A2 = "G", Z = rnorm(3), N = 100L)
 #' GwasSumStats(studyName = "t1", entry = list(gr), genome = "hg38",
-#'   ldSketch = panel)
+#'   ldReference = panel)
 #' @export
 GwasSumStats <- function(
     studyName,
     entry,
     genome,
-    ldSketch = NULL,
+    ldReference = NULL,
     varY = NA_real_,
     nCase = NULL,
     nControl = NULL,
@@ -217,7 +217,7 @@ GwasSumStats <- function(
         GenomicRanges::GRangesList(split$entry),
         value = md
     )
-    .sumStatsNewValidated("GwasSumStats", grl, ldSketch, genome, qcInfo)
+    .sumStatsNewValidated("GwasSumStats", grl, ldReference, genome, qcInfo)
 }
 
 # Build and validate a SumStatsBase subclass from its GRangesList plus the
@@ -225,7 +225,7 @@ GwasSumStats <- function(
 # rather than duplicated so the two constructors cannot drift in how they
 # coerce those slots. Used by qtlSumStats.R too.
 # @noRd
-.sumStatsNewValidated <- function(Class, grl, ldSketch, genome, qcInfo) {
+.sumStatsNewValidated <- function(Class, grl, ldReference, genome, qcInfo) {
     # The build goes into seqinfo, which is where a GRangesList keeps it and
     # where every Bioconductor consumer reads it from. Assigned before new()
     # so validity sees the finished object.
@@ -233,7 +233,7 @@ GwasSumStats <- function(
     obj <- methods::new(
         Class,
         built,
-        ldSketch = .asLdSketch(ldSketch),
+        ldReference = .asLdRef(ldReference),
         qcInfo = as.list(qcInfo)
     )
     methods::validObject(obj)
@@ -302,7 +302,7 @@ GwasSumStats <- function(
     if (length(genome) != 1L) {
         msg <- glue(
             "`genome` must be a single character string (one build per ",
-            "collection, because all entries share the LD sketch)."
+            "collection, because all entries share the LD reference)."
         )
         abort(msg)
     }
@@ -525,15 +525,18 @@ setMethod("varY", "GwasSumStats", function(x, studyName = NULL) {
 #' across the inputs (a mismatch is an error, not a silent first-wins), the
 #' per-element \code{qcInfo$entryAudit} concatenates in element order so
 #' \code{\link{qcDiagnostics}} keeps addressing the right element, and the
-#' LD sketches union into one panel over the shared genotype handle. That last
-#' one matters: block-parallel pipelines narrow each piece's panel to its own
-#' block, so keeping only the first would leave a multi-block collection whose
-#' LD reference covers one block.
+#' LD references combine: genotype panels union into one panel over the shared
+#' genotype handle. That last one matters: block-parallel pipelines narrow each
+#' piece's panel to its own block, so keeping only the first would leave a
+#' multi-block collection whose LD reference covers one block. An
+#' \code{LdMatrix} or a \code{GenotypeMixture} cannot be unioned that way;
+#' one of the inputs' references must already cover the others, or the
+#' combined one is passed as \code{ldReference}.
 #'
 #' @param ... Two or more \code{GwasSumStats} objects, or a single \code{list}
 #'   of them.
-#' @param ldSketch Optional genotype panel (see \code{\link{readGenotypes}}) to
-#'   attach to the combined collection, overriding the unioned one. Default
+#' @param ldReference Optional genotype panel (see \code{\link{readGenotypes}})
+#'   to attach to the combined collection, overriding the unioned one. Default
 #'   \code{NULL}.
 #' @return A single combined \code{GwasSumStats}.
 #' @seealso \code{\link{combineQtlSumStats}},
@@ -542,7 +545,7 @@ setMethod("varY", "GwasSumStats", function(x, studyName = NULL) {
 #' data(gwasSumStatsS4Example)
 #' combineGwasSumStats(gwasSumStatsS4Example)
 #' @export
-combineGwasSumStats <- function(..., ldSketch = NULL) {
+combineGwasSumStats <- function(..., ldReference = NULL) {
     parts <- .asCombineList(
         list(...),
         "GwasSumStats",
@@ -551,5 +554,5 @@ combineGwasSumStats <- function(..., ldSketch = NULL) {
     if (length(parts) == 1L) {
         return(parts[[1L]])
     }
-    .rbindSumStats(parts, ldSketch, "combineGwasSumStats")
+    .rbindSumStats(parts, ldReference, "combineGwasSumStats")
 }

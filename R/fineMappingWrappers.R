@@ -293,7 +293,7 @@ fitSusieInfThenSusie <- function(
 #' @param fitRetention How much of each fit is kept: \code{"slim"} (default)
 #'   trims the retained fit to what downstream needs, \code{"full"} keeps the
 #'   whole fit object. The \code{topLoci} table's per-credible-set columns
-#'   are governed by \code{credibleSet}'s \code{perCsColumns} instead.
+#'   are governed by \code{credibleSetParam}'s \code{perCsColumns} instead.
 #' @param otherQuantities Optional named list of extra per-method quantities to
 #'   carry on the result untouched (returned as the \code{otherQuantities}
 #'   element). Default \code{NULL}.
@@ -771,6 +771,8 @@ extractVariantNames <- function(fit) {
     normalizeVariantId(variantNames)
 }
 
+#' @importFrom susieR univariate_regression
+#' @noRd
 extractSumstats <- function(
     dataX,
     dataY,
@@ -973,7 +975,8 @@ computeCsTable <- function(
 
 # fSuSiE credible sets: purity is the min |correlation| WITHIN each CS
 # (fsusieR::cal_purity), recorded as sets$purity$min.abs.corr for the canonical
-# .csPurityVec() reader; cs_corr keeps the BETWEEN-CS correlation matrix.
+# .csPurityVec() reader. The correlation BETWEEN sets is not kept;
+# computeCsCorrelation() derives it from an LD source on demand.
 .csTableFsusie <- function(fit, dataX, coverage) {
     sets <- try_fetch(
         fsusieGetCs(fit, dataX, requestedCoverage = coverage),
@@ -1009,7 +1012,15 @@ computeCsTable <- function(
     # X vs Xcorr only changes how susie_get_cs computes purity; the between-CS
     # correlation is derived on demand later by computeCsCorrelation(), so it is
     # no longer stored on the fit.
-    ldArg <- if (csInput == "X") list(X = dataX) else list(Xcorr = dataX)
+    ldArg <- if (csInput == "Xcorr") {
+        list(Xcorr = dataX)
+    } else if (inherits(fit, "susieRss")) {
+        # An RSS fit's X is its LD reference's factor, standing in for the
+        # matrix, so its purity must be the matrix route's: never subsampled.
+        list(X = dataX, n_purity = Inf)
+    } else {
+        list(X = dataX)
+    }
     sets <- exec(susie_get_cs, !!!c(list(fit), csArgs, ldArg))
     list(sets = sets, pip = fit$pip)
 }
@@ -1020,9 +1031,43 @@ computeCsTable <- function(
 # fit. get_cs_correlation() needs only the CS membership + PIP + the LD, with
 # the LD columns/rows ALIGNED to the fit's variable order (variantIds).
 
+# A fit's credible sets: a susie fit keeps them in sets$cs, an fSuSiE fit
+# (class "susiF") in cs. Reading only the first made every fSuSiE fit look
+# set-less, so its between-CS correlation was never computed.
+# @noRd
+.csSetsOf <- function(fit) {
+    if (inherits(fit, "susiF")) fit$cs else fit$sets$cs
+}
+
 # TRUE when the fit has fewer than two credible sets (no between-CS corr).
 .csCountBelowTwo <- function(fit) {
-    is.null(fit$sets) || is.null(fit$sets$cs) || length(fit$sets$cs) < 2L
+    length(.csSetsOf(fit)) < 2L
+}
+
+# An fSuSiE fit's between-CS correlation as fsusieR::cal_cor_cs() defines it
+# -- for each pair of sets, the largest correlation between a member of one
+# and a member of the other, so 1 on the diagonal -- read from the LD among
+# the sets' members alone.
+# @noRd
+.fsusieCsCorrelationLd <- function(cs, ldReference, ids, label) {
+    members <- sort(unique(as.integer(list_c(cs))))
+    R <- .ldFromRef(ldReference, ids[members], label, onMissing = "error")
+    sets <- map(cs, match, table = members)
+    n <- length(cs)
+    values <- map2_dbl(
+        rep(seq_len(n), times = n),
+        rep(seq_len(n), each = n),
+        .csPairMaxCorrelation,
+        sets = sets,
+        R = R
+    )
+    matrix(values, n, n)
+}
+
+# The largest correlation between a member of set `l` and one of set `k`.
+# @noRd
+.csPairMaxCorrelation <- function(l, k, sets, R) {
+    max(R[sets[[l]], sets[[k]]])
 }
 
 # GRanges spanning the fit's variants (parsed from chrom:pos in the ids).
@@ -1058,6 +1103,7 @@ computeCsTable <- function(
 }
 
 #' @rdname computeCsCorrelation
+#' @importFrom purrr map2_dbl
 setMethod(
     "computeCsCorrelation",
     signature(x = "FineMappingResultBase", ldSource = "SumStatsBase"),
@@ -1073,22 +1119,29 @@ setMethod(
         if (.csCountBelowTwo(fit)) {
             return(NULL)
         }
-        ldSketch <- ldSketch(ldSource)
-        if (is.null(ldSketch)) {
+        ldReference <- ldReference(ldSource)
+        if (is.null(ldReference)) {
             abort(glue(
                 "computeCsCorrelation(): the summary-statistics ldSource ",
-                "carries no LD sketch to derive the correlation from."
+                "carries no LD reference to derive the correlation from."
             ))
         }
         # onMissing = "error": every fit variant must be in the panel, else the
         # 1..p sets$cs indices would misalign with a shrunken LD matrix.
-        xcorr <- .ldFromSketch(
-            ldSketch,
-            .fmrPartsVariantIds(parts),
-            label = "computeCsCorrelation",
-            onMissing = "error"
-        )
-        get_cs_correlation(list(sets = fit$sets, pip = fit$pip), Xcorr = xcorr)
+        ids <- .fmrPartsVariantIds(parts)
+        label <- "computeCsCorrelation"
+        if (inherits(fit, "susiF")) {
+            return(.fsusieCsCorrelationLd(fit$cs, ldReference, ids, label))
+        }
+        csFit <- list(sets = fit$sets, pip = fit$pip)
+        if (!.ldIsGenotypeRef(ldReference)) {
+            xcorr <- .ldFromRef(ldReference, ids, label, onMissing = "error")
+            return(get_cs_correlation(csFit, Xcorr = xcorr))
+        }
+        # A genotype reference's factor: get_cs_correlation() correlates only
+        # the credible sets' lead columns of it, never forming the p x p LD.
+        factor <- .ldFactorFromRef(ldReference, ids, label, onMissing = "error")
+        get_cs_correlation(csFit, X = factor)
     }
 }
 
@@ -1780,12 +1833,19 @@ buildTopLoci <- function(
     mu <- .fmSliceCond(fit$mu, conditionIdx)
     mu2 <- .fmSliceCond(fit$mu2, conditionIdx)
     scaleFactors <- .btlScaleFactors(fit, nV)
+    infinitesimal <- .btlInfinitesimal(fit, nV)
     meanStd <- if (!is.null(mu) && all(dim(alpha) == dim(mu))) {
-        colSums(alpha * mu) + .btlInfinitesimal(fit, nV)
+        colSums(alpha * mu) + infinitesimal
     } else {
         rep(NA_real_, nV)
     }
     postMean <- meanStd / scaleFactors
+    # Reported on the SAME scale as postMean, because that is the question it
+    # answers: how much of the published weight is the infinitesimal term
+    # rather than the sparse one. The sum is already inside postMean -- this
+    # only lets a reader see the split, which is otherwise unrecoverable.
+    # Zero for every method that has no infinitesimal component.
+    postTheta <- infinitesimal / scaleFactors
     postSd <- if (!is.null(mu2) && all(dim(alpha) == dim(mu2))) {
         # From the STANDARDIZED mean, then rescaled: an SD rescales the same
         # way its mean does, but the mu2 identity only holds in the units mu2
@@ -1810,6 +1870,7 @@ buildTopLoci <- function(
         mu2 = mu2,
         postMean = postMean,
         postSd = postSd,
+        postTheta = postTheta,
         logBF = logBF
     )
 }
@@ -2014,9 +2075,6 @@ buildTopLoci <- function(
     list_c(pieces)
 }
 
-# One credible set's conditional-lfsr values, or NULL when its effect is out
-# of range or it covers no in-range variant.
-# @noRd
 # The conditional lfsr of a univariate susie fit, which reports none.
 #
 # It has everything needed to compute one: the single-effect posterior for
@@ -2049,6 +2107,9 @@ buildTopLoci <- function(
     array(lfsr, dim = c(dim(mu), 1L))
 }
 
+# One credible set's conditional-lfsr values, or NULL when its effect is out
+# of range or it covers no in-range variant.
+# @noRd
 .btlCondLfsrForSet <- function(
     csPos,
     setsPrim,
@@ -2190,6 +2251,7 @@ buildTopLoci <- function(
         pip = as.numeric(fit$pip),
         posterior_mean = unname(post$postMean),
         posterior_sd = unname(post$postSd),
+        posterior_theta = unname(post$postTheta),
         logBF = unname(post$logBF)
     )
     meta <- tibble(
@@ -2229,6 +2291,7 @@ buildTopLoci <- function(
         pip = numeric(),
         posterior_mean = numeric(),
         posterior_sd = numeric(),
+        posterior_theta = numeric(),
         logBF = numeric(),
         cs_95 = character(),
         cs_70 = character(),
@@ -2438,7 +2501,7 @@ trimFinemappingFit <- function(fit, effectIdx, method, csTables) {
 #' Promotes the primary method's per-method post-processing payload to the root
 #' level and attaches the unified \code{top_loci} table. The primary method's
 #' bare \code{FineMappingRow} appears at \code{$finemappingEntry}; wrap it
-#' into a \code{FineMappingResult} collection at the pipeline level once (study,
+#' into a fine-mapping result collection at the pipeline level once (study,
 #' context, trait, method) identity tags are known.
 #'
 #' @param post Output from \code{\link{postprocessFinemappingFits}}.
@@ -2503,28 +2566,6 @@ csInfo <- function(susieOutputSetsCs, topVariantsIdx) {
     )
     bind_rows(rows)
 }
-#' @title Calculate Purity Measures for Credible Sets
-#'
-#' @description As an extension of the internal cal_purity function. This
-#'   function computes purity metrics (minimum, mean, and median absolute
-#'   correlations) for each credible set in a list of credible set indices,
-#'   based on the provided X matrix. The output Purity depends on the method
-#'   specified: for the 'min' method, it returns a single value for
-#'   single-element sets or the minimum absolute correlation for others. For
-#'   other methods, it returns a vector of three values (min, mean, median) for
-#'   each set.
-#'
-#' @param lCs A list of credible set indices, where each element is a vector of
-#'   indices corresponding to variables in a credible set.
-#' @param X The data matrix used to compute correlations between variables in
-#'   each credible set.
-#' @param method A character string specifying the method to use for calculating
-#'   purity. Defaults to 'min'. Other methods return a vector of min, mean, and
-#'   median absolute correlations for each credible set.
-#' @return A list where each element corresponds to a credible set and contains
-#'   either a single purity value (for 'min' method and single-element sets) or
-#'   a vector of purity metrics (for other methods and multi-element sets).
-#' @noRd
 
 # Absolute off-diagonal correlations among one credible set's variants. The
 # diagonal is blanked so a set is never judged pure by its self-correlation.
@@ -2556,6 +2597,28 @@ csInfo <- function(susieOutputSetsCs, topVariantsIdx) {
     )
 }
 
+#' @title Calculate Purity Measures for Credible Sets
+#'
+#' @description As an extension of the internal cal_purity function. This
+#'   function computes purity metrics (minimum, mean, and median absolute
+#'   correlations) for each credible set in a list of credible set indices,
+#'   based on the provided X matrix. The output Purity depends on the method
+#'   specified: for the 'min' method, it returns a single value for
+#'   single-element sets or the minimum absolute correlation for others. For
+#'   other methods, it returns a vector of three values (min, mean, median) for
+#'   each set.
+#'
+#' @param lCs A list of credible set indices, where each element is a vector of
+#'   indices corresponding to variables in a credible set.
+#' @param X The data matrix used to compute correlations between variables in
+#'   each credible set.
+#' @param method A character string specifying the method to use for calculating
+#'   purity. Defaults to 'min'. Other methods return a vector of min, mean, and
+#'   median absolute correlations for each credible set.
+#' @return A list where each element corresponds to a credible set and contains
+#'   either a single purity value (for 'min' method and single-element sets) or
+#'   a vector of purity metrics (for other methods and multi-element sets).
+#' @noRd
 calPurity <- function(lCs, X, method = "min") {
     # Each `lCs[[k]]` is documented (and always supplied) as a plain index
     # vector; the unlist() that used to sit here was a no-op that quietly
@@ -2597,12 +2660,12 @@ fsusieGetCs <- function(fsusieObj, X, requestedCoverage = 0.95) {
         str_c("L", seq_along(fsusieObj$cs))
     )
 
-    # Create 'purity' data frame
-    purity <- `colnames<-`(
-        bind_rows(
-            map(calPurity(fsusieObj$cs, X = X, method = "susie"), .asDataFrameT)
-        ),
-        c("minAbsCorr", "meanAbsCorr", "medianAbsCorr")
+    # Create 'purity' data frame: each set's (min, mean, median) |r|.
+    setPurity <- calPurity(fsusieObj$cs, X = X, method = "susie")
+    purity <- tibble(
+        minAbsCorr = map_dbl(setPurity, 1L),
+        meanAbsCorr = map_dbl(setPurity, 2L),
+        medianAbsCorr = map_dbl(setPurity, 3L)
     )
     # Credible-set label as a `cs` column (was rownames; tibbles carry none).
     purityDf <- bind_cols(tibble(cs = names(csNamed)), purity)
@@ -2957,10 +3020,6 @@ fitFsusie <- function(
 #  extractors live with the rest of the fine-mapping/SuSiE wrappers).
 # =============================================================================
 
-# Shared helper for susie/susieAsh/susieInf weight extraction.
-# @param fit A susie fit object (or NULL to fit from X, y).
-# @param X Genotype matrix (optional).
-# @param y Phenotype vector (optional).
 # Drop-intercept TWAS coefficient weights from a fitted SuSiE(-RSS) model
 # (zero the intercept, then coef.susie without the intercept row).
 # @noRd
@@ -2968,13 +3027,18 @@ fitFsusie <- function(
     coef.susie(list_assign(fit, intercept = 0))[-1]
 }
 
-# @param requiredFields Fields that must be present in the fit to extract
-# weights.
-# @param token SuSiE-family token ("susie" / "susieInf" / "susieAsh") selecting
-#   the unmappable_effects mode. The fit is delegated to .fmFitSusieIndiv so the
-#   package keeps a single susie-invocation point.
-# @param userArgs Extra arguments forwarded to susieR::susie via
-# .fmFitSusieIndiv.
+# Shared helper for susie/susieAsh/susieInf weight extraction: the
+# drop-intercept coefficients of an EXISTING fit. These never fine-map, so a
+# NULL `fit` is an error naming the run that would produce one.
+# @param fit A susie fit object.
+# @param X Genotype matrix, or NULL; when given, its column count is checked
+#   against the fit's variants.
+# @param requiredFields Fields the fit must carry for weights to be extracted;
+#   the weights are all zero when any is missing.
+# @param token SuSiE-family token ("susie" / "susieInf" / "susieAsh") the
+#   error names.
+# @param fitRetention "none" returns the weights alone; otherwise the fit rides
+#   along as their "fit" attribute.
 #' @importFrom susieR coef.susie susie
 #' @noRd
 .susieExtractWeights <- function(
@@ -3191,7 +3255,7 @@ susieInfWeights <- function(
 #' @noRd
 .susieRssExtractWeights <- function(
     fit,
-    R,
+    nVariants,
     requiredFields,
     token = "susie",
     fitRetention = c("none", "slim", "full")
@@ -3206,12 +3270,11 @@ susieInfWeights <- function(
         )
         abort(msg)
     }
-    if (length(fit$pip) != nrow(R)) {
+    if (!is.na(nVariants) && length(fit$pip) != nVariants) {
         nPip <- length(fit$pip)
-        nR <- nrow(R)
         msg <- glue(
-            "Dimension mismatch: susieRss fit has {nPip} variants but R ",
-            "has {nR} rows."
+            "Dimension mismatch: susieRss fit has {nPip} variants but the ",
+            "statistics describe {nVariants}."
         )
         abort(msg)
     }
@@ -3232,8 +3295,11 @@ susieInfWeights <- function(
 #' \code{susieR::susie_rss()} from summary statistics and LD.
 #'
 #' @param stat List with components \code{z} (z-scores), \code{n} (sample
-#'   sizes).
-#' @param LD LD correlation matrix.
+#'   sizes) and, to check against an \code{ldReference}, \code{variantNames}.
+#' @param ldReference Optional LD reference: a genotype panel, a
+#'   \code{\link{GenotypeMixture}} or an \code{\link{LdMatrix}}. The fit is
+#'   checked against the statistics' variants and, with a reference, those
+#'   variants must also be in it. No LD is read.
 #' @param susieRssFit A fitted SuSiE-RSS object. Required: these wrappers
 #'   extract weights and never run fine-mapping themselves.
 #' @param fitRetention How much of the fit is kept on the returned weights:
@@ -3255,12 +3321,12 @@ susieInfWeights <- function(
 #'   n = rep(nrow(X), ncol(X)))
 #' LD <- cor(X)
 #' fit <- susieR::susie_rss(z = stat$z, R = LD, n = nrow(X), L = 5)
-#' susieRssWeights(stat, LD, susieRssFit = fit)
+#' susieRssWeights(stat, susieRssFit = fit)
 #' @importFrom checkmate assertList assertFlag
 #' @export
 susieRssWeights <- function(
     stat,
-    LD,
+    ldReference = NULL,
     susieRssFit = NULL,
     fitRetention = c("slim", "none", "full")
 ) {
@@ -3268,7 +3334,7 @@ susieRssWeights <- function(
     fitRetention <- arg_match(fitRetention)
     .susieRssExtractWeights(
         fit = susieRssFit,
-        R = LD,
+        nVariants = .rssVariantCount(stat, ldReference, "susieRssWeights"),
         requiredFields = c("alpha", "mu", "X_column_scale_factors"),
         token = "susie",
         fitRetention = fitRetention
@@ -3297,12 +3363,12 @@ susieRssWeights <- function(
 #'   n = rep(nrow(X), ncol(X)))
 #' LD <- cor(X)
 #' fit <- susieR::susie_rss(z = stat$z, R = LD, n = nrow(X), L = 5)
-#' susieInfRssWeights(stat, LD, susieInfRssFit = fit)
+#' susieInfRssWeights(stat, susieInfRssFit = fit)
 #' @importFrom checkmate assertList assertFlag
 #' @export
 susieInfRssWeights <- function(
     stat,
-    LD,
+    ldReference = NULL,
     susieInfRssFit = NULL,
     fitRetention = c("slim", "none", "full")
 ) {
@@ -3310,7 +3376,7 @@ susieInfRssWeights <- function(
     fitRetention <- arg_match(fitRetention)
     .susieRssExtractWeights(
         fit = susieInfRssFit,
-        R = LD,
+        nVariants = .rssVariantCount(stat, ldReference, "susieInfRssWeights"),
         requiredFields = c("alpha", "mu", "theta", "X_column_scale_factors"),
         token = "susieInf",
         fitRetention = fitRetention
@@ -3339,12 +3405,12 @@ susieInfRssWeights <- function(
 #'   n = rep(nrow(X), ncol(X)))
 #' LD <- cor(X)
 #' fit <- susieR::susie_rss(z = stat$z, R = LD, n = nrow(X), L = 5)
-#' susieAshRssWeights(stat, LD, susieAshRssFit = fit)
+#' susieAshRssWeights(stat, susieAshRssFit = fit)
 #' @importFrom checkmate assertList assertFlag
 #' @export
 susieAshRssWeights <- function(
     stat,
-    LD,
+    ldReference = NULL,
     susieAshRssFit = NULL,
     fitRetention = c("slim", "none", "full")
 ) {
@@ -3352,7 +3418,7 @@ susieAshRssWeights <- function(
     fitRetention <- arg_match(fitRetention)
     .susieRssExtractWeights(
         fit = susieAshRssFit,
-        R = LD,
+        nVariants = .rssVariantCount(stat, ldReference, "susieAshRssWeights"),
         requiredFields = c("alpha", "mu", "theta", "X_column_scale_factors"),
         token = "susieAsh",
         fitRetention = fitRetention
@@ -3656,15 +3722,18 @@ fsusieWeights <- function(
 #' extracts coefficients from an existing \code{mvsusieR::mvsusie_rss} fit.
 #' It never runs fine-mapping itself --- \code{mvsusieRssFit} is required.
 #'
-#' Follows the \code{*_rss_weights(stat, LD, ...)} contract: \code{stat} and
-#' \code{LD} describe the block the fit is being extracted against, and the
-#' fit is checked against them rather than refitted.
+#' Follows the RSS weights contract: \code{stat} (and \code{ldReference},
+#' when given) describe the block the fit is being extracted against, and
+#' the fit is checked against them rather than refitted.
 #'
-#' @param stat A list with \code{z} (matrix variants x conditions) and \code{n}
-#'   (numeric vector or scalar), describing the block the fit came from.
-#' @param LD LD correlation matrix for that block. The fit must cover the
-#'   same number of variants; a mismatch is an error, since weights from one
-#'   block are not comparable against another's LD.
+#' @param stat A list with \code{z} (matrix variants x conditions), \code{n}
+#'   (numeric vector or scalar) and, to check against an \code{ldReference},
+#'   \code{variantNames}, describing the block the fit came from. The fit
+#'   must cover the same number of variants; a mismatch is an error, since
+#'   weights from one block are not comparable against another's.
+#' @param ldReference Optional LD reference for that block: a genotype
+#'   panel, a \code{\link{GenotypeMixture}} or an \code{\link{LdMatrix}}.
+#'   With one, the statistics' variants must also be in it. No LD is read.
 #' @param mvsusieRssFit A fitted \code{mvsusieRss} object. Required: this
 #'   extracts weights and never runs fine-mapping itself.
 #' @param fitRetention How much of the fit is kept on the returned weights:
@@ -3689,11 +3758,11 @@ fsusieWeights <- function(
 #' LD <- cor(X)
 #' fit <- fitMvsusieRss(Z = stat$z, R = LD, N = nrow(X),
 #'   prior_variance = 1)
-#' mvsusieRssWeights(stat, LD, mvsusieRssFit = fit)
+#' mvsusieRssWeights(stat, mvsusieRssFit = fit)
 #' @export
 mvsusieRssWeights <- function(
     stat,
-    LD,
+    ldReference = NULL,
     mvsusieRssFit = NULL,
     fitRetention = c("none", "slim", "full")
 ) {
@@ -3712,11 +3781,14 @@ mvsusieRssWeights <- function(
         abort(msg)
     }
     weights <- mvsusieR::coef.mvsusie(mvsusieRssFit)[-1, , drop = FALSE]
-    # `stat` / `LD` describe the block the fit is being combined with. The
-    # susie *RssWeights wrappers check the fit against them; this one used
-    # to take both and read neither, so a fit from a different block was
-    # extracted without complaint.
-    .mvsusieRssAssertBlock(weights, LD)
+    # `stat` (and `ldReference`) describe the block the fit is being combined
+    # with. The susie *RssWeights wrappers check the fit against them; this
+    # one used to take both and read neither, so a fit from a different block
+    # was extracted without complaint.
+    .mvsusieRssAssertBlock(
+        weights,
+        .rssVariantCount(stat, ldReference, "mvsusieRssWeights")
+    )
     if (identical(fitRetention, "none")) {
         return(weights)
     }
@@ -3726,13 +3798,13 @@ mvsusieRssWeights <- function(
 # The supplied fit must describe the LD block it is being extracted against;
 # the pairing is what makes the weights comparable across a region.
 # @noRd
-.mvsusieRssAssertBlock <- function(weights, LD) {
-    if (is.null(LD) || nrow(weights) == nrow(LD)) {
+.mvsusieRssAssertBlock <- function(weights, nVariants) {
+    if (is.na(nVariants) || nrow(weights) == nVariants) {
         return(invisible(NULL))
     }
     abort(glue(
         "Dimension mismatch: mvsusieRss fit has {nrow(weights)} variants ",
-        "but LD has {nrow(LD)} rows."
+        "but the statistics describe {nVariants}."
     ))
 }
 
@@ -3741,8 +3813,6 @@ mvsusieRssWeights <- function(
 # Cross-condition credible-set merging
 # =============================================================================
 
-# Identify variant IDs that are associated with more than one credible set.
-# @noRd
 # The sets a variant belongs to, but only when it belongs to more than one.
 # @noRd
 .ovlMultiSets <- function(entry) {
@@ -3750,6 +3820,8 @@ mvsusieRssWeights <- function(
     if (length(sets) > 1) sets else NULL
 }
 
+# Identify variant IDs that are associated with more than one credible set.
+# @noRd
 .identifyOverlapSets <- function(variantsSetsAndPipsList) {
     compact(map(variantsSetsAndPipsList, .ovlMultiSets))
 }
@@ -3776,8 +3848,6 @@ mvsusieRssWeights <- function(
     `[[<-`(parent, rootB, value = rootA)
 }
 
-# Merge overlapping credible sets using connected components (union-find).
-# @noRd
 # @noRd
 .ufPair <- function(s, first) {
     list(a = first, b = s)
@@ -3804,6 +3874,8 @@ mvsusieRssWeights <- function(
     set_names(as.list(rep(label, length(members))), members)
 }
 
+# Merge overlapping credible sets using connected components (union-find).
+# @noRd
 .mergeAndUpdateOverlapSets <- function(variantsSetsAndPipsList, overlapSets) {
     allSets <- unique(list_c(overlapSets))
     if (length(allSets) == 0) {
@@ -3899,7 +3971,7 @@ mvsusieRssWeights <- function(
 #' the \code{"strong"} input for \code{\link{mashPipeline}}.
 #'
 #' @param fineMappingResult A \code{\link{QtlFineMappingResult}} (or any
-#'   \code{FineMappingResult}) produced by per-condition SuSiE fine-mapping.
+#'   \code{FineMappingResultBase}) produced by per-condition SuSiE fine-mapping.
 #'   Each entry's \code{topLoci} must carry a credible-set column
 #'   (\code{cs_<coverage*100>}, e.g. \code{cs_95}, with values such as
 #'   \code{"susie_1"} where the trailing integer is the set index and \code{_0}
@@ -3919,8 +3991,8 @@ mvsusieRssWeights <- function(
 mergeSusieCs <- function(fineMappingResult, coverage = 0.95) {
     if (!is(fineMappingResult, "FineMappingResultBase")) {
         msg <- glue(
-            "`fineMappingResult` must be a QtlFineMappingResult (or ",
-            "FineMappingResult)."
+            "`fineMappingResult` must be a QtlFineMappingResult or ",
+            "GwasFineMappingResult."
         )
         abort(msg)
     }
@@ -3957,28 +4029,30 @@ mergeSusieCs <- function(fineMappingResult, coverage = 0.95) {
 
 #' Extract the trimmed SuSiE fit from a finemapping pipeline result
 #'
-#' Returns the trimmed model fit underlying \code{con_data$finemappingEntry} (a
-#' \code{FineMappingRow} S4 object), or NULL if no fine-mapping entry is
-#' attached.
+#' Returns the trimmed model fit underlying \code{conData$finemappingEntry} (a
+#' \code{FineMappingRow}, or a single-row fine-mapping result), or NULL if no
+#' fine-mapping entry is attached.
 #'
 #' @param conData List. The method-layer entry from a finemapping pipeline
 #'   result, expected to carry \code{$finemappingEntry} as a
-#'   \code{FineMappingRow} object.
+#'   \code{FineMappingRow} or a single-row fine-mapping result.
 #' @return The trimmed fit (a list with \code{pip}, \code{sets}, etc.) or NULL.
 #' @examples
-#' data(qtlSumStatsExample)
-#' susieResult(qtlSumStatsExample)
+#' data(qtlFineMappingExample)
+#' fit <- susieResult(list(finemappingEntry = qtlFineMappingExample[1]))
+#' head(fit$pip)
 #' @importFrom checkmate assertList
 #' @export
 susieResult <- function(conData) {
-    # No type guard: this is duck-typed on `$` and `length()` and returns NULL
-    # for anything without a `finemappingEntry`. Its own @example passes a
-    # QtlSumStats, which assertList rejects.
+    # Duck-typed on `$` and `length()`: NULL for anything without a
+    # fine-mapping entry. The entry is one row's worth of fine-mapping -- a
+    # FineMappingRow, or the single-row result fineMappingResult() returns --
+    # which .fmrPartsSusieFit() reads alike.
     if (length(conData) == 0) {
         return(NULL)
     }
     fm <- conData$finemappingEntry
-    if (is.null(fm) || !is(fm, "FineMappingResultBase")) {
+    if (!is(fm, "FineMappingRow") && !is(fm, "FineMappingResultBase")) {
         return(NULL)
     }
     trimmed <- .fmrPartsSusieFit(fm)
@@ -4019,8 +4093,8 @@ susieResult <- function(conData) {
 #'     CS (its row of the between-CS matrix, self-correlation on the diagonal),
 #'     computed on demand from \code{ldSource}. Absent when there are fewer than
 #'     two credible sets.}
-#'   \item{cs_corr_max}{Maximum absolute between-CS correlation (excluding the
-#'     self == 1); \code{NA} for a single CS.}
+#'   \item{cs_corr_max}{Maximum absolute correlation with the other credible
+#'     sets; \code{NA} for a single CS.}
 #'   \item{cs_corr_min}{Minimum absolute between-CS correlation; \code{NA} for a
 #'     single CS.}
 #'
@@ -4135,43 +4209,40 @@ extractTopPipInfo <- function(fmRow, sumstats) {
     )
 }
 
-# Reduce one credible set's correlation vector (a row of the between-CS matrix,
-# the self-correlation == 1 on the diagonal) to its |corr| max/min, excluding
-# every self / perfect correlation (== 1). An empty result yields NA.
+# Credible set `i`'s largest and smallest |correlation| with the other sets
+# in the between-CS matrix `csCorr`. Only its own entry is dropped, by
+# position: two sets in perfect LD still report |r| = 1, and a diagonal a few
+# ulps short of 1 (as a factor's correlation gives) is still the set with
+# itself. `csCorr` exists only for two or more sets, so others always remain.
 # @noRd
-.extractCorrelations <- function(x) {
-    filtered <- abs(x[x != 1])
-    if (length(filtered) == 0L) {
-        return(list(max_corr = NA_real_, min_corr = NA_real_))
-    }
+.extractCorrelations <- function(i, csCorr) {
+    others <- abs(csCorr[i, -i])
     list(
-        max_corr = max(filtered, na.rm = TRUE),
-        min_corr = min(filtered, na.rm = TRUE)
+        max_corr = max(others, na.rm = TRUE),
+        min_corr = min(others, na.rm = TRUE)
     )
 }
 
 # Append the between-CS correlation columns to the per-CS summary `base` from
 # the m x m matrix `csCorr` (whose rows are aligned to `base`): the expanded
 # cs_corr_1..m (each CS's row, self-correlation on the diagonal) plus
-# cs_corr_max / cs_corr_min (|corr| excluding the self == 1). A NULL matrix
+# cs_corr_max / cs_corr_min (|corr| with the other sets). A NULL matrix
 # (fewer than two credible sets) yields NA max/min and no expanded columns.
 # @noRd
 .csAppendCorrelationCols <- function(base, csCorr) {
     if (is.null(csCorr)) {
         return(mutate(base, cs_corr_max = NA_real_, cs_corr_min = NA_real_))
     }
-    perRow <- apply(csCorr, 1L, .extractCorrelations, simplify = FALSE)
+    perRow <- map(seq_len(nrow(csCorr)), .extractCorrelations, csCorr = csCorr)
     expanded <- `names<-`(
         as_tibble(csCorr, .name_repair = "minimal"),
         str_c("cs_corr_", seq_len(ncol(csCorr)))
     )
-    # unname(): apply() names its result by the matrix rownames, which map_dbl
-    # then carries into the column (tibbles preserve element names).
     base |>
         bind_cols(expanded) |>
         mutate(
-            cs_corr_max = unname(map_dbl(perRow, "max_corr")),
-            cs_corr_min = unname(map_dbl(perRow, "min_corr"))
+            cs_corr_max = map_dbl(perRow, "max_corr"),
+            cs_corr_min = map_dbl(perRow, "min_corr")
         )
 }
 
@@ -4244,7 +4315,7 @@ extractTopPipInfo <- function(fmRow, sumstats) {
         # into the arg prep (not merged afterwards) so L_greedy is clamped to
         # min(#inf effects, L) rather than passed through raw.
         chainedArgs <- prepareSusieFromInfArgs(
-            .fmMergeUserArgs(list(), token, userArgs),
+            .fmMergeUserArgs(list(), userArgs),
             chainFromInf,
             refineDefault = if (token == "susie") TRUE else NULL,
             unmappableEffects = if (token == "susieAsh") "ash" else "none"
@@ -4258,7 +4329,6 @@ extractTopPipInfo <- function(fmRow, sumstats) {
     } else {
         .fmMergeUserArgs(
             list_assign(baseArgs, !!!.fmSusieTokenDefaults(token)),
-            token,
             userArgs
         )
     }
@@ -4267,7 +4337,9 @@ extractTopPipInfo <- function(fmRow, sumstats) {
 
 
 # Sumstat counterpart of .fmFitSusieIndiv. Calls susieR::susie_rss with
-# the same unmappable_effects switch, chained init, and userArgs merge.
+# the same unmappable_effects switch, chained init, and userArgs merge. The
+# LD is either the matrix `R` or, in its place, a factor `X` of it (see
+# .ldRefFactor()), which susie_rss correlates itself without forming R.
 # @noRd
 .fmFitSusieRss <- function(
     z,
@@ -4279,14 +4351,16 @@ extractTopPipInfo <- function(fmRow, sumstats) {
     userArgs = NULL,
     rFinite = NULL,
     rMismatch = "none",
-    rssControl = NULL
+    rssControl = NULL,
+    X = NULL
 ) {
     info <- .fmRssValidateToken(token)
+    ldArgs <- if (is.null(X)) list(R = R) else list(X = X)
     baseArgs <- .fmRssAddControl(
         c(
+            list(z = z),
+            ldArgs,
             list(
-                z = z,
-                R = R,
                 n = n,
                 coverage = coverage,
                 unmappable_effects = info$unmappableEffects
@@ -4306,7 +4380,7 @@ extractTopPipInfo <- function(fmRow, sumstats) {
             userArgs,
             chainFromInf,
             z,
-            R,
+            ldArgs,
             n,
             coverage
         )
@@ -4354,19 +4428,20 @@ extractTopPipInfo <- function(fmRow, sumstats) {
 }
 
 # SuSiE-RSS(-ash) initialised from a SuSiE-inf fit; userArgs folded into the arg
-# prep so L_greedy is clamped rather than passed through raw.
+# prep so L_greedy is clamped rather than passed through raw. `ldArgs` is
+# list(R = ) or list(X = ), whichever form of the LD the fit reads.
 .fmRssChainedArgs <- function(
     baseArgs,
     token,
     userArgs,
     chainFromInf,
     z,
-    R,
+    ldArgs,
     n,
     coverage
 ) {
     chainedArgs <- prepareSusieFromInfArgs(
-        .fmMergeUserArgs(list(), token, userArgs),
+        .fmMergeUserArgs(list(), userArgs),
         chainFromInf,
         refineDefault = if (token == "susie") TRUE else NULL,
         unmappableEffects = if (token == "susieAsh") "ash" else "none"
@@ -4374,7 +4449,7 @@ extractTopPipInfo <- function(fmRow, sumstats) {
     list_assign(
         list_modify(baseArgs, !!!compact(chainedArgs)),
         z = z,
-        R = R,
+        !!!ldArgs,
         n = n,
         coverage = coverage
     )
@@ -4384,7 +4459,6 @@ extractTopPipInfo <- function(fmRow, sumstats) {
 .fmRssNonChainedArgs <- function(baseArgs, token, userArgs) {
     .fmMergeUserArgs(
         list_assign(baseArgs, !!!.fmSusieTokenDefaults(token)),
-        token,
         userArgs
     )
 }
@@ -4410,7 +4484,6 @@ extractTopPipInfo <- function(fmRow, sumstats) {
 .fmFitSusieSer <- function(z, n, coverage = 0.95, userArgs = NULL) {
     baseArgs <- .fmMergeUserArgs(
         list(z = z, n = n, coverage = coverage),
-        "ser",
         userArgs
     )
     .setFinemappingFitClass(exec(susieR::susie_ser, !!!baseArgs), "susieRss")
@@ -4481,8 +4554,12 @@ extractTopPipInfo <- function(fmRow, sumstats) {
     tid,
     af,
     fitRetention,
-    region = NULL
+    region = NULL,
+    fitFullData = TRUE
 ) {
+    if (isFALSE(fitFullData)) {
+        return(set_names(rep(list(.fmCvOnlyRow()), length(toRun)), toRun))
+    }
     chainLocal <- .fmResolveSusieChain(toRun, initializeWithSusieInf)
     infFit <- .fmXInfFit(
         chainLocal,
@@ -4531,7 +4608,8 @@ extractTopPipInfo <- function(fmRow, sumstats) {
     af = NULL,
     fitRetention = "slim",
     seed = NULL,
-    region = NULL
+    region = NULL,
+    fitFullData = TRUE
 ) {
     out <- .fmXFitAll(
         toRun,
@@ -4545,7 +4623,8 @@ extractTopPipInfo <- function(fmRow, sumstats) {
         tid = tid,
         af = af,
         fitRetention = fitRetention,
-        region = region
+        region = region,
+        fitFullData = fitFullData
     )
     .fmXCrossValidate(
         out,
@@ -4708,13 +4787,15 @@ extractTopPipInfo <- function(fmRow, sumstats) {
     .fmAttachCv(out[[tk]], .fmSliceCv(cv, tk))
 }
 
-# Fit every requested RSS token on one (z, R, n) sumstat block, returning a
+# Fit every requested RSS token on one (z, LD, n) sumstat block, returning a
 # named list (token -> FineMappingRow). The sumstat analog of .fmFitXBlock:
 # the QtlSumStats and GwasSumStats methods both call it and differ only in how
-# they push the returned entries (tuple shape) and the progress `label`.
+# they push the returned entries (tuple shape) and the progress `label`. `ld`
+# is list(R, X) as .fmRssLd() builds it: the LD matrix, the LD reference's
+# factor, or both.
 .fmFitRssBlock <- function(
     z,
-    R,
+    ld,
     n,
     toRun,
     initializeWithSusieInf,
@@ -4732,7 +4813,7 @@ extractTopPipInfo <- function(fmRow, sumstats) {
     infFit <- .fmRssInfFit(
         chainLocal,
         z = z,
-        R = R,
+        R = ld$R,
         n = n,
         coverage = credibleSetParam$coverage,
         methodArgs = methodArgs,
@@ -4747,7 +4828,7 @@ extractTopPipInfo <- function(fmRow, sumstats) {
             chainLocal = chainLocal,
             infFit = infFit,
             z = z,
-            R = R,
+            ld = ld,
             n = n,
             credibleSetParam = credibleSetParam,
             methodArgs = methodArgs,
@@ -4771,7 +4852,7 @@ extractTopPipInfo <- function(fmRow, sumstats) {
     chainLocal,
     infFit,
     z,
-    R,
+    ld,
     n,
     credibleSetParam,
     methodArgs,
@@ -4788,7 +4869,7 @@ extractTopPipInfo <- function(fmRow, sumstats) {
         chainLocal,
         infFit,
         z = z,
-        R = R,
+        ld = ld,
         n = n,
         coverage = credibleSetParam$coverage,
         methodArgs = methodArgs,
@@ -4801,7 +4882,7 @@ extractTopPipInfo <- function(fmRow, sumstats) {
     }
     entry <- .fmRssPostprocess(
         f$fit,
-        R = R,
+        ld = ld,
         z = z,
         credibleSetParam = credibleSetParam,
         af = af,
@@ -4849,12 +4930,14 @@ extractTopPipInfo <- function(fmRow, sumstats) {
 
 # Standard multi-effect SuSiE-RSS fit (susie / susieAsh): the only branch that
 # carries susieR's finite-sample R diagnostics and honours the SER fallback.
+# The plain susie model reads the LD reference's factor when there is one;
+# susieAsh needs the matrix (see .fmRssLd()).
 .fmRssFitStd <- function(
     tk,
     chainLocal,
     infFit,
     z,
-    R,
+    ld,
     n,
     coverage,
     methodArgs,
@@ -4874,9 +4957,10 @@ extractTopPipInfo <- function(fmRow, sumstats) {
         msg <- glue("Fitting {tk} (RSS) for {label} ...")
         inform(msg)
     }
+    useFactor <- tk == "susie" && !is.null(ld$X)
     fit <- .fmFitSusieRss(
         z,
-        R,
+        if (useFactor) NULL else ld$R,
         n,
         tk,
         chainFromInf = chainFrom,
@@ -4884,7 +4968,8 @@ extractTopPipInfo <- function(fmRow, sumstats) {
         userArgs = methodArgs[[tk]],
         rFinite = susieRssParam$rFinite,
         rMismatch = susieRssParam$rMismatch,
-        rssControl = .rssControlList(susieRssParam$control)
+        rssControl = .rssControlList(susieRssParam$control),
+        X = if (useFactor) ld$X
     )
     .fmRssSerFallback(fit, susieRssParam)
 }
@@ -4921,7 +5006,7 @@ extractTopPipInfo <- function(fmRow, sumstats) {
     chainLocal,
     infFit,
     z,
-    R,
+    ld,
     n,
     coverage,
     methodArgs,
@@ -4953,7 +5038,7 @@ extractTopPipInfo <- function(fmRow, sumstats) {
         chainLocal,
         infFit,
         z = z,
-        R = R,
+        ld = ld,
         n = n,
         coverage = coverage,
         methodArgs = methodArgs,
@@ -4964,10 +5049,12 @@ extractTopPipInfo <- function(fmRow, sumstats) {
     list(fit = std$fit, flag = std$flag, isStd = TRUE, multiFit = std$multiFit)
 }
 
-# Post-process one RSS fit into a finemapping entry.
+# Post-process one RSS fit into a finemapping entry. The credible sets'
+# purity reads the LD reference's factor when there is one (only the sets'
+# own columns are correlated), else the LD matrix.
 .fmRssPostprocess <- function(
     fit,
-    R,
+    ld,
     z,
     credibleSetParam,
     af,
@@ -4978,7 +5065,7 @@ extractTopPipInfo <- function(fmRow, sumstats) {
     .fmPostprocessOne(
         fit = fit,
         method = "susieRss",
-        dataX = R,
+        dataX = ld$X %||% ld$R,
         dataY = list(z = z),
         af = af,
         # Per-variant effective N (reporting-only, top_loci$N). NULL on any
@@ -4986,7 +5073,7 @@ extractTopPipInfo <- function(fmRow, sumstats) {
         # never 1. This is NOT `n` (the scalar median the RSS fit consumes).
         n = nVar,
         region = region,
-        csInput = "Xcorr",
+        csInput = if (is.null(ld$X)) "Xcorr" else "X",
         credibleSetParam = credibleSetParam,
         fitRetention = fitRetention
     )
@@ -5130,13 +5217,13 @@ extractTopPipInfo <- function(fmRow, sumstats) {
     str_c(methodTag, "_", ix)
 }
 
-# Trailing integer of a "<method>_<idx>" cs string (0 when empty / NA).
+# Trailing integer of "<method>_<idx>" credible-set labels, the inverse of
+# .btlCsLabel ("susie_3" -> 3L). Vectorized. 0 marks "in no credible set",
+# which is also what an empty or NA label means.
 # @noRd
-.cs95ToIndex <- function(s) {
-    if (is.na(s) || str_length(s) == 0L) {
-        return(0L)
-    }
-    suppressWarnings(as.integer(str_remove(s, "^.*_")))
+.csLabelIndex <- function(labels) {
+    idx <- suppressWarnings(as.integer(str_remove(labels, "^.*_")))
+    replace(idx, is.na(labels) | str_length(labels) == 0L, 0L)
 }
 
 # @noRd
@@ -5164,11 +5251,6 @@ extractTopPipInfo <- function(fmRow, sumstats) {
         variant_idx = rep(vi, length(csNums)),
         cs_idx = csNums
     )
-}
-
-# @noRd
-.asDataFrameT <- function(x) {
-    as.data.frame(t(x))
 }
 
 # @noRd
@@ -5438,7 +5520,7 @@ extractTopPipInfo <- function(fmRow, sumstats) {
         baseArgs,
         !!!compact(list(residual_variance = mvPrior$residualVariance))
     )
-    mvArgs <- .fmMergeUserArgs(withPrior, "mvsusie", userArgs)
+    mvArgs <- .fmMergeUserArgs(withPrior, userArgs)
     fit <- exec(fitMvsusie, !!!.splitMethodArgs(fitMvsusie, mvArgs))
     raw <- as.matrix(mvsusieWeights(mvsusieFit = fit))
     W <- `rownames<-`(raw, rownames(raw) %||% colnames(Xtr))

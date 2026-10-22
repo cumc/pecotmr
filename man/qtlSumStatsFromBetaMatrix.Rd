@@ -8,7 +8,7 @@ qtlSumStatsFromBetaMatrix(
   bhat,
   shat,
   studyName,
-  ldSketch = NULL,
+  ldReference = NULL,
   context = colnames(bhat),
   trait = "mash",
   genome = "GRCh38",
@@ -28,7 +28,7 @@ conditions.}
 
 \item{studyName}{Study identifier (recycled across conditions).}
 
-\item{ldSketch}{A genotype panel (see \code{\link{readGenotypes}})
+\item{ldReference}{A genotype panel (see \code{\link{readGenotypes}})
 embedded in the collection, or \code{NULL} (default) -- mash operates
 across
 conditions per variant and needs no LD reference.}
@@ -66,7 +66,7 @@ bhat <- matrix(rnorm(6), 2, 3, dimnames = list(
   c("chr22:1:A:G", "chr22:2:A:G"), c("brain", "blood", "muscle")))
 shat <- matrix(0.1, 2, 3, dimnames = dimnames(bhat))
 qtlSumStatsFromBetaMatrix(bhat = bhat, shat = shat, studyName = "s1",
-  ldSketch = panel, context = colnames(bhat), trait = "g1",
+  ldReference = panel, context = colnames(bhat), trait = "g1",
     genome = "hg38", n = 100)
 }
 \seealso{

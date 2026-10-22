@@ -2,10 +2,11 @@
 % Please edit documentation in R/LdScore.R
 \name{buildLdScore}
 \alias{buildLdScore}
-\title{Build an LdScore from loaded LD}
+\title{Build an LdScore from an LD reference}
 \usage{
 buildLdScore(
-  ldBlockData,
+  ldReference,
+  ldBlocks = NULL,
   nSamples = NULL,
   inSample = FALSE,
   genome = NA_character_,
@@ -14,58 +15,72 @@ buildLdScore(
 )
 }
 \arguments{
-\item{ldBlockData}{An \code{\link{LdData}}, or a list of them, covering
-  the reference variants. An \code{LdData} whose correlation is a list of
-  per-block matrices contributes one LD block per matrix; one whose
-  correlation is a single matrix contributes one block. Blocks are kept in
-  the order given, and that order defines the variant order of the result.
+\item{ldReference}{The LD reference, block by block: a list of
+  \code{\link{LdMatrix}} objects, one per LD block (a single
+  \code{LdMatrix} is one block), or a genotype panel (see
+  \code{\link{readGenotypes}}) together with \code{ldBlocks}. Blocks are
+  kept in the order given, and that order defines the variant order of the
+  result.
 
   Block structure matters downstream: \code{\link{estimateH2}} takes its
   standard error from a delete-one-block jackknife, so it requires at
-  least two blocks and wants many more. Loading a whole region as one
-  dense matrix yields a single block.}
+  least two blocks and wants many more.}
 
-\item{nSamples}{Integer, the LD reference panel sample size. Defaults to the
-size recorded by the supplied \code{LdData}; required when they record
-none, and an error when they disagree.}
+\item{ldBlocks}{With a genotype panel, the LD blocks to cut it into: a
+\code{GRanges}, or a data frame with columns \code{chrom}, \code{start}
+and \code{end}. Each block's LD is computed from the panel variants
+inside it; variants outside every block are left out. Not used with
+\code{LdMatrix} blocks.}
+
+\item{nSamples}{Integer, the number of samples the reference's LD was
+estimated from. Defaults to a panel's sample count (a stochastic
+sketch's effective size), or the size the \code{LdMatrix} blocks record;
+required when they record none, and an error when they disagree. It is
+also the \code{n} of the unbiased \eqn{r^2}, and it must exceed 2.}
 
 \item{inSample}{Logical, whether the reference is the GWAS cohort itself.}
 
 \item{genome}{Character, genome build. Defaults to the build recorded by
-the supplied \code{LdData}, which \code{\link{loadLdMatrix}} leaves
-unset.}
+the reference's variants.}
 
 \item{ldScoreWeights}{Optional numeric regression weights, one per variant.
 Defaults to the conventional \eqn{1/\max(\ell_j, 1)}.}
 
-\item{keepLdMatrices}{Logical. Keep each block's LD matrix on the result.
-\code{TRUE} (the default) is required for \code{method = "gldsc"},
-which forms its FGLS residual covariance from them and errors without
-them. \code{FALSE} drops them, leaving a scores-only object.}
+\item{keepLdMatrices}{Logical, for \code{LdMatrix} blocks: keep each
+block's LD matrix on the result. \code{TRUE} (the default) is required
+for \code{method = "gldsc"} and for annotation-stratified scores, which
+need each block's LD. \code{FALSE} drops them, leaving a scores-only
+object. A genotype panel is never copied into matrices: the result keeps
+the panel and reads each block's LD from it when it is needed, so it
+serves every method either way.}
 }
 \value{
-An \code{LdScore} over every variant in \code{ldBlockData}.
+An \code{LdScore} over every variant in the reference's blocks.
 }
 \description{
-Compute per-variant LD scores from already-loaded LD, block by
+Compute per-variant LD scores from an LD reference, block by
   block, into the \code{LdScore} that \code{\link{estimateH2}} consumes
   for \code{method = "gldsc"}. This is the supported route from an LD
   reference to an h2 input: \code{\link{LdScore}} itself is the low-level
   constructor and expects the scores to have been computed already.
 
-  The score is \eqn{\ell_j = \sum_k r^2_{jk}} within each block, the same
-  quantity \code{\link{computeLdScores}} reconstructs from an
-  \code{\link{LdEigen}}, so the two agree on a shared reference.
-
-  No file I/O happens here. Read the LD first with
-  \code{\link{loadLdMatrix}} -- passing a vector of regions returns one
-  \code{LdData} per block -- then pass the result in.
+  The score is \eqn{\ell_j = \sum_k r^2_{jk}} within each block, with
+  each term ldsc's unbiased estimate of \eqn{r^2} (Bulik-Sullivan et al.
+  2015, \code{ldscore.py}): \code{r^2 - (1 - r^2) / (n - 2)}, where
+  \code{n} is the reference panel sample size. A sample \eqn{r^2}
+  overstates the population value by about \code{(1 - r^2) / (n - 2)},
+  and a block sums many of them. A variant's own term stays 1, and
+  negative estimates are kept, as in ldsc. \code{\link{computeLdScores}}
+  gives the same scores from an \code{\link{LdEigen}} built on the same
+  reference.
 }
 \examples{
-meta <- system.file("extdata", "ld_reference", "ld_meta_file.tsv",
-  package = "pecotmr")
-ld <- loadLdMatrix(meta, region = "chr22:10000000-19000000")
-ldScore <- buildLdScore(ld, genome = "hg38")
+panel <- readGenotypes(plink2Prefix = file.path(system.file("extdata",
+  "ld_reference", "chr22", package = "pecotmr"),
+  "protocol_example.LD.chr22"))
+blocks <- data.frame(chrom = "chr22", start = c(10000000, 15000001),
+  end = c(15000000, 19000000))
+ldScore <- buildLdScore(panel, ldBlocks = blocks, genome = "hg38")
 ldScore
 head(S4Vectors::mcols(ldScore)$ldScores)
 }

@@ -25,9 +25,10 @@ jointly across the identity-tuple columns and any present joint columns.
 \section{Slots}{
 
 \describe{
-\item{\code{ldSketch}}{The LD reference genotype panel the weights were
-derived against, or \code{NULL} when the weights were learned from
-individual-level data. Used downstream for cross-pipeline LD-sketch
-identity validation.}
+\item{\code{ldReference}}{The LD reference the weights were derived against (a
+genotype panel, a \code{GenotypeMixture} or an \code{LdMatrix}), or
+\code{NULL} when the weights were learned from individual-level data.
+Used downstream to check that pipelines combining results share one LD
+reference.}
 }}
 

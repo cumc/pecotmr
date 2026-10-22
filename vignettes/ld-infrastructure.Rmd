@@ -24,103 +24,140 @@ knitr::opts_chunk$set(
 Almost everything else in pecotmr needs LD. Fine-mapping from summary
 statistics needs it, RSS weight learning needs it, colocalization needs it,
 and the heritability estimators are built on nothing else. The pipelines
-handle it for you, so this vignette is about the layer underneath: loading
-LD for a region, computing it from genotypes, checking it is usable, and
-reducing a variant set that is too correlated to model.
+handle it for you, so this vignette is about the layer underneath: the two
+kinds of LD reference pecotmr reads LD from, computing LD from genotypes,
+checking it is usable, and reducing a variant set that is too correlated to
+model.
 
 ```{r load-packages}
 library(pecotmr)
-ldMeta <- system.file(
-    "extdata",
-    "ld_reference",
-    "ld_meta_file.tsv",
-    package = "pecotmr"
+```
+
+## Two kinds of LD reference
+
+Every pipeline reads LD from one place: the `ldReference` of the collection
+it is given. That reference is one of two things (or a mixture of either,
+below).
+
+- A **genotype panel**, read lazily from disk with `readGenotypes()`. LD is
+    computed on demand for whichever variants a step needs, so a panel far
+    larger than any one region costs nothing until it is read. It is the same
+    structure a `QtlDataset` holds its genotypes in.
+- An **`LdMatrix`**: a correlation matrix you built, held in memory. pecotmr
+    does not read pre-computed LD from disk; read the matrix with whatever
+    suits its format and wrap it.
+
+### A genotype panel
+
+```{r panel}
+panel <- readGenotypes(
+    plink2Prefix = file.path(
+        system.file("extdata", "ld_reference", "chr22", package = "pecotmr"),
+        "protocol_example.LD.chr22"
+    )
 )
+panel
 ```
 
-An LD reference is described by a **meta file**: one row per LD block, giving
-the block's coordinates and the path to the genotype or correlation data
-backing it.
+The bundled panel is a *stochastic LD sketch*: 1,000 pseudo-samples
+projected from 60 real people, which reproduces their LD without carrying
+their genotypes. pecotmr recognises one by its `.afreq` sidecar and records
+the real sample size and allele frequencies on the panel when it is read,
+because the projected dosages say nothing about either:
 
-```{r meta}
-read.delim(ldMeta, check.names = FALSE)
+```{r panel-sketch}
+S4Vectors::metadata(panel)$ldProjection
+head(SummarizedExperiment::rowRanges(panel)$AF)
 ```
 
-Paths are relative to the meta file, so a reference directory can be moved
-without rewriting it.
+A MAC cutoff or DENTIST's truncation rank counts the 60 real samples, and
+ldsc's unbiased \(r^2\) and HDL use the effective size of the sketch's LD,
+\(1 / (1/60 + 1/1000) \approx 57\). Neither is the 1,000 columns.
 
-## Loading LD for a region
+`computeLd()` correlates any subset of a panel's variants:
 
-`loadLdMatrix()` returns an `LdData` — a `GRanges` of the variants plus the
-correlation matrix, or the genotypes to compute it from:
-
-```{r load}
-region <- "chr22:10000000-19000000"
-ld <- loadLdMatrix(ldMeta, region = region)
-ld
-R <- ldMatrix(ld)
+```{r panel-ld}
+R <- computeLd(panel)
 dim(R)
 ```
 
-Whether a correlation matrix or a genotype handle comes back depends on the
-source. `returnGenotype = "auto"` (the default for genotype sources) returns
-dosages and computes `R` on demand, which matters because a dense matrix for
-a large region is far bigger than the genotypes it came from.
+A panel can also be reached through an LD meta file: one row per chromosome
+or block, giving its coordinates and the genotype files behind it, with
+paths relative to the meta file. `readGenotypes(ldMeta = , region = )` opens
+the row covering a region.
 
-`variantInfo()` gives the variants as a plain `GRanges`, which is what you
-need to align summary statistics against the panel:
+### An LdMatrix
 
-```{r variant-info}
-head(variantInfo(ld), 3)
+```{r ldmatrix}
+ld <- LdMatrix(R, nSamples = 57)
+ld
 ```
 
-**A region is not a block.** Loading a whole region returns one dense matrix
-covering it. To get one matrix per LD block — which the block jackknife in
-[heritability estimation](heritability.html) requires — address the blocks
-individually.
+The matrix's dimnames here are `chrom:pos:A2:A1` ids, so the variants are
+parsed from them; otherwise pass `variants`, a `GRanges` or a data frame with
+`chrom`, `pos`, `A1` and `A2` (and optionally `SNP` and `AF`). Correlations
+must be signed by the dosage of `A1`. `nSamples` is the number of samples the
+LD was estimated from, and `AF`, the frequency of `A1`, is what the
+frequency filters and cTWAS's weight scaling read.
 
-`region` also takes a vector, returning one `LdData` per entry — which is
-how you get per-block LD without writing the loop yourself:
+`LdMatrix()` checks the matrix's shape and labels, its unit diagonal, that
+its entries lie in \([-1, 1]\), and its symmetry. It does not check positive
+semi-definiteness, which costs an eigendecomposition; `checkLd()` below does.
 
-```{r multi-region}
-blocks <- read.delim(ldMeta, check.names = FALSE)
-ldList <- loadLdMatrix(
-    ldMeta,
-    region = sprintf("chr22:%d-%d", blocks$start, blocks$end)
-)
-length(ldList)
-```
+A matrix has no genotypes, so the steps that need them work differently:
 
-### Sources without coordinates
-
-An LD meta file carries coordinates, so its blocks are addressed by `region`.
-Other sources have no coordinates and are addressed by `block` index instead:
-
-- an **`ldInfo` table** — an `LD_file` column and optionally `SNP_file`, the
-  shape cTWAS's `LD_map` uses
-- a **matrix** already in memory, or a list of them
-
-```{r by-block}
-R2 <- computeLd(matrix(rnorm(100 * 10), 100, 10))
-loadLdMatrix(R2, block = 1)
-```
-
-Supplying both `region` and `block`, or neither, is an error — the source
-determines which one applies.
-
-### Options
-
-| Argument | Effect |
+| Step | With an `LdMatrix` |
 |---|---|
-| `returnGenotype` | `"auto"` gives dosages for genotype sources, `R` for pre-computed |
-| `dropMonomorphic` | drop variants with no variation |
-| `materializeGenotypes` | read dosages once and keep them, so later access does no file I/O |
-| `maxVariants` / `seed` | randomly thin oversized blocks, reproducibly |
+| LD for any variant set | read from the matrix |
+| MAF / MAC filters, cTWAS scaling | need `AF` (and `nSamples` for MAC) |
+| DENTIST, ldsc's unbiased \(r^2\), HDL | need its `nSamples` |
+| Missingness filter | refused: there are no genotypes to be missing |
+| RAiSS | inverts the matrix instead of the genotype SVD |
 
-```{r options}
-thinned <- loadLdMatrix(ldMeta, region = region, maxVariants = 50, seed = 1)
-length(thinned)
+### Mixtures of LD references
+
+Summary statistics meta-analysed across ancestries are correlated through
+the weighted average of the cohorts' LD. `LdMatrix()` builds that average
+from one `LdMatrix` per cohort, matching the components by position and
+allele and keeping the variants they all cover:
+
+```{r mixture}
+half <- seq_len(ncol(panel) / 2)
+ldA <- LdMatrix(computeLd(panel[, half]), nSamples = 30)
+ldB <- LdMatrix(computeLd(panel[, -half]), nSamples = 30)
+LdMatrix(list(ldA, ldB), mixtureWeights = c(0.7, 0.3))
 ```
+
+The weights are typically each cohort's share of the GWAS sample size.
+
+`GenotypeMixture()` builds the same average from genotype panels, but
+lazily: the panels stay on disk and are read only for the variants a step
+asks about, so each keeps answering for its own samples. A frequency or
+missingness filter judges every panel on its own and drops a variant that
+fails in any of them. The mixture is a `MultiAssayExperiment` with one
+experiment per cohort, so the panels are named after their cohorts, and
+`experiments()` and `sampleMap()` show what it holds.
+
+```{r genotype-mixture}
+GenotypeMixture(
+    list(EUR = panel[, half], AFR = panel[, -half]),
+    mixtureWeights = c(EUR = 0.7, AFR = 0.3)
+)
+```
+
+### Using a reference
+
+Either kind goes in the same slot, and from there every step reads it the
+same way:
+
+```{r use, eval=FALSE}
+gwas <- GwasSumStats(..., ldReference = panel) # or ldReference = ld
+```
+
+When two collections meet in one pipeline — a QTL and a GWAS side in
+colocalization, say — their references must be the same: two panels must
+share their samples and allele coding, two `LdMatrix` objects must agree on
+the LD they share, and a panel never matches a matrix.
 
 ## Computing LD from genotypes
 

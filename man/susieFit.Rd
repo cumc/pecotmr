@@ -21,7 +21,8 @@ susieFit(x, ...)
 \S4method{susieFit}{FineMappingRow}(x)
 }
 \arguments{
-\item{x}{A \code{FineMappingRow} or \code{FineMappingResult}.}
+\item{x}{A \code{FineMappingRow}, \code{QtlFineMappingResult} or
+\code{GwasFineMappingResult}.}
 
 \item{...}{Class-specific selection arguments.}
 

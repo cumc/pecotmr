@@ -179,7 +179,8 @@ test_that(".twas_method_lookup: default args are set for mrash, not susie", {
     # susie carries NO fitting defaults: susieWeights extracts from a supplied
     # fit and never runs susie, so `refine` / `L` would have nothing to configure.
     expect_length(result$susie_weights, 0L)
-    expect_equal(result$mrash_weights$initPriorSd, TRUE)
+    # mrash keeps mr.ash's own prior grid, so only the iteration cap is set.
+    expect_named(result$mrash_weights, "max.iter")
     expect_equal(result$mrash_weights$max.iter, 100)
 })
 
@@ -656,7 +657,9 @@ test_that("learnTwasWeights resolves fits under camelCase method names", {
         d$X,
         as.numeric(d$Y),
         weightMethods = list(susie_weights = list()),
-        fittedModels = list(susie = makeFakeSusieFit(p = 10, maxNumSingleEffects = 5))
+        fittedModels = list(
+            susie = makeFakeSusieFit(p = 10, maxNumSingleEffects = 5)
+        )
     )
     expect_true("susie" %in% class(seen))
 })
@@ -677,7 +680,11 @@ test_that("learnTwasWeights runs susie + susieInf from supplied fits", {
         ),
         fittedModels = list(
             susie = makeFakeSusieFit(p = 10, maxNumSingleEffects = 5),
-            susieInf = makeFakeSusieFit(p = 10, maxNumSingleEffects = 7, inf = TRUE)
+            susieInf = makeFakeSusieFit(
+                p = 10,
+                maxNumSingleEffects = 7,
+                inf = TRUE
+            )
         )
     )
     expect_equal(methodNames(result), c("susie", "susie_inf"))
@@ -1064,7 +1071,7 @@ test_that("show.TwasWeights prints entry/study/context/trait/method counts", {
 })
 
 
-test_that("show.TwasWeights reports ldSketch when present", {
+test_that("show.TwasWeights reports ldReference when present", {
     e <- .sh_makeTwEntry()
     tw <- TwasWeights(
         studyName = "s1",
@@ -1072,10 +1079,10 @@ test_that("show.TwasWeights reports ldSketch when present", {
         trait = "t1",
         method = "lasso",
         entry = list(e),
-        ldSketch = .sh_makeGenotypeHandle()
+        ldReference = .sh_makeGenotypeHandle()
     )
     out <- capture.output(show(tw))
-    expect_true(any(grepl("LD sketch: gds @ /tmp/test.gds", out)))
+    expect_true(any(grepl("LD reference: plink2 @ /tmp/test", out)))
 })
 
 # ===========================================================================
@@ -1317,7 +1324,7 @@ test_that("TwasWeights: studyName returns unique study labels", {
     expect_setequal(studyName(tw), c("s1", "s2"))
 })
 
-test_that("TwasWeights: weights/cvResult/methodFits/ldSketch delegate per tuple", {
+test_that("TwasWeights: per-tuple weights/cvResult/methodFits/ldReference", {
     w1 <- rnorm(4)
     e1 <- twasWeightsRow(
         variantIds = sprintf("chr1:%d:A:G", 100L * (1:4)),
@@ -1335,7 +1342,7 @@ test_that("TwasWeights: weights/cvResult/methodFits/ldSketch delegate per tuple"
         trait = c("t1", "t1"),
         method = c("lasso", "enet"),
         entry = list(e1, e2),
-        ldSketch = .sh_makeGenotypeHandle()
+        ldReference = .sh_makeGenotypeHandle()
     )
 
     expect_equal(
@@ -1368,7 +1375,7 @@ test_that("TwasWeights: weights/cvResult/methodFits/ldSketch delegate per tuple"
         )$tag,
         "fitA"
     )
-    expect_s4_class(ldSketch(tw), "RangedSummarizedExperiment")
+    expect_s4_class(ldReference(tw), "RangedSummarizedExperiment")
 })
 
 # ===========================================================================
@@ -2095,9 +2102,13 @@ test_that("the twas lookup helpers answer NULL when the token is absent", {
         ".rssShrinkGridWeights",
         "buildMrmashPriorMatrices",
         "penalizedRss",
+        ".penalizedRssPath",
         "lassosumRss",
+        ".lassosumRssPath",
         "sdpr",
-        "prsCs"
+        ".sdprRun",
+        "prsCs",
+        ".prsCsRun"
     )
     hit <- new.env(parent = emptyenv())
     for (f in watched) {
@@ -2133,9 +2144,15 @@ test_that("the twas lookup helpers answer NULL when the token is absent", {
     set.seed(1)
     LD <- diag(p)
     LD[abs(row(LD) - col(LD)) == 1] <- 0.3
+    ids <- sprintf("chr1:%d:A:G", 100L * seq_len(p))
     list(
-        LD = LD,
-        stat = list(bhat = rnorm(p) * 0.1, shat = rep(0.05, p), n = 500L)
+        ldReference = LdMatrix(`dimnames<-`(LD, list(ids, ids))),
+        stat = list(
+            b = rnorm(p) * 0.1,
+            seb = rep(0.05, p),
+            n = rep(500L, p),
+            variantNames = ids
+        )
     )
 }
 
@@ -2168,12 +2185,30 @@ test_that("the recorded individual-path chains match what a fit enters", {
 
 test_that("the recorded RSS chains match what a fit enters", {
     fx <- .tw_rssFixture()
-    seen <- .tw_traceChain(scadRssWeights(fx$stat, fx$LD))
-    recorded <- pecotmr:::.twasMethodChainFor("scad", "QtlSumStats")
-    # Every pecotmr hop the run entered must be in the recorded chain.
-    expect_true(all(is_in(seen, recorded)))
-    expect_true(is_in("penalizedRss", seen))
+    recordedFor <- function(tk) {
+        pecotmr:::.twasMethodChainFor(tk, "QtlSumStats")
+    }
+    # Every pecotmr hop a run entered must be in the recorded chain, and the
+    # chain's last pecotmr hop must be one the run entered.
+    seen <- .tw_traceChain(scadRssWeights(fx$stat, fx$ldReference))
+    expect_true(all(is_in(seen, recordedFor("scad"))))
+    expect_true(is_in(".penalizedRssPath", seen))
     expect_true(is_in(".rssShrinkGridWeights", seen))
+    seen <- .tw_traceChain(lassosumRssWeights(fx$stat, fx$ldReference))
+    expect_true(all(is_in(seen, recordedFor("lasso"))))
+    expect_true(is_in(".lassosumRssPath", seen))
+    prsCsOpts <- PrsCsOptions(nIter = 20, nBurnin = 5, thin = 1)
+    seen <- .tw_traceChain(
+        prsCsWeights(fx$stat, fx$ldReference, methodArgs = prsCsOpts)
+    )
+    expect_equal(seen, ".prsCsRun")
+    expect_true(is_in(".prsCsRun", recordedFor("prsCs")))
+    sdprOpts <- SdprOptions(iter = 20, burn = 5, thin = 1, verbose = FALSE)
+    seen <- .tw_traceChain(
+        sdprWeights(fx$stat, fx$ldReference, methodArgs = sdprOpts)
+    )
+    expect_equal(seen, ".sdprRun")
+    expect_true(is_in(".sdprRun", recordedFor("dprGibbs")))
 })
 
 test_that("every RSS chain yields a checkable argument set", {
@@ -2225,10 +2260,19 @@ test_that("the TWAS Options registry is derived from each implementation", {
     # restate a pairing the implementation already declares through its own
     # `methodArgs` default. The two paths of one method often reach different
     # packages, so a second table is a second thing to keep in step.
-    reg <- pecotmr:::.twasMethodCtors()
-    expect_setequal(names(reg), names(pecotmr:::.twasMethodCapabilities))
-    expect_setequal(names(reg), pecotmr:::.twasConfigurableMethods())
-    expect_true(all(map_lgl(reg, is.function)))
+    expect_setequal(
+        pecotmr:::.twasConfigurableMethods(),
+        names(pecotmr:::.twasMethodCapabilities)
+    )
+    # Every configurable method has a constructor on each path it runs on.
+    for (path in c("QtlDataset", "QtlSumStats")) {
+        toks <- intersect(
+            pecotmr:::.twasConfigurableMethods(),
+            pecotmr:::.twasMethodsFor(path)
+        )
+        ctors <- map(toks, pecotmr:::.twasMethodCtorFor, inputKind = path)
+        expect_true(all(map_lgl(ctors, is.function)), info = path)
+    }
 
     nameOf <- function(f) {
         if (is.null(f)) {
@@ -2241,12 +2285,15 @@ test_that("the TWAS Options registry is derived from each implementation", {
         if (length(hit) > 0L) hit[[1L]] else "?"
     }
     # Spot-check the pairs the derivation must reproduce.
-    expect_equal(nameOf(reg$lasso), "GlmnetOptions")
-    expect_equal(nameOf(reg$mcp), "NcvregOptions")
-    expect_equal(nameOf(reg$bayesB), "BglrOptions")
-    # prsCs has no individual implementation, so the path-blind view falls
-    # back to its summary-statistics constructor rather than dropping it.
-    expect_equal(nameOf(reg$prsCs), "PrsCsOptions")
+    ctorName <- function(tk, path) {
+        nameOf(pecotmr:::.twasMethodCtorFor(tk, path))
+    }
+    expect_equal(ctorName("lasso", "QtlDataset"), "GlmnetOptions")
+    expect_equal(ctorName("mcp", "QtlDataset"), "NcvregOptions")
+    expect_equal(ctorName("bayesB", "QtlDataset"), "BglrOptions")
+    # prsCs has no individual implementation; its one constructor is the
+    # summary-statistics one.
+    expect_equal(ctorName("prsCs", "QtlSumStats"), "PrsCsOptions")
 })
 
 test_that("each method's Options constructor is resolved per input path", {

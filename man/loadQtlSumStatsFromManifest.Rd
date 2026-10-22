@@ -7,7 +7,7 @@
 loadQtlSumStatsFromManifest(
   manifest,
   genome = NULL,
-  ldSketch = NULL,
+  ldReference = NULL,
   region = NULL,
   minLdOverlapWarn = 0.5,
   columnMapping = NULL,
@@ -22,7 +22,7 @@ loadQtlSumStatsFromManifest(
 \code{study}, \code{context}, \code{trait} (required), \code{sumStatsPath}
 (required), \code{columnMapping} (optional), \code{nSample} (optional
 tuple-level total N), \code{varY} (optional), and the single-valued
-\code{genome} / \code{ldSketchPath}. When a row supplies \code{nSample},
+\code{genome} / \code{ldReferencePath}. When a row supplies \code{nSample},
 its sumstats file need not carry a per-variant \code{N} column;
 \code{\link{summaryStatsQc}} fills \code{N} from the scalar. (Unlike the
 GWAS loader, there are no \code{nCase}/\code{nControl} columns: molecular
@@ -30,8 +30,8 @@ QTL traits are quantitative.)}
 
 \item{genome}{Genome build; reconciled with a \code{genome} column.}
 
-\item{ldSketch}{A genotype panel (see \code{\link{readGenotypes}}) or spec;
-reconciled with an \code{ldSketchPath} column.}
+\item{ldReference}{A genotype panel (see \code{\link{readGenotypes}}) or
+spec; reconciled with an \code{ldReferencePath} column.}
 
 \item{region, minLdOverlapWarn, columnMapping, sampleSelect, formatMapping}{As
 for \code{\link{loadGwasSumStatsFromManifest}}.}
@@ -72,5 +72,5 @@ ldStem <- file.path(system.file("extdata", "ld_reference", "chr22",
 manifest <- data.frame(study = "s1", context = "brain",
   trait = "ENSG1", sumStatsPath = tsv)
 loadQtlSumStatsFromManifest(manifest = manifest, genome = "hg38",
-  ldSketch = ldStem, region = "chr22:10000000-19000000")
+  ldReference = ldStem, region = "chr22:10000000-19000000")
 }

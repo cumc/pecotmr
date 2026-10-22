@@ -88,7 +88,7 @@ than one of the things being chosen between, so it is always retained.
 
 \describe{
 \item{\code{studyName}}{Character (length 1). Study identifier; used in collection
-classes to tag downstream \code{FineMappingResult} / \code{TwasWeights}
+classes to tag downstream \code{QtlFineMappingResult} / \code{TwasWeights}
 entries.
 The \code{genotype} experiment's assay reads through this handle; the
 extraction accessors read it directly, so that QC can be applied per

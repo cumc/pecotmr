@@ -6,18 +6,21 @@
 \usage{
 mvsusieRssWeights(
   stat,
-  LD,
+  ldReference = NULL,
   mvsusieRssFit = NULL,
   fitRetention = c("none", "slim", "full")
 )
 }
 \arguments{
-\item{stat}{A list with \code{z} (matrix variants x conditions) and \code{n}
-(numeric vector or scalar), describing the block the fit came from.}
+\item{stat}{A list with \code{z} (matrix variants x conditions), \code{n}
+(numeric vector or scalar) and, to check against an \code{ldReference},
+\code{variantNames}, describing the block the fit came from. The fit
+must cover the same number of variants; a mismatch is an error, since
+weights from one block are not comparable against another's.}
 
-\item{LD}{LD correlation matrix for that block. The fit must cover the
-same number of variants; a mismatch is an error, since weights from one
-block are not comparable against another's LD.}
+\item{ldReference}{Optional LD reference for that block: a genotype
+panel, a \code{\link{GenotypeMixture}} or an \code{\link{LdMatrix}}.
+With one, the statistics' variants must also be in it. No LD is read.}
 
 \item{mvsusieRssFit}{A fitted \code{mvsusieRss} object. Required: this
 extracts weights and never runs fine-mapping itself.}
@@ -37,9 +40,9 @@ extracts coefficients from an existing \code{mvsusieR::mvsusie_rss} fit.
 It never runs fine-mapping itself --- \code{mvsusieRssFit} is required.
 }
 \details{
-Follows the \code{*_rss_weights(stat, LD, ...)} contract: \code{stat} and
-\code{LD} describe the block the fit is being extracted against, and the
-fit is checked against them rather than refitted.
+Follows the RSS weights contract: \code{stat} (and \code{ldReference},
+when given) describe the block the fit is being extracted against, and
+the fit is checked against them rather than refitted.
 }
 \examples{
 data(eqtlRegionExample)
@@ -56,5 +59,5 @@ stat <- list(
 LD <- cor(X)
 fit <- fitMvsusieRss(Z = stat$z, R = LD, N = nrow(X),
   prior_variance = 1)
-mvsusieRssWeights(stat, LD, mvsusieRssFit = fit)
+mvsusieRssWeights(stat, mvsusieRssFit = fit)
 }

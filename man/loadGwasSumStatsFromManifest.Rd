@@ -7,7 +7,7 @@
 loadGwasSumStatsFromManifest(
   manifest,
   genome = NULL,
-  ldSketch = NULL,
+  ldReference = NULL,
   region = NULL,
   minLdOverlapWarn = 0.5,
   columnMapping = NULL,
@@ -21,22 +21,24 @@ loadGwasSumStatsFromManifest(
 \code{study} (required, unique), \code{sumStatsPath} (required),
 \code{columnMapping} (optional), \code{nCase} / \code{nControl} (optional),
 \code{nSample} (optional study-level total N), \code{varY} (optional), and
-the single-valued \code{genome} / \code{ldSketchPath}. When a row supplies
-a study-level scalar (\code{nCase} + \code{nControl}, or \code{nSample}),
-its sumstats file need not carry a per-variant \code{N} column;
+the single-valued \code{genome} / \code{ldReferencePath}. When a row
+supplies a study-level scalar (\code{nCase} + \code{nControl}, or
+\code{nSample}), its sumstats file need not carry a per-variant \code{N}
+column;
 \code{\link{summaryStatsQc}} fills \code{N} from the scalar.}
 
 \item{genome}{Genome build; reconciled with a \code{genome} column.}
 
-\item{ldSketch}{A genotype panel (see \code{\link{readGenotypes}}) or a spec
-(path/prefix/genoMeta); reconciled with an \code{ldSketchPath} column.}
+\item{ldReference}{A genotype panel (see \code{\link{readGenotypes}}) or a
+spec (path/prefix/genoMeta); reconciled with an \code{ldReferencePath}
+column.}
 
 \item{region}{Optional \code{chr:start-end} string, GRanges, or one-row
 data.frame restricting the variants read (honoured only for tabix-indexed
 text and bgzipped+tabixed VCF; ignored with a warning otherwise).}
 
 \item{minLdOverlapWarn}{Warn when the fraction of sumstats variants present
-in the LD sketch falls below this (default 0.5).}
+in the LD reference falls below this (default 0.5).}
 
 \item{columnMapping}{Optional default column mapping (a named list/vector, or
 a path to a YAML file of \code{standardName: sourceName} entries) applied
@@ -47,9 +49,9 @@ when a row has no \code{columnMapping}.}
 \item{formatMapping}{Optional GWAS-VCF FORMAT tag mapping (canonical stat ->
 FORMAT field), overriding ES/SE/LP/SS/EAF defaults.}
 
-\item{ldBlocks}{Optional LD-block specification (an \code{LdBlocks}, a
-\code{GRanges}, a data.frame with \code{chrom}/\code{start}/\code{end},
-or a path to such a table). Without it a genome-wide file splits into one
+\item{ldBlocks}{Optional LD-block specification (a \code{GRanges}, a
+data.frame with \code{chrom}/\code{start}/\code{end}, or a path to such
+a table). Without it a genome-wide file splits into one
 element per chromosome; with it, into one element per LD block, which is
 the granularity \code{\link{assembleCtwasInputs}} needs.}
 }
@@ -70,5 +72,5 @@ ldStem <- file.path(system.file("extdata", "ld_reference", "chr22",
   package = "pecotmr"), "protocol_example.LD.chr22")
 manifest <- data.frame(study = "g1", sumStatsPath = gwasTsv)
 loadGwasSumStatsFromManifest(manifest = manifest, genome = "hg38",
-  ldSketch = ldStem, region = "chr22:10000000-19000000")
+  ldReference = ldStem, region = "chr22:10000000-19000000")
 }

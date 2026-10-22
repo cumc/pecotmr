@@ -95,13 +95,13 @@ length(variantIds(entry))
 
 The posterior effect estimates of SuSiE fine-mapping models are themselves a
 set of per-variant weight estimates. When you pass an existing
-`FineMappingResult` to `twasWeightsPipeline()`, the trimmed susie fit for each
-matching `(study, context, trait)` tuple is added to the ensemble as an
+`QtlFineMappingResult` to `twasWeightsPipeline()`, the trimmed susie fit for
+each matching `(study, context, trait)` tuple is added to the ensemble as an
 additional weights row instead of being re-fit.
 
 The same holds under cross-validation: each fold needs a fit trained on that
 fold's rows, and the weights pipeline will not produce one. Run the
-fine-mapping with `crossValidation` so those per-fold fits travel with the
+fine-mapping with `crossValidationParam` so those per-fold fits travel with the
 result —
 requesting a fine-mapping method under cross-validation without them is an
 error. That fold partition then governs the whole run: every other weight
@@ -115,7 +115,7 @@ fmr <- fineMappingPipeline(
     qtlDatasetExample,
     methods = "susie",
     cisWindow = 1e6,
-    crossValidationArgs = CrossValidationParam(folds = 3)
+    crossValidationParam = CrossValidationParam(folds = 3)
 )
 tw2 <- twasWeightsPipeline(
     qtlDatasetExample,
@@ -153,7 +153,7 @@ twasWeightsPipeline(
     methods = c("lasso", "enet", "ridge", "mrash")
 )
 
-# Add a fine-mapping susie row by providing the FineMappingResult.
+# Add a fine-mapping susie row by providing the QtlFineMappingResult.
 fmr <- fineMappingPipeline(
     qtlDatasetExample,
     methods = "susie",
@@ -174,8 +174,11 @@ twSs <- twasWeightsPipeline(qtlSumStatsExample, methods = "lasso")
 twSs
 ```
 
-The RSS path uses the `ldSketch` genotype panel inside the
-`QtlSumStats` collection to compute LD as needed. The same 
+The RSS path uses the `ldReference` genotype panel inside the
+`QtlSumStats` collection to compute LD as needed. The same rule holds for
+fine-mapping methods here: they are not re-fit, so run
+`fineMappingPipeline()` on the `QtlSumStats` first and pass its result as
+`fineMappingResult`.
 
 ## Multivariate (multi-context) weights
 
@@ -190,14 +193,20 @@ twasWeightsPipeline(
 )
 ```
 
-For an explicit cross-context joint fit driven by a
-`jointSpecification`:
+To choose the axes yourself, pass a `jointSpecification`: a character
+vector of axes, or `list(axes = , scope = )` to limit the fit to listed
+studies, contexts or traits. The `jointSpecification` argument in
+`?twasWeightsPipeline` gives the full grammar.
 
 ```{r joint, eval=FALSE}
+# `qd`: a QtlDataset whose traits are measured in brain, liver and more.
 twasWeightsPipeline(
-    multiStudyQtlDatasetExample,
+    qd,
     methods = "mrmash",
-    jointSpecification = list(axis = "context", contexts = c("brain", "liver"))
+    jointSpecification = list(list(
+        axes = "context",
+        scope = list(context = c("brain", "liver"))
+    ))
 )
 ```
 
@@ -230,7 +239,7 @@ The families, and the `methods =` name each answers to:
 | Penalized regression | `lasso`, `enet`, `mcp`, `scad`, `l0learn` | `lassoWeights()`, `enetWeights()`, … |
 | Bayesian alphabet | `bayesA` … `bayesR`, `bLasso` | `bayesAWeights()`, `bLassoWeights()`, … |
 | Dirichlet process regression | `dprVb`, `dprGibbs`, `dprAdaptiveGibbs` | `dprVbWeights()`, `dprGibbsWeights()`, … |
-| External PRS methods | `prsCs` (sumstats input only) | `prsCs()`, `sdpr()`, `lassosumRss()` |
+| PRS-CS | `prsCs` (sumstats input only) | `prsCsWeights()` |
 | mr.mash / mr.ash | `mrmash`, `mrash` | `mrmashWeights()`, `mrashWeights()` |
 | SuSiE family | `susie`, `susieInf`, `susieAsh`, `mvsusie`, `fsusie` | `susieWeights()`, `mvsusieWeights()`, … |
 
@@ -238,19 +247,42 @@ Every token is camelCase, matching the function names. Snake_case spellings
 are not accepted: `bayes_r`, `dpr_vb` and `susie_inf` all error with the list
 of known tokens.
 
-Every family has an RSS counterpart taking summary statistics and an LD
-matrix instead of `X`/`y` — `lassosumRssWeights()`, `mcpRssWeights()`,
-`susieRssWeights()`, and so on. Those are what
-`twasWeightsPipeline()` calls when the input is a `QtlSumStats`.
+Most families have an RSS counterpart taking summary statistics and an LD
+reference instead of `X`/`y` — `lassosumRssWeights()` for `lasso`,
+`mcpRssWeights()`, `sdprWeights()` (SDPR) for `dprGibbs`, `susieRssWeights()`,
+and so on; the Bayesian alphabet, `enet`, `dprVb` and `dprAdaptiveGibbs` have
+none. Those are what `twasWeightsPipeline()` calls when the input is a
+`QtlSumStats`. The LD
+reference is the same `ldReference` the rest of the package takes: a
+genotype panel from `readGenotypes()`, a `GenotypeMixture` or an
+`LdMatrix`, matched to the statistics by their `variantNames`. lassosum,
+the penalized methods, PRS-CS and SDPR use a genotype reference through its
+standardized genotypes without forming the LD matrix; the mr.ash and
+mr.mash engines take the matrix, which is formed over the statistics'
+variants.
 
-`prsCs()`, `sdpr()` and `lassosumRss()` are exported alongside their
-`*Weights()` adapters because they return more than the coefficient vector.
-`sdpr()` also gives a heritability estimate (`h2`), `lassosumRss()` the whole
-regularization path (`beta` is variants x lambda, plus the `lambda` grid and
-per-fit `loss`), and `prsCs()` the posterior shrinkage parameters (`psiEst`,
-`sigmaEst`, `phiEst`). The adapters reduce each of those to the weights the
-pipeline consumes, so reach for the raw function when you want the
-diagnostics rather than just the weights.
+Several of these engines estimate more than the weights, and
+`fitRetention = "slim"` keeps it as the `"fit"` attribute of the weights they
+return: SDPR's heritability estimate (`h2`), PRS-CS's posterior shrinkage
+parameters (`psiEst`, `sigmaEst`, `phiEst`), and for lassosum and the
+penalized methods the search itself --- `path` has one row per LD shrinkage
+`s` and penalty `lambda`, with the objective (`fbeta`), `loss`, convergence
+flag and number of non-zero weights, and marks the candidate returned.
+`fitRetention = "full"` adds each candidate's coefficients.
+
+```{r rss-fit}
+# An LdMatrix is keyed by chrom:pos:A2:A1 variant ids.
+ids <- sprintf("chr1:%d:A:G", 100L * seq_len(p))
+R <- cor(X)
+dimnames(R) <- list(ids, ids)
+stat <- list(
+    z = as.vector(cor(X, y)) * sqrt(n),
+    n = rep(n, p),
+    variantNames = ids
+)
+w <- lassosumRssWeights(stat, LdMatrix(R), fitRetention = "slim")
+head(attr(w, "fit")$path)
+```
 
 The mr.mash methods need prior covariance matrices, built by
 `buildMrmashPriorMatrices()`. Pass `dataDrivenPriorMatrices` to add
@@ -293,22 +325,22 @@ twasWeightsPipeline(
     traitId = "ENSG_example",
     region = "chr22:25000000-26000000",
     cisWindow = 5e5,
-    crossValidationArgs = CrossValidationParam(
+    crossValidationParam = CrossValidationParam(
         folds = 5,
         numThreads = 1,
         samplePartition = NULL,
         maxVariants = -1
     ),
     # required for a fine-mapping method, and under folds > 1 it must carry
-    # the per-fold fits (fineMappingPipeline(..., crossValidationArgs = ...))
+    # the per-fold fits (fineMappingPipeline(..., crossValidationParam = ...))
     fineMappingResult = fmr,
-    ensembleArgs = EnsembleParam(
+    ensembleParam = EnsembleParam(
         enabled = TRUE,
         r2Threshold = 0.01,
         solver = "quadprog"
     ),
     estimatePi = TRUE,
-    residualizationArgs = ResidualizationParam(
+    residualizationParam = ResidualizationParam(
         phenotypeCovariates = NULL,
         genotypeCovariates = NULL
     ),
@@ -396,10 +428,11 @@ exportToBed(tw, "weights.bed.gz")
 ```
 
 Both export the **full-data fit only**, and refuse an object that has none —
-`twasWeightsPipeline(fitFullData = FALSE)` produces rows holding nothing but
-cross-validation results, and those cannot be published: they describe
-held-out folds, and fold membership is sample-level information. For the same
-reason neither exporter writes CV metrics. Those stay on the object:
+`crossValidationParam = CrossValidationParam(fitFullData = FALSE)` produces rows
+holding nothing but cross-validation results, and those cannot be published:
+they describe held-out folds, and fold membership is sample-level information.
+For the same reason neither exporter writes CV metrics. Those stay on the
+object:
 
 ```{r tw-cv, eval=FALSE}
 cv <- cvResult(tw, studyName = "s1", context = "brain", trait = "g1",
@@ -410,7 +443,7 @@ cv$performance # per-method metric matrix: corr, rsq, adj_rsq, pval, RMSE, MAE
 Fine-mapping-derived rows (`susie`, `susie_inf`, `susie_ash`, `mvsusie`,
 `fsusie`) are skipped with a message by **both** exporters, because their
 "weights" are the fine-mapping posterior re-expressed — export the
-`FineMappingResult` instead, which carries the posterior, its standard error
+fine-mapping result instead, which carries the posterior, its standard error
 and the credible sets. Selecting only such a method, as in
 `method = "susie"`, is therefore an error rather than an empty file.
 

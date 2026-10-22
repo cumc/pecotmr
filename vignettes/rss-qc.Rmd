@@ -57,7 +57,7 @@ make these objects. In this example the object is `GwasSumStats` object called
 ```{r run-qc, eval=FALSE}
 gws_qcd <- summaryStatsQc(
     gws,
-    sumstatsFilterArgs = SumstatsFilterParam(
+    sumstatsFilterParam = SumstatsFilterParam(
         removeIndels = FALSE,
         removeStrandAmbiguous = TRUE,
         infoCutoff = 0, # 0 = off; > 0 requires INFO column
@@ -69,7 +69,7 @@ gws_qcd <- summaryStatsQc(
     skipRegion = NULL, # e.g. MHC "chr6:25000000-35000000"
     ldMismatchQcMethod = "slalom", # "none", "slalom", "dentist"
     alleleFlipKriging = FALSE, # opt-in pre-SLALOM LD-consistency check
-    impute = FALSE, # RAISS imputation against ldSketch
+    impute = FALSE, # RAISS imputation against ldReference
     matchMinProp = 0
 )
 ```
@@ -81,7 +81,7 @@ accessible via `qcInfo()`:
 ```{r inspect-qcinfo, eval=FALSE}
 qc <- qcInfo(gws_qcd)
 str(qc$entryAudit[[1]]) # per-entry counts: variantsIn, mungeSumstatsDropped,
-# keepVariantsDropped, skipRegionDropped, matchedAgainstSketch,
+# keepVariantsDropped, skipRegionDropped, matchedAgainstLdReference,
 # krigingOutliersDropped, ldMismatchOutliersDropped, ...
 qc$options # the curated knobs you passed (frozen for provenance)
 ```
@@ -196,9 +196,9 @@ It uses `susieR`'s kriging RSS diagnostic:
     the `qcInfo` audit as `krigingOutliersDropped`.
 
 Because it needs a per-region LD matrix and the kriging diagnostic, this is an
-**RSS-only** check: it draws `R` from the collection's `ldSketch` and requires
-a `susieR` that exports `kriging_rss()` / `estimate_s_rss()` (otherwise it
-errors — which is why it is off by default).
+**RSS-only** check: it draws `R` from the collection's `ldReference` and
+requires a `susieR` that exports `kriging_rss()` / `estimate_s_rss()`
+(otherwise it errors — which is why it is off by default).
 
 The same diagnostic is exposed standalone as `krigingOutlierQc()` when you want
 to inspect the per-variant predicted z, residual, statistic, and p-value
@@ -266,7 +266,7 @@ flagged variants from the surviving ones, pair SLALOM with **RAISS** (a
 LD-regression imputer).
 `summaryStatsQc(ldMismatchQcMethod = "slalom", impute = TRUE)`
 does this for you. The standalone version is exposed as `raiss()`; the
-full set of RAISS knobs lives under the `imputeArgs` argument to
+full set of RAISS knobs lives under the `raissParam` argument to
 `summaryStatsQc()`, built with `RaissParam()`:
 
 ```{r raiss-args, eval=FALSE}
@@ -274,7 +274,7 @@ gws_qcd <- summaryStatsQc(
     gws,
     ldMismatchQcMethod = "slalom",
     impute = TRUE,
-    imputeArgs = RaissParam(
+    raissParam = RaissParam(
         r2Threshold = 0.6,
         minimumLd = 5,
         lamb = 0.01,

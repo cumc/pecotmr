@@ -44,6 +44,10 @@ NULL
 setClassUnion("numeric_OR_NULL", c("numeric", "NULL"))
 setClassUnion("logical_OR_NULL", c("logical", "NULL"))
 setClassUnion("list_OR_NULL", c("list", "NULL"))
+# A tibble is a data.frame here, so it fills a data.frame_OR_NULL slot; a bare
+# list does not.
+setClassUnion("data.frame_OR_NULL", c("data.frame", "NULL"))
+setClassUnion("matrix_OR_NULL", c("matrix", "NULL"))
 
 # The one cross-family slot: SusieRssParam() carries a SusieRssControlOptions()
 # record, which is a MethodOptions rather than a Param -- `control` really is
@@ -311,10 +315,13 @@ setValidity("MethodsSelectionParam", function(object) {
 # "is mrmash requested", "are these methods available at all".
 # @noRd
 .methodsParamTokens <- function(param) {
-    unique(unlist(map(
-        .methodsSlotNames,
-        function(s) names(slot(param, s)) %||% character(0)
-    )))
+    unique(unlist(map(.methodsSlotNames, .methodsSlotTokens, param = param)))
+}
+
+# The method names one slot of a Param holds; empty when the slot is.
+# @noRd
+.methodsSlotTokens <- function(slotName, param) {
+    names(slot(param, slotName)) %||% character(0)
 }
 
 # The same Param with some methods removed from every slot -- the joint
@@ -844,13 +851,13 @@ setValidity("MethodsSelectionParam", function(object) {
 
 # @noRd
 .methodsCtorHasCallee <- function(ctor, callee) {
-    rec <- tryCatch(ctor(), error = function(cnd) NULL)
+    rec <- try_fetch(ctor(), error = function(cnd) NULL)
     !is.null(rec) && identical(metadata(rec)$callee, callee)
 }
 
 # @noRd
 .methodsRecordEngine <- function(ctor) {
-    rec <- tryCatch(ctor(), error = function(cnd) NULL)
+    rec <- try_fetch(ctor(), error = function(cnd) NULL)
     if (is.null(rec)) {
         return(NULL)
     }
@@ -1053,8 +1060,14 @@ setValidity("MethodsSelectionParam", function(object) {
 # *Param() has its own class, so handing `ColocPriorParam()` where
 # `CredibleSetParam()` was wanted is caught here rather than surfacing as a
 # missing field somewhere downstream.
+#
+# The message names the argument from the caller's own expression
+# (caller_arg()), so it cannot drift from the argument's name the way a
+# hand-written label did: 19 of 30 labels still named arguments that had
+# since been renamed.
 # @noRd
-.assertMethodParam <- function(x, ctor, argName, class = NULL) {
+#' @importFrom rlang caller_arg
+.assertMethodParam <- function(x, ctor, argName = caller_arg(x), class = NULL) {
     class <- class %||% .paramClassOf(ctor)
     if (is(x, class)) {
         return(invisible(x))

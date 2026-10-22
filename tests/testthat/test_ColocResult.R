@@ -284,6 +284,7 @@ test_that("show on an empty ColocResult stops after the header", {
 # ===========================================================================
 
 .cr_panel <- function() {
+    skip_if_not_installed("PlinkMatrix")
     readGenotypes(
         test_path("test_data", "test_variants"),
         format = "plink1"
@@ -293,7 +294,7 @@ test_that("show on an empty ColocResult stops after the header", {
 .cr_panelIds <- function(n = 3L) {
     panel <- .cr_panel()
     normalizeVariantId(
-        .refVariantsFromSketch(.ldSketchHandle(panel))$variant_id
+        .refVariantsFromLdRef(panel)$variant_id
     )[seq_len(n)]
 }
 

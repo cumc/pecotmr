@@ -22,14 +22,13 @@ twasWeightsPipeline(data, ...)
   fineMappingResult = NULL,
   twasWeights = NULL,
   mashPrior = NULL,
-  crossValidationArgs = CrossValidationParam(),
-  fitFullData = TRUE,
-  ensembleArgs = EnsembleParam(),
+  crossValidationParam = CrossValidationParam(),
+  ensembleParam = EnsembleParam(),
   estimatePi = TRUE,
   usePCA = FALSE,
   nPCs = 10L,
   fitRetention = c("slim", "none", "full"),
-  residualizationArgs = ResidualizationParam(),
+  residualizationParam = ResidualizationParam(),
   weightsDataType = NULL,
   naAction = c("drop", "impute"),
   verbose = 1,
@@ -48,7 +47,7 @@ twasWeightsPipeline(data, ...)
   weightsDataType = NULL,
   verbose = 1L,
   panelFilterParam = PanelFilterParam(),
-  crossValidationArgs = CrossValidationParam()
+  crossValidationParam = CrossValidationParam()
 )
 
 \S4method{twasWeightsPipeline}{MultiStudyQtlDataset}(
@@ -65,15 +64,16 @@ twasWeightsPipeline(data, ...)
   fineMappingResult = NULL,
   twasWeights = NULL,
   mashPrior = NULL,
-  fitFullData = TRUE,
   estimatePi = TRUE,
+  usePCA = FALSE,
+  nPCs = 10L,
   fitRetention = c("slim", "none", "full"),
   weightsDataType = NULL,
   naAction = c("drop", "impute"),
   verbose = 1,
-  residualizationArgs = ResidualizationParam(),
-  crossValidationArgs = CrossValidationParam(),
-  ensembleArgs = EnsembleParam(),
+  residualizationParam = ResidualizationParam(),
+  crossValidationParam = CrossValidationParam(),
+  ensembleParam = EnsembleParam(),
   seed = NULL
 )
 }
@@ -87,16 +87,27 @@ embedded \code{QtlSumStats}, then rbinds the results.}
 
 \item{methods}{A character vector of short method names, a preset string
 (\code{"default"} or \code{"fastDefault"}), or a named list of
-\code{<method>_weights = args} entries. For QtlSumStats / GwasSumStats
-inputs the default switches to the RSS preset (\code{c("susieRss",
-"susieInfRss", "lassosumRss", "prsCs", "sdpr")}).}
+\code{<method>_weights = args} entries. For QtlSumStats input the
+default is \code{c("lasso", "prsCs", "dprGibbs")}, which there run
+lassosum, PRS-CS and SDPR; the fine-mapping methods are not in it, and
+are requested by name together with a \code{fineMappingResult}.}
 
-\item{contexts}{Optional character vector of contexts to restrict processing
-to (QtlDataset / QtlSumStats inputs). Default \code{NULL} (use all
-contexts).}
+\item{contexts}{Optional context selection; \code{NULL} (the default) uses
+every context. A character vector applies to every study: a context no
+study has is an error, and one only some studies lack is skipped for
+those, with a warning. A list keyed by study name picks each study's
+contexts separately (\code{list(A = "liver")}); studies it does not name
+keep all of theirs.}
 
-\item{traitId}{Optional character vector of trait identifiers to restrict
-processing to (QtlDataset / QtlSumStats inputs). Default \code{NULL}.}
+\item{traitId}{Optional trait selection; \code{NULL} (the default) uses
+every trait, or those overlapping \code{region} when one is given. A
+character vector applies to every study. A list keyed by study name
+picks each study's traits separately (\code{list(A = "ENSG1")}), and a
+study's entry may itself be a list keyed by context
+(\code{list(A = list(brain = "ENSG1"))}). Studies and contexts the list
+does not name keep all of their traits. A joint fit spanning a study's
+contexts uses every trait selected in any of them, minus the (context,
+trait) pairs a per-context entry leaves out.}
 
 \item{region}{Optional variant window for QtlDataset trait selection: a
 \code{GRanges}, a \code{"chr:start-end"} string, or a one-row data.frame
@@ -124,15 +135,21 @@ flat \code{cvResult} data frame (one row per region). \code{TRUE}
 concatenates the ranges' genotypes into one joint fit. Ignored for a
 single-range / cis request.}
 
-\item{jointSpecification}{Optional joint-fit specification (NULL by default).
-When NULL, the pipeline runs the implicit multi-trait / multi-context
-mr.mash branches as before. When non-NULL, the argument is parsed and
-validated via the joint-spec grammar documented under
-\code{parseJointSpecification}; the per-spec axis dispatcher implementation
-is in progress and a non-NULL value currently errors with an informative
-message.}
+\item{jointSpecification}{Optional joint-fit specification saying which
+axes \code{mrmash} fits across. When NULL (the default) it runs its
+implicit multi-trait / multi-context fit. Otherwise give a character
+vector of axes (one spec) or a list of specs. A spec is a character
+vector drawn from \code{"study"}, \code{"context"} and \code{"trait"},
+or \code{list(axes = <axes>, scope = <named list>)}, where \code{scope}
+(keys \code{study}, \code{context}, \code{trait}) limits the fit to the
+listed values, each of which must exist in \code{data}. A list-form
+spec always goes inside the outer list, even on its own. Other methods
+run per (study, context, trait) as usual. The \code{"study"} axis needs
+summary statistics: it is rejected on a \code{QtlDataset}, and on a
+\code{MultiStudyQtlDataset} only the summary-statistics studies take
+part.}
 
-\item{fineMappingResult}{Optional \code{FineMappingResult}. When supplied,
+\item{fineMappingResult}{Optional \code{QtlFineMappingResult}. When supplied,
 its SuSiE / SuSiE-inf / SuSiE-ash trimmed fits for the matching (study,
 context, trait) tuples are injected into \code{learnTwasWeights} via
 \code{fittedModels} so SuSiE-family weight methods reuse the prior fit
@@ -151,11 +168,13 @@ produce one fit jointly across multiple \code{(context, trait)} columns.}
 \item{mashPrior}{Optional \code{\link{MashPrior}} (or coercible) supplying
 data-driven prior matrices for mr.mash weight methods; \code{NULL} to skip.}
 
-\item{crossValidationArgs}{Cross-validation settings, built with
+\item{crossValidationParam}{Cross-validation settings, built with
   \code{\link{CrossValidationParam}}: \code{folds} (default \code{0}, no
   CV), \code{threads}, \code{samplePartition}, \code{maxVariants} (cap
-  on the CV design matrix) and \code{weightMethods} (which methods to
-  cross-validate; unset means every method with non-zero weights).
+  on the CV design matrix), \code{weightMethods} (which methods to
+  cross-validate; unset means every method with non-zero weights) and
+  \code{fitFullData} (\code{FALSE} keeps only the cross-validation
+  results; default \code{TRUE}).
 
   \code{folds} defaulted to \code{5} before, while
   \code{\link{fineMappingPipeline}}'s defaulted to \code{0}. The two now
@@ -165,21 +184,20 @@ data-driven prior matrices for mr.mash weight methods; \code{NULL} to skip.}
   \code{QtlSumStats} input; that method \strong{errors} if it is set
   rather than returning results that were never cross-validated.}
 
-\item{fitFullData}{Logical. If \code{TRUE}, fit final weights on the full
-data after cross-validation. Default \code{TRUE}.}
-
-\item{ensembleArgs}{SR-TWAS ensemble settings, built with
+\item{ensembleParam}{SR-TWAS ensemble settings, built with
 \code{\link{EnsembleParam}}: \code{enabled} (default \code{FALSE}),
 \code{r2Threshold}, \code{solver} and \code{alpha}. Stacking reads
 out-of-fold predictions, so \code{enabled = TRUE} requires
-\code{crossValidation} with \code{folds >= 2} and is an error
+\code{crossValidationParam} with \code{folds >= 2} and is an error
 otherwise --- it previously returned a result quietly missing its
 ensemble row.}
 
 \item{estimatePi}{If TRUE, estimate spike-and-slab sparsity from mr.ash
 before BGLR / qgg spike-and-slab methods that consume it.}
 
-\item{usePCA}{Logical (length 1). \code{QtlDataset} only. When
+\item{usePCA}{Logical (length 1). Individual-level data only: a
+\code{QtlDataset}, or the \code{QtlDataset} components of a
+\code{MultiStudyQtlDataset}. When
 \code{TRUE}, each multi-trait context is additionally PCA-reduced and
 weights are fitted for each top principal component \emph{as a trait}
 (\code{topPC1}, \code{topPC2}, ...), alongside the per-trait rows. The
@@ -198,13 +216,14 @@ components fitted per context when \code{usePCA = TRUE} (default
   takes, which has no \code{"none"} --- its \code{susieFit} slot is part
   of the returned object's contract.
 
-  \code{"full"} is honoured only by the mr.mash engines, the only ones
-  that distinguish the two retaining levels; every other method keeps its
-  fit whole or not at all. Requesting \code{"full"} for a run where no
-  method can honour it is an error, and a mixed run warns rather than
-  dropping it in silence.}
+  \code{"full"} is honoured by the mr.mash engines and, on summary
+  statistics, by \code{lasso}, \code{scad}, \code{mcp} and
+  \code{l0learn}, whose full fit also keeps every candidate's
+  coefficients; every other method keeps its fit whole or not at all.
+  Requesting \code{"full"} for a run where no method can honour it is an
+  error, and a mixed run warns rather than dropping it in silence.}
 
-\item{residualizationArgs}{Covariate residualization settings, built with
+\item{residualizationParam}{Covariate residualization settings, built with
   \code{\link{ResidualizationParam}} and forwarded to
   \code{\link{residualizedPhenotypes}} /
   \code{\link{residualizedGenotypes}}: \code{phenotypeCovariates} and
@@ -216,7 +235,8 @@ components fitted per context when \code{usePCA = TRUE} (default
   \code{QtlDataset} / \code{MultiStudyQtlDataset} input only. A
   \code{QtlSumStats} run has no covariates to regress out, so the bundle
   is \strong{ignored} there rather than refused --- unlike
-  \code{crossValidation}, which errors. Residualization is on by default,
+  \code{crossValidationParam}, which errors. Residualization is on by
+  default,
   so refusing a non-default value would reject the default bundle; CV is
   off by default, so a non-default value there is an explicit request for
   something the input cannot do.}
@@ -245,8 +265,8 @@ above.}
 }
 \value{
 A \code{\link{TwasWeights}} collection keyed by \code{(study,
-  context, trait, method)}. The \code{ldSketch} slot is \code{NULL} for
-  individual-level fits and equals the input's \code{ldSketch} for
+  context, trait, method)}. The \code{ldReference} slot is \code{NULL} for
+  individual-level fits and equals the input's \code{ldReference} for
   RSS-derived fits.
 }
 \description{
@@ -255,8 +275,9 @@ Accepts:
 \itemize{
   \item a \code{\link{QtlDataset}} for individual-level cohort fits;
   \item a \code{\link{QtlSumStats}} for per-trait RSS fits;
-  \item a \code{\link{GwasSumStats}} for per-LD-block PRS-CS-style fits
-        from GWAS summary statistics.
+  \item a \code{\link{MultiStudyQtlDataset}}, whose individual-level
+        studies and optional summary-statistic studies are each fitted,
+        then combined.
 }
 }
 \details{
@@ -265,49 +286,51 @@ Method-restriction rules (enforced):
   \item \code{mr.mash}, \code{mvsusie} follow the multi-trait /
         multi-context rules of the fine-mapping \code{mvsusie} family
         (require at least two traits OR at least two contexts).
-  \item RSS-only methods (PRS-CS, \code{lassosumRss}, SDPR, all
-        \code{*Rss} variants) are rejected on \code{QtlDataset}
-        input.
-  \item Individual-level-only methods (BGLR and CRAN-stable qgg:
-        \code{bayes_a/b/c/l/n/r}, \code{b_lasso}, \code{dpr_*}) are
-        rejected on \code{QtlSumStats} / \code{GwasSumStats} input.
+  \item \code{prsCs} runs only on summary statistics, so it is rejected
+        on \code{QtlDataset} input.
+  \item \code{enet}, \code{dprVb}, \code{dprAdaptiveGibbs} and the
+        Bayesian alphabet (\code{bayesA}, \code{bayesB}, \code{bayesC},
+        \code{bayesL}, \code{bayesN}, \code{bayesR}, \code{bLasso}) run
+        only on individual-level data, so they are rejected on
+        \code{QtlSumStats} input.
 }
 
-Both \code{QtlSumStats} and \code{GwasSumStats} inputs must have been QC'd
-via \code{\link{summaryStatsQc}} first; otherwise an error is raised pointing
+A \code{QtlSumStats} input must have been QC'd via
+\code{\link{summaryStatsQc}} first; otherwise an error is raised pointing
 at that function.
 
-The returned \code{\link{TwasWeights}} collection's \code{ldSketch} slot is
-set automatically: \code{NULL} for individual-level fits, the input's
-\code{ldSketch} for RSS-derived fits.
+The returned \code{\link{TwasWeights}} collection's \code{ldReference} slot
+is set automatically: \code{NULL} for individual-level fits, the input's
+\code{ldReference} for RSS-derived fits.
 
-Optionally a \code{FineMappingResult} may be supplied as a source of pre-fit
-SuSiE / SuSiE-inf / SuSiE-ash objects; their \code{trimmedFit} payloads are
-passed through to \code{learnTwasWeights} / the RSS sub-pipelines via the
+Optionally a \code{QtlFineMappingResult} may be supplied as a source of
+pre-fit SuSiE / SuSiE-inf / SuSiE-ash objects; their stored fits are passed
+through to \code{learnTwasWeights} / the RSS sub-pipelines via the
 \code{fittedModels} slot, avoiding a re-fit.
 
-When the supplied \code{FineMappingResult} was produced with cross-validation
-(\code{fineMappingPipeline(..., cvFolds > 1)}), each matching \code{(study,
-context, trait)} entry's \code{cvResult} is reused: its fold partition
-becomes the CV partition (unless \code{samplePartition} is given explicitly)
-and its per-fold out-of-fold predictions/metrics are fed directly into the
-SR-TWAS ensemble in place of re-fitting those fine-mapping methods here.
+When the supplied result was produced with cross-validation (a
+\code{\link{CrossValidationParam}} with \code{folds >= 2}), each matching
+\code{(study, context, trait)} entry's \code{cvResult} is reused: its fold
+partition becomes the CV partition (unless \code{samplePartition} is given
+explicitly) and its per-fold out-of-fold predictions/metrics are fed
+directly into the SR-TWAS ensemble in place of re-fitting those
+fine-mapping methods here.
 Non-fine-mapping methods (lasso, enet, ...) are still cross-validated on the
 same shared partition.
 }
 \section{Panel filters on the RSS path}{
  On \code{QtlSumStats} input there
-  is no genotype matrix to filter, so \code{panelFilter}'s
+  is no genotype matrix to filter, so \code{panelFilterParam}'s
   \code{mafCutoff} / \code{macCutoff} / \code{imissCutoff} are measured
   against the \strong{LD reference panel} instead: a variant whose panel
   genotypes fall below the cutoffs is dropped before the z-scores and LD
   matrix are built. The thresholds mean the same thing as
-  \code{genotypeFilter}'s on the \code{QtlDataset} path (MAC is converted
-  to a MAF equivalent and the stricter of the two applies), so one number
-  carries across input types. The defaults filter nothing.
+  \code{genotypeFilterParam}'s on the \code{QtlDataset} path (MAC is
+  converted to a MAF equivalent and the stricter of the two applies), so
+  one number carries across input types. The defaults filter nothing.
 
   This discards \emph{observed} variants, unlike
-  \code{summaryStatsQc(imputeArgs = ...)}, which only bounds which variants
+  \code{summaryStatsQc(raissParam = ...)}, which only bounds which variants
   RAISS will impute.
 }
 

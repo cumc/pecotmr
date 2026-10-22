@@ -30,7 +30,7 @@ NULL
 # The GWAS Bayes factors fastenloc recovers from fine-mapped PIPs, contrasting
 # against "every variant in the cluster has no effect" (controller.cc):
 #   log10bf = log10(pip) - log10(P_gwas) + log10(1 - P_gwas) - log10(1 - cpip)
-# A zero PIP is floored, as upstream does, so the log is finite.
+# A zero PIP is floored, as the original fastenloc does, so the log is finite.
 # @noRd
 .enlocGwasLog10Bf <- function(gwasPip, pGwas, clusterPip) {
     floored <- replace(gwasPip, gwasPip == 0, 1e-10)
@@ -93,8 +93,8 @@ enlocClusterProbabilities <- function(
         ))
     }
     bf <- 10^gwasLog10Bf
-    # The cluster's total eQTL posterior, capped as upstream does so that
-    # log(1 - clusterPip) stays finite.
+    # The cluster's total eQTL posterior, capped as the original fastenloc
+    # does so that log(1 - clusterPip) stays finite.
     clusterPip <- min(sum(qtlPip), 1 - 1e-8)
     pri <- .enlocConfigPriors(pi1e, pi1ne, p)
     # case 4, split by whether the GWAS hit is the causal eQTL
@@ -124,7 +124,7 @@ enlocClusterProbabilities <- function(
 
 # enloc's priors from the enrichment parameters, as
 # fastenloc's set_enrich_params(a0, a1) computes them. `a1` is capped first,
-# matching the --cap_a1 option upstream.
+# matching the original fastenloc's --cap_a1 option.
 # @noRd
 .enlocPriorsFromEnrichment <- function(a0, a1, pQtl, capA1 = Inf) {
     a1 <- min(a1, capA1)

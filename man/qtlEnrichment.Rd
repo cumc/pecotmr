@@ -73,7 +73,7 @@ A named list of enrichment parameter estimates, carrying the
   \code{sd (w/ shrinkage)}, \code{Alternative (coloc) p1} / \code{p2} /
   \code{p12} and \code{Effective MI rounds} -- plus
   \code{unused_xqtl_variants}, the QTL variants of each region that no GWAS
-  variant matched. The names are upstream fastenloc's;
+  variant matched. The names are the original fastenloc's;
   \code{\link{qtlEnrichmentPipeline}} is what renames them to a tidy table.
 }
 \description{

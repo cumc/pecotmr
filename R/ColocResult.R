@@ -17,7 +17,7 @@
 #   inner mcols  per-variant: SNP.PP.H4
 #   outer mcols  per-pair: identity tuple, blockId, PP.H0..PP.H4, nSnps,
 #                retained alpha mass (both sides), enrichment / p12Used
-#   slots        ldSketch, for the credible-set view's purity calculation
+#   slots        ldReference, for the credible-set view's purity calculation
 #
 # Nothing is filtered at write time (spec 5.3): every testable pair and every
 # variant is kept, and all narrowing is a view decision. Purity in particular
@@ -46,28 +46,29 @@ NULL
 #'   projection surface: both answer \code{\link{colocPairs}} and
 #'   \code{\link{colocVariants}}, so code that only needs "which variants
 #'   colocalized, and how strongly" works against either.
-#' @slot ldSketch The LD reference panel the underlying fits were computed
-#'   against, or \code{NULL}. Shared by both subclasses: coloc and ColocBoost
-#'   report different statistics, but both are computed against a panel and
-#'   both are asked for it the same way.
+#' @slot ldReference The LD reference the underlying fits were computed
+#'   against (a genotype panel, a \code{GenotypeMixture} or an
+#'   \code{LdMatrix}), or \code{NULL}. Shared by both subclasses: coloc and
+#'   ColocBoost report different statistics, but both are computed against a
+#'   reference and both are asked for it the same way.
 #' @export
 setClass(
     "ColocResultBase",
     contains = c("VIRTUAL", "RangedTupleList"),
-    representation(ldSketch = "LdSketch_OR_NULL"),
-    prototype(ldSketch = NULL)
+    representation(ldReference = "LdReference_OR_NULL"),
+    prototype(ldReference = NULL)
 )
 
-#' @rdname ldSketch
+#' @rdname ldReference
 #' @export
-setMethod("ldSketch", "ColocResultBase", function(x) x@ldSketch)
+setMethod("ldReference", "ColocResultBase", function(x) x@ldReference)
 
 #' @title Colocalization Result
 #' @description A collection of colocalization results, one element per tested
 #'   (QTL credible set, GWAS credible set, block) pair. Build the four views
 #'   with \code{\link{colocPairs}}, \code{\link{colocVariants}},
 #'   \code{\link{colocCredibleSets}} and \code{\link{colocGenes}}.
-#' @details The inherited \code{ldSketch} is what
+#' @details The inherited \code{ldReference} is what
 #'   \code{colocCredibleSets()} uses to compute credible-set purity.
 #' @seealso \code{\link{colocPipeline}}
 #' @export
@@ -197,7 +198,7 @@ setMethod("show", "ColocResult", function(object) {
 #'   columns are \code{NA} for it.
 #' @param variants A list, parallel to \code{pairs}' rows, of per-pair data
 #'   frames with a \code{variant_id} column and a \code{SNP.PP.H4} column.
-#' @param ldSketch Optional genotype panel (see \code{\link{readGenotypes}})
+#' @param ldReference Optional genotype panel (see \code{\link{readGenotypes}})
 #'   for the LD reference, used by \code{\link{colocCredibleSets}} to
 #'   compute purity.
 #' @return A \code{ColocResult}.
@@ -217,7 +218,7 @@ setMethod("show", "ColocResult", function(object) {
 #' ))
 #' ColocResult(pairs, variants)
 #' @export
-ColocResult <- function(pairs, variants, ldSketch = NULL) {
+ColocResult <- function(pairs, variants, ldReference = NULL) {
     pairs <- as.data.frame(pairs, stringsAsFactors = FALSE)
     if (!is.list(variants) || length(variants) != nrow(pairs)) {
         msg <- glue(
@@ -237,7 +238,7 @@ ColocResult <- function(pairs, variants, ldSketch = NULL) {
             !!!c(as.list(pairs), list(check.names = FALSE))
         )
     )
-    obj <- new("ColocResult", grl, ldSketch = .asLdSketch(ldSketch))
+    obj <- new("ColocResult", grl, ldReference = .asLdRef(ldReference))
     validObject(obj)
     obj
 }
@@ -461,7 +462,7 @@ setMethod(
         }
         out <- bind_rows(sets)
         .crApplyPurityFilter(
-            mutate(out, purity = .crPuritiesFor(out, ldSketch(x))),
+            mutate(out, purity = .crPuritiesFor(out, ldReference(x))),
             minAbsCorr
         )
     }
@@ -535,23 +536,23 @@ setMethod(
 # one LD extraction per set (section 3.7). NA when there is no LD reference to
 # extract from -- reported honestly rather than defaulted to a passing value.
 # @noRd
-.crPuritiesFor <- function(out, ldSketch) {
-    if (is.null(ldSketch)) {
+.crPuritiesFor <- function(out, ldReference) {
+    if (is.null(ldReference)) {
         return(rep(NA_real_, nrow(out)))
     }
-    map_dbl(out$csVariants, .crPurityOne, ldSketch = ldSketch)
+    map_dbl(out$csVariants, .crPurityOne, ldReference = ldReference)
 }
 
 # @noRd
 #' @importFrom rlang try_fetch
-.crPurityOne <- function(ids, ldSketch) {
+.crPurityOne <- function(ids, ldReference) {
     # A singleton set has no pair to correlate, and susie treats it as pure.
     if (length(ids) < 2L) {
         return(1)
     }
     ld <- try_fetch(
-        .ldFromSketch(
-            ldSketch,
+        .ldFromRef(
+            ldReference,
             ids,
             label = "colocCredibleSets",
             onMissing = "drop"

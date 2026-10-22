@@ -6,7 +6,7 @@
 \usage{
 estCtwasGroupPriors(
   inputs,
-  ctwasPriorArgs = CtwasPriorParam(),
+  ctwasPriorParam = CtwasPriorParam(),
   numThreads = 1L,
   methodArgs = CtwasOptions()
 )
@@ -14,7 +14,7 @@ estCtwasGroupPriors(
 \arguments{
 \item{inputs}{A list returned by \code{\link{assembleCtwasInputs}}.}
 
-\item{ctwasPriorArgs}{The EM settings, built with
+\item{ctwasPriorParam}{The EM settings, built with
 \code{\link{CtwasPriorParam}}: \code{thin} (SNP thinning when
 assembling region data), \code{niterPrefit} and \code{niter} (prefit /
 accurate EM iterations), \code{varStructure}, and
@@ -42,7 +42,7 @@ Step 2 of the three-step \code{\link{ctwasPipeline}}: assembles
 \examples{
 data(ctwasInputsExample)
 estCtwasGroupPriors(ctwasInputsExample,
-  ctwasPrior = CtwasPriorParam(thin = 1, niterPrefit = 3, niter = 10,
+  ctwasPriorParam = CtwasPriorParam(thin = 1, niterPrefit = 3, niter = 10,
     fallbackToPrefit = TRUE),
   methodArgs = CtwasOptions(
     regionData = CtwasRegionDataOptions(min_group_size = 1),

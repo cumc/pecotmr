@@ -66,8 +66,14 @@ test_that("CtwasOptions nests one bundle per ctwas step", {
     expect_equal(
         names(a),
         c(
-            "geneZ", "regionData", "estParam", "screen", "expand",
-            "finemap", "merge", "boundaryGenes"
+            "geneZ",
+            "regionData",
+            "estParam",
+            "screen",
+            "expand",
+            "finemap",
+            "merge",
+            "boundaryGenes"
         )
     )
     expect_equal(a$estParam$min_group_size, 2L)
@@ -110,7 +116,8 @@ test_that("the estParam bundle covers the prefit-EM fallback too", {
     # whose formals are NOT a subset -- so the bundle is checked against
     # both and .ctwasInvoke drops whichever the running step lacks.
     expect_s4_class(
-        CtwasEstParamOptions(warn_converge_fail = FALSE), "MethodOptions"
+        CtwasEstParamOptions(warn_converge_fail = FALSE),
+        "MethodOptions"
     )
     expect_s4_class(CtwasEstParamOptions(EM_tol = 1e-4), "MethodOptions")
 })
@@ -144,10 +151,12 @@ test_that("step bundles refuse pecotmr's own pipeline parameters", {
     # silently discarded. The error names the setting that takes effect, and
     # it is now raised by the step that would have dropped it.
     expect_error(
-        CtwasRegionDataOptions(thin = 0.1), "CtwasPriorParam\\(thin =\\)"
+        CtwasRegionDataOptions(thin = 0.1),
+        "CtwasPriorParam\\(thin =\\)"
     )
     expect_error(
-        CtwasEstParamOptions(niter = 10L), "CtwasPriorParam\\(niter =\\)"
+        CtwasEstParamOptions(niter = 10L),
+        "CtwasPriorParam\\(niter =\\)"
     )
     expect_error(
         CtwasEstParamOptions(group_prior_var_structure = "shared_all"),
@@ -156,6 +165,39 @@ test_that("step bundles refuse pecotmr's own pipeline parameters", {
     expect_error(CtwasFinemapOptions(L = 5L), "the pipeline's own")
     expect_error(CtwasGeneZOptions(ncore = 4L), "the pipeline's own")
     expect_error(
-        CtwasMergeOptions(maxSNP = 10L), "BoundaryMergeParam\\(maxSnp =\\)"
+        CtwasMergeOptions(maxSNP = 10L),
+        "BoundaryMergeParam\\(maxSnp =\\)"
     )
+})
+
+
+test_that("a ctwas step logs warnings only to the console, all to its file", {
+    # ctwas logs through the logging package, which prints with cat(); the
+    # step below logs as ctwas does, opening a file handler for `logfile=`.
+    skip_if_not_installed("logging")
+    logFile <- withr::local_tempfile(fileext = ".log")
+    before <- names(logging::getLogger()[["handlers"]])
+    step <- function(logfile = NULL) {
+        if (!is.null(logfile)) {
+            logging::addHandler(
+                logging::writeToFile,
+                file = logfile,
+                level = "DEBUG"
+            )
+        }
+        logging::loginfo("step info")
+        logging::logwarn("step warning")
+        "done"
+    }
+    shown <- utils::capture.output(
+        res <- pecotmr:::.ctwasQuietly(step, list(logfile = logFile))
+    )
+    expect_identical(res, "done")
+    expect_false(any(grepl("step info", shown)))
+    expect_true(any(grepl("step warning", shown)))
+    expect_true(any(grepl("step info", readLines(logFile))))
+    # The step's file handler is gone and the console is as it was.
+    expect_identical(names(logging::getLogger()[["handlers"]]), before)
+    after <- utils::capture.output(logging::loginfo("after the step"))
+    expect_true(any(grepl("after the step", after)))
 })

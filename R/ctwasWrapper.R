@@ -7,6 +7,37 @@
 # forwards arguments to one of those calls.
 # =============================================================================
 
+# Run a ctwas step with its console log lowered to warnings. ctwas narrates
+# every step through the logging package, whose console handler writes to
+# stdout with cat(), so neither suppressMessages() nor knitr's message = FALSE
+# can hide it. Only that handler is lowered: a log file asked of the step
+# (`logfile=`) still receives every record. A handler the step adds is removed
+# after it, as ctwas never removes the one it opens for `logfile=`, which
+# would otherwise go on receiving every later step's records.
+# @noRd
+.ctwasQuietly <- function(fn, args) {
+    if (!requireNamespace("logging", quietly = TRUE)) {
+        return(exec(fn, !!!args))
+    }
+    before <- names(logging::getLogger()[["handlers"]])
+    on.exit(.ctwasDropAddedHandlers(before), add = TRUE)
+    console <- logging::getHandler("basic.stdout")
+    if (!is.null(console)) {
+        level <- console[["level"]]
+        logging::setLevel("WARN", console)
+        on.exit(logging::setLevel(level, console), add = TRUE)
+    }
+    exec(fn, !!!args)
+}
+
+# Remove the log handlers added since `before` was taken.
+# @noRd
+.ctwasDropAddedHandlers <- function(before) {
+    added <- setdiff(names(logging::getLogger()[["handlers"]]), before)
+    walk(added, logging::removeHandler)
+    invisible(NULL)
+}
+
 # z_gene for assemble_region_data (which requires it non-NULL): use the caller's
 # inputs$z_gene, else compute via ctwas::compute_gene_z (mirrors
 # ctwas_sumstats). Routed through .ctwasInvoke so `methodArgs` reaches it --

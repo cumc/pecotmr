@@ -10,8 +10,8 @@ A \code{\link{GwasFineMappingResult}} object: a
 chr22) keyed by \code{study_1} / \code{susie}, carrying the SuSiE-RSS fit
 and a per-variant table with the standard post-processing columns
 (\code{pip}, \code{logBF}, \code{cs_95} / \code{cs_70} / \code{cs_50} and
-their purities, marginal statistics). Four credible sets. \code{ldSketch} is
-the bundled \code{toy_canonical} genotype panel, present
+their purities, marginal statistics). Four credible sets. \code{ldReference}
+is the bundled \code{toy_canonical} genotype panel, present
 because \code{\link{qtlEnrichmentPipeline}} requires the GWAS collection to
 carry one as its RSS-derived marker; the LD actually used for the fit is an
 in-memory correlation matrix computed from \code{\link{eqtlRegionExample}}.

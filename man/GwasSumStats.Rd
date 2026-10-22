@@ -8,7 +8,7 @@ GwasSumStats(
   studyName,
   entry,
   genome,
-  ldSketch = NULL,
+  ldReference = NULL,
   varY = NA_real_,
   nCase = NULL,
   nControl = NULL,
@@ -27,10 +27,11 @@ study.}
 
 \item{genome}{Single character string giving the genome build (e.g.,
 \code{"hg19"}, \code{"hg38"}). Uniform across the collection because all
-entries share the same LD sketch.}
+entries share the same LD reference.}
 
-\item{ldSketch}{A genotype panel (see \code{\link{readGenotypes}})
-carrying the LD reference.}
+\item{ldReference}{The LD reference: a genotype panel (see
+\code{\link{readGenotypes}}), a \code{\link{GenotypeMixture}} or an
+\code{\link{LdMatrix}}.}
 
 \item{varY}{Optional numeric vector of per-study phenotype variances
 (\code{NA_real_} entries allowed). Used by the sufficient-statistic
@@ -56,10 +57,9 @@ on construction; populated by \code{summaryStatsQc()} with a per-step audit
 record. Fine-mapping / TWAS pipelines reject inputs where
 \code{length(qcInfo(x)) == 0}.}
 
-\item{ldBlocks}{Optional LD-block specification: an \code{LdBlocks}, a
-\code{GRanges}, a data.frame with \code{chrom}/\code{start}/\code{end}
-(plus an optional \code{blockId}), or a path to such a table. When
-supplied, each
+\item{ldBlocks}{Optional LD-block specification: a \code{GRanges}, a
+data.frame with \code{chrom}/\code{start}/\code{end} (plus an optional
+\code{blockId}), or a path to such a table. When supplied, each
 study's variants are split into one element per block rather than one per
 chromosome, and \code{blockId} takes the block's key (its \code{names},
 else a \code{blockId} metadata column, else its coordinates). cTWAS needs
@@ -86,7 +86,7 @@ A \code{GwasSumStats} object.
 \description{
 Construct a \code{GwasSumStats} S4 DFrame-subclass collection
   from per-study tuple vectors and a list of \code{GRanges} entries (one per
-  study), plus a single LD sketch handle and a single genome build that apply
+  study), plus a single LD reference and a single genome build that apply
   to the whole collection.
 
 Each \code{GRanges} entry must carry per-variant statistics in its mcols (at
@@ -100,5 +100,5 @@ gr <- GenomicRanges::GRanges("chr1", IRanges::IRanges(100 * 1:3, width = 1))
 S4Vectors::mcols(gr) <- S4Vectors::DataFrame(SNP = paste0("rs", 1:3),
   A1 = "A", A2 = "G", Z = rnorm(3), N = 100L)
 GwasSumStats(studyName = "t1", entry = list(gr), genome = "hg38",
-  ldSketch = panel)
+  ldReference = panel)
 }

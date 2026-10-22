@@ -4,7 +4,8 @@
 //   LASSO, MCP, SCAD, L0, L0L1, L0L2
 //
 // Objective (smooth part): min_beta  beta'R beta - 2 beta'z + penalty(beta)
-// where R is a (possibly pre-shrunk) LD matrix and z = bhat / sqrt(n).
+// where R is the LD matrix shrunk to R_s = (1 - s) R + s I (s = `shrink`;
+// 0 for an LD matrix already shrunk) and z = bhat / sqrt(n).
 //
 // The coordinate descent update is identical across penalties; only the
 // proximal/thresholding operator differs.  MCP/SCAD operators are ported
@@ -15,6 +16,8 @@
 #include <cpp11armadillo.hpp>
 #include <cmath>
 #include <string>
+
+#include "rss_ld.h"
 
 using namespace cpp11;
 using namespace arma;
@@ -152,11 +155,14 @@ static double compute_penalty(Penalty pen, const vec& beta,
 }
 
 // ---- Single-block coordinate descent -------------------------------------
+// `ld` answers R's entries for the current beta (rss_ld.h): DenseLd tracks
+// R * beta as a running sum, FactorLd tracks F * beta.
 
+template <class Ld>
 static int penalized_cd_rss(Penalty pen, double lambda, double gamma,
                             double alpha, double lambda0, double lambda2,
-                            const vec& diag_R, const mat& R, const vec& z,
-                            double thr, vec& beta, vec& Rbeta, int maxiter) {
+                            Ld& ld, const vec& z,
+                            double thr, vec& beta, int maxiter) {
   int p = z.n_elem;
   double l1, l2;
 
@@ -176,17 +182,18 @@ static int penalized_cd_rss(Penalty pen, double lambda, double gamma,
     double dlx = 0.0;
     for (int j = 0; j < p; j++) {
       double bj = beta(j);
+      double v = ld.diag(j);
       // Partial correlation: z_j - sum_{k!=j} R[j,k]*beta[k]
-      double t = z(j) - Rbeta(j) + diag_R(j) * bj;
+      double t = z(j) - ld.row(j, beta) + v * bj;
 
       // Apply penalty-specific thresholding
-      beta(j) = apply_threshold(pen, t, diag_R(j), l1, l2, gamma, lambda0);
+      beta(j) = apply_threshold(pen, t, v, l1, l2, gamma, lambda0);
 
       if (beta(j) == bj) continue;
       double del = beta(j) - bj;
       dlx = std::max(dlx, std::abs(del));
-      // Update running Rbeta
-      Rbeta += del * R.col(j);
+      // Update the running R * beta
+      ld.update(j, del);
     }
     cpp11::check_user_interrupt();
     if (dlx < thr) {
@@ -202,9 +209,10 @@ static int penalized_cd_rss(Penalty pen, double lambda, double gamma,
 // with zero ones that have higher correlation with the residual.
 // Ported from L0Learn CDL012Swaps.cpp.
 
+template <class Ld>
 static bool l0_swap_round(double lambda0, double l1, double l2,
-                          const vec& diag_R, const mat& R, const vec& z,
-                          double thr, vec& beta, vec& Rbeta, int maxiter) {
+                          Ld& ld, const vec& z,
+                          double thr, vec& beta, int maxiter) {
   int p = beta.n_elem;
   bool found_better = false;
 
@@ -217,7 +225,7 @@ static bool l0_swap_round(double lambda0, double l1, double l2,
     int i = nnz_idx[ii];
     // Compute partial correlation for all variables with beta[i] added back
     // riX_j = z_j - Rbeta_j + R_ji * beta_i
-    vec riX = z - Rbeta + R.col(i) * beta(i);
+    vec riX = z - ld.product(beta) + ld.column(i) * beta(i);
 
     double max_corr = -1.0;
     int max_idx = -1;
@@ -230,23 +238,23 @@ static bool l0_swap_round(double lambda0, double l1, double l2,
     if (max_idx < 0) continue;
 
     // Check if swap is worthwhile
-    double denom = diag_R(max_idx) + 2.0 * l2;
+    double denom = ld.diag(max_idx) + 2.0 * l2;
     if (max_corr > denom * std::abs(beta(i)) + l1) {
       // Perform swap: zero out i, set j to optimal
       double old_bi = beta(i);
       beta(i) = 0.0;
-      Rbeta -= old_bi * R.col(i);
+      ld.update(i, -old_bi);
 
-      double t_j = z(max_idx) - Rbeta(max_idx) + diag_R(max_idx) * 0.0;
-      beta(max_idx) = l0_thresh(t_j, lambda0, l1, l2, diag_R(max_idx));
+      double t_j = z(max_idx) - ld.row(max_idx, beta) + ld.diag(max_idx) * 0.0;
+      beta(max_idx) = l0_thresh(t_j, lambda0, l1, l2, ld.diag(max_idx));
       if (beta(max_idx) != 0.0) {
-        Rbeta += beta(max_idx) * R.col(max_idx);
+        ld.update(max_idx, beta(max_idx));
       }
 
       // Re-run CD from swapped solution.
       // For PEN_L0: inside penalized_cd_rss, l1 = lambda param, l2 = lambda2.
       penalized_cd_rss(PEN_L0, l1, 0.0, 1.0, lambda0, l2,
-                       diag_R, R, z, thr, beta, Rbeta, maxiter);
+                       ld, z, thr, beta, maxiter);
       found_better = true;
       break; // restart from scratch
     }
@@ -254,12 +262,52 @@ static bool l0_swap_round(double lambda0, double l1, double l2,
   return found_better;
 }
 
-// ---- Registered entry point ----------------------------------------------
+// ---- One block at one lambda: coordinate descent, then the L0 swaps ------
 
+template <class Ld>
+static int penalized_block(Penalty pen, double lambda, double gamma,
+                           double alpha, double lambda0, double lambda2,
+                           Ld& ld, const vec& z, double thr, vec& beta,
+                           int maxiter, int maxSwaps) {
+  int conv = penalized_cd_rss(pen, lambda, gamma, alpha, lambda0, lambda2,
+                              ld, z, thr, beta, maxiter);
+  // L0 swap phase (per block)
+  if (pen == PEN_L0 && maxSwaps > 0) {
+    for (int sw = 0; sw < maxSwaps; sw++) {
+      bool improved = l0_swap_round(lambda0, lambda, lambda2, ld, z, thr,
+                                    beta, maxiter);
+      if (!improved) break;
+    }
+  }
+  return conv;
+}
+
+// The lambda path's results, in the shape both entry points return.
+static cpp11::writable::list penalized_path_result(const mat& beta_mat,
+                                                   const vec& lambda,
+                                                   const Col<int>& conv_vec,
+                                                   const vec& loss_vec,
+                                                   const vec& fbeta_vec) {
+  using namespace cpp11::literals;
+  writable::list result({
+    "beta"_nm   = as_doubles_matrix(beta_mat),
+    "lambda"_nm = as_doubles(lambda),
+    "conv"_nm   = as_integers(conv_vec),
+    "loss"_nm   = as_doubles(loss_vec),
+    "fbeta"_nm  = as_doubles(fbeta_vec)
+  });
+  return result;
+}
+
+// ---- Registered entry points ---------------------------------------------
+
+// `shrink` is s: each block is fitted against R_s = (1 - s) R + s I, which
+// is never formed (DenseLd).
 [[cpp11::register]]
-cpp11::writable::list penalizedRssRcpp(
+cpp11::writable::list penalizedRssCpp(
     const doubles& zR,
     const list& LD,
+    double shrink,
     const doubles& lambdaR,
     const std::string& penaltyStr,
     double gamma,
@@ -305,26 +353,13 @@ cpp11::writable::list penalizedRssRcpp(
       const mat& Rb = ld_blocks[b];
       int s = block_start[b];
       int e = block_end[b];
-      vec diag_R = Rb.diag();
       vec z_blk = z.subvec(s, e);
       vec beta_blk = beta.subvec(s, e);
-      vec Rbeta_blk = Rb * beta_blk;
+      DenseLd ld(Rb, shrink, beta_blk);
 
-      int conv_blk = penalized_cd_rss(pen, lambda(i), gamma, alpha,
-                                       lambda0, lambda2,
-                                       diag_R, Rb, z_blk, thr,
-                                       beta_blk, Rbeta_blk, maxiter);
-
-      // L0 swap phase (per block)
-      if (pen == PEN_L0 && maxSwaps > 0) {
-        for (int sw = 0; sw < maxSwaps; sw++) {
-          bool improved = l0_swap_round(lambda0, lambda(i), lambda2,
-                                        diag_R, Rb, z_blk, thr,
-                                        beta_blk, Rbeta_blk, maxiter);
-          if (!improved) break;
-        }
-      }
-
+      int conv_blk = penalized_block(pen, lambda(i), gamma, alpha, lambda0,
+                                     lambda2, ld, z_blk, thr, beta_blk,
+                                     maxiter, maxSwaps);
       beta.subvec(s, e) = beta_blk;
       out = std::min(out, conv_blk);
     }
@@ -332,28 +367,70 @@ cpp11::writable::list penalizedRssRcpp(
     beta_mat.col(i) = beta;
     conv_vec(i) = out;
 
-    // Compute loss = beta'R beta - 2 z'beta (block-wise)
+    // Compute loss = beta'R_s beta - 2 z'beta (block-wise)
     double loss = -2.0 * dot(z, beta);
     for (int b = 0; b < n_blocks; b++) {
       const mat& Rb = ld_blocks[b];
       int s = block_start[b];
       int e = block_end[b];
       vec beta_blk = beta.subvec(s, e);
-      loss += as_scalar(beta_blk.t() * Rb * beta_blk);
+      loss += (1.0 - shrink) * as_scalar(beta_blk.t() * Rb * beta_blk)
+              + shrink * dot(beta_blk, beta_blk);
     }
     loss_vec(i) = loss;
     fbeta_vec(i) = loss + compute_penalty(pen, beta, lambda(i), alpha,
                                            gamma, lambda0, lambda2);
   }
 
-  using namespace cpp11::literals;
-  writable::list result({
-    "beta"_nm   = as_doubles_matrix(beta_mat),
-    "lambda"_nm = as_doubles(lambda),
-    "conv"_nm   = as_integers(conv_vec),
-    "loss"_nm   = as_doubles(loss_vec),
-    "fbeta"_nm  = as_doubles(fbeta_vec)
-  });
+  return penalized_path_result(beta_mat, lambda, conv_vec, loss_vec, fbeta_vec);
+}
 
-  return result;
+// penalizedRssCpp() for one LD block given by a factor F of R = F'F / (m - 1)
+// and shrunk to R_s = (1 - s) R + s I: the same lambda path, the same updates
+// and swaps, without forming R or R_s.
+[[cpp11::register]]
+cpp11::writable::list penalizedRssFactorCpp(
+    const doubles& zR,
+    const doubles_matrix<>& factorR,
+    double shrink,
+    const doubles& lambdaR,
+    const std::string& penaltyStr,
+    double gamma,
+    double alpha,
+    double lambda0,
+    double lambda2,
+    double thr,
+    int maxiter,
+    int maxSwaps) {
+
+  Penalty pen = parse_penalty(penaltyStr);
+  vec z = as_Col(zR);
+  vec lambda = as_Col(lambdaR);
+  mat F = as_Mat(factorR);
+  if (F.n_cols != z.n_elem)
+    cpp11::stop("The LD factor has %d columns but there are %d z-scores.",
+                (int)F.n_cols, (int)z.n_elem);
+
+  int p = z.n_elem;
+  int nlambda = lambda.n_elem;
+  mat beta_mat(p, nlambda, fill::zeros);
+  Col<int> conv_vec(nlambda, fill::zeros);
+  vec loss_vec(nlambda, fill::zeros);
+  vec fbeta_vec(nlambda, fill::zeros);
+
+  // Working beta — warm-started across lambda path
+  vec beta(p, fill::zeros);
+
+  for (int i = 0; i < nlambda; i++) {
+    FactorLd ld(F, shrink, beta);
+    conv_vec(i) = penalized_block(pen, lambda(i), gamma, alpha, lambda0,
+                                  lambda2, ld, z, thr, beta, maxiter, maxSwaps);
+    beta_mat.col(i) = beta;
+    double loss = -2.0 * dot(z, beta) + ld.quad(beta);
+    loss_vec(i) = loss;
+    fbeta_vec(i) = loss + compute_penalty(pen, beta, lambda(i), alpha,
+                                           gamma, lambda0, lambda2);
+  }
+
+  return penalized_path_result(beta_mat, lambda, conv_vec, loss_vec, fbeta_vec);
 }

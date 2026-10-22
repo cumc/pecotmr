@@ -23,9 +23,9 @@ fineMappingPipeline(data, ...)
   initializeWithSusieInf = TRUE,
   credibleSetParam = CredibleSetParam(),
   fineMappingResult = NULL,
-  crossValidationArgs = CrossValidationParam(),
-  residualizationArgs = ResidualizationParam(),
-  signalScreenArgs = SignalScreenParam(),
+  crossValidationParam = CrossValidationParam(),
+  residualizationParam = ResidualizationParam(),
+  signalScreenParam = SignalScreenParam(),
   usePCA = FALSE,
   nPCs = 10L,
   seed = NULL,
@@ -53,9 +53,9 @@ fineMappingPipeline(data, ...)
   fineMappingResult = NULL,
   mrmashPrior = NULL,
   dataDrivenPriorWeightsCutoff = 1e-10,
-  crossValidationArgs = CrossValidationParam(),
-  residualizationArgs = ResidualizationParam(),
-  signalScreenArgs = SignalScreenParam(),
+  crossValidationParam = CrossValidationParam(),
+  residualizationParam = ResidualizationParam(),
+  signalScreenParam = SignalScreenParam(),
   susieRssParam = SusieRssParam(),
   usePCA = FALSE,
   nPCs = 10L,
@@ -81,8 +81,8 @@ fineMappingPipeline(data, ...)
   fitRetention = c("slim", "full"),
   susieRssParam = SusieRssParam(),
   panelFilterParam = PanelFilterParam(),
-  crossValidationArgs = CrossValidationParam(),
-  residualizationArgs = ResidualizationParam(),
+  crossValidationParam = CrossValidationParam(),
+  residualizationParam = ResidualizationParam(),
   dataType = NULL
 )
 
@@ -96,8 +96,8 @@ fineMappingPipeline(data, ...)
   fitRetention = c("slim", "full"),
   susieRssParam = SusieRssParam(),
   panelFilterParam = PanelFilterParam(),
-  crossValidationArgs = CrossValidationParam(),
-  residualizationArgs = ResidualizationParam(),
+  crossValidationParam = CrossValidationParam(),
+  residualizationParam = ResidualizationParam(),
   dataType = NULL
 )
 }
@@ -126,11 +126,22 @@ fineMappingPipeline(data, ...)
         even when fitting from a susieInf chain).
 }}
 
-\item{contexts}{Optional character vector of context names. Default
-\code{NULL} (all contexts).}
+\item{contexts}{Optional context selection; \code{NULL} (the default) uses
+every context. A character vector applies to every study: a context no
+study has is an error, and one only some studies lack is skipped for
+those, with a warning. A list keyed by study name picks each study's
+contexts separately (\code{list(A = "liver")}); studies it does not name
+keep all of theirs.}
 
-\item{traitId}{Optional character vector of trait names to restrict
-processing to.}
+\item{traitId}{Optional trait selection; \code{NULL} (the default) uses
+every trait, or those overlapping \code{region} when one is given. A
+character vector applies to every study. A list keyed by study name
+picks each study's traits separately (\code{list(A = "ENSG1")}), and a
+study's entry may itself be a list keyed by context
+(\code{list(A = list(brain = "ENSG1"))}). Studies and contexts the list
+does not name keep all of their traits. A joint fit spanning a study's
+contexts uses every trait selected in any of them, minus the (context,
+trait) pairs a per-context entry leaves out.}
 
 \item{region}{Optional variant window for QtlDataset trait selection: a
 \code{GRanges}, a \code{"chr:start-end"} string, or a one-row data.frame
@@ -156,15 +167,20 @@ labels are renumbered to stay unique. \code{TRUE} concatenates the ranges'
 genotypes into one joint fit. Ignored for a single-range / cis
 (\code{traitId} + \code{cisWindow}) request.}
 
-\item{jointSpecification}{Optional joint-fit specification (NULL by default).
-When NULL, the pipeline runs the implicit multi-context / multi-trait
-mvSuSiE / fSuSiE branches as before. When non-NULL, the argument is parsed
-and validated via the joint-spec grammar documented under
-\code{parseJointSpecification} (a character vector of axes, or a list of
-\code{list(axes, scope)} specs); the per-spec axis dispatcher
-implementation is in progress and a non-NULL value currently errors with an
-informative message. See the design notes in \code{R/jointSpecification.R}
-for the accepted grammar.}
+\item{jointSpecification}{Optional joint-fit specification saying which
+axes \code{mvsusie} / \code{fsusie} fit across. When NULL (the default)
+they fit across traits if the input has two or more, else across
+contexts. Otherwise give a character vector of axes (one spec) or a list
+of specs. A spec is a character vector drawn from \code{"study"},
+\code{"context"} and \code{"trait"}, or
+\code{list(axes = <axes>, scope = <named list>)}, where \code{scope}
+(keys \code{study}, \code{context}, \code{trait}) limits the fit to the
+listed values, each of which must exist in \code{data}. A list-form
+spec always goes inside the outer list, even on its own. Other methods
+run per (study, context, trait) as usual. The \code{"study"} axis needs
+summary statistics: it is rejected on a \code{QtlDataset}, and on a
+\code{MultiStudyQtlDataset} only the summary-statistics studies take
+part.}
 
 \item{initializeWithSusieInf}{Logical. When \code{susieInf} is in
 \code{methods} alongside \code{susie} and/or \code{susieAsh}, whether the
@@ -191,16 +207,23 @@ credible sets, which is why it stands alone.}
   onto each SuSiE-family token's own arguments, so changing them needs a
   refit.}
 
-\item{fineMappingResult}{Optional existing \code{FineMappingResult} to use as
-a resume cache; tuples already present are not refit.}
+\item{fineMappingResult}{Optional existing \code{QtlFineMappingResult} or
+\code{GwasFineMappingResult} to use as a resume cache; tuples already
+present are not refit.}
 
-\item{crossValidationArgs}{Cross-validation settings, built with
+\item{crossValidationParam}{Cross-validation settings, built with
   \code{\link{CrossValidationParam}}: \code{folds} (default \code{0}, no
   CV), \code{numThreads} for the per-fold refits, and \code{samplePartition}
   to reuse a fixed partition across methods. When \code{folds > 1} each
   method is refit on every fold's training samples and used to predict the
   held-out ones; the partition, the out-of-fold predictions and the metrics
   are stored on each \code{FineMappingRow}'s \code{cvResult} slot.
+  \code{fitFullData = FALSE} keeps only that: each row carries its
+  \code{cvResult} and no full-data fit, variants or top loci. A
+  \code{fineMappingResult} resume cache is only reused where it carries
+  what the run asks for -- a full-data fit unless the run is
+  cross-validation-only, and a \code{cvResult} when the run
+  cross-validates -- and the other tuples are refit.
 
   Cross-validation holds out \strong{samples}, so it is not possible on
   \code{QtlSumStats} / \code{GwasSumStats} input. Those methods accept
@@ -210,7 +233,7 @@ a resume cache; tuples already present are not refit.}
   \code{maxVariants} and \code{weightMethods} are honoured by
   \code{\link{twasWeightsPipeline}} only and are ignored here.}
 
-\item{residualizationArgs}{Covariate residualization settings, built with
+\item{residualizationParam}{Covariate residualization settings, built with
   \code{\link{ResidualizationParam}}: \code{phenotypeCovariates} and
   \code{genotypeCovariates} name which covariates to regress out
   (\code{NULL}, the default, uses every available one), and
@@ -220,7 +243,8 @@ a resume cache; tuples already present are not refit.}
   Only meaningful for \code{QtlDataset} / \code{MultiStudyQtlDataset}
   input. A \code{QtlSumStats} / \code{GwasSumStats} run has no covariates
   to regress out, so the bundle is \strong{ignored} there rather than
-  refused --- unlike \code{crossValidation}, which errors. Residualization
+  refused --- unlike \code{crossValidationParam}, which errors.
+  Residualization
   is on by default, so refusing a non-default value would reject the
   default bundle; CV is off by default, so a non-default value there is an
   explicit request for something the input cannot do.
@@ -229,7 +253,7 @@ a resume cache; tuples already present are not refit.}
   obey the same choice as the SuSiE fit itself --- they are computed
   against the same residualized \code{X} / \code{Y}.}
 
-\item{signalScreenArgs}{Individual-level single-effect (SER) pre-screen
+\item{signalScreenParam}{Individual-level single-effect (SER) pre-screen
 applied to each residualized \code{(X, y)} block before a full fit,
 built with \code{\link{SignalScreenParam}}. A susie model with
 \code{L = 1} is fit and the block is skipped unless the chosen metric
@@ -247,17 +271,19 @@ Only one metric may be enabled, which
 default) screens nothing. The summary-statistics analog lives in
 \code{\link{summaryStatsQc}}.}
 
-\item{usePCA}{Logical (length 1). \code{QtlDataset} only. When \code{TRUE}
+\item{usePCA}{Logical (length 1). Individual-level data only: a
+\code{QtlDataset}, or the \code{QtlDataset} components of a
+\code{MultiStudyQtlDataset}. When \code{TRUE}
 (default \code{FALSE}), each multi-trait context's PCA-reduced phenotype is
 fine-mapped with univariate SuSiE on its top principal components (ports
 the legacy \code{fsusie.R} \code{susie_on_top_pc}). Each PC becomes a
 pseudo-trait row keyed \code{trait = "topPC\{i\}"}, \code{method =
 "susie"}. Single-trait contexts have no PCA and are skipped.}
 
-\item{nPCs}{Integer (length 1). \code{QtlDataset} only. Caps the number of
-top principal components fine-mapped per context when \code{usePCA = TRUE}
-(default \code{10}). The effective count is \code{min(nPCs, usable
-traits)}.}
+\item{nPCs}{Integer (length 1). Individual-level data only. Caps the
+number of top principal components fine-mapped per context when
+\code{usePCA = TRUE} (default \code{10}). The effective count is
+\code{min(nPCs, usable traits)}.}
 
 \item{seed}{Optional integer. When non-NULL,
 \code{withr::local_seed(seed)} is called at the start of the call for
@@ -287,7 +313,7 @@ non-default-coverage \code{credibleSets()} queries can read the full
 posterior
 matrices. The per-variant \code{topLoci} table is fully populated
 either way --- its per-credible-set columns are governed by
-\code{credibleSet}'s \code{perCsColumns}, not by this.}
+\code{credibleSetParam}'s \code{perCsColumns}, not by this.}
 
 \item{dataType}{Optional assay / modality label for the phenotype the fit
 was run on (\code{"bulk_rnaseq"}, \code{"methylation"}), recorded as a
@@ -318,7 +344,7 @@ and GWAS methods, built with \code{\link{PanelFilterParam}}. See
     \code{R_finite} correction. \code{NULL} (default) uses susieR's
     own, except when a finite/EB mode is active (\code{serFallback} or
     \code{rMismatch != "none"}), where it falls back to the LD panel's
-    \code{nSamples(ldSketch)}.
+    \code{nSamples(ldReference)}.
   \item \code{rMismatch} (default \code{"none"}) --- LD-mismatch
     correction forwarded as \code{R_mismatch}: also \code{"eb"} or
     \code{"eb_mix"}.
@@ -330,10 +356,12 @@ and GWAS methods, built with \code{\link{PanelFilterParam}}. See
 }}
 }
 \value{
-A \code{FineMappingResult} collection keyed by \code{(study, context,
-  trait, method)}. The \code{ldSketch} slot is set automatically: \code{NULL}
+A \code{QtlFineMappingResult} keyed by \code{(study, context,
+  trait, method)} -- for \code{GwasSumStats} input, a
+  \code{GwasFineMappingResult} keyed by \code{(study, method)} and range.
+  The \code{ldReference} slot is set automatically: \code{NULL}
   for individual-level (QtlDataset / all-individual-level
-  MultiStudyQtlDataset) fits, the input's \code{ldSketch} for RSS-derived
+  MultiStudyQtlDataset) fits, the input's \code{ldReference} for RSS-derived
   fits.
 }
 \description{
@@ -404,7 +432,7 @@ S4-dispatched per-region fine-mapping entry point that
  All \code{QtlSumStats} and \code{GwasSumStats} inputs
   must have been QC'd via \code{\link{summaryStatsQc}}; the pipeline errors
   on inputs where \code{length(qcInfo(x)) == 0L}. \code{summaryStatsQc}
-  also drops variants absent from the \code{ldSketch}, so by the time
+  also drops variants absent from the \code{ldReference}, so by the time
   per-entry processing runs every variant is guaranteed to be present in the
   LD panel and a local LD matrix can be built with
   \code{extractBlockGenotypes} + \code{computeLd("sample")}.
@@ -412,7 +440,7 @@ S4-dispatched per-region fine-mapping entry point that
 
 \section{Optional resume cache}{
  Supplying \code{fineMappingResult} of an
-  existing \code{FineMappingResult} skips re-fitting any \code{(study,
+  existing fine-mapping result skips re-fitting any \code{(study,
   context, trait, method)} tuple that already has a matching row; cached
   entries are merged with the newly-fit entries in the returned collection.
 }
@@ -426,8 +454,8 @@ deliberately not ported here:
 \itemize{
   \item TWAS weights computation (\code{twasWeights = TRUE} path):
         lives in \code{\link{twasWeightsPipeline}} now.
-  \item Filtering knobs (now \code{genotypeFilter} /
-        \code{panelFilter}, \code{ldReferenceMetaFile}): individual-
+  \item Filtering knobs (now \code{genotypeFilterParam} /
+        \code{panelFilterParam}, \code{ldReferenceMetaFile}): individual-
         level QC lives on the \code{QtlDataset} constructor; sumstat
         QC lives in \code{summaryStatsQc()}. No filtering happens
         inside this pipeline.
@@ -441,10 +469,10 @@ deliberately not ported here:
   \item \code{loadRssData} and explicit
         \code{ldReferenceMetaFile} arguments: the new
         \code{QtlSumStats} / \code{GwasSumStats} carry the
-        (already-QC'd) sumstats and \code{ldSketch} directly.
+        (already-QC'd) sumstats and \code{ldReference} directly.
   \item Verbose \code{methodName} suffixing (e.g.
         \code{"susie_rss_NO_QC"}, \code{"susie_rss_SLALOM_RAISS_imputed"}):
-        the method column on the returned \code{FineMappingResult}
+        the method column on the returned collection
         carries the bare token (\code{"susie"},
         \code{"susieInf"}, \code{"mvsusie"}, ...) only. QC
         provenance is recorded on the sumstats' \code{qcInfo}.
@@ -459,17 +487,17 @@ deliberately not ported here:
 \section{Panel filters on the RSS path}{
  On \code{QtlSumStats} /
   \code{GwasSumStats} input there is no genotype matrix to filter, so
-  \code{panelFilter}'s \code{mafCutoff} / \code{macCutoff} /
+  \code{panelFilterParam}'s \code{mafCutoff} / \code{macCutoff} /
   \code{imissCutoff} are measured against the \strong{LD reference panel}
   instead: a variant whose panel genotypes fall below the cutoffs is
   dropped before the z-scores and LD matrix are built. The thresholds mean
-  the same thing as \code{genotypeFilter}'s on the \code{QtlDataset} path
-  (MAC is converted to a MAF equivalent and the stricter of the two
+  the same thing as \code{genotypeFilterParam}'s on the \code{QtlDataset}
+  path (MAC is converted to a MAF equivalent and the stricter of the two
   applies), so one number carries across input types. The defaults filter
   nothing.
 
   This discards \emph{observed} variants, unlike
-  \code{summaryStatsQc(imputeArgs = ...)}, which only bounds which variants
+  \code{summaryStatsQc(raissParam = ...)}, which only bounds which variants
   RAISS will impute. Use it when the panel cannot support the LD estimate a
   rare variant would need.
 }

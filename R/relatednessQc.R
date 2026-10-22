@@ -233,8 +233,8 @@ filterRelatedness <- function(
     verbose = FALSE
 ) {
     .relatednessRequirePackages()
-    .assertMethodParam(columns, "RelatednessColumnsParam", "columns")
-    .assertMethodParam(pruning, "RelatednessPruningParam", "pruning")
+    .assertMethodParam(columns, "RelatednessColumnsParam")
+    .assertMethodParam(pruning, "RelatednessPruningParam")
     .assertMethodOptions(plinkQcArgs, "PlinkQcOptions", "plinkQc")
     analysisType <- arg_match(analysisType)
     relatedness <- as_tibble(relatedness)

@@ -15,7 +15,7 @@ TwasWeights(
   jointTraits = NULL,
   traitPos = NULL,
   region = NULL,
-  ldSketch = NULL
+  ldReference = NULL
 )
 }
 \arguments{
@@ -53,7 +53,7 @@ forward as provenance; not part of the identity key. \code{NULL}
 (default) omits the column, and \code{\link{genomicRegion}} then
 derives the window from the span of the variants present.}
 
-\item{ldSketch}{An optional genotype panel (see
+\item{ldReference}{An optional genotype panel (see
 \code{\link{readGenotypes}}), or \code{NULL} for individual-level fits.}
 }
 \value{

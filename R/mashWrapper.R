@@ -151,16 +151,16 @@
     )
 }
 
-# Internal: build the requested data-driven covariance components off a prepared
-# mashr data object, in a fixed order (canonical, pca, flash, flashNonneg) so a
-# given `components` set reproduces the same ordering everywhere. RNG is
-# consumed only by cov_flash / cov_flash(nonneg). Shared by mashPriorCovariances
-# and the exported mashCovarianceComponents.
-# @noRd
 # Build the requested components, keeping the two roles apart: `canonical`
 # are fixed structural hypotheses that go to the mash fit unrefined, while
 # `dataDriven` are the generator output the engine refines. mashr's own eQTL
 # vignette draws exactly this line -- cov_ed sees only the data-driven set.
+#
+# The components are built off a prepared mashr data object in a fixed order
+# (canonical, pca, flash, flashNonneg), so a given `components` set
+# reproduces the same ordering everywhere. RNG is consumed only by cov_flash
+# / cov_flash(nonneg). Shared by mashPriorCovariances and the exported
+# mashCovarianceComponents.
 # @noRd
 .mashBuildComponents <- function(
     mashData,
@@ -169,32 +169,46 @@
     componentArgs = NULL
 ) {
     npc <- nPcs %||% (ncol(mashData$Bhat) - 1)
-    argsFor <- function(key) as.list(componentArgs[[key]] %||% list())
     canonical <- if (is_in("canonical", components)) {
         exec(
             mashr::cov_canonical,
             mashData,
-            !!!compact(argsFor("canonical"))
+            !!!compact(.mashComponentArgs("canonical", componentArgs))
         )
     }
     pca <- if (is_in("pca", components)) {
-        exec(mashr::cov_pca, mashData, npc = npc, !!!compact(argsFor("pca")))
+        exec(
+            mashr::cov_pca,
+            mashData,
+            npc = npc,
+            !!!compact(.mashComponentArgs("pca", componentArgs))
+        )
     }
     flash <- if (is_in("flash", components)) {
-        exec(mashr::cov_flash, mashData, !!!compact(argsFor("flash")))
+        exec(
+            mashr::cov_flash,
+            mashData,
+            !!!compact(.mashComponentArgs("flash", componentArgs))
+        )
     }
     flashNonneg <- if (is_in("flashNonneg", components)) {
         exec(
             mashr::cov_flash,
             mashData,
             factors = "nonneg",
-            !!!compact(argsFor("flashNonneg"))
+            !!!compact(.mashComponentArgs("flashNonneg", componentArgs))
         )
     }
     list(
         canonical = canonical,
         dataDriven = c(pca, flash, flashNonneg)
     )
+}
+
+# The caller's extra arguments for one component generator, as a list.
+# @noRd
+.mashComponentArgs <- function(key, componentArgs) {
+    as.list(componentArgs[[key]] %||% list())
 }
 
 # The covariance list and its mixture weights. A supplied `priorCovariances`

@@ -21,9 +21,10 @@ Virtual base shared by \code{\linkS4class{ColocResult}} (from
 \section{Slots}{
 
 \describe{
-\item{\code{ldSketch}}{The LD reference panel the underlying fits were computed
-against, or \code{NULL}. Shared by both subclasses: coloc and ColocBoost
-report different statistics, but both are computed against a panel and
-both are asked for it the same way.}
+\item{\code{ldReference}}{The LD reference the underlying fits were computed
+against (a genotype panel, a \code{GenotypeMixture} or an
+\code{LdMatrix}), or \code{NULL}. Shared by both subclasses: coloc and
+ColocBoost report different statistics, but both are computed against a
+reference and both are asked for it the same way.}
 }}
 

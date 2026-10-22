@@ -14,7 +14,7 @@ test_that("QtlFineMappingResult: builds a collection keyed by 4-tuple", {
     )
     expect_s4_class(res, "QtlFineMappingResult")
     expect_equal(nrow(res), 2L)
-    expect_null(ldSketch(res))
+    expect_null(ldReference(res))
 })
 
 
@@ -31,7 +31,7 @@ test_that("QtlFineMappingResult: validity does not recurse on key subset (#546)"
         trait = "t",
         method = "qsusie",
         entry = list(e),
-        ldSketch = NULL
+        ldReference = NULL
     )
     expect_s4_class(res, "QtlFineMappingResult")
     expect_true(validObject(res))
@@ -55,11 +55,11 @@ test_that("QtlFineMappingResult: stores an LD sketch when supplied", {
         trait = "t1",
         method = "susie",
         entry = list(e),
-        ldSketch = gh
+        ldReference = gh
     )
     # The slot holds the panel; the handle it reads through is its seed.
-    expect_s4_class(ldSketch(res), "RangedSummarizedExperiment")
-    expect_identical(pecotmr:::.ldSketchHandle(ldSketch(res)), gh)
+    expect_s4_class(ldReference(res), "RangedSummarizedExperiment")
+    expect_identical(pecotmr:::.ldRefHandle(ldReference(res)), gh)
 })
 
 
@@ -287,21 +287,21 @@ test_that("show.QtlFineMappingResult prints entry/study/context/trait/method cou
     out <- capture.output(show(res))
     expect_true(any(grepl("QtlFineMappingResult: 2 entries", out)))
     expect_true(any(grepl("1 studies.*2 contexts.*1 traits.*2 methods", out)))
-    expect_true(any(grepl("LD sketch: NULL", out)))
+    expect_true(any(grepl("LD reference: NULL", out)))
 })
 
 
-test_that("show.QtlFineMappingResult reports the ldSketch source when present", {
+test_that("show.QtlFineMappingResult reports the ldReference source", {
     res <- QtlFineMappingResult(
         studyName = "s1",
         context = "c1",
         trait = "t1",
         method = "susie",
         entry = list(.sh_makeFmEntry()),
-        ldSketch = .sh_makeGenotypeHandle()
+        ldReference = .sh_makeGenotypeHandle()
     )
     out <- capture.output(show(res))
-    expect_true(any(grepl("LD sketch: gds @ /tmp/test.gds", out)))
+    expect_true(any(grepl("LD reference: plink2 @ /tmp/test", out)))
 })
 
 

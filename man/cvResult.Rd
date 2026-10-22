@@ -20,7 +20,7 @@ cvResult(x, ...)
 \S4method{cvResult}{TwasWeightsRow}(x)
 }
 \arguments{
-\item{x}{A \code{FineMappingRow} or \code{FineMappingResult}.}
+\item{x}{A \code{FineMappingRow} or \code{QtlFineMappingResult}.}
 
 \item{...}{Class-specific selection arguments.}
 
@@ -42,12 +42,12 @@ A list (the CV payload) or \code{NULL}.
 \description{
 Extract the cross-validation payload stored on a
   \code{FineMappingRow} (or the matching entry of a
-  \code{FineMappingResult}). The payload is a list with components
+  \code{QtlFineMappingResult}). The payload is a list with components
   \code{samplePartition} (a \code{data.frame} of \code{Sample}/\code{Fold}
   assignments), \code{predictions} (a named list of per-method out-of-fold
   prediction matrices), and \code{performance} (a named list of per-method
   metric matrices). \code{NULL} when fine-mapping was run without
-  cross-validation (\code{cvFolds <= 1}).
+  cross-validation.
 }
 \examples{
 data(qtlFineMappingExample)

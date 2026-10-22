@@ -6,16 +6,19 @@
 \usage{
 susieRssWeights(
   stat,
-  LD,
+  ldReference = NULL,
   susieRssFit = NULL,
   fitRetention = c("slim", "none", "full")
 )
 }
 \arguments{
 \item{stat}{List with components \code{z} (z-scores), \code{n} (sample
-sizes).}
+sizes) and, to check against an \code{ldReference}, \code{variantNames}.}
 
-\item{LD}{LD correlation matrix.}
+\item{ldReference}{Optional LD reference: a genotype panel, a
+\code{\link{GenotypeMixture}} or an \code{\link{LdMatrix}}. The fit is
+checked against the statistics' variants and, with a reference, those
+variants must also be in it. No LD is read.}
 
 \item{susieRssFit}{A fitted SuSiE-RSS object. Required: these wrappers
 extract weights and never run fine-mapping themselves.}
@@ -46,5 +49,5 @@ stat <- list(
   n = rep(nrow(X), ncol(X)))
 LD <- cor(X)
 fit <- susieR::susie_rss(z = stat$z, R = LD, n = nrow(X), L = 5)
-susieRssWeights(stat, LD, susieRssFit = fit)
+susieRssWeights(stat, susieRssFit = fit)
 }

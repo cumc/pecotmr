@@ -285,7 +285,7 @@ mashPipeline <- function(
 # Every bundle mashPipeline() takes, checked together.
 # @noRd
 .mashPipelineAssert <- function(prior, mashDataArgs, mashArgs) {
-    .assertMethodParam(prior, "MashPriorParam", "prior")
+    .assertMethodParam(prior, "MashPriorParam")
     .assertMethodOptions(mashDataArgs, "MashDataOptions", "mashDataArgs")
     .assertMethodOptions(mashArgs, "MashOptions", "mashArgs")
 }
@@ -652,9 +652,6 @@ mashCovarianceComponents <- function(
     .mashComponentList(c(built$canonical, built$dataDriven))
 }
 
-# `components` and `engine` each take a name or that choice's own
-# constructor, so both resolve to a (name, options) pair the same way.
-# @noRd
 # Both arguments arrive already normalized -- a MashComponentParam and an
 # Options record or NULL -- so this only splits them into the shapes the
 # cov_* chain downstream expects. NULL engine is "none": no refinement.
@@ -669,6 +666,9 @@ mashCovarianceComponents <- function(
     )
 }
 
+# mashPriorCovariances() is exported with the same convenience arguments as
+# MashPriorParam(), so it normalizes through the same helpers rather than
+# resolving a second time in its own way.
 #' @title Estimate mash Prior Covariances and Mixture Weights
 #' @description Build the mash prior covariance list \code{U} and mixture
 #'   weights \code{w} from a \code{{strong[, random, null]}} SumStats
@@ -753,17 +753,10 @@ mashPriorCovariances <- function(
     .assertMethodOptions(mashDataArgs, "MashDataOptions", "mashDataArgs")
     .assertMethodOptions(mashArgs, "MashOptions", "mashArgs")
     inputScale <- arg_match(inputScale)
-    # Exported with the same convenience arguments as MashPriorParam(), so
-    # it normalizes through the same helpers rather than resolving a second
-    # time in its own way.
     choice <- .mashResolvePriorChoice(
         .mashNormalizeComponents(components),
         .mashNormalizeEngine(engine)
     )
-    components <- choice$components
-    componentArgs <- choice$componentArgs
-    engine <- choice$engine
-    engineArgs <- choice$engineArgs
     .mashRequirePriorPackages()
     if (methods::is(sumStatsList, "SimpleList")) {
         sumStatsList <- as.list(sumStatsList)
@@ -783,11 +776,11 @@ mashPriorCovariances <- function(
         mashData,
         priorCovariances = priorCovariances,
         priorComponents = priorComponents,
-        components = components,
+        components = choice$components,
         nPcs = nPcs,
-        engine = engine,
-        engineArgs = engineArgs,
-        componentArgs = componentArgs,
+        engine = choice$engine,
+        engineArgs = choice$engineArgs,
+        componentArgs = choice$componentArgs,
         mashArgs = mashArgs
     )
 }
@@ -939,25 +932,6 @@ MashComponentParam <- function(
 
 # Reject unknown prior-covariance component names.
 # @noRd
-# `components` may be a character vector or a MashComponentParam() record.
-# Naming a component in the record selects it, so the two forms carry the
-# same information and the record additionally carries per-component options.
-# @noRd
-.mashResolveComponentChoice <- function(components) {
-    if (is(components, "MashComponentParam")) {
-        entries <- slot(components, "components") %||% list()
-        return(list(names = names(entries), args = entries))
-    }
-    if (!is.character(components)) {
-        abort(glue(
-            "mashPriorCovariances: `components` must be a character vector ",
-            "or a MashComponentParam() record."
-        ))
-    }
-    .mashValidateComponents(components)
-    list(names = components, args = NULL)
-}
-
 .mashValidateComponents <- function(
     components,
     caller = "mashPriorCovariances"
@@ -1358,9 +1332,6 @@ fitMashContrast <- function(
     )
 }
 
-# Pairwise (all-pairs) contrasts, with grouped conditions' contributions split
-# evenly across the group.
-# @noRd
 # One grouped condition's share of a pairwise column: the group's matched
 # contribution split evenly across its members.
 # @noRd
@@ -1395,6 +1366,9 @@ fitMashContrast <- function(
     )
 }
 
+# Pairwise (all-pairs) contrasts, with grouped conditions' contributions split
+# evenly across the group.
+# @noRd
 .mashPairwiseContrast <- function(tested, grouping, pairwiseVector) {
     twoCombn <- combn(tested, 2)
     pwNames <- apply(twoCombn, 2, str_flatten, collapse = "_vs_")
@@ -2550,7 +2524,7 @@ mergeMashData <- function(resData, oneData) {
     }
     msg <- glue(
         "mashInput: each element of `objects` must be a QtlSumStats, ",
-        "GwasSumStats, or FineMappingResult; got ",
+        "GwasSumStats, QtlFineMappingResult or GwasFineMappingResult; got ",
         "{str_flatten(class(obj), '/')}."
     )
     abort(msg)
@@ -2566,9 +2540,9 @@ mergeMashData <- function(resData, oneData) {
     list(b = mats$b, s = mats$s, strongRows = strongRows)
 }
 
-# (Bhat, Shat, strongRows) from a FineMappingResult: pivot the marginal effects
-# to a variants x contexts matrix pair; strong = each credible set's lead (max
-# PIP) variant.
+# (Bhat, Shat, strongRows) from a fine-mapping result: pivot the marginal
+# effects to a variants x contexts matrix pair; strong = each credible set's
+# lead (max PIP) variant.
 # @noRd
 .mashFmrMatrices <- function(obj, coverage) {
     rawMe <- marginalEffects(obj)
@@ -2576,7 +2550,7 @@ mergeMashData <- function(resData, oneData) {
     if (!all(is_in(c("variant_id", "context", "beta", "se"), names(rawMe)))) {
         msg <- glue(
             "mashInput: marginalEffects() must return variant_id/context/",
-            "beta/se columns; a FineMappingResult with >= 2 contexts is ",
+            "beta/se columns; a fine-mapping result with >= 2 contexts is ",
             "required."
         )
         abort(msg)
@@ -2601,7 +2575,7 @@ mergeMashData <- function(resData, oneData) {
     )
 }
 
-# A multi-method FineMappingResult would duplicate (variant, context) cells;
+# A multi-method fine-mapping result would duplicate (variant, context) cells;
 # pin the first method so the pivot is unambiguous.
 # @noRd
 .mashFmrMethodPin <- function(me, cs) {
@@ -2610,7 +2584,7 @@ mergeMashData <- function(resData, oneData) {
     }
     m1 <- me$method[[1L]]
     msg <- glue(
-        "mashInput: FineMappingResult carries multiple methods; using ",
+        "mashInput: the fine-mapping result carries multiple methods; using ",
         "'{m1}'."
     )
     warn(msg)
@@ -2746,7 +2720,7 @@ mergeMashData <- function(resData, oneData) {
 #' \describe{
 #'   \item{strong}{The high-signal variants (deterministic, class-specific).
 #'     \code{QtlSumStats}: the single most significant variant (\eqn{\max|z|})
-#'     per condition, unioned. \code{FineMappingResult}: the lead variant
+#'     per condition, unioned. A fine-mapping result: the lead variant
 #'     (\eqn{\max} PIP) of each credible set in each condition, unioned
 #'     (conditions with no credible set contribute nothing).}
 #'   \item{random}{\code{nRandom} variants sampled uniformly at random --
@@ -2762,21 +2736,21 @@ mergeMashData <- function(resData, oneData) {
 #' and the strong \code{XtX} cross-product appended.
 #'
 #' @param objects A named \code{list} of \code{\link{QtlSumStats}} and/or
-#'   \code{FineMappingResult} objects, one per region. Names disambiguate
+#'   fine-mapping result objects, one per region. Names disambiguate
 #'   rownames across regions (defaults to \code{region1}, \code{region2}, ...).
 #'   For \code{QtlSumStats} inputs \code{\link{summaryStatsQc}} must have been
 #'   run (the matrix builder rejects un-QC'd SumStats).
 #' @param nRandom,nNull Per-object random / null sample sizes (default 10 each).
 #' @param excludeCondition Character vector of condition (column) names to drop.
-#' @param coverage Credible-set coverage for \code{FineMappingResult} strong
-#'   selection (default 0.95).
+#' @param coverage Credible-set coverage for the strong selection on
+#'   fine-mapping results (default 0.95).
 #' @param zOnly When \code{TRUE} the returned partitions carry only \code{.z}
 #'   (the \code{.b}/\code{.s} matrices are dropped after z is derived).
 #' @param sigPCutoff Significance cutoff applied to the strong partition
 #'   (default 1e-6).
 #' @param inputScale Matrix scale for \code{QtlSumStats} inputs
 #'   (\code{"auto"}/\code{"beta"}/\code{"z"}); ignored for
-#'   \code{FineMappingResult} (always effect-size scale).
+#'   fine-mapping results (always effect-size scale).
 #' @param independentVariants Optional character vector of variant ids (e.g. an
 #'   LD-pruned independent SNP list). When supplied, the \emph{random} and
 #'   \emph{null} background of every object is restricted to variants that match
@@ -2835,7 +2809,7 @@ mashInput <- function(
     if (!is.list(objects) || length(objects) == 0L) {
         msg <- glue(
             "mashInput: `objects` must be a non-empty list of QtlSumStats ",
-            "and/or FineMappingResult objects."
+            "and/or fine-mapping result objects."
         )
         abort(msg)
     }
@@ -2974,7 +2948,7 @@ mashInput <- function(
 #'   variant ids (ideally \code{chr:pos:A2:A1}); \code{colnames(z)} label the
 #'   conditions.
 #' @param studyName Study identifier (recycled across conditions).
-#' @param ldSketch A genotype panel (see \code{\link{readGenotypes}})
+#' @param ldReference A genotype panel (see \code{\link{readGenotypes}})
 #'   embedded in the collection, or \code{NULL} (default) -- mash operates
 #'   across
 #'   conditions per variant and needs no LD reference.
@@ -2997,13 +2971,13 @@ mashInput <- function(
 #'   system.file("extdata", "toy_ref.bed", package = "pecotmr"))
 #' z <- matrix(rnorm(6), 2, 3, dimnames = list(
 #'   c("chr22:1:A:G", "chr22:2:A:G"), c("brain", "blood", "muscle")))
-#' qtlSumStatsFromZMatrix(z = z, studyName = "s1", ldSketch = panel,
+#' qtlSumStatsFromZMatrix(z = z, studyName = "s1", ldReference = panel,
 #'   context = colnames(z), trait = "g1", genome = "hg38", n = 100)
 #' @export
 qtlSumStatsFromZMatrix <- function(
     z,
     studyName,
-    ldSketch = NULL,
+    ldReference = NULL,
     context = colnames(z),
     trait = "mash",
     genome = "GRCh38",
@@ -3024,7 +2998,7 @@ qtlSumStatsFromZMatrix <- function(
         vids = vids,
         nCond = ncol(z),
         studyName = studyName,
-        ldSketch = ldSketch,
+        ldReference = ldReference,
         context = context,
         trait = trait,
         genome = genome,
@@ -3050,7 +3024,7 @@ qtlSumStatsFromZMatrix <- function(
 #' @param shat Numeric matrix of standard errors, aligned with \code{bhat}
 #'   (identical dimensions and row/column order).
 #' @param studyName Study identifier (recycled across conditions).
-#' @param ldSketch A genotype panel (see \code{\link{readGenotypes}})
+#' @param ldReference A genotype panel (see \code{\link{readGenotypes}})
 #'   embedded in the collection, or \code{NULL} (default) -- mash operates
 #'   across
 #'   conditions per variant and needs no LD reference.
@@ -3072,14 +3046,14 @@ qtlSumStatsFromZMatrix <- function(
 #'   c("chr22:1:A:G", "chr22:2:A:G"), c("brain", "blood", "muscle")))
 #' shat <- matrix(0.1, 2, 3, dimnames = dimnames(bhat))
 #' qtlSumStatsFromBetaMatrix(bhat = bhat, shat = shat, studyName = "s1",
-#'   ldSketch = panel, context = colnames(bhat), trait = "g1",
+#'   ldReference = panel, context = colnames(bhat), trait = "g1",
 #'     genome = "hg38", n = 100)
 #' @export
 qtlSumStatsFromBetaMatrix <- function(
     bhat,
     shat,
     studyName,
-    ldSketch = NULL,
+    ldReference = NULL,
     context = colnames(bhat),
     trait = "mash",
     genome = "GRCh38",
@@ -3094,7 +3068,7 @@ qtlSumStatsFromBetaMatrix <- function(
         vids = vids,
         nCond = ncol(bhat),
         studyName = studyName,
-        ldSketch = ldSketch,
+        ldReference = ldReference,
         context = context,
         trait = trait,
         genome = genome,
@@ -3174,7 +3148,7 @@ qtlSumStatsFromBetaMatrix <- function(
     vids,
     nCond,
     studyName,
-    ldSketch,
+    ldReference,
     context,
     trait,
     genome,
@@ -3202,7 +3176,7 @@ qtlSumStatsFromBetaMatrix <- function(
         trait = trait,
         entry = entries,
         genome = genome,
-        ldSketch = ldSketch,
+        ldReference = ldReference,
         qcInfo = list(role = role, entryAudit = vector("list", nCond))
     )
 }

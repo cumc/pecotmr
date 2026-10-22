@@ -10,7 +10,7 @@ combinePValues(
   methods,
   R = NULL,
   naRm = TRUE,
-  methodArgs = PvalMethodsParam()
+  pvalMethodsParam = PvalMethodsParam()
 )
 }
 \arguments{
@@ -22,13 +22,14 @@ work on p-values; derivable from \code{zScores}.}
 \item{methods}{Character vector of combination method names; see above for
 the menu (lowercase).}
 
-\item{R}{Optional correlation matrix aligned to \code{pvals} /
+\item{R}{Optional correlation matrix among the test statistics (for
+variant-level tests, their LD), aligned to \code{pvals} /
 \code{zScores}. Required for the correlation-adjusted methods.}
 
 \item{naRm}{Logical; if \code{TRUE} (default), drop NA p-values before
 combination.}
 
-\item{methodArgs}{Per-method engine options, built with
+\item{pvalMethodsParam}{Per-method engine options, built with
 \code{\link{PvalMethodsParam}} -- for example
 \code{PvalMethodsParam(aspu = AspuOptions(n.perm = 5000))}. Configuring
 a method that \code{methods} does not request is an error rather than a

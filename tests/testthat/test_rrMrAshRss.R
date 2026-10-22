@@ -14,7 +14,8 @@ test_that("mrashRssWeights forwards arguments to susieR::mr.ash.rss", {
     stat <- list(
         b = bhat,
         seb = shat,
-        n = c(10, 20, 30, 40, 50, 60, 70, 80, 90, 1000)
+        n = c(10, 20, 30, 40, 50, 60, 70, 80, 90, 1000),
+        variantNames = .rrwIds(p)
     )
     z_vec <- bhat / shat
     captured <- new.env(parent = emptyenv())
@@ -48,18 +49,17 @@ test_that("mrashRssWeights forwards arguments to susieR::mr.ash.rss", {
     )
     result <- mrashRssWeights(
         stat = stat,
-        LD = R,
+        ldReference = .rrwLdMatrix(R),
         varY = 1.5,
         sigma2E = 0.4,
         s0 = c(0, 0.1, 0.2),
         w0 = c(0.5, 0.3, 0.2),
-        z = z_vec,
-        methodArgs = MrashOptions(tol = 1e-6)
+        methodArgs = MrashRssOptions(tol = 1e-6)
     )
     expect_equal(captured$bhat, bhat)
     expect_equal(captured$shat, shat)
     expect_equal(captured$z, z_vec)
-    expect_equal(captured$R, R)
+    expect_equal(unname(captured$R), R)
     expect_equal(captured$var_y, 1.5)
     expect_equal(captured$n, 55) # median of stat$n, NOT mean (145)
     expect_equal(captured$sigma2_e, 0.4)
@@ -81,10 +81,10 @@ test_that("mrashRssWeights returns a numeric vector of expected length", {
     bhat <- as.vector(cor(y, X))
     shat <- rep(1 / sqrt(n - 1), p)
     R <- cor(X)
-    stat <- list(b = bhat, seb = shat, n = rep(n, p))
+    stat <- list(b = bhat, seb = shat, n = rep(n, p), variantNames = .rrwIds(p))
     w <- mrashRssWeights(
         stat = stat,
-        LD = R,
+        ldReference = .rrwLdMatrix(R),
         varY = var(y),
         sigma2E = NULL,
         s0 = c(0, 0.01, 0.1, 0.5),

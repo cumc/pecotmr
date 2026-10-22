@@ -8,7 +8,7 @@
 #'           extracted from the dataset (filtering knobs on the
 #'           constructor apply lazily inside the accessors).
 #'     \item \code{QtlSumStats} -- summary-statistic-only QTL data with a
-#'           shared LD reference (\code{ldSketch}). Must already have
+#'           shared LD reference (\code{ldReference}). Must already have
 #'           been passed through \code{\link{summaryStatsQc}} (the
 #'           pipeline rejects inputs whose \code{qcInfo()} is empty).
 #'           Every analysis variant is available on this input, including
@@ -21,7 +21,7 @@
 #'   GWAS is optional and always passed separately as a
 #'   \code{GwasSumStats} object (must also be QC'd).
 #'
-#' \code{colocboostPipeline} does \strong{not} accept a \code{FineMappingResult}
+#' \code{colocboostPipeline} does \strong{not} accept a fine-mapping result
 #' for either side; colocboost has its own variable-selection algorithm.
 #'
 #' @section QC contract:
@@ -32,17 +32,17 @@
 #'           \code{genotypes()} / \code{residualizedGenotypes()}.
 #'           The pipeline does \emph{not} run a separate
 #'           individual-level QC pass.
-#'     \item \code{panelFilter} acts at ANALYSIS time on the sumstat
+#'     \item \code{panelFilterParam} acts at ANALYSIS time on the sumstat
 #'           sides, measured against the \strong{LD reference panel}: a
 #'           variant whose panel genotypes fall below its cutoffs is dropped
 #'           before the LD matrix is built. It applies to a
 #'           \code{QtlSumStats} QTL side and to a \code{GwasSumStats} GWAS
 #'           side (so it still bites when the QTL side is
 #'           individual-level). Its defaults filter nothing. Unlike
-#'           \code{summaryStatsQc(imputeArgs = ...)}, which only bounds what
+#'           \code{summaryStatsQc(raissParam = ...)}, which only bounds what
 #'           RAISS will impute, these discard \emph{observed} variants.
 #'     \item All summary-statistic QC (variant filters, harmonization
-#'           against the \code{ldSketch}, LD-mismatch detection, RAISS
+#'           against the \code{ldReference}, LD-mismatch detection, RAISS
 #'           imputation, etc.) lives in
 #'           \code{\link{summaryStatsQc}}. The pipeline rejects any
 #'           \code{QtlSumStats} or \code{GwasSumStats} where
@@ -96,7 +96,7 @@
 #'   GWAS study focal.
 #' @param xqtlColoc,jointGwas,separateGwas Logical flags selecting which
 #'   colocboost variants to run.
-#' @param signalScreenArgs Individual-level pre-filter (ports the legacy
+#' @param signalScreenParam Individual-level pre-filter (ports the legacy
 #'   \code{pip_cutoff_to_skip_ind}), built with
 #'   \code{\link{SignalScreenParam}}. For each context every outcome is fit
 #'   with a single-effect SuSiE (\code{L = 1}) and dropped unless the chosen
@@ -121,7 +121,7 @@
 #'   below its cutoffs is dropped before the LD matrix is built. The defaults
 #'   filter nothing. See the Details section for how these relate to the
 #'   individual-level cutoffs recorded on a \code{QtlDataset}.
-#' @param residualizationArgs Covariate residualization settings for
+#' @param residualizationParam Covariate residualization settings for
 #'   individual-level input, built with \code{\link{ResidualizationParam}}.
 #'   Reaches both \code{\link{residualizedGenotypes}} and
 #'   \code{\link{residualizedPhenotypes}}, so it governs what is regressed
@@ -243,16 +243,16 @@ setGeneric("colocboostPipeline", function(qtlData, gwasSumStats = NULL, ...) {
 # Helpers (private)
 # =============================================================================
 
-# Build the LD / X_ref slot of the colocboost call from a list of LD
-# matrices. When any matrix is non-square it is treated as a samples x
-# variants genotype reference and routed to X_ref; otherwise routed to LD.
-.cbBuildLdArgs <- function(ldList) {
+# Build the LD / X_ref slot of the colocboost call from a bundle's LD list.
+# `ldArg` says which the list holds -- LD matrices ("LD") or factors of them
+# ("X_ref"), which colocboost correlates itself -- as .cbMergeSumstatBundles()
+# records it; a factor can be square by coincidence, so its shape cannot say.
+.cbBuildLdArgs <- function(ldList, ldArg = "LD") {
     ldList <- compact(ldList)
     if (length(ldList) == 0L) {
         return(list())
     }
-    isGeno <- any(map_lgl(ldList, .cbIsNonSquare))
-    if (isGeno) list(X_ref = ldList) else list(LD = ldList)
+    set_names(list(ldList), ldArg)
 }
 
 # Reject SumStats objects that have not been passed through
@@ -308,7 +308,7 @@ setGeneric("colocboostPipeline", function(qtlData, gwasSumStats = NULL, ...) {
     cisWindow = NULL,
     samples = NULL,
     pipCutoffToSkip = 0,
-    residualizationArgs = ResidualizationParam()
+    residualizationParam = ResidualizationParam()
 ) {
     contexts <- .cbResolveBundleContexts(qd, contexts)
     p <- list(
@@ -318,7 +318,7 @@ setGeneric("colocboostPipeline", function(qtlData, gwasSumStats = NULL, ...) {
         cisWindow = cisWindow,
         samples = samples,
         pipCutoffToSkip = pipCutoffToSkip,
-        residualizationArgs = residualizationArgs
+        residualizationParam = residualizationParam
     )
     built <- compact(map(contexts, .cbBuildContextXY, p = p))
     if (length(built) == 0L) {
@@ -373,7 +373,7 @@ setGeneric("colocboostPipeline", function(qtlData, gwasSumStats = NULL, ...) {
         ctx,
         p$traitId,
         p$region,
-        p$residualizationArgs
+        p$residualizationParam
     )
     if (is.null(rawY) || ncol(rawY) == 0L) {
         return(NULL)
@@ -385,7 +385,7 @@ setGeneric("colocboostPipeline", function(qtlData, gwasSumStats = NULL, ...) {
         p$region,
         p$cisWindow,
         p$samples,
-        p$residualizationArgs
+        p$residualizationParam
     )
     if (is.null(rawX) || ncol(rawX) == 0L) {
         return(NULL)
@@ -425,7 +425,7 @@ setGeneric("colocboostPipeline", function(qtlData, gwasSumStats = NULL, ...) {
     ctx,
     traitId,
     region,
-    residualizationArgs = ResidualizationParam()
+    residualizationParam = ResidualizationParam()
 ) {
     try_fetch(
         residualizedPhenotypes(
@@ -433,7 +433,7 @@ setGeneric("colocboostPipeline", function(qtlData, gwasSumStats = NULL, ...) {
             contexts = ctx,
             traitId = traitId,
             region = region,
-            residualizationArgs = residualizationArgs
+            residualizationParam = residualizationParam
         ),
         error = function(cnd) {
             msg <- glue(
@@ -455,7 +455,7 @@ setGeneric("colocboostPipeline", function(qtlData, gwasSumStats = NULL, ...) {
     region,
     cisWindow,
     samples,
-    residualizationArgs = ResidualizationParam()
+    residualizationParam = ResidualizationParam()
 ) {
     try_fetch(
         residualizedGenotypes(
@@ -465,7 +465,7 @@ setGeneric("colocboostPipeline", function(qtlData, gwasSumStats = NULL, ...) {
             region = region,
             cisWindow = cisWindow,
             samples = samples,
-            residualizationArgs = residualizationArgs
+            residualizationParam = residualizationParam
         ),
         error = function(cnd) {
             msg <- glue(
@@ -621,10 +621,10 @@ setGeneric("colocboostPipeline", function(qtlData, gwasSumStats = NULL, ...) {
 
 # Build a single (sumstat data.frame, LD correlation matrix) pair from a
 # QtlSumStats / GwasSumStats entry. Returns NULL when the entry has no
-# variants overlapping the ldSketch panel.
+# variants overlapping the ldReference panel.
 .cbSumstatPair <- function(
     df,
-    ldSketch,
+    ldReference,
     varY = NULL,
     nCase = NULL,
     nControl = NULL,
@@ -644,33 +644,40 @@ setGeneric("colocboostPipeline", function(qtlData, gwasSumStats = NULL, ...) {
     # the two.
     wanted <- variantIds[.panelKeepMask(
         variantIds,
-        ldSketch,
+        ldReference,
         cutoffs,
         ".cbSumstatPair"
     )]
     if (length(wanted) == 0L) {
         return(NULL)
     }
-    # Use the shared `.ldFromSketch` helper in "drop" mode so missing-from-panel
-    # variants are silently filtered (the colocboost path expects to operate
-    # only on the overlap).
-    R <- .ldFromSketch(
-        ldSketch,
-        wanted,
-        label = ".cbSumstatPair",
-        onMissing = "drop"
-    )
-    if (is.null(R)) {
+    ld <- .cbPairLd(ldReference, wanted)
+    if (is.null(ld)) {
         return(NULL)
     }
-    keptIds <- attr(R, "keptVariantIds")
+    keptIds <- attr(ld, "keptVariantIds")
     kept <- filter(df, is_in(variantIds, keptIds))
     ss <- .cbSumstatFrame(kept, keptIds, nCase, nControl, varY)
     list(
         sumstat = ss,
-        LD = `attr<-`(R, "keptVariantIds", NULL),
-        variantIds = keptIds
+        LD = `attr<-`(ld, "keptVariantIds", NULL),
+        variantIds = keptIds,
+        isFactor = .ldIsGenotypeRef(ldReference)
     )
+}
+
+# The LD of the `wanted` variants the panel holds, the rest dropped (the
+# colocboost path expects to operate only on the overlap): a genotype
+# reference's factor, which colocboost takes as X_ref and correlates itself,
+# or an LdMatrix's matrix.
+# @noRd
+.cbPairLd <- function(ldReference, wanted) {
+    ldFrom <- if (.ldIsGenotypeRef(ldReference)) {
+        .ldFactorFromRef
+    } else {
+        .ldFromRef
+    }
+    ldFrom(ldReference, wanted, label = ".cbSumstatPair", onMissing = "drop")
 }
 
 # The colocboost sumstat frame for one entry, over the variants the LD panel
@@ -734,7 +741,7 @@ setGeneric("colocboostPipeline", function(qtlData, gwasSumStats = NULL, ...) {
     if (is.null(ss) || nrow(ss) == 0L) {
         return(list())
     }
-    ldSketch <- ldSketch(ss)
+    ldReference <- ldReference(ss)
     byContext <- if (!is.null(contexts) && length(contexts) > 0L) {
         is_in(as.character(ss$context), contexts)
     } else {
@@ -756,7 +763,7 @@ setGeneric("colocboostPipeline", function(qtlData, gwasSumStats = NULL, ...) {
             rows,
             .cbQtlEntryPair,
             ss = ss,
-            ldSketch = ldSketch,
+            ldReference = ldReference,
             cutoffs = cutoffs
         ),
         map_chr(rows, .cbQtlEntryLabel, ss = ss)
@@ -775,7 +782,7 @@ setGeneric("colocboostPipeline", function(qtlData, gwasSumStats = NULL, ...) {
 
 # One QTL entry's (sumstat, LD) pair, or NULL when it has no panel overlap.
 # @noRd
-.cbQtlEntryPair <- function(i, ss, ldSketch, cutoffs) {
+.cbQtlEntryPair <- function(i, ss, ldReference, cutoffs) {
     .cbSumstatPair(
         df = as.data.frame(
             ss,
@@ -784,7 +791,7 @@ setGeneric("colocboostPipeline", function(qtlData, gwasSumStats = NULL, ...) {
             trait = as.character(ss$trait)[[i]],
             require = "Z"
         ),
-        ldSketch = ldSketch,
+        ldReference = ldReference,
         varY = .cbTupleValue(ss, "varY", i),
         cutoffs = cutoffs
     )
@@ -807,13 +814,13 @@ setGeneric("colocboostPipeline", function(qtlData, gwasSumStats = NULL, ...) {
     if (is.null(gws) || nrow(gws) == 0L) {
         return(list())
     }
-    ldSketch <- ldSketch(gws)
+    ldReference <- ldReference(gws)
     compact(set_names(
         map(
             seq_len(nrow(gws)),
             .cbGwasEntryPair,
             gws = gws,
-            ldSketch = ldSketch,
+            ldReference = ldReference,
             cutoffs = cutoffs
         ),
         as.character(gws$study)
@@ -822,14 +829,14 @@ setGeneric("colocboostPipeline", function(qtlData, gwasSumStats = NULL, ...) {
 
 # One GWAS entry's (sumstat, LD) pair, or NULL when it has no panel overlap.
 # @noRd
-.cbGwasEntryPair <- function(i, gws, ldSketch, cutoffs) {
+.cbGwasEntryPair <- function(i, gws, ldReference, cutoffs) {
     .cbSumstatPair(
         df = as.data.frame(
             gws,
             studyName = as.character(gws$study)[[i]],
             require = "Z"
         ),
-        ldSketch = ldSketch,
+        ldReference = ldReference,
         varY = .cbTupleValue(gws, "varY", i),
         nCase = .cbTupleValue(gws, "nCase", i),
         nControl = .cbTupleValue(gws, "nControl", i),
@@ -838,12 +845,12 @@ setGeneric("colocboostPipeline", function(qtlData, gwasSumStats = NULL, ...) {
 }
 
 # Check two LD sketches for the reference-panel compatibility contract. Thin
-# wrapper over the shared `.requireMatchingLdSketches` helper (R/ld.R)
+# wrapper over the shared `.requireMatchingLdRefs` helper (R/ld.R)
 # using the "lenient" null policy: a NULL on either side skips the check
 # (only colocboostPipeline allows that, since some bundles only have a
 # QTL side or only a GWAS side).
-.cbRequireMatchingLdSketches <- function(qtlLd, gwasLd) {
-    .requireMatchingLdSketches(
+.cbRequireMatchingLdRefs <- function(qtlLd, gwasLd) {
+    .requireMatchingLdRefs(
         qtlLd,
         gwasLd,
         pipelineName = "colocboostPipeline",
@@ -853,14 +860,25 @@ setGeneric("colocboostPipeline", function(qtlData, gwasSumStats = NULL, ...) {
 
 # Combine sumstat bundles into the (sumstat-list, LD-list, dict) shape
 # colocboost expects. Deduplicates identical LD matrices so dict_sumstatLD
-# can point multiple sumstats at one LD.
+# can point multiple sumstats at one LD, and records in `ldArg` whether the
+# list holds LD matrices ("LD") or factors of them ("X_ref"). Every side of
+# a run reads one LD reference (.cbRequireMatchingLdRefs()), so the bundles
+# never mix the two.
 .cbMergeSumstatBundles <- function(bundles) {
     if (length(bundles) == 0L) {
         return(list(
             sumstat = list(),
             LD = list(),
-            dict_sumstatLD = matrix(integer(0), ncol = 2L)
+            dict_sumstatLD = matrix(integer(0), ncol = 2L),
+            ldArg = "LD"
         ))
+    }
+    kinds <- unique(map_lgl(bundles, .cbPairIsFactor))
+    if (length(kinds) > 1L) {
+        abort(
+            "colocboost inputs mix LD matrices and genotype factors.",
+            .internal = TRUE
+        )
     }
     # Same shape as .cbDedupX: every bundle resolves to the first bundle
     # carrying an identical LD matrix, so the unique set and the back-mapping
@@ -874,7 +892,8 @@ setGeneric("colocboostPipeline", function(qtlData, gwasSumStats = NULL, ...) {
         dict_sumstatLD = cbind(
             sumstat = seq_along(bundles),
             LD = match(firstIdx, keepIdx)
-        )
+        ),
+        ldArg = if (kinds) "X_ref" else "LD"
     )
 }
 
@@ -903,10 +922,6 @@ setGeneric("colocboostPipeline", function(qtlData, gwasSumStats = NULL, ...) {
     )
 }
 
-# A requested analysis with nothing to run on would otherwise be a silent
-# no-op: the caller gets an empty ColocBoostResult whose computingTime()
-# entries are all NULL, with no indication of why. Say so.
-# @noRd
 # TRUE when an analysis was requested and has the data to run. When it was
 # requested but cannot run, warn and answer FALSE, so the caller's compact()
 # drops it instead of skipping it silently.
@@ -922,6 +937,10 @@ setGeneric("colocboostPipeline", function(qtlData, gwasSumStats = NULL, ...) {
     FALSE
 }
 
+# A requested analysis with nothing to run on would otherwise be a silent
+# no-op: the caller gets an empty ColocBoostResult whose computingTime()
+# entries are all NULL, with no indication of why. Say so.
+# @noRd
 .cbWarnNoData <- function(flag, needed) {
     msg <- glue(
         "colocboostPipeline: {flag} = TRUE was requested, but there is no ",
@@ -933,48 +952,25 @@ setGeneric("colocboostPipeline", function(qtlData, gwasSumStats = NULL, ...) {
 }
 
 # Shared dispatch: accepts a fully-prepared individual bundle (possibly
-# NULL) plus a sumstat bundle (possibly empty) and runs the three
-# colocboost variants the user requested. `qtlSumstatBundle` is the QTL-side
-# subset of `sumstatBundle` (see .cbDriver); only the xQTL-only run uses it,
-# so that a GWAS study never becomes an xQTL-only outcome.
-# The analyses that were requested AND have data to run on, keyed by the
-# result slot each fills. .cbCanRun warns in the "requested but cannot" case
-# so the skip is never silent, and compact() drops what did not run.
+# NULL) plus a sumstat bundle (possibly empty) and runs the colocboost
+# variants `run` (from .cbResolveRuns) switched on. `qtlSumstatBundle` is the
+# QTL-side subset of `sumstatBundle` (see .cbDriver); only the xQTL-only run
+# uses it, so that a GWAS study never becomes an xQTL-only outcome. The
+# result is keyed by the result slot each run fills; compact() drops what did
+# not run.
 # @noRd
 .cbDispatchRuns <- function(
     individualBundle,
     sumstatBundle,
     qtlSumstatBundle,
-    xqtlColoc,
-    jointGwas,
-    separateGwas,
+    run,
     hasInd,
-    hasSs,
-    hasQtlSs,
     focalTrait,
     methodArgs,
-    gwasRunBundles = list(),
-    hasGwasSs = FALSE
+    gwasRunBundles = list()
 ) {
-    # Resolved first, in the order the runs are listed: .cbCanRun() warns
-    # when a requested analysis has no data for it, and hoisting keeps those
-    # warnings in the same order they were emitted inline.
-    ssNeeded <- "summary-statistic data"
-    runXqtl <- .cbCanRun(
-        xqtlColoc,
-        hasInd || hasQtlSs,
-        "xqtlColoc",
-        "QTL data"
-    )
-    runJoint <- .cbCanRun(jointGwas, hasSs, "jointGwas", ssNeeded)
-    runSeparate <- .cbCanRun(
-        separateGwas,
-        hasGwasSs,
-        "separateGwas",
-        "GWAS summary statistics"
-    )
     compact(list(
-        xqtl_coloc = if (runXqtl) {
+        xqtl_coloc = if (run$xqtl) {
             .cbRunXqtlOnly(
                 individualBundle,
                 qtlSumstatBundle,
@@ -983,7 +979,7 @@ setGeneric("colocboostPipeline", function(qtlData, gwasSumStats = NULL, ...) {
                 methodArgs
             )
         },
-        joint_gwas = if (runJoint) {
+        joint_gwas = if (run$joint) {
             .cbRunJointGwas(
                 individualBundle,
                 sumstatBundle,
@@ -992,7 +988,7 @@ setGeneric("colocboostPipeline", function(qtlData, gwasSumStats = NULL, ...) {
                 gwasNames = names(gwasRunBundles)
             )
         },
-        separate_gwas = if (runSeparate) {
+        separate_gwas = if (run$separate) {
             .cbRunSeparateGwas(
                 individualBundle,
                 gwasRunBundles,
@@ -1001,6 +997,45 @@ setGeneric("colocboostPipeline", function(qtlData, gwasSumStats = NULL, ...) {
             )
         }
     ))
+}
+
+# Which analyses were requested AND have data to run on. .cbCanRun warns in
+# the "requested but cannot" case so the skip is never silent; the flags are
+# resolved in the order the runs are listed, so those warnings keep that
+# order. separateGwas needs a GWAS, not merely "some summary statistics": a
+# QTL-only sumstat input used to satisfy a `hasSs` guard and then run one
+# focal pass per QTL study.
+# @noRd
+.cbResolveRuns <- function(
+    xqtlColoc,
+    jointGwas,
+    separateGwas,
+    hasInd,
+    hasSs,
+    qtlSumstatBundle,
+    gwasRunBundles
+) {
+    hasQtlSs <- length(qtlSumstatBundle$sumstat) > 0L
+    list(
+        xqtl = .cbCanRun(
+            xqtlColoc,
+            hasInd || hasQtlSs,
+            "xqtlColoc",
+            "QTL data"
+        ),
+        joint = .cbCanRun(
+            jointGwas,
+            hasSs,
+            "jointGwas",
+            "summary-statistic data"
+        ),
+        separate = .cbCanRun(
+            separateGwas,
+            length(gwasRunBundles) > 0L,
+            "separateGwas",
+            "GWAS summary statistics"
+        )
+    )
 }
 
 # Each run's result and timing folded into the empty result skeleton, so a
@@ -1044,7 +1079,9 @@ setGeneric("colocboostPipeline", function(qtlData, gwasSumStats = NULL, ...) {
     Y[, keep, drop = FALSE]
 }
 
-
+# Run the requested colocboost analyses over the prepared bundles and fold
+# them into a ColocBoostResult (an empty one when no QTL input remains).
+# @noRd
 .cbRunVariants <- function(
     individualBundle,
     sumstatBundle,
@@ -1053,19 +1090,13 @@ setGeneric("colocboostPipeline", function(qtlData, gwasSumStats = NULL, ...) {
     separateGwas,
     focalTrait,
     methodArgs,
-    qtlLdSketch = NULL,
+    qtlLdReference = NULL,
     qtlSumstatBundle = NULL,
     gwasRunBundles = list()
 ) {
-    empty <- .cbEmptyResult()
     hasInd <- !is.null(individualBundle)
     hasSs <- length(sumstatBundle$sumstat) > 0L
     qtlSumstatBundle <- qtlSumstatBundle %||% .cbMergeSumstatBundles(list())
-    hasQtlSs <- length(qtlSumstatBundle$sumstat) > 0L
-    # separateGwas needs a GWAS, not merely "some summary statistics": a
-    # QTL-only sumstat input used to satisfy the old `hasSs` guard and then
-    # run one focal pass per QTL study.
-    hasGwasSs <- length(gwasRunBundles) > 0L
     if (!hasInd && !hasSs) {
         msg <- glue(
             "colocboostPipeline: no QTL inputs remain after selection. ",
@@ -1074,26 +1105,30 @@ setGeneric("colocboostPipeline", function(qtlData, gwasSumStats = NULL, ...) {
         inform(msg)
         return(.cbEmptyResultObject())
     }
-    runs <- .cbDispatchRuns(
-        individualBundle,
-        sumstatBundle,
-        qtlSumstatBundle,
+    run <- .cbResolveRuns(
         xqtlColoc,
         jointGwas,
         separateGwas,
         hasInd,
         hasSs,
-        hasQtlSs,
+        qtlSumstatBundle,
+        gwasRunBundles
+    )
+    runs <- .cbDispatchRuns(
+        individualBundle,
+        sumstatBundle,
+        qtlSumstatBundle,
+        run,
+        hasInd,
         focalTrait,
         methodArgs,
-        gwasRunBundles = gwasRunBundles,
-        hasGwasSs = hasGwasSs
+        gwasRunBundles = gwasRunBundles
     )
-    results <- .cbMergeRuns(empty, runs)
+    results <- .cbMergeRuns(.cbEmptyResult(), runs)
     .cbToResultObject(
         results,
         .cbOutcomeInfo(individualBundle, sumstatBundle, hasInd),
-        qtlLdSketch
+        qtlLdReference
     )
 }
 
@@ -1110,14 +1145,6 @@ setGeneric("colocboostPipeline", function(qtlData, gwasSumStats = NULL, ...) {
     )
 }
 
-# Flatten the three raw colocboost runs into one ColocBoostResult.
-#
-# The three analyses are NOT parallel structures: xqtl_coloc and joint_gwas are
-# each a single colocboost object, while separate_gwas is a NAMED LIST of them,
-# one per GWAS study -- one level deeper. That is why `gwasStudy` exists as a
-# key: without it the separate-GWAS sets would be indistinguishable from each
-# other once flattened.
-# @noRd
 # @noRd
 .cbJointRun <- function(nm, results) {
     if (is.null(results[[nm]])) {
@@ -1143,7 +1170,15 @@ setGeneric("colocboostPipeline", function(qtlData, gwasSumStats = NULL, ...) {
     map_chr(entries, field)
 }
 
-.cbToResultObject <- function(results, outcomeInfo, ldSketch = NULL) {
+# Flatten the three raw colocboost runs into one ColocBoostResult.
+#
+# The three analyses are NOT parallel structures: xqtl_coloc and joint_gwas are
+# each a single colocboost object, while separate_gwas is a NAMED LIST of them,
+# one per GWAS study -- one level deeper. That is why `gwasStudy` exists as a
+# key: without it the separate-GWAS sets would be indistinguishable from each
+# other once flattened.
+# @noRd
+.cbToResultObject <- function(results, outcomeInfo, ldReference = NULL) {
     sep <- results$separate_gwas
     sepRuns <- if (is.null(sep) || length(sep) == 0L) {
         list()
@@ -1170,7 +1205,7 @@ setGeneric("colocboostPipeline", function(qtlData, gwasSumStats = NULL, ...) {
         analysis = .cbEntryField(entries, "analysis"),
         gwasStudy = .cbEntryField(entries, "gwasStudy"),
         outcomeInfo = outcomeInfo,
-        ldSketch = ldSketch,
+        ldReference = ldReference,
         computingTime = results$computing_time %||% list()
     )
 }
@@ -1219,7 +1254,11 @@ setGeneric("colocboostPipeline", function(qtlData, gwasSumStats = NULL, ...) {
     nCtx <- if (hasInd) length(individualBundle$Y) else 0L
     nSs <- length(sumstatBundle$sumstat)
     .cbAnnounceXqtl(nCtx, nSs)
-    ldArgs <- if (nSs > 0L) .cbBuildLdArgs(sumstatBundle$LD) else list()
+    ldArgs <- if (nSs > 0L) {
+        .cbBuildLdArgs(sumstatBundle$LD, sumstatBundle$ldArg)
+    } else {
+        list()
+    }
     args <- c(
         list(
             X = if (hasInd) individualBundle$X else NULL,
@@ -1298,7 +1337,7 @@ setGeneric("colocboostPipeline", function(qtlData, gwasSumStats = NULL, ...) {
         if (hasInd) individualBundle$outcomeNames else character(),
         ssNames
     )
-    ldArgs <- .cbBuildLdArgs(sumstatBundle$LD)
+    ldArgs <- .cbBuildLdArgs(sumstatBundle$LD, sumstatBundle$ldArg)
     # The merged bundle holds QTL sumstats as well as GWAS, so split the
     # labels rather than calling every sumstat a GWAS: a context is any
     # outcome that is not one of the GWAS studies, whether it arrived as
@@ -1381,7 +1420,7 @@ setGeneric("colocboostPipeline", function(qtlData, gwasSumStats = NULL, ...) {
     # `runBundle` carries every QTL sumstat followed by this one GWAS, so the
     # whole LD list and its dict come along -- the same shape as the joint
     # run, but focal on the last outcome.
-    ldArgs <- .cbBuildLdArgs(runBundle$LD)
+    ldArgs <- .cbBuildLdArgs(runBundle$LD, runBundle$ldArg)
     traits <- c(
         if (hasInd) individualBundle$outcomeNames else character(),
         names(runBundle$sumstat)
@@ -1443,9 +1482,10 @@ setGeneric("colocboostPipeline", function(qtlData, gwasSumStats = NULL, ...) {
 
 # Relabel a (sumstat, LD) pair to the canonical coding: flip the z-score and the
 # LD sign-submatrix for variants swapped relative to canonical
-# (LD_ij -> sign_i * sign_j * LD_ij), drop unmatched variants, and relabel to
-# canonical. The sumstat and its LD share one sign vector, so they stay
-# consistent. Returns NULL when no variant matches.
+# (LD_ij -> sign_i * sign_j * LD_ij; on a factor, the swapped columns are
+# negated), drop unmatched variants, and relabel to canonical. The sumstat
+# and its LD share one sign vector, so they stay consistent. Returns NULL
+# when no variant matches.
 # @noRd
 .cbFlipPairToCanonical <- function(p, canonical) {
     mm <- matchVariants(p$sumstat$variant, canonical)
@@ -1461,11 +1501,31 @@ setGeneric("colocboostPipeline", function(qtlData, gwasSumStats = NULL, ...) {
         z = .data$z * sgn,
         variant = canonical[ib]
     )
-    ld <- `dimnames<-`(
-        p$LD[ia, ia, drop = FALSE] * outer(sgn, sgn),
-        list(canonical[ib], canonical[ib])
+    isFactor <- .cbPairIsFactor(p)
+    ld <- if (isFactor) {
+        `colnames<-`(
+            sweep(p$LD[, ia, drop = FALSE], 2L, sgn, FUN = "*"),
+            canonical[ib]
+        )
+    } else {
+        `dimnames<-`(
+            p$LD[ia, ia, drop = FALSE] * outer(sgn, sgn),
+            list(canonical[ib], canonical[ib])
+        )
+    }
+    list(
+        sumstat = ss,
+        LD = ld,
+        variantIds = canonical[ib],
+        isFactor = isFactor
     )
-    list(sumstat = ss, LD = ld, variantIds = canonical[ib])
+}
+
+# TRUE when a (sumstat, LD) pair carries a factor of its LD rather than the
+# matrix.
+# @noRd
+.cbPairIsFactor <- function(p) {
+    isTRUE(p$isFactor)
 }
 
 # Harmonize the allele coding of every colocboost input (individual X columns,
@@ -1528,6 +1588,12 @@ setGeneric("colocboostPipeline", function(qtlData, gwasSumStats = NULL, ...) {
 # are per-tuple lists of `list(sumstat, LD)` produced by the per-class
 # bundle helpers; they are merged here so dict_sumstatLD can dedupe
 # identical LD matrices across QTL and GWAS sides.
+#
+# The xQTL-only run gets its own bundle over just the QTL-side pairs, so a
+# GWAS study is never treated as an xQTL outcome. Rebuilding it through
+# .cbMergeSumstatBundles (rather than subsetting the merged one) keeps the
+# deduplicated LD list and dict_sumstatLD consistent for the subset.
+# @noRd
 .cbDriver <- function(
     individualBundle,
     qtlPairs,
@@ -1537,7 +1603,7 @@ setGeneric("colocboostPipeline", function(qtlData, gwasSumStats = NULL, ...) {
     separateGwas,
     focalTrait,
     methodArgs,
-    qtlLdSketch = NULL,
+    qtlLdReference = NULL,
     alleleFlip = TRUE,
     cutoffs = NULL
 ) {
@@ -1548,7 +1614,7 @@ setGeneric("colocboostPipeline", function(qtlData, gwasSumStats = NULL, ...) {
     combinedPairs <- .cbAppendGwasPairs(
         qtlPairs,
         gwasSumStats,
-        qtlLdSketch,
+        qtlLdReference,
         cutoffs = cutoffs
     )
     harmonized <- .cbMaybeHarmonize(
@@ -1557,29 +1623,9 @@ setGeneric("colocboostPipeline", function(qtlData, gwasSumStats = NULL, ...) {
         alleleFlip
     )
     sumstatBundle <- .cbMergeSumstatBundles(harmonized$pairs)
-    # The xQTL-only run gets its own bundle over just the QTL-side pairs, so
-    # a GWAS study is never treated as an xQTL outcome. Rebuilding it through
-    # .cbMergeSumstatBundles (rather than subsetting the merged one) keeps the
-    # deduplicated LD list and dict_sumstatLD consistent for the subset.
     qtlKeys <- intersect(names(harmonized$pairs), names(qtlPairs))
     qtlSumstatBundle <- .cbMergeSumstatBundles(harmonized$pairs[qtlKeys])
-    # The separate-GWAS runs are FOCAL: each is one GWAS tested against the
-    # whole QTL side, so each needs its own bundle of (every QTL pair + that
-    # one GWAS). Built the same way and for the same reason as the xQTL
-    # bundle above -- the deduplicated LD list and dict_sumstatLD have to
-    # match the subset, which subsetting the merged bundle would not give.
-    # Without this the separate loop ran over EVERY merged label and treated
-    # each QTL study as a focal GWAS in its own right.
-    gwasKeys <- setdiff(names(harmonized$pairs), qtlKeys)
-    gwasRunBundles <- set_names(
-        map(
-            gwasKeys,
-            .cbGwasRunBundle,
-            pairs = harmonized$pairs,
-            qtlKeys = qtlKeys
-        ),
-        gwasKeys
-    )
+    gwasRunBundles <- .cbGwasRunBundles(harmonized$pairs, qtlKeys)
     .cbRunVariants(
         harmonized$individualBundle,
         sumstatBundle,
@@ -1588,9 +1634,25 @@ setGeneric("colocboostPipeline", function(qtlData, gwasSumStats = NULL, ...) {
         separateGwas,
         focalTrait,
         methodArgs,
-        qtlLdSketch = qtlLdSketch,
+        qtlLdReference = qtlLdReference,
         qtlSumstatBundle = qtlSumstatBundle,
         gwasRunBundles = gwasRunBundles
+    )
+}
+
+# The separate-GWAS run bundles, keyed by GWAS label. The runs are FOCAL: each
+# is one GWAS tested against the whole QTL side, so each needs its own bundle
+# of (every QTL pair + that one GWAS). Built through .cbMergeSumstatBundles
+# for the same reason as the xQTL bundle in .cbDriver -- the deduplicated LD
+# list and dict_sumstatLD have to match the subset, which subsetting the
+# merged bundle would not give. Without this the separate loop ran over EVERY
+# merged label and treated each QTL study as a focal GWAS in its own right.
+# @noRd
+.cbGwasRunBundles <- function(pairs, qtlKeys) {
+    gwasKeys <- setdiff(names(pairs), qtlKeys)
+    set_names(
+        map(gwasKeys, .cbGwasRunBundle, pairs = pairs, qtlKeys = qtlKeys),
+        gwasKeys
     )
 }
 
@@ -1601,15 +1663,15 @@ setGeneric("colocboostPipeline", function(qtlData, gwasSumStats = NULL, ...) {
 .cbAppendGwasPairs <- function(
     qtlPairs,
     gwasSumStats,
-    qtlLdSketch,
+    qtlLdReference,
     cutoffs = NULL
 ) {
     if (is.null(gwasSumStats)) {
         return(qtlPairs)
     }
     .cbRequireSumStatsQc(gwasSumStats, "gwasSumStats")
-    if (!is.null(qtlLdSketch)) {
-        .cbRequireMatchingLdSketches(qtlLdSketch, ldSketch(gwasSumStats))
+    if (!is.null(qtlLdReference)) {
+        .cbRequireMatchingLdRefs(qtlLdReference, ldReference(gwasSumStats))
     }
     gwasPairs <- .cbGwasSumStatsBundle(gwasSumStats, cutoffs = cutoffs)
     if (length(gwasPairs) == 0L) {
@@ -1647,12 +1709,12 @@ setGeneric("colocboostPipeline", function(qtlData, gwasSumStats = NULL, ...) {
     separateGwas,
     samples,
     panelFilterParam,
-    signalScreenArgs,
+    signalScreenParam,
     alleleFlip,
     methodArgs,
-    residualizationArgs
+    residualizationParam
 ) {
-    screenSpec <- .screenResolve(signalScreenArgs)
+    screenSpec <- .screenResolve(signalScreenParam)
     indBundle <- .cbIndividualBundle(
         qtlData,
         contexts = contexts,
@@ -1661,7 +1723,7 @@ setGeneric("colocboostPipeline", function(qtlData, gwasSumStats = NULL, ...) {
         cisWindow = cisWindow,
         samples = samples,
         pipCutoffToSkip = screenSpec,
-        residualizationArgs = residualizationArgs
+        residualizationParam = residualizationParam
     )
     .cbDriver(
         indBundle,
@@ -1698,9 +1760,9 @@ setMethod(
         separateGwas = FALSE,
         samples = NULL,
         panelFilterParam = PanelFilterParam(),
-        signalScreenArgs = SignalScreenParam(),
+        signalScreenParam = SignalScreenParam(),
         alleleFlip = TRUE,
-        residualizationArgs = ResidualizationParam(),
+        residualizationParam = ResidualizationParam(),
         # `list()`, not ColocboostOptions(): the formal shadows the
         # constructor, so a constructor-call default is a recursive
         # reference. An empty list is the "no options" spelling
@@ -1722,10 +1784,10 @@ setMethod(
             separateGwas = separateGwas,
             samples = samples,
             panelFilterParam = panelFilterParam,
-            signalScreenArgs = signalScreenArgs,
+            signalScreenParam = signalScreenParam,
             alleleFlip = alleleFlip,
             methodArgs = methodArgs,
-            residualizationArgs = residualizationArgs
+            residualizationParam = residualizationParam
         )
     }
 )
@@ -1767,7 +1829,7 @@ setMethod(
             separateGwas = separateGwas,
             focalTrait = focalTrait,
             methodArgs = methodArgs,
-            qtlLdSketch = ldSketch(qtlData),
+            qtlLdReference = ldReference(qtlData),
             alleleFlip = alleleFlip,
             cutoffs = cutoffs
         )
@@ -1792,9 +1854,9 @@ setMethod(
         separateGwas = FALSE,
         samples = NULL,
         panelFilterParam = PanelFilterParam(),
-        signalScreenArgs = SignalScreenParam(),
+        signalScreenParam = SignalScreenParam(),
         alleleFlip = TRUE,
-        residualizationArgs = ResidualizationParam(),
+        residualizationParam = ResidualizationParam(),
         # `list()`, not ColocboostOptions(): the formal shadows the
         # constructor, so a constructor-call default is a recursive
         # reference. An empty list is the "no options" spelling
@@ -1816,10 +1878,10 @@ setMethod(
             separateGwas = separateGwas,
             samples = samples,
             panelFilterParam = panelFilterParam,
-            signalScreenArgs = signalScreenArgs,
+            signalScreenParam = signalScreenParam,
             alleleFlip = alleleFlip,
             methodArgs = methodArgs,
-            residualizationArgs = residualizationArgs
+            residualizationParam = residualizationParam
         )
     }
 )
@@ -1840,12 +1902,12 @@ setMethod(
     separateGwas,
     samples,
     panelFilterParam,
-    signalScreenArgs,
+    signalScreenParam,
     alleleFlip,
     methodArgs,
-    residualizationArgs
+    residualizationParam
 ) {
-    screenSpec <- .screenResolve(signalScreenArgs)
+    screenSpec <- .screenResolve(signalScreenParam)
     indBundle <- .cbMultiStudyIndBundle(
         qtlData = qtlData,
         contexts = contexts,
@@ -1854,7 +1916,7 @@ setMethod(
         cisWindow = cisWindow,
         samples = samples,
         screenSpec = screenSpec,
-        residualizationArgs = residualizationArgs
+        residualizationParam = residualizationParam
     )
     cutoffs <- .panelCutoffs(panelFilterParam)
     ss <- .cbMultiStudySumstats(
@@ -1872,17 +1934,12 @@ setMethod(
         separateGwas,
         focalTrait,
         methodArgs,
-        qtlLdSketch = ss$qtlLdSketch,
+        qtlLdReference = ss$qtlLdReference,
         alleleFlip = alleleFlip,
         cutoffs = cutoffs
     )
 }
 
-# Aggregate the individual-level bundles across all QtlDataset members. Per-
-# study trait names are prefixed with "{study}:" so colocboost sees distinct
-# outcomes when two studies share a trait. Returns the combined bundle or NULL.
-# (Sequential offset-shifted merge -- kept as a loop.)
-# @noRd
 # One study's bundle with its names study-prefixed, or NULL when it has
 # nothing to contribute.
 # @noRd
@@ -1895,7 +1952,7 @@ setMethod(
     cisWindow,
     samples,
     screenSpec,
-    residualizationArgs = ResidualizationParam()
+    residualizationParam = ResidualizationParam()
 ) {
     sub <- .cbIndividualBundle(
         qtlDatasets[[studyName]],
@@ -1905,7 +1962,7 @@ setMethod(
         cisWindow = cisWindow,
         samples = samples,
         pipCutoffToSkip = screenSpec,
-        residualizationArgs = residualizationArgs
+        residualizationParam = residualizationParam
     )
     if (is.null(sub)) {
         return(NULL)
@@ -1931,6 +1988,12 @@ setMethod(
     cbind(Y = d[, "Y"] + yOffsets[[i]], X = d[, "X"] + xOffsets[[i]])
 }
 
+# The individual-level bundle across every study of a MultiStudyQtlDataset.
+# Each study's dict indexes its own X and Y, so it shifts by however many
+# entries the studies before it contributed -- a cumulative count, known once
+# all the bundles are in hand rather than tracked while looping.
+# NULL when no study has anything to contribute.
+# @noRd
 .cbMultiStudyIndBundle <- function(
     qtlData,
     contexts,
@@ -1939,7 +2002,7 @@ setMethod(
     cisWindow,
     samples,
     screenSpec,
-    residualizationArgs = ResidualizationParam()
+    residualizationParam = ResidualizationParam()
 ) {
     qtlDatasets <- qtlDatasets(qtlData)
     subs <- compact(map(
@@ -1952,14 +2015,11 @@ setMethod(
         cisWindow = cisWindow,
         samples = samples,
         screenSpec = screenSpec,
-        residualizationArgs = residualizationArgs
+        residualizationParam = residualizationParam
     ))
     if (length(subs) == 0L) {
         return(NULL)
     }
-    # Each study's dict indexes its own X and Y, so it shifts by however many
-    # entries the studies before it contributed -- a cumulative count, known
-    # once all the bundles are in hand rather than tracked while looping.
     xOffsets <- .cbOffsets(map_int(subs, .cbFieldLength, field = "X"))
     yOffsets <- .cbOffsets(map_int(subs, .cbFieldLength, field = "Y"))
     combinedX <- .cbConcat(map(subs, "X"))
@@ -1985,7 +2045,8 @@ setMethod(
 }
 
 # Prefix a study's X names + outcome names with "{study}:" (Y names track the
-# outcome names).
+# outcome names), so colocboost sees distinct outcomes when two studies share
+# a trait.
 # @noRd
 .cbPrefixStudyNames <- function(sub, studyName) {
     outcomeNames <- str_c(studyName, sub$outcomeNames, sep = ":")
@@ -2014,7 +2075,7 @@ setMethod(
 }
 
 # Sumstat side of a MultiStudyQtlDataset: bundle any embedded QtlSumStats.
-# Returns list(qtlPairs, qtlLdSketch).
+# Returns list(qtlPairs, qtlLdReference).
 # @noRd
 .cbMultiStudySumstats <- function(
     qtlData,
@@ -2024,7 +2085,7 @@ setMethod(
 ) {
     embeddedSs <- sumStats(qtlData)
     if (is.null(embeddedSs)) {
-        return(list(qtlPairs = list(), qtlLdSketch = NULL))
+        return(list(qtlPairs = list(), qtlLdReference = NULL))
     }
     .cbRequireSumStatsQc(embeddedSs, "MultiStudyQtlDataset@sumStats")
     list(
@@ -2034,17 +2095,11 @@ setMethod(
             traitId = traitId,
             cutoffs = cutoffs
         ),
-        qtlLdSketch = ldSketch(embeddedSs)
+        qtlLdReference = ldReference(embeddedSs)
     )
 }
 
 # ---- map/apply helpers (lambda-free callbacks) ---------------------------
-
-# TRUE when a matrix is non-square (a samples x variants genotype reference).
-# @noRd
-.cbIsNonSquare <- function(m) {
-    nrow(m) != ncol(m)
-}
 
 # Single-effect screen decision for outcome column `j` (drop on failure).
 # @noRd

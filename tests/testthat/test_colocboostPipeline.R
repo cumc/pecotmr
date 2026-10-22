@@ -38,7 +38,7 @@ context("colocboostPipeline")
 #     setMethod("colocboostPipeline", "MultiStudyQtlDataset", ...)
 #
 #   - QTL data is supplied as a QtlDataset / QtlSumStats / MultiStudyQtlDataset
-#     (DFrame-based S4 objects with an ldSketch slot for sumstats inputs and
+#     (DFrame-based S4 objects with an ldReference slot for sumstats inputs and
 #     residualizedGenotypes() / residualizedPhenotypes() accessors for
 #     individual-level inputs).
 #   - GWAS is supplied separately via the gwasSumStats = GwasSumStats(...)
@@ -86,14 +86,14 @@ context("colocboostPipeline (S4 dispatch)")
 # colocboost::colocboost is the heavy compute; we mock it to return a stub
 # result so the pipeline orchestration runs end-to-end. The helpers
 # (.cbBuildLdArgs, .cbMergeSumstatBundles,
-# .cbRequireMatchingLdSketches, .cbEmptyResult) are exercised directly.
+# .cbRequireMatchingLdRefs, .cbEmptyResult) are exercised directly.
 # ===========================================================================
 
 .cbp_makeHandle <- function(snp_n = 6L, n_samples = 30L, sample_prefix = "s") {
     new(
         "GenotypeHandle",
-        path = "/tmp/cb.gds",
-        format = "gds",
+        path = "/tmp/cb",
+        format = "plink2",
         snpInfo = data.frame(
             SNP = sprintf("chr1:%d:A:G", 100L * seq_len(snp_n)),
             CHR = rep("1", snp_n),
@@ -211,7 +211,7 @@ context("colocboostPipeline (S4 dispatch)")
         trait = "t1",
         entry = list(gr),
         genome = "hg19",
-        ldSketch = .cbp_makeHandle(),
+        ldReference = .cbp_makeHandle(),
         qcInfo = if (qc) list(step1 = "ok") else list()
     )
 }
@@ -235,7 +235,7 @@ context("colocboostPipeline (S4 dispatch)")
         studyName = "G1",
         entry = list(gr),
         genome = "hg19",
-        ldSketch = .cbp_makeHandle(),
+        ldReference = .cbp_makeHandle(),
         qcInfo = if (qc) list(step1 = "ok") else list()
     )
 }
@@ -252,10 +252,13 @@ test_that(".cbBuildLdArgs: square matrices route to LD", {
     expect_false("X_ref" %in% names(res))
 })
 
-test_that(".cbBuildLdArgs: non-square matrices route to X_ref", {
+test_that(".cbBuildLdArgs: factors route to X_ref, whatever their shape", {
     X1 <- matrix(0, 10, 4)
-    res <- pecotmr:::.cbBuildLdArgs(list(X1))
-    expect_true("X_ref" %in% names(res))
+    res <- pecotmr:::.cbBuildLdArgs(list(X1), "X_ref")
+    expect_identical(names(res), "X_ref")
+    # A factor with as many rows as variants is still a factor.
+    square <- pecotmr:::.cbBuildLdArgs(list(diag(4)), "X_ref")
+    expect_identical(names(square), "X_ref")
 })
 
 test_that(".cbBuildLdArgs: empty list returns empty list", {
@@ -320,22 +323,22 @@ test_that(".cbRequireSumStatsQc: QCd input passes", {
 })
 
 
-test_that(".cbRequireMatchingLdSketches: NULL sides are allowed", {
-    expect_silent(pecotmr:::.cbRequireMatchingLdSketches(
+test_that(".cbRequireMatchingLdRefs: NULL sides are allowed", {
+    expect_silent(pecotmr:::.cbRequireMatchingLdRefs(
         NULL,
         .cbp_makeHandle()
     ))
-    expect_silent(pecotmr:::.cbRequireMatchingLdSketches(
+    expect_silent(pecotmr:::.cbRequireMatchingLdRefs(
         .cbp_makeHandle(),
         NULL
     ))
 })
 
-test_that(".cbRequireMatchingLdSketches: accepts differently trimmed panels", {
+test_that(".cbRequireMatchingLdRefs: accepts differently trimmed panels", {
     # Separate QC of the two sides trims one shared LD reference to two
     # overlapping-but-unequal variant sets; the check reports, not refuses.
     expect_warning(
-        expect_null(pecotmr:::.cbRequireMatchingLdSketches(
+        expect_null(pecotmr:::.cbRequireMatchingLdRefs(
             .cbp_makeHandle(snp_n = 4L),
             .cbp_makeHandle(snp_n = 5L)
         )),
@@ -343,9 +346,9 @@ test_that(".cbRequireMatchingLdSketches: accepts differently trimmed panels", {
     )
 })
 
-test_that(".cbRequireMatchingLdSketches: sample-set mismatch errors", {
+test_that(".cbRequireMatchingLdRefs: sample-set mismatch errors", {
     expect_error(
-        pecotmr:::.cbRequireMatchingLdSketches(
+        pecotmr:::.cbRequireMatchingLdRefs(
             .cbp_makeHandle(sample_prefix = "a"),
             .cbp_makeHandle(sample_prefix = "b")
         ),
@@ -369,6 +372,23 @@ test_that(".cbMergeSumstatBundles: identical LD matrices are deduplicated", {
     res <- pecotmr:::.cbMergeSumstatBundles(bundles)
     expect_equal(length(res$LD), 1L)
     expect_equal(unique(res$dict_sumstatLD[, 2L]), 1L)
+    expect_identical(res$ldArg, "LD")
+})
+
+test_that(".cbMergeSumstatBundles records factors and refuses a mix", {
+    f <- matrix(c(1, -1, 0.5, -0.5), 2)
+    factors <- list(
+        a = list(sumstat = data.frame(z = 1:2), LD = f, isFactor = TRUE),
+        b = list(sumstat = data.frame(z = 3:4), LD = f, isFactor = TRUE)
+    )
+    res <- pecotmr:::.cbMergeSumstatBundles(factors)
+    expect_identical(res$ldArg, "X_ref")
+    expect_equal(length(res$LD), 1L)
+    mixed <- list_assign(factors, b = list_assign(factors$b, isFactor = FALSE))
+    expect_error(
+        pecotmr:::.cbMergeSumstatBundles(mixed),
+        "mix LD matrices and genotype factors"
+    )
 })
 
 test_that(".cbEmptyResult: is the internal per-analysis accumulator", {
@@ -590,9 +610,9 @@ test_that("colocboostPipeline: no analysis flag set is an error", {
     }
 })
 
-test_that("colocboostPipeline: GWAS ldSketch mismatch errors during the driver", {
+test_that("colocboostPipeline: GWAS ldReference mismatch errors in driver", {
     ss <- .cbp_makeQtlSumStats()
-    # Build a GwasSumStats whose ldSketch has a different sample set.
+    # Build a GwasSumStats whose ldReference has a different sample set.
     gh_diff <- .cbp_makeHandle(sample_prefix = "z")
     gr <- GenomicRanges::GRanges(
         seqnames = "chr1",
@@ -612,7 +632,7 @@ test_that("colocboostPipeline: GWAS ldSketch mismatch errors during the driver",
         studyName = "G1",
         entry = list(gr),
         genome = "hg19",
-        ldSketch = gh_diff,
+        ldReference = gh_diff,
         qcInfo = list(step1 = "ok")
     )
     # .cbQtlSumStatsBundle reads the qtl sketch via extractBlockGenotypes
@@ -658,7 +678,7 @@ test_that("GwasSumStats: nCase/nControl are optional columns (absent by default)
         study = "G1",
         entry = list(gr),
         genome = "hg19",
-        ldSketch = .cbp_makeHandle(),
+        ldReference = .cbp_makeHandle(),
         qcInfo = list(ok = 1)
     )
     g0 <- exec(GwasSumStats, !!!base)
@@ -690,7 +710,7 @@ test_that("colocboost GWAS bundle: effective N for case/control, per-variant N o
         study = "G1",
         entry = list(gr),
         genome = "hg19",
-        ldSketch = .cbp_makeHandle(),
+        ldReference = .cbp_makeHandle(),
         qcInfo = list(ok = 1)
     )
     local_mocked_bindings(
@@ -844,7 +864,7 @@ test_that("colocboostPipeline(QtlDataset): pipCutoffToSkip dropping every outcom
         colocboostPipeline(
             qd,
             xqtlColoc = TRUE,
-            signalScreenArgs = SignalScreenParam(pip = 0.9999)
+            signalScreenParam = SignalScreenParam(pip = 0.9999)
         )
     ))
     expect_null(out$xqtl_coloc) # 249-253 skip -> empty
@@ -954,6 +974,27 @@ test_that(".cbFlipPairToCanonical flips z + LD for swapped variants, relabels to
     expect_equal(unname(diag(out$LD)), c(1, 1)) # diagonal preserved
 })
 
+test_that(".cbFlipPairToCanonical negates a factor's swapped columns", {
+    ss <- data.frame(
+        z = c(2, -1),
+        n = c(1000, 1000),
+        variant = c("chr1:100:A:G", "chr1:200:C:T"),
+        stringsAsFactors = FALSE
+    )
+    f <- matrix(c(1, -1, 0, 0.5, 0.5, -1), nrow = 3)
+    p <- list(sumstat = ss, LD = f, variantIds = ss$variant, isFactor = TRUE)
+    canonical <- c("chr1:100:G:A", "chr1:200:C:T")
+    out <- pecotmr:::.cbFlipPairToCanonical(p, canonical)
+    expect_true(out$isFactor)
+    expect_identical(colnames(out$LD), canonical)
+    expect_equal(unname(out$LD), cbind(-f[, 1], f[, 2]))
+    # The factor's LD is the flipped LD.
+    expect_equal(
+        unname(crossprod(out$LD)),
+        unname(crossprod(f) * outer(c(-1, 1), c(-1, 1)))
+    )
+})
+
 test_that(".cbFlipMatrixToCanonical negates residualized dosage for swapped columns", {
     X <- matrix(
         c(1, -1, 2, 0.5, -0.5, 1),
@@ -1056,7 +1097,7 @@ test_that("colocboost RSS cutoffs match .panelVariantFilter", {
         expect_equal(
             .cbf_n(ss, mafCutoff = cut),
             length(.panelVariantFilter(
-                ldSketch(ss),
+                ldReference(ss),
                 ids,
                 PanelFilterParam(mafCutoff = cut)
             )),
@@ -1067,7 +1108,7 @@ test_that("colocboost RSS cutoffs match .panelVariantFilter", {
 
 test_that("colocboost RSS treats MAC as a MAF equivalent", {
     ss <- .cbf_qcd()
-    nSamp <- ncol(ldSketch(ss))
+    nSamp <- ncol(ldReference(ss))
     expect_equal(
         .cbf_n(ss, macCutoff = 0.1 * 2 * nSamp),
         .cbf_n(ss, mafCutoff = 0.1)
@@ -1092,20 +1133,49 @@ test_that(".cbSumstatPair keeps sumstat rows aligned to the LD matrix", {
         trait = ss$trait[[1L]],
         require = "Z"
     )
-    sketch <- ldSketch(ss)
+    sketch <- ldReference(ss)
     pair <- suppressMessages(.cbSumstatPair(
         df = df,
-        ldSketch = sketch,
+        ldReference = sketch,
         cutoffs = list(mafCutoff = 0.2, macCutoff = 0, imissCutoff = 1)
     ))
     expect_lt(length(pair$variantIds), nrow(df))
     expect_equal(nrow(pair$sumstat), length(pair$variantIds))
     expect_equal(pair$sumstat$variant, pair$variantIds)
-    expect_equal(nrow(pair$LD), length(pair$variantIds))
-    expect_equal(rownames(pair$LD), pair$variantIds)
+    # A genotype reference gives a factor of its LD: variants on the columns.
+    expect_true(pair$isFactor)
+    expect_equal(ncol(pair$LD), length(pair$variantIds))
+    expect_equal(colnames(pair$LD), pair$variantIds)
     # The surviving z values are the originals for those variants.
     orig <- df$z[is_in(normalizeVariantId(df$variant_id), pair$variantIds)]
     expect_equal(pair$sumstat$z, orig)
+})
+
+test_that("colocboost reads a panel's factor and its LdMatrix alike", {
+    # A genotype reference reaches colocboost as X_ref, a factor of its LD;
+    # an LdMatrix as LD. The same LD gives the same colocalization.
+    skip_if_not_installed("colocboost")
+    data(qtlSumStatsMulticontextExample)
+    ss <- suppressMessages(summaryStatsQc(qtlSumStatsMulticontextExample))
+    panel <- ldReference(ss)
+    withLd <- QtlSumStats(
+        studyName = ss$study,
+        context = ss$context,
+        trait = ss$trait,
+        entry = map(seq_len(length(ss)), .collectionEntry, x = ss),
+        genome = "hg19",
+        ldReference = LdMatrix(
+            unname(computeLd(panel)),
+            variants = SummarizedExperiment::rowRanges(panel)
+        ),
+        qcInfo = qcInfo(ss)
+    )
+    set.seed(1)
+    viaPanel <- suppressWarnings(suppressMessages(colocboostPipeline(ss)))
+    set.seed(1)
+    viaMatrix <- suppressWarnings(suppressMessages(colocboostPipeline(withLd)))
+    expect_gt(nrow(as.data.frame(viaPanel)), 0L)
+    expect_equal(as.data.frame(viaPanel), as.data.frame(viaMatrix))
 })
 
 test_that(".cbSumstatPair returns NULL when a cutoff removes everything", {
@@ -1119,7 +1189,7 @@ test_that(".cbSumstatPair returns NULL when a cutoff removes everything", {
     )
     expect_null(suppressMessages(.cbSumstatPair(
         df = df,
-        ldSketch = ldSketch(ss),
+        ldReference = ldReference(ss),
         cutoffs = list(mafCutoff = 0.99, macCutoff = 0, imissCutoff = 1)
     )))
 })
@@ -1188,7 +1258,7 @@ test_that("a MultiStudyQtlDataset with no embedded sumstats yields no pairs", {
         traitId = NULL
     )
     expect_equal(out$qtlPairs, list())
-    expect_null(out$qtlLdSketch)
+    expect_null(out$qtlLdReference)
 })
 
 test_that("the signal screen passes Y through when no cutoff applies", {
@@ -1501,7 +1571,7 @@ test_that(".cbAppendGwasPairs disambiguates a colliding study key", {
     out <- pecotmr:::.cbAppendGwasPairs(
         list(dup = "QTL", other = "X"),
         "notNull",
-        qtlLdSketch = NULL
+        qtlLdReference = NULL
     )
     # The QTL pair keeps its key; the GWAS pair is suffixed rather than
     # overwriting it.
@@ -1514,7 +1584,7 @@ test_that(".cbConcat answers an empty list for no pieces", {
     expect_identical(pecotmr:::.cbConcat(list()), list())
 })
 
-test_that("colocboostPipeline forwards residualizationArgs to both sides", {
+test_that("colocboostPipeline forwards residualizationParam to both sides", {
     # It accepted no bundle at all, so it ran on the dataset's own settings
     # with no per-call say -- unlike fineMappingPipeline() and
     # twasWeightsPipeline(). Both SIDES matter here: colocboost consumes X and
@@ -1538,25 +1608,25 @@ test_that("colocboostPipeline forwards residualizationArgs to both sides", {
         residualizedGenotypes = function(
             x,
             ...,
-            residualizationArgs = ResidualizationParam()
+            residualizationParam = ResidualizationParam()
         ) {
-            note("geno", residualizationArgs)
-            origG(x, ..., residualizationArgs = residualizationArgs)
+            note("geno", residualizationParam)
+            origG(x, ..., residualizationParam = residualizationParam)
         },
         residualizedPhenotypes = function(
             x,
             ...,
-            residualizationArgs = ResidualizationParam()
+            residualizationParam = ResidualizationParam()
         ) {
-            note("pheno", residualizationArgs)
-            origP(x, ..., residualizationArgs = residualizationArgs)
+            note("pheno", residualizationParam)
+            origP(x, ..., residualizationParam = residualizationParam)
         },
         .package = "pecotmr"
     )
     suppressWarnings(suppressMessages(colocboostPipeline(
         qtlDatasetExample,
         cisWindow = 1e6,
-        residualizationArgs = ResidualizationParam(scaleResiduals = FALSE)
+        residualizationParam = ResidualizationParam(scaleResiduals = FALSE)
     )))
     expect_equal(unique(get("geno", envir = seen)), "FALSE")
     expect_equal(unique(get("pheno", envir = seen)), "FALSE")

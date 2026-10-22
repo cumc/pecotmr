@@ -7,8 +7,8 @@ context("qtlSumStats")
 .qtlMakeGenotypeHandle <- function() {
     new(
         "GenotypeHandle",
-        path = "/tmp/test.gds",
-        format = "gds",
+        path = "/tmp/test",
+        format = "plink2",
         snpInfo = data.frame(),
         nSamples = 0L,
         sampleIds = character(),
@@ -60,7 +60,7 @@ context("qtlSumStats")
         trait = trait,
         entry = list(.qtlMakeEntryGr(n, with_maf = with_maf)),
         genome = genome,
-        ldSketch = .qtlMakeGenotypeHandle(),
+        ldReference = .qtlMakeGenotypeHandle(),
         varY = varY,
         qcInfo = qcInfo
     )
@@ -88,7 +88,7 @@ test_that("QtlSumStats: multi-tuple object is keyed by (study, context, trait)",
             .qtlMakeEntryGr(5)
         ),
         genome = "hg38",
-        ldSketch = .qtlMakeGenotypeHandle()
+        ldReference = .qtlMakeGenotypeHandle()
     )
     expect_equal(nrow(obj), 3L)
     expect_setequal(contexts(obj), c("c1", "c2"))
@@ -111,7 +111,7 @@ test_that("QtlSumStats: traitPosition returns the supplied trait position", {
         trait = "ENSGX",
         entry = list(.qtlMakeEntryGr(5)),
         genome = "hg19",
-        ldSketch = .qtlMakeGenotypeHandle(),
+        ldReference = .qtlMakeGenotypeHandle(),
         traitPos = tpos
     )
     tp <- traitPosition(obj)
@@ -135,7 +135,7 @@ test_that("QtlSumStats: errors on length mismatch among study/context/trait/entr
             trait = c("t1"),
             entry = list(.qtlMakeEntryGr(1)),
             genome = "hg19",
-            ldSketch = .qtlMakeGenotypeHandle()
+            ldReference = .qtlMakeGenotypeHandle()
         ),
         "same length"
     )
@@ -149,7 +149,7 @@ test_that("QtlSumStats: errors when entry is not a list", {
             trait = "t1",
             entry = "not_a_list",
             genome = "hg19",
-            ldSketch = .qtlMakeGenotypeHandle()
+            ldReference = .qtlMakeGenotypeHandle()
         ),
         "must be a list"
     )
@@ -163,7 +163,7 @@ test_that("QtlSumStats: errors on non-singleton genome", {
             trait = "t1",
             entry = list(.qtlMakeEntryGr(1)),
             genome = c("hg19", "hg38"),
-            ldSketch = .qtlMakeGenotypeHandle()
+            ldReference = .qtlMakeGenotypeHandle()
         ),
         "single character string"
     )
@@ -177,7 +177,7 @@ test_that("QtlSumStats: errors on duplicate (study, context, trait) tuple", {
             trait = c("t1", "t1"),
             entry = list(.qtlMakeEntryGr(1), .qtlMakeEntryGr(1)),
             genome = "hg19",
-            ldSketch = .qtlMakeGenotypeHandle()
+            ldReference = .qtlMakeGenotypeHandle()
         ),
         "uniqueness violated"
     )
@@ -191,7 +191,7 @@ test_that("QtlSumStats: errors when entry list contains non-GRanges", {
             trait = "t1",
             entry = list("not_a_granges"),
             genome = "hg19",
-            ldSketch = .qtlMakeGenotypeHandle()
+            ldReference = .qtlMakeGenotypeHandle()
         ),
         "must be a GRanges"
     )
@@ -204,7 +204,7 @@ test_that("QtlSumStats: scalar varY is recycled across tuples", {
         trait = c("t1", "t1"),
         entry = list(.qtlMakeEntryGr(2), .qtlMakeEntryGr(2)),
         genome = "hg19",
-        ldSketch = .qtlMakeGenotypeHandle(),
+        ldReference = .qtlMakeGenotypeHandle(),
         varY = 1.5
     )
     expect_equal(obj$varY, c(1.5, 1.5))
@@ -218,7 +218,7 @@ test_that("QtlSumStats: errors when varY length is neither 1 nor n", {
             trait = c("t1", "t1"),
             entry = list(.qtlMakeEntryGr(2), .qtlMakeEntryGr(2)),
             genome = "hg19",
-            ldSketch = .qtlMakeGenotypeHandle(),
+            ldReference = .qtlMakeGenotypeHandle(),
             varY = c(1, 2, 3)
         ),
         "length 1 or length\\(study\\)"
@@ -234,7 +234,7 @@ test_that("QtlSumStats: optional nSample column is absent by default, attached a
         trait = c("t1", "t1"),
         entry = list(.qtlMakeEntryGr(2), .qtlMakeEntryGr(2)),
         genome = "hg19",
-        ldSketch = .qtlMakeGenotypeHandle(),
+        ldReference = .qtlMakeGenotypeHandle(),
         nSample = 838
     ) # scalar recycled to both tuples
     expect_equal(as.numeric(obj$nSample), c(838, 838))
@@ -249,7 +249,7 @@ test_that("QtlSumStats: errors when nSample length is neither 1 nor n", {
             trait = c("t1", "t1"),
             entry = list(.qtlMakeEntryGr(2), .qtlMakeEntryGr(2)),
             genome = "hg19",
-            ldSketch = .qtlMakeGenotypeHandle(),
+            ldReference = .qtlMakeGenotypeHandle(),
             nSample = c(1, 2, 3)
         ),
         "length 1 or length\\(study\\)"
@@ -264,7 +264,7 @@ test_that("QtlSumStats: subsetChr preserves the nSample column", {
         trait = "t1",
         entry = list(gr),
         genome = "hg19",
-        ldSketch = .qtlMakeGenotypeHandle(),
+        ldReference = .qtlMakeGenotypeHandle(),
         nSample = 838
     )
     sub <- subsetChr(obj, "chr1")
@@ -278,7 +278,7 @@ test_that("QtlSumStats: accepts and stores extra per-tuple columns via ...", {
         trait = c("t1", "t1"),
         entry = list(.qtlMakeEntryGr(2), .qtlMakeEntryGr(2)),
         genome = "hg19",
-        ldSketch = .qtlMakeGenotypeHandle(),
+        ldReference = .qtlMakeGenotypeHandle(),
         extraCols = list(cohort = c("UKB", "FinnGen"))
     )
     expect_equal(as.character(obj$cohort), c("UKB", "FinnGen"))
@@ -341,7 +341,7 @@ test_that("contexts / traitNames return unique values across tuples", {
             .qtlMakeEntryGr(1)
         ),
         genome = "hg19",
-        ldSketch = .qtlMakeGenotypeHandle()
+        ldReference = .qtlMakeGenotypeHandle()
     )
     expect_setequal(contexts(obj), c("c1", "c2"))
     expect_setequal(traitNames(obj), c("t1", "t2"))
@@ -354,7 +354,7 @@ test_that("accessors require (study, context, trait) when collection has >1 entr
         trait = c("t1", "t1"),
         entry = list(.qtlMakeEntryGr(1), .qtlMakeEntryGr(1)),
         genome = "hg19",
-        ldSketch = .qtlMakeGenotypeHandle()
+        ldReference = .qtlMakeGenotypeHandle()
     )
     expect_error(
         sumStats(obj),
@@ -410,7 +410,7 @@ test_that("subsetChr keeps only variants on the requested chromosome", {
         trait = "t1",
         entry = list(gr),
         genome = "hg19",
-        ldSketch = .qtlMakeGenotypeHandle()
+        ldReference = .qtlMakeGenotypeHandle()
     )
 
     chr1_only <- subsetChr(obj, "1")
@@ -435,10 +435,10 @@ test_that("subsetChr drops the element when no variants on that chromosome", {
         unname(GenomeInfoDb::genome(empty)),
         unname(GenomeInfoDb::genome(obj))
     )
-    expect_identical(ldSketch(empty), ldSketch(obj))
+    expect_identical(ldReference(empty), ldReference(obj))
 })
 
-test_that("subsetChr preserves class-level slots (genome, ldSketch, qcInfo)", {
+test_that("subsetChr keeps class-level slots (genome, ldReference, qcInfo)", {
     obj <- .qtlMakeOne(qcInfo = list(step1 = "ok"))
     res <- subsetChr(obj, "1")
     expect_equal(
@@ -446,7 +446,7 @@ test_that("subsetChr preserves class-level slots (genome, ldSketch, qcInfo)", {
         unname(GenomeInfoDb::genome(obj))
     )
     expect_equal(qcInfo(res), qcInfo(obj))
-    expect_identical(ldSketch(res), ldSketch(obj))
+    expect_identical(ldReference(res), ldReference(obj))
 })
 
 # ===========================================================================
@@ -469,26 +469,26 @@ test_that("sumStats errors on an empty QtlSumStats collection", {
         trait = character(0),
         entry = list(),
         genome = "hg19",
-        ldSketch = .qtlMakeGenotypeHandle(),
+        ldReference = .qtlMakeGenotypeHandle(),
         varY = numeric(0)
     )
     expect_equal(nrow(empty), 0L)
     expect_error(sumStats(empty), "has no rows")
 })
 
-test_that("QtlSumStats: ldSketch is optional (NULL for LD-free workflows)", {
+test_that("QtlSumStats: ldReference is optional (NULL for LD-free workflows)", {
     obj <- QtlSumStats(
         studyName = "s1",
         context = "c1",
         trait = "t1",
         entry = list(.qtlMakeEntryGr(1)),
         genome = "hg19"
-    ) # ldSketch omitted
-    expect_null(ldSketch(obj))
+    ) # ldReference omitted
+    expect_null(ldReference(obj))
     expect_output(show(obj), "none \\(LD-free\\)")
 })
 
-test_that("QtlSumStats: a non-GenotypeHandle ldSketch is rejected", {
+test_that("QtlSumStats: a non-GenotypeHandle ldReference is rejected", {
     expect_error(
         QtlSumStats(
             studyName = "s1",
@@ -496,7 +496,7 @@ test_that("QtlSumStats: a non-GenotypeHandle ldSketch is rejected", {
             trait = "t1",
             entry = list(.qtlMakeEntryGr(1)),
             genome = "hg19",
-            ldSketch = "not_a_handle"
+            ldReference = "not_a_handle"
         ),
         "must be a genotype panel"
     )
@@ -609,10 +609,10 @@ test_that("combineQtlSumStats() row-binds collections and keeps NULL sketches", 
     )
 
     a2 <- a
-    a2@ldSketch <- NULL
+    a2@ldReference <- NULL
     b2 <- b
-    b2@ldSketch <- NULL
-    expect_null(ldSketch(combineQtlSumStats(a2, b2)))
+    b2@ldReference <- NULL
+    expect_null(ldReference(combineQtlSumStats(a2, b2)))
 })
 
 

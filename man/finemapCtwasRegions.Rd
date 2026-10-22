@@ -47,13 +47,14 @@ blocks <- GenomicRanges::GRanges("chr22",
   IRanges::IRanges(c(10000000, 15000001), c(15000000, 19000000)),
   blockId = c("chr22_1", "chr22_2"))
 gss <- loadGwasSumStatsFromManifest(manifest = mani, genome = "hg38",
-  ldSketch = ldStem, region = "chr22:10000000-19000000", ldBlocks = blocks)
+  ldReference = ldStem, region = "chr22:10000000-19000000",
+  ldBlocks = blocks)
 gwasByRegion <- summaryStatsQc(gss,
   panelFilterParam = PanelFilterParam(mafCutoff = 0.0025))
 inp <- assembleCtwasInputs(gwasSumStats = gwasByRegion,
   twasWeights = list(ctwasWeightsExample))
 est <- estCtwasGroupPriors(inp,
-  ctwasPrior = CtwasPriorParam(thin = 1, niterPrefit = 3, niter = 10,
+  ctwasPriorParam = CtwasPriorParam(thin = 1, niterPrefit = 3, niter = 10,
     fallbackToPrefit = TRUE),
   methodArgs = CtwasOptions(
     regionData = CtwasRegionDataOptions(min_group_size = 1),

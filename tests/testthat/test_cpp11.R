@@ -2,7 +2,11 @@
 # only thin .Call() wrappers around the compiled routines in src/. The
 # behaviour of each routine is tested through its R-level wrapper
 # (test_rrLassosum.R, test_rrPrsCs.R, test_rrSdpr.R, test_rrPenalizedRss.R,
-# test_sumstatsQc.R for DENTIST, test_qtlEnrichmentPipeline.R).
+# test_sumstatsQc.R for DENTIST, test_qtlEnrichmentPipeline.R,
+# test_ld.R for the pruning components, test_genotypeIo.R for the BGEN
+# decoder, test_GenotypeDosageSeed.R for VCF GT calls) or, for the solvers'
+# factor entry points, against their dense counterparts
+# (test_regularizedRegressionWrappers.R).
 #
 # What is left to check here is the seam those tests cannot see: that every
 # generated wrapper's native symbol is actually registered in the compiled
@@ -12,12 +16,21 @@
 # "object '_pecotmr_x' not found" from deep inside a pipeline.
 
 .cpp_wrappers <- c(
+    "bgenDosageCpp",
+    "bgenSampleIdsCpp",
     "dentistIterativeImpute",
-    "lassosumRssRcpp",
-    "penalizedRssRcpp",
-    "prsCsRcpp",
-    "qtlEnrichmentRcpp",
-    "sdprRcpp"
+    "dentistIterativeImputeFactor",
+    "lassosumRssCpp",
+    "lassosumRssFactorCpp",
+    "ldThresholdComponents",
+    "penalizedRssCpp",
+    "penalizedRssFactorCpp",
+    "prsCsCpp",
+    "prsCsFactorCpp",
+    "qtlEnrichmentCpp",
+    "sdprCpp",
+    "sdprFactorCpp",
+    "vcfGtDosageCpp"
 )
 
 test_that("every generated cpp11 wrapper exists in the namespace", {

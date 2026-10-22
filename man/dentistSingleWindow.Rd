@@ -26,8 +26,10 @@ dentistSingleWindow(
 
 \item{R}{Square LD correlation matrix. Provide either \code{R} or \code{X}.}
 
-\item{X}{Genotype matrix (samples x SNPs). If provided, LD is computed via
-\code{computeLd(X)} and \code{nSample} defaults to \code{nrow(X)}.}
+\item{X}{Genotype matrix (samples x SNPs). With \code{ldMethod = "sample"}
+DENTIST works on the standardized genotypes and never forms the LD
+matrix; any other \code{ldMethod} computes LD via \code{computeLd(X)}.
+\code{nSample} defaults to \code{nrow(X)}.}
 
 \item{nSample}{Number of samples in the LD reference panel (NOT the GWAS
 sample size). Controls the SVD truncation rank. Required when \code{R} is
@@ -52,9 +54,9 @@ provided; inferred from \code{X} when \code{X} is provided.}
 is TRUE.}
 
 \item{ldMethod}{Character string specifying the LD computation method when
-\code{X} is provided. Passed to \code{computeLd}. One of \code{"sample"}
-(default), \code{"population"}, or \code{"gcta"}. Ignored when \code{R} is
-provided directly.}
+\code{X} is provided: \code{"sample"} (default), which uses the
+genotypes directly, or \code{"population"} or \code{"gcta"}, which go
+through \code{computeLd}. Ignored when \code{R} is provided directly.}
 
 \item{seed}{Integer or \code{NULL}. Random seed for the iterative
 variant-partitioning RNG. \code{NULL} (default) preserves the original

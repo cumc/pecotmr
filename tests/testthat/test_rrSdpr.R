@@ -219,10 +219,10 @@ test_that("sdprWeights calls sdpr and returns beta_est", {
     p <- 10
     bhat <- rnorm(p, sd = 0.1)
     R <- diag(p)
-    stat <- list(b = bhat, n = rep(100, p))
+    stat <- list(b = bhat, n = rep(100, p), variantNames = .rrwIds(p))
     result <- sdprWeights(
         stat = stat,
-        LD = R,
+        ldReference = .rrwLdMatrix(R),
         methodArgs = SdprOptions(
             iter = 50,
             burn = 10,

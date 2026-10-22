@@ -83,7 +83,10 @@ test_that("ldMismatchQc dentist returns a data frame with an outlier column", {
     p <- 20
     R <- diag(p)
     z <- rnorm(p)
-    result <- ldMismatchQc(z, R = R, nSample = 1000, method = "dentist")
+    expect_warning(
+        result <- ldMismatchQc(z, R = R, nSample = 1000, method = "dentist"),
+        "below 2000"
+    )
     expect_true(is.data.frame(result) || is.list(result))
     expect_true("outlier" %in% names(result))
 })
@@ -115,18 +118,6 @@ test_that("ldMismatchQc method argument is validated", {
 context("raiss")
 library(tidyverse)
 library(MASS)
-
-# Helper: build LdData S4 from a ref_panel data.frame, correlation matrix, and blockMetadata
-makeLdDataFromRefPanel <- function(R_mat, ref_panel, blockMetadata) {
-    ref_panel$chrom <- as.character(ref_panel$chrom)
-    ref_panel$variant_id <- as.character(ref_panel$variant_id)
-    variants_gr <- pecotmr:::.refPanelToGranges(ref_panel)
-    LdData(
-        correlation = R_mat,
-        variants = variants_gr,
-        blockMetadata = blockMetadata
-    )
-}
 
 generateDummyData <- function(
     seed = 1,
@@ -200,6 +191,84 @@ test_that("Input validation for raiss works correctly", {
         input_data_zscores_unordered$known_zscores,
         input_data$ldMatrix
     ))
+})
+
+test_that("raiss refuses a plain list of block matrices", {
+    # Such a list does not say which variants each block holds; it used to
+    # come back as NULL with nothing said.
+    input_data <- generateDummyData()
+    R <- input_data$ldMatrix
+    expect_error(
+        raiss(input_data$ref_panel, input_data$known_zscores, list(R, R)),
+        "square LD matrix or an LdMatrix"
+    )
+})
+
+test_that("raiss needs refPanel with a plain LD matrix", {
+    input_data <- generateDummyData()
+    expect_error(
+        raiss(
+            knownZscores = input_data$known_zscores,
+            ldMatrix = input_data$ldMatrix
+        ),
+        "`refPanel` is required"
+    )
+})
+
+test_that("raiss takes an LdMatrix and uses its variants", {
+    set.seed(3)
+    p <- 30L
+    R <- 0.6^abs(outer(seq_len(p), seq_len(p), "-"))
+    pos <- seq(100L, by = 100L, length.out = p)
+    ref_panel <- data.frame(
+        chrom = "1",
+        pos = pos,
+        variant_id = sprintf("chr1:%d:A:G", pos),
+        A1 = "G",
+        A2 = "A"
+    )
+    known <- ref_panel[seq_len(p) %% 3L != 0L, ]
+    known$z <- rnorm(nrow(known))
+    full <- raiss(
+        ref_panel,
+        known,
+        ldMatrix = R,
+        r2Threshold = 0.3,
+        minimumLd = 1,
+        verbose = FALSE
+    )
+    ld <- LdMatrix(
+        R,
+        variants = data.frame(
+            chrom = "chr1",
+            pos = pos,
+            SNP = ref_panel$variant_id,
+            A1 = "G",
+            A2 = "A"
+        )
+    )
+    # No refPanel: the LdMatrix's own variants supply it, so the z-scores
+    # label chromosomes canonically, as it does.
+    chr <- transform(known, chrom = "chr1")
+    expect_error(
+        raiss(knownZscores = chr, ldMatrix = ld, verbose = FALSE),
+        "chromosome labels"
+    )
+    fromLd <- raiss(
+        knownZscores = known,
+        ldMatrix = ld,
+        r2Threshold = 0.3,
+        minimumLd = 1,
+        verbose = FALSE
+    )
+    expect_equal(
+        arrange(fromLd$resultNofilter, variant_id)$z,
+        arrange(full$resultNofilter, variant_id)$z
+    )
+    expect_error(
+        raiss(knownZscores = known, genotypes = ld),
+        "must be a genotype panel or a GenotypeMixture"
+    )
 })
 
 test_that("Default parameters for raiss work correctly", {
@@ -553,6 +622,13 @@ test_that("checkInversion correctly identifies inverse matrices in", {
     expect_true(checkInversion(sig_t, sig_t_inv))
 })
 
+test_that("checkInversion reports a failed inversion as FALSE, not text", {
+    # all.equal() describes a mismatch as a string; passed through, that put
+    # text in the logical correctInversion column exactly when it failed.
+    sig_t <- matrix(c(1, 2, 3, 4), nrow = 2, ncol = 2)
+    expect_false(checkInversion(sig_t, diag(2)))
+})
+
 test_that("varInBoundaries sets boundaries correctly", {
     lamb_test <- 0.05
     var <- c(-1, 0, 0.5, 1.04, 1.05)
@@ -603,56 +679,6 @@ test_that("invertMatRecursive handles errors and recurses correctly", {
     lamb <- 0.5
     rcond <- 0.01
     expect_error(invertMatRecursive(mat, lamb, rcond))
-})
-
-# Test with Different Tolerance Levels
-test_that("invertMatEigen behaves differently with varying tolerance levels", {
-    mat <- matrix(c(1, 0, 0, 1e-4), nrow = 2)
-    tol_high <- 1e-2
-    tol_low <- 1e-6
-    result_high_tol <- invertMatEigen(mat, tol_high)
-    result_low_tol <- invertMatEigen(mat, tol_low)
-    expect_true(!is.logical(all.equal(result_high_tol, result_low_tol)))
-})
-
-test_that("invertMatEigen handles non-square matrices", {
-    mat <- matrix(1:6, nrow = 2)
-    expect_error(invertMatEigen(mat))
-})
-
-test_that("invertMatEigen returns the same matrix for an identity matrix", {
-    mat <- diag(2)
-    expected <- mat
-    actual <- invertMatEigen(mat)
-    expect_equal(actual, expected)
-})
-
-test_that("invertMatEigen returns a zero matrix for a zero matrix input", {
-    mat <- matrix(0, nrow = 2, ncol = 2)
-    expected <- mat
-    expect_error(
-        invertMatEigen(mat),
-        "Cannot invert the input matrix because all its eigen values are negative or close to zero"
-    )
-})
-
-test_that("invertMatEigen handles matrices with negative eigenvalues", {
-    mat <- matrix(c(-2, 0, 0, -3), nrow = 2)
-    expect_silent(invertMatEigen(mat))
-})
-
-test_that("invertMatEigen inverts a matrix that keeps a single eigenvector", {
-    # A near-rank-1 matrix puts >99.9% of the variance in one eigenvalue, so
-    # L == 1. That used to drop the eigenvector subscript to a vector and
-    # hand diag() a length-one value, which returns an identity matrix of
-    # THAT ORDER (diag(0.1) is 0x0) rather than a 1x1 matrix holding it.
-    v <- c(1, 1, 1) / sqrt(3)
-    mat <- 3 * outer(v, v) + diag(1e-9, 3)
-    actual <- invertMatEigen(mat)
-    expect_equal(dim(actual), c(3L, 3L))
-    expect_equal(actual, t(actual))
-    # The rank-1 pseudo-inverse reproduces the matrix it came from.
-    expect_equal(mat %*% actual %*% mat, mat, tolerance = 1e-6)
 })
 
 # ===========================================================================
@@ -798,774 +824,6 @@ test_that("raissSingleMatrixFromX returns known z when nothing to impute", {
 # raiss() dispatch paths: single-matrix list and genotype_matrix list
 # ===========================================================================
 
-test_that("raiss with single-matrix LD list dispatches to single matrix path", {
-    set.seed(42)
-    n_variants <- 20
-    ref_panel <- data.frame(
-        chrom = rep(1, n_variants),
-        pos = seq(10, n_variants * 10, 10),
-        variant_id = paste0("rs", seq_len(n_variants)),
-        A1 = rep("A", n_variants),
-        A2 = rep("G", n_variants),
-        stringsAsFactors = FALSE
-    )
-    n_known <- 10
-    known_idx <- sort(sample(seq_len(n_variants), n_known))
-    known_zscores <- data.frame(
-        chrom = rep(1, n_known),
-        pos = ref_panel$pos[known_idx],
-        variant_id = ref_panel$variant_id[known_idx],
-        A1 = ref_panel$A1[known_idx],
-        A2 = ref_panel$A2[known_idx],
-        z = rnorm(n_known),
-        stringsAsFactors = FALSE
-    )
-    R <- diag(n_variants)
-    colnames(R) <- rownames(R) <- ref_panel$variant_id
-
-    # Wrap in list structure with ldMatrices
-    LD_list <- list(ldMatrices = list(R))
-
-    result <- raiss(
-        ref_panel,
-        known_zscores,
-        ldMatrix = LD_list,
-        r2Threshold = 0,
-        minimumLd = 0,
-        verbose = FALSE
-    )
-    expect_true(is.list(result))
-    expect_true("resultNofilter" %in% names(result))
-    expect_equal(nrow(result$resultNofilter), n_variants)
-})
-
-test_that("raiss with genotype_matrix list processes multiple blocks", {
-    set.seed(42)
-    n <- 50
-    p <- 20
-    # Each block has its own ref_panel subset matching the X columns
-    ref_panel <- data.frame(
-        chrom = rep(1, p),
-        pos = seq(10, p * 10, 10),
-        variant_id = paste0("rs", seq_len(p)),
-        A1 = rep("A", p),
-        A2 = rep("G", p),
-        stringsAsFactors = FALSE
-    )
-    # Use only first block's variants as known (so second block has unknowns)
-    known_idx <- sort(sample(1:10, 5))
-    known_zscores <- data.frame(
-        chrom = rep(1, length(known_idx)),
-        pos = ref_panel$pos[known_idx],
-        variant_id = ref_panel$variant_id[known_idx],
-        A1 = ref_panel$A1[known_idx],
-        A2 = ref_panel$A2[known_idx],
-        z = rnorm(length(known_idx)),
-        stringsAsFactors = FALSE
-    )
-    X <- scale(matrix(sample(0:2, n * p, replace = TRUE), nrow = n))
-    X[is.na(X)] <- 0
-    colnames(X) <- ref_panel$variant_id
-
-    # Use the full matrix as a single-element list - the simplest valid list input
-    X_list <- list(X)
-
-    result <- raiss(
-        ref_panel,
-        known_zscores,
-        genotypeMatrix = X_list,
-        r2Threshold = 0,
-        minimumLd = 0,
-        verbose = FALSE
-    )
-    expect_true(is.list(result))
-    expect_true("resultNofilter" %in% names(result))
-    expect_true(nrow(result$resultNofilter) > 0)
-    expect_null(result$ldMat)
-})
-
-test_that("raiss with genotype_matrix list returns NULL when all blocks fail", {
-    set.seed(42)
-    n <- 50
-    p <- 10
-    ref_panel <- data.frame(
-        chrom = rep(1, p),
-        pos = seq(10, p * 10, 10),
-        variant_id = paste0("rs", seq_len(p)),
-        A1 = rep("A", p),
-        A2 = rep("G", p),
-        stringsAsFactors = FALSE
-    )
-    # known_zscores has no overlap with ref_panel
-    known_zscores <- data.frame(
-        chrom = rep(1, 3),
-        pos = c(200, 300, 400),
-        variant_id = paste0("other", 1:3),
-        A1 = rep("A", 3),
-        A2 = rep("G", 3),
-        z = rnorm(3),
-        stringsAsFactors = FALSE
-    )
-    X <- scale(matrix(sample(0:2, n * p, replace = TRUE), nrow = n))
-    X[is.na(X)] <- 0
-    colnames(X) <- ref_panel$variant_id
-    X_list <- list(X[, 1:5, drop = FALSE], X[, 6:10, drop = FALSE])
-
-    result <- raiss(
-        ref_panel,
-        known_zscores,
-        genotypeMatrix = X_list,
-        verbose = FALSE
-    )
-    expect_null(result)
-})
-
-# Block-Diagonal LD data generator for RAISS testing
-# Corrected function to generate proper block-diagonal test data
-generateBlockDiagonalTestData <- function(
-    seed = 123,
-    block_structure = "overlapping",
-    n_variants = 30
-) {
-    set.seed(seed)
-
-    # Create reference panel with variants
-    ref_panel <- data.frame(
-        chrom = rep(1, n_variants),
-        pos = seq(1, n_variants * 10, 10),
-        variant_id = paste0("var", seq_len(n_variants)),
-        A1 = sample(c("A", "T", "G", "C"), n_variants, replace = TRUE),
-        A2 = sample(c("A", "T", "G", "C"), n_variants, replace = TRUE),
-        stringsAsFactors = FALSE
-    )
-
-    # Create known z-scores for every other variant
-    known_indices <- seq(1, n_variants, by = 2)
-    known_zscores <- data.frame(
-        chrom = rep(1, length(known_indices)),
-        pos = ref_panel$pos[known_indices],
-        variant_id = ref_panel$variant_id[known_indices],
-        A1 = ref_panel$A1[known_indices],
-        A2 = ref_panel$A2[known_indices],
-        z = rnorm(length(known_indices)),
-        stringsAsFactors = FALSE
-    )
-
-    # Define block boundaries based on requested structure
-    if (block_structure == "overlapping") {
-        block_boundaries <- list(
-            c(1, 11), # Block 1: variants 1-11
-            c(11, 21), # Block 2: variants 11-21 (overlap at var11)
-            c(21, n_variants) # Block 3: variants 21-30 (overlap at var21)
-        )
-    } else if (block_structure == "non_overlapping") {
-        block_boundaries <- list(
-            c(1, 10),
-            c(11, 20),
-            c(21, n_variants)
-        )
-    } else if (block_structure == "uneven") {
-        block_boundaries <- list(
-            c(1, 5),
-            c(6, 20),
-            c(21, n_variants)
-        )
-    } else if (block_structure == "many_small") {
-        block_size <- 5
-        n_blocks <- ceiling(n_variants / block_size)
-        block_boundaries <- list()
-        for (i in seq_len(n_blocks)) {
-            startIdx <- (i - 1) * block_size + 1
-            endIdx <- min(i * block_size, n_variants)
-            block_boundaries[[i]] <- c(startIdx, endIdx)
-        }
-    } else if (block_structure == "single_block") {
-        block_boundaries <- list(c(1, n_variants))
-    }
-
-    # First, create independent block matrices
-    block_matrices <- list()
-    for (i in seq_along(block_boundaries)) {
-        startIdx <- block_boundaries[[i]][1]
-        endIdx <- block_boundaries[[i]][2]
-        block_variant_ids <- ref_panel$variant_id[startIdx:endIdx]
-        n_block <- length(block_variant_ids)
-
-        # Create the block matrix with correlations ONLY within the block
-        block_matrix <- matrix(0, nrow = n_block, ncol = n_block)
-        for (a in seq_len(n_block)) {
-            for (b in seq_len(n_block)) {
-                if (a == b) {
-                    block_matrix[a, b] <- 1
-                } else {
-                    # Use positions within the block, not absolute positions
-                    block_matrix[a, b] <- 0.95^abs(a - b)
-                }
-            }
-        }
-        rownames(block_matrix) <- block_variant_ids
-        colnames(block_matrix) <- block_variant_ids
-
-        block_matrices[[i]] <- block_matrix
-    }
-
-    # Create variant indices data frame
-    variantIndices <- data.frame(
-        variant_id = character(),
-        blockId = integer(),
-        stringsAsFactors = FALSE
-    )
-
-    for (i in seq_along(block_boundaries)) {
-        startIdx <- block_boundaries[[i]][1]
-        endIdx <- block_boundaries[[i]][2]
-        block_variant_ids <- ref_panel$variant_id[startIdx:endIdx]
-
-        block_indices <- data.frame(
-            variant_id = block_variant_ids,
-            blockId = i,
-            stringsAsFactors = FALSE
-        )
-        variantIndices <- rbind(variantIndices, block_indices)
-    }
-
-    # Create block metadata
-    block_sizes <- map_dbl(block_boundaries, function(b) b[2] - b[1] + 1)
-    blockMetadata <- data.frame(
-        blockId = seq_along(block_boundaries),
-        chrom = rep(1, length(block_boundaries)),
-        size = block_sizes,
-        startIdx = map_dbl(seq_along(block_boundaries), function(i) {
-            # Adjust for 1-based indexing in R
-            if (i == 1) {
-                return(1)
-            }
-            # Count unique variants before this block
-            sum(map_dbl(seq_len(i - 1), function(j) {
-                # If there's an overlap with the next block, count one less
-                if (
-                    j < length(block_boundaries) &&
-                        block_boundaries[[j]][2] == block_boundaries[[j + 1]][1]
-                ) {
-                    return(block_boundaries[[j]][2] - block_boundaries[[j]][1])
-                } else {
-                    return(
-                        block_boundaries[[j]][2] - block_boundaries[[j]][1] + 1
-                    )
-                }
-            })) +
-                1
-        }),
-        endIdx = map_dbl(seq_along(block_boundaries), function(i) {
-            # Count all unique variants up to and including this block
-            sum(map_dbl(seq_len(i), function(j) {
-                # If there's an overlap with the next block, count one less
-                if (
-                    j < i &&
-                        block_boundaries[[j]][2] == block_boundaries[[j + 1]][1]
-                ) {
-                    return(block_boundaries[[j]][2] - block_boundaries[[j]][1])
-                } else {
-                    return(
-                        block_boundaries[[j]][2] - block_boundaries[[j]][1] + 1
-                    )
-                }
-            }))
-        }),
-        stringsAsFactors = FALSE
-    )
-
-    # Build the full matrix correctly ensuring proper block structure
-    # IMPORTANT: Initialize a matrix with zeros - ensure no correlations between blocks
-    all_variant_ids <- unique(variantIndices$variant_id)
-    LD_matrix_full <- matrix(
-        0,
-        nrow = length(all_variant_ids),
-        ncol = length(all_variant_ids)
-    )
-    rownames(LD_matrix_full) <- all_variant_ids
-    colnames(LD_matrix_full) <- all_variant_ids
-
-    # For each block, fill in only the relevant section of the full matrix
-    for (i in seq_along(block_matrices)) {
-        block_matrix <- block_matrices[[i]]
-        block_vars <- rownames(block_matrix)
-
-        for (var_a in block_vars) {
-            for (var_b in block_vars) {
-                LD_matrix_full[var_a, var_b] <- block_matrix[var_a, var_b]
-            }
-        }
-    }
-
-    # Create the block structure for RAISS
-    LD_matrix_blocks <- list(
-        ldMatrices = block_matrices,
-        variantIndices = variantIndices,
-        blockMetadata = blockMetadata,
-        ldVariants = all_variant_ids
-    )
-
-    return(list(
-        ref_panel = ref_panel,
-        known_zscores = known_zscores,
-        LD_matrix_full = LD_matrix_full,
-        LD_matrix_blocks = LD_matrix_blocks,
-        variantIndices = variantIndices,
-        block_boundaries = block_boundaries,
-        blockMetadata = blockMetadata
-    ))
-}
-
-test_that("full matrix and block processing produce identical results", {
-    # Only test non-overlapping structures for exact z-score matching
-    block_structures <- c("non_overlapping", "single_block")
-
-    for (structure in block_structures) {
-        test_data <- generateBlockDiagonalTestData(
-            seed = 123,
-            block_structure = structure
-        )
-
-        # Prepare ld_data as LdData S4 for partitionLdMatrix
-        ld_data <- makeLdDataFromRefPanel(
-            test_data$LD_matrix_full,
-            test_data$ref_panel,
-            test_data$blockMetadata
-        )
-
-        # For non-overlapping structures, use partitionLdMatrix
-        partitioned <- partitionLdMatrix(
-            ld_data,
-            mergeSmallBlocks = FALSE
-        )
-
-        # Run RAISS with full matrix
-        result_full <- raiss(
-            refPanel = test_data$ref_panel,
-            knownZscores = test_data$known_zscores,
-            ldMatrix = test_data$LD_matrix_full,
-            lamb = 0.01,
-            rcond = 0.01,
-            r2Threshold = 0.3,
-            minimumLd = 1,
-            verbose = FALSE
-        )
-
-        # Run RAISS with partitioned blocks
-        result_blocks <- raiss(
-            refPanel = test_data$ref_panel,
-            knownZscores = test_data$known_zscores,
-            ldMatrix = partitioned,
-            lamb = 0.01,
-            rcond = 0.01,
-            r2Threshold = 0.3,
-            minimumLd = 1,
-            verbose = FALSE
-        )
-
-        # For non-overlapping blocks, we compare all variants
-        result_full_sorted <- result_full$resultNofilter %>% arrange(variant_id)
-        result_blocks_sorted <- result_blocks$resultNofilter %>%
-            arrange(variant_id)
-
-        # Compare variant IDs
-        expect_equal(
-            sort(result_full$resultNofilter$variant_id),
-            sort(result_blocks$resultNofilter$variant_id),
-            info = paste("Variant IDs should match for", structure)
-        )
-
-        # Compare z-scores with appropriate tolerance
-        expect_equal(
-            result_full_sorted$z,
-            result_blocks_sorted$z,
-            tolerance = 0.01,
-            info = paste("Z-scores should match for", structure)
-        )
-
-        # Compare filtered results if present
-        if (
-            !is.null(result_full$resultFilter) &&
-                !is.null(result_blocks$resultFilter) &&
-                nrow(result_full$resultFilter) > 0 &&
-                nrow(result_blocks$resultFilter) > 0
-        ) {
-            expect_equal(
-                sort(result_full$resultFilter$variant_id),
-                sort(result_blocks$resultFilter$variant_id),
-                info = paste("Filtered variant IDs should match for", structure)
-            )
-
-            result_full_filter_sorted <- result_full$resultFilter %>%
-                arrange(variant_id)
-            result_blocks_filter_sorted <- result_blocks$resultFilter %>%
-                arrange(variant_id)
-
-            expect_equal(
-                result_full_filter_sorted$z,
-                result_blocks_filter_sorted$z,
-                tolerance = 0.01,
-                info = paste("Filtered Z-scores should match for", structure)
-            )
-        }
-    }
-})
-
-test_that("overlapping blocks keep variant IDs but may differ in z", {
-    # Test only overlapping structure
-    test_data <- generateBlockDiagonalTestData(
-        seed = 123,
-        block_structure = "overlapping"
-    )
-
-    # Run RAISS with full matrix
-    result_full <- raiss(
-        refPanel = test_data$ref_panel,
-        knownZscores = test_data$known_zscores,
-        ldMatrix = test_data$LD_matrix_full,
-        lamb = 0.01,
-        rcond = 0.01,
-        r2Threshold = 0.3,
-        minimumLd = 1,
-        verbose = FALSE
-    )
-
-    # Run RAISS with block processing
-    result_blocks <- raiss(
-        refPanel = test_data$ref_panel,
-        knownZscores = test_data$known_zscores,
-        ldMatrix = test_data$LD_matrix_blocks,
-        lamb = 0.01,
-        rcond = 0.01,
-        r2Threshold = 0.3,
-        minimumLd = 1,
-        verbose = FALSE
-    )
-
-    # Test 1: Verify all variants are present in both results
-    expect_equal(
-        sort(result_full$resultNofilter$variant_id),
-        sort(result_blocks$resultNofilter$variant_id),
-        info = "Both methods should have the same set of variant IDs"
-    )
-
-    # Test 2: For overlapping blocks, verify boundary variants exist and have valid values
-    # Identify boundary variants
-    boundary_variants <- character(0)
-    for (i in seq_len(length(test_data$block_boundaries) - 1)) {
-        overlap_pos <- test_data$block_boundaries[[i]][2]
-        boundary_variants <- c(boundary_variants, paste0("var", overlap_pos))
-    }
-
-    # Verify boundary variants exist in results
-    expect_true(
-        all(boundary_variants %in% result_blocks$resultNofilter$variant_id),
-        info = "All boundary variants should be present in block results"
-    )
-
-    # Verify boundary variants have valid z-scores
-    boundaryResults <- result_blocks$resultNofilter %>%
-        filter(variant_id %in% boundary_variants)
-
-    expect_true(
-        all(!is.na(boundaryResults$z)),
-        info = "Boundary variants should have valid z-scores in block results"
-    )
-
-    # Test 3: Verify non-boundary variants have z-scores with reasonable range
-    non_boundaryResults <- result_blocks$resultNofilter %>%
-        filter(!variant_id %in% boundary_variants)
-
-    expect_true(
-        all(!is.na(non_boundaryResults$z)),
-        info = "Non-boundary variants should have valid z-scores"
-    )
-
-    expect_true(
-        all(abs(non_boundaryResults$z) < 10),
-        info = "Non-boundary variant z-scores should be in reasonable range"
-    )
-
-    # We deliberately do NOT compare z-score values between full matrix and block processing
-    # for overlapping blocks, as differences are expected and valid
-})
-
-test_that("raiss handles block boundaries correctly", {
-    # Generate test data with overlapping blocks
-    test_data <- generateBlockDiagonalTestData(
-        seed = 456,
-        block_structure = "overlapping"
-    )
-
-    # Define the thresholds explicitly
-    test_R2_threshold <- 0.3
-    test_minimum_ld <- 1
-
-    # Run RAISS with block processing
-    result <- raiss(
-        refPanel = test_data$ref_panel,
-        knownZscores = test_data$known_zscores,
-        ldMatrix = test_data$LD_matrix_blocks,
-        lamb = 0.01,
-        rcond = 0.01,
-        r2Threshold = test_R2_threshold,
-        minimumLd = test_minimum_ld,
-        verbose = FALSE
-    )
-
-    # First verify that the required columns exist in the results
-    expect_true(
-        "variant_id" %in% names(result$resultNofilter),
-        info = "resultNofilter should contain a variant_id column"
-    )
-
-    expect_true(
-        "raissR2" %in% names(result$resultNofilter),
-        info = "resultNofilter should contain a raissR2 column"
-    )
-
-    expect_true(
-        "raissLdScore" %in% names(result$resultNofilter),
-        info = "resultNofilter should contain a raissLdScore column"
-    )
-
-    # Check that we have only one entry per variant ID (no duplicates)
-    expect_equal(
-        length(unique(result$resultNofilter$variant_id)),
-        length(result$resultNofilter$variant_id),
-        info = "Result should have no duplicate variant IDs"
-    )
-
-    # Check that boundary variants have reasonable values
-    boundary_variants <- character(0)
-    for (i in seq_len(length(test_data$block_boundaries) - 1)) {
-        overlap_pos <- test_data$block_boundaries[[i]][2]
-        boundary_variants <- c(boundary_variants, paste0("var", overlap_pos))
-    }
-
-    # Verify that boundary variants exist in the results
-    expect_true(
-        all(boundary_variants %in% result$resultNofilter$variant_id),
-        info = "All boundary variants should be present in the results"
-    )
-
-    # Get the boundary variant results
-    boundaryResults <- result$resultNofilter %>%
-        filter(variant_id %in% boundary_variants)
-
-    # Check R-squared values for non-NA boundary variants
-    non_na_r2 <- boundaryResults$raissR2[!is.na(boundaryResults$raissR2)]
-    if (length(non_na_r2) > 0) {
-        expect_true(
-            all(non_na_r2 >= 0 & non_na_r2 <= 1),
-            info = "Non-NA boundary variant R-squared values should be between 0 and 1"
-        )
-    }
-
-    # Check LD scores for non-NA boundary variants
-    non_na_ld <- boundaryResults$raissLdScore[
-        !is.na(boundaryResults$raissLdScore)
-    ]
-    if (length(non_na_ld) > 0) {
-        expect_true(
-            all(non_na_ld >= 0),
-            info = "Non-NA boundary variant LD scores should be non-negative"
-        )
-    }
-
-    # Verify that pre-filtering and post-filtering steps handle boundary variants correctly
-    if (!is.null(result$resultFilter) && nrow(result$resultFilter) > 0) {
-        # First check if filtered results have the required columns
-        expect_true(
-            "variant_id" %in% names(result$resultFilter),
-            info = "resultFilter should contain a variant_id column"
-        )
-
-        expect_true(
-            "raissR2" %in% names(result$resultFilter),
-            info = "resultFilter should contain a raissR2 column"
-        )
-
-        expect_true(
-            "raissLdScore" %in% names(result$resultFilter),
-            info = "resultFilter should contain a raissLdScore column"
-        )
-
-        # Check which boundary variants passed the filtering
-        boundary_in_filtered <- boundary_variants %in%
-            result$resultFilter$variant_id
-
-        if (any(boundary_in_filtered)) {
-            # Get the filtered boundary variants
-            boundary_filtered <- result$resultFilter %>%
-                filter(variant_id %in% boundary_variants)
-
-            # Check that non-NA R-squared values meet the threshold
-            non_na_r2_filtered <- boundary_filtered$raissR2[
-                !is.na(boundary_filtered$raissR2)
-            ]
-            if (length(non_na_r2_filtered) > 0) {
-                expect_true(
-                    all(non_na_r2_filtered >= test_R2_threshold),
-                    info = paste(
-                        "Non-NA filtered boundary variant R-squared values should meet the threshold of",
-                        test_R2_threshold
-                    )
-                )
-            }
-
-            # Check that non-NA LD scores meet the threshold
-            non_na_ld_filtered <- boundary_filtered$raissLdScore[
-                !is.na(boundary_filtered$raissLdScore)
-            ]
-            if (length(non_na_ld_filtered) > 0) {
-                expect_true(
-                    all(non_na_ld_filtered >= test_minimum_ld),
-                    info = paste(
-                        "Non-NA filtered boundary variant LD scores should meet the threshold of",
-                        test_minimum_ld
-                    )
-                )
-            }
-        }
-    }
-})
-
-test_that("partitionLdMatrix integrates correctly with RAISS", {
-    test_data <- generateBlockDiagonalTestData(
-        seed = 456,
-        block_structure = "non_overlapping"
-    )
-
-    ld_data <- makeLdDataFromRefPanel(
-        test_data$LD_matrix_full,
-        test_data$ref_panel,
-        test_data$blockMetadata
-    )
-
-    partitioned <- partitionLdMatrix(
-        ld_data,
-        mergeSmallBlocks = FALSE
-    )
-
-    result_full <- raiss(
-        refPanel = test_data$ref_panel,
-        knownZscores = test_data$known_zscores,
-        ldMatrix = test_data$LD_matrix_full,
-        lamb = 0.01,
-        rcond = 0.01,
-        r2Threshold = 0.3,
-        minimumLd = 1,
-        verbose = FALSE
-    )
-
-    result_partitioned <- raiss(
-        refPanel = test_data$ref_panel,
-        knownZscores = test_data$known_zscores,
-        ldMatrix = partitioned,
-        lamb = 0.01,
-        rcond = 0.01,
-        r2Threshold = 0.3,
-        minimumLd = 1,
-        verbose = FALSE
-    )
-
-    result_full_sorted <- result_full$resultNofilter %>% arrange(variant_id)
-    result_partitioned_sorted <- result_partitioned$resultNofilter %>%
-        arrange(variant_id)
-
-    expect_equal(
-        result_full_sorted$variant_id,
-        result_partitioned_sorted$variant_id,
-        info = "Variant IDs should match"
-    )
-
-    expect_equal(
-        result_full_sorted$z,
-        result_partitioned_sorted$z,
-        tolerance = 1e-4,
-        info = "Z-scores should match"
-    )
-})
-
-# Test 3: Boundary overlap handling
-test_that("boundary overlaps are handled correctly", {
-    test_data <- generateBlockDiagonalTestData(
-        seed = 789,
-        block_structure = "overlapping"
-    )
-
-    result_blocks <- raiss(
-        refPanel = test_data$ref_panel,
-        knownZscores = test_data$known_zscores,
-        ldMatrix = test_data$LD_matrix_blocks,
-        lamb = 0.01,
-        rcond = 0.01,
-        r2Threshold = 0.1,
-        minimumLd = 1,
-        verbose = FALSE
-    )
-
-    variant_counts <- table(test_data$variantIndices$variant_id)
-    boundary_vars <- names(variant_counts[variant_counts > 1])
-
-    for (var in boundary_vars) {
-        expect_equal(
-            sum(result_blocks$resultNofilter$variant_id == var),
-            1,
-            info = paste("Boundary variant", var, "should appear once")
-        )
-    }
-
-    expect_equal(
-        nrow(result_blocks$resultNofilter),
-        length(unique(result_blocks$resultNofilter$variant_id)),
-        info = "No duplicate variants in results"
-    )
-})
-
-# Test 4: Single-block case
-test_that("RAISS handles single-block list correctly", {
-    test_data <- generateBlockDiagonalTestData(
-        seed = 202,
-        block_structure = "single_block"
-    )
-
-    result_full <- raiss(
-        refPanel = test_data$ref_panel,
-        knownZscores = test_data$known_zscores,
-        ldMatrix = test_data$LD_matrix_full,
-        lamb = 0.01,
-        rcond = 0.01,
-        r2Threshold = 0.3,
-        minimumLd = 1,
-        verbose = FALSE
-    )
-
-    result_single_block <- raiss(
-        refPanel = test_data$ref_panel,
-        knownZscores = test_data$known_zscores,
-        ldMatrix = test_data$LD_matrix_blocks,
-        lamb = 0.01,
-        rcond = 0.01,
-        r2Threshold = 0.3,
-        minimumLd = 1,
-        verbose = FALSE
-    )
-
-    result_full_sorted <- result_full$resultNofilter %>% arrange(variant_id)
-    result_single_block_sorted <- result_single_block$resultNofilter %>%
-        arrange(variant_id)
-
-    expect_equal(
-        result_full_sorted$z,
-        result_single_block_sorted$z,
-        tolerance = 1e-6,
-        info = "Z-scores should match for single block"
-    )
-})
-
 # ============================================================================
 # Tests for SVD-based genotype matrix path (raissSingleMatrixFromX)
 # ============================================================================
@@ -1623,6 +881,35 @@ generateXTestData <- function(n = 200, p = 100, n_known = 50, seed = 42) {
     )
 }
 
+# The SVD route on a standardized genotype matrix. raiss() takes genotypes
+# only as a panel, which it standardizes itself, so these numeric checks call
+# the route it hands that matrix to.
+.raissX <- function(
+    refPanel,
+    knownZscores,
+    X,
+    lamb = 0.01,
+    rcond = 0.01,
+    svdTol = 1e-8,
+    r2Threshold = 0.6,
+    minimumLd = 5,
+    verbose = FALSE
+) {
+    pecotmr:::.raissGenotypePath(
+        refPanel,
+        knownZscores,
+        X,
+        list(
+            lamb = lamb,
+            rcond = rcond,
+            svdTol = svdTol,
+            r2Threshold = r2Threshold,
+            minimumLd = minimumLd,
+            verbose = verbose
+        )
+    )
+}
+
 test_that("safeSvd basic functionality", {
     set.seed(1)
     mat <- matrix(rnorm(20), nrow = 5, ncol = 4)
@@ -1671,10 +958,10 @@ test_that("X path matches R path: basic equivalence (n > p)", {
         minimumLd = 0,
         verbose = FALSE
     )
-    result_X <- raiss(
+    result_X <- .raissX(
         data$ref_panel,
         data$known_zscores,
-        genotypeMatrix = data$X,
+        data$X,
         lamb = 0.01,
         svdTol = 1e-12,
         r2Threshold = 0,
@@ -1719,10 +1006,10 @@ test_that("X path matches R path: n < p regime", {
         minimumLd = 0,
         verbose = FALSE
     )
-    result_X <- raiss(
+    result_X <- .raissX(
         data$ref_panel,
         data$known_zscores,
-        genotypeMatrix = data$X,
+        data$X,
         lamb = 0.01,
         svdTol = 1e-12,
         r2Threshold = 0,
@@ -1747,6 +1034,66 @@ test_that("X path matches R path: n < p regime", {
     )
 })
 
+
+test_that("the genotype and LD routes drop the same weak directions", {
+    # Blocks of near-identical columns: a few large eigenvalues and many tiny
+    # ones, so rcond's cutoff removes directions the ridge alone would keep.
+    set.seed(17)
+    n <- 150
+    p <- 40
+    base <- matrix(sample(0:2, n * 5, replace = TRUE), nrow = n)
+    X_raw <- base[, rep(1:5, each = 8)]
+    flips <- cbind(sample(n, 6 * p, replace = TRUE), rep(seq_len(p), each = 6))
+    X_raw[flips] <- sample(0:2, nrow(flips), replace = TRUE)
+    ref_panel <- data.frame(
+        chrom = 1,
+        pos = seq_len(p),
+        variant_id = paste0("rs", seq_len(p)),
+        A1 = "A",
+        A2 = "G"
+    )
+    X <- `colnames<-`(scale(X_raw), ref_panel$variant_id)
+    R <- cor(X_raw)
+    dimnames(R) <- list(ref_panel$variant_id, ref_panel$variant_id)
+    known_idx <- which(seq_len(p) %% 4L != 0L)
+    known <- ref_panel[known_idx, ]
+    known$z <- rnorm(nrow(known))
+    ridged <- `diag<-`(R[known_idx, known_idx], 1.01)
+    ev <- eigen(ridged, symmetric = TRUE, only.values = TRUE)$values
+    expect_true(any(ev < 0.01 * ev[[1L]]))
+
+    viaLd <- raiss(
+        ref_panel,
+        known,
+        ldMatrix = R,
+        r2Threshold = 0,
+        minimumLd = 0,
+        verbose = FALSE
+    )$resultNofilter
+    viaX <- .raissX(
+        ref_panel,
+        known,
+        X,
+        svdTol = 1e-12,
+        r2Threshold = 0,
+        minimumLd = 0
+    )$resultNofilter
+    expect_equal(viaX$z, viaLd$z, tolerance = 1e-8)
+    expect_equal(viaX$Var, viaLd$Var, tolerance = 1e-8)
+    expect_equal(viaX$raissLdScore, viaLd$raissLdScore, tolerance = 1e-8)
+    # Without the cutoff the genotype route keeps those directions and its
+    # imputation differs.
+    uncut <- .raissX(
+        ref_panel,
+        known,
+        X,
+        rcond = 0,
+        svdTol = 1e-12,
+        r2Threshold = 0,
+        minimumLd = 0
+    )$resultNofilter
+    expect_false(isTRUE(all.equal(uncut$z, viaLd$z, tolerance = 1e-6)))
+})
 test_that("X path matches R path: n >> p regime", {
     data <- generateXTestData(n = 500, p = 50, n_known = 25, seed = 99)
 
@@ -1760,10 +1107,10 @@ test_that("X path matches R path: n >> p regime", {
         minimumLd = 0,
         verbose = FALSE
     )
-    result_X <- raiss(
+    result_X <- .raissX(
         data$ref_panel,
         data$known_zscores,
-        genotypeMatrix = data$X,
+        data$X,
         lamb = 0.01,
         svdTol = 1e-12,
         r2Threshold = 0,
@@ -1792,10 +1139,10 @@ test_that("X path matches R path: varying lambda", {
             minimumLd = 0,
             verbose = FALSE
         )
-        result_X <- raiss(
+        result_X <- .raissX(
             data$ref_panel,
             data$known_zscores,
-            genotypeMatrix = data$X,
+            data$X,
             lamb = lamb,
             svdTol = 1e-12,
             r2Threshold = 0,
@@ -1833,10 +1180,10 @@ test_that("X path handles all-known edge case", {
         z = rnorm(nrow(data$ref_panel)),
         stringsAsFactors = FALSE
     )
-    result <- raiss(
+    result <- .raissX(
         data$ref_panel,
         all_known,
-        genotypeMatrix = data$X,
+        data$X,
         verbose = FALSE
     )
     expect_equal(nrow(result$resultNofilter), nrow(data$ref_panel))
@@ -1855,10 +1202,10 @@ test_that("X path handles single unknown variant", {
         minimumLd = 0,
         verbose = FALSE
     )
-    result_X <- raiss(
+    result_X <- .raissX(
         data$ref_panel,
         data$known_zscores,
-        genotypeMatrix = data$X,
+        data$X,
         lamb = 0.01,
         svdTol = 1e-12,
         r2Threshold = 0,
@@ -1875,10 +1222,10 @@ test_that("X path handles single unknown variant", {
 test_that("X path handles single known variant", {
     data <- generateXTestData(n = 100, p = 50, n_known = 1, seed = 20)
 
-    result_X <- raiss(
+    result_X <- .raissX(
         data$ref_panel,
         data$known_zscores,
-        genotypeMatrix = data$X,
+        data$X,
         lamb = 0.01,
         svdTol = 1e-12,
         r2Threshold = 0,
@@ -1902,10 +1249,10 @@ test_that("X path R2 filtering matches R path", {
         minimumLd = 5,
         verbose = FALSE
     )
-    result_X <- raiss(
+    result_X <- .raissX(
         data$ref_panel,
         data$known_zscores,
-        genotypeMatrix = data$X,
+        data$X,
         lamb = 0.01,
         svdTol = 1e-12,
         r2Threshold = 0.6,
@@ -1923,7 +1270,9 @@ test_that("X path R2 filtering matches R path", {
     )
 })
 
-test_that("raw genotype_matrix path differs from the legacy LD path", {
+test_that("the SVD route needs standardized genotypes", {
+    # Why raiss() standardizes a panel's dosages itself: raw dosages through
+    # the same route give different answers from the LD path.
     set.seed(1)
     n <- 80
     p <- 40
@@ -1970,20 +1319,20 @@ test_that("raw genotype_matrix path differs from the legacy LD path", {
         minimumLd = 0,
         verbose = FALSE
     )
-    result_raw_X <- raiss(
+    result_raw_X <- .raissX(
         ref_panel,
         known_zscores,
-        genotypeMatrix = X_raw,
+        X_raw,
         lamb = 0.01,
         svdTol = 1e-8,
         r2Threshold = 0.6,
         minimumLd = 0,
         verbose = FALSE
     )
-    result_scaled_X <- raiss(
+    result_scaled_X <- .raissX(
         ref_panel,
         known_zscores,
-        genotypeMatrix = X_scaled,
+        X_scaled,
         lamb = 0.01,
         svdTol = 1e-12,
         r2Threshold = 0.6,
@@ -2005,25 +1354,76 @@ test_that("raw genotype_matrix path differs from the legacy LD path", {
     expect_equal(ld_sorted$raissR2, scaled_sorted$raissR2, tolerance = 1e-10)
 })
 
-test_that("raiss rejects both ldMatrix and genotype_matrix", {
+test_that("raiss rejects both ldMatrix and genotypes", {
     data <- generateXTestData(n = 50, p = 20, n_known = 10, seed = 1)
     expect_error(
         raiss(
             data$ref_panel,
             data$known_zscores,
             ldMatrix = data$R,
-            genotypeMatrix = data$X
+            genotypes = data$X
         ),
         "not both"
     )
 })
 
-test_that("raiss rejects neither ldMatrix nor genotype_matrix", {
+test_that("raiss refuses genotypes that are not a panel", {
+    # A bare matrix leaves centring, scaling, column order and allele coding
+    # to the caller, and gets every one of them wrong silently.
+    data <- generateXTestData(n = 50, p = 20, n_known = 10, seed = 1)
+    expect_error(
+        raiss(data$ref_panel, data$known_zscores, genotypes = data$X),
+        "`genotypes` must be a genotype panel or a GenotypeMixture"
+    )
+})
+
+test_that("raiss rejects neither ldMatrix nor genotypes", {
     data <- generateXTestData(n = 50, p = 20, n_known = 10, seed = 1)
     expect_error(
         raiss(data$ref_panel, data$known_zscores),
         "Provide either"
     )
+})
+
+test_that("raiss imputes from a genotype panel through the SVD route", {
+    # The panel's dosages are standardized here and the p x p matrix is never
+    # formed: the fit is the SVD route's on the same standardized dosages.
+    set.seed(11)
+    panel <- readGenotypes(test_path("test_data", "test_variants.bed"))[1:30, ]
+    ref_panel <- pecotmr:::.refVariantsFromLdRef(panel)
+    known <- ref_panel[seq_len(30L) %% 3L != 0L, ]
+    known$z <- rnorm(nrow(known))
+    expect_message(
+        fromPanel <- raiss(knownZscores = known, genotypes = panel),
+        "SVD-based"
+    )
+    direct <- .raissX(
+        ref_panel,
+        known,
+        pecotmr:::.ldRefFactor(panel, seq_len(30L)),
+        verbose = FALSE
+    )
+    expect_equal(fromPanel$resultNofilter, direct$resultNofilter)
+    expect_error(
+        raiss(knownZscores = known, ldMatrix = panel),
+        "Pass genotypes as `genotypes`"
+    )
+})
+
+test_that("the SVD route reports its progress when verbose", {
+    data <- generateXTestData(n = 60, p = 20, n_known = 10, seed = 3)
+    expect_message(
+        res <- .raissX(
+            data$ref_panel,
+            data$known_zscores,
+            data$X,
+            r2Threshold = 0,
+            minimumLd = 0,
+            verbose = TRUE
+        ),
+        "Processing genotype matrix"
+    )
+    expect_equal(nrow(res$resultNofilter), nrow(data$ref_panel))
 })
 
 test_that("X path with collinear variants matches R path", {
@@ -2079,10 +1479,10 @@ test_that("X path with collinear variants matches R path", {
         minimumLd = 0,
         verbose = FALSE
     )
-    result_X <- raiss(
+    result_X <- .raissX(
         ref_panel,
         known_zscores,
-        genotypeMatrix = X,
+        X,
         lamb = 0.01,
         svdTol = 1e-12,
         r2Threshold = 0,
@@ -2100,7 +1500,6 @@ test_that("X path with collinear variants matches R path", {
         info = "Collinear case: z-scores should be close"
     )
 })
-
 
 context("RAISS missing-variant imputation in TWAS pipelines")
 
@@ -2196,8 +1595,24 @@ test_that("slalom honours ldMethod when given genotypes", {
     )
     invisible(slalom(zScore = z, X = X, ldMethod = "gcta"))
     expect_equal(seen, "gcta")
+    # The sample estimator reads the lead column off X's LD factor instead,
+    # never forming the matrix.
+    seen <- NULL
     invisible(slalom(zScore = z, X = X))
-    expect_equal(seen, "sample")
+    expect_null(seen)
+})
+
+test_that("slalom from genotypes matches slalom from their LD", {
+    set.seed(12)
+    X <- matrix(sample(0:2, 80 * 7, replace = TRUE), nrow = 80, ncol = 7)
+    X[, 4] <- 2
+    X[c(3, 17), 2] <- NA
+    colnames(X) <- paste0("snp", seq_len(7))
+    z <- rnorm(7)
+    expect_equal(
+        slalom(zScore = z, X = X),
+        slalom(zScore = z, R = computeLd(X))
+    )
 })
 
 test_that("slalom still refuses both or neither of R and X", {
@@ -3020,7 +2435,6 @@ test_that("CS95 variants are ordered by decreasing PIP", {
     expect_true(all(diff(cs_pips) <= .Machine$double.eps))
 })
 
-
 context("summaryStatsQc")
 
 # NOTE
@@ -3028,7 +2442,7 @@ context("summaryStatsQc")
 # The variant-content QC (MAF/INFO/N) is pure data.frame filtering via
 # .applyContentFilters; no external genome / dbSNP packages required.
 # All pecotmr-native steps (.applyContentFilters, .applySkipRegion,
-# .matchAgainstSketch, .applyLdMismatchQcToEntry) run
+# .matchAgainstLdRef, .applyLdMismatchQcToEntry) run
 # for real on the synthetic fixture.
 
 # ===========================================================================
@@ -3038,8 +2452,8 @@ context("summaryStatsQc")
 .ssQ_makeHandle <- function(snp_n = 8L, n_samples = 60L) {
     new(
         "GenotypeHandle",
-        path = "/tmp/sketch.gds",
-        format = "gds",
+        path = "/tmp/sketch",
+        format = "plink2",
         snpInfo = data.frame(
             SNP = paste0("rs", seq_len(snp_n)),
             CHR = rep("1", snp_n),
@@ -3081,7 +2495,7 @@ context("summaryStatsQc")
         studyName = studyName,
         entry = list(.ssQ_makeEntryGr(snp_ids, positions)),
         genome = "hg19",
-        ldSketch = .ssQ_makeHandle()
+        ldReference = .ssQ_makeHandle()
     )
 }
 
@@ -3159,7 +2573,7 @@ test_that("summaryStatsQc: infoCutoff > 0 with no INFO column errors", {
     expect_error(
         summaryStatsQc(
             ss,
-            sumstatsFilterArgs = SumstatsFilterParam(infoCutoff = 0.5)
+            sumstatsFilterParam = SumstatsFilterParam(infoCutoff = 0.5)
         ),
         "infoCutoff > 0 requires every entry to carry an INFO column"
     )
@@ -3183,12 +2597,12 @@ test_that("summaryStatsQc: PIP screen runs AFTER allele harmonization", {
         studyName = "g1",
         entry = list(gr),
         genome = "hg19",
-        ldSketch = .ssQ_makeHandle()
+        ldReference = .ssQ_makeHandle()
     )
     out <- summaryStatsQc(
         ss,
-        signalScreenArgs = SignalScreenParam(pip = 0.5),
-        sumstatsFilterArgs = SumstatsFilterParam(nCutoff = 0)
+        signalScreenParam = SignalScreenParam(pip = 0.5),
+        sumstatsFilterParam = SumstatsFilterParam(nCutoff = 0)
     )
     snps <- as.character(S4Vectors::mcols(out[[1L]])$SNP)
     expect_false("rsX" %in% snps) # dropped by harmonization
@@ -3210,12 +2624,12 @@ test_that("summaryStatsQc: PIP screen off leaves the harmonized set intact", {
         studyName = "g1",
         entry = list(gr),
         genome = "hg19",
-        ldSketch = .ssQ_makeHandle()
+        ldReference = .ssQ_makeHandle()
     )
     out <- summaryStatsQc(
         ss,
-        signalScreenArgs = SignalScreenParam(pip = 0),
-        sumstatsFilterArgs = SumstatsFilterParam(nCutoff = 0)
+        signalScreenParam = SignalScreenParam(pip = 0),
+        sumstatsFilterParam = SumstatsFilterParam(nCutoff = 0)
     )
     snps <- as.character(S4Vectors::mcols(out[[1L]])$SNP)
     # SNP is re-keyed to the panel-harmonized id (chr:pos:A2:A1) after
@@ -3257,12 +2671,12 @@ test_that("summaryStatsQc: harmonization re-keys SNP and sign-flips Z", {
         studyName = "g1",
         entry = list(.ssQ_makeFlipEntryGr()),
         genome = "hg19",
-        ldSketch = .ssQ_makeHandle()
+        ldReference = .ssQ_makeHandle()
     )
     out <- summaryStatsQc(
         ss,
-        signalScreenArgs = SignalScreenParam(pip = 0),
-        sumstatsFilterArgs = SumstatsFilterParam(nCutoff = 0)
+        signalScreenParam = SignalScreenParam(pip = 0),
+        sumstatsFilterParam = SumstatsFilterParam(nCutoff = 0)
     )
     e <- out[[1L]]
     o <- order(GenomicRanges::start(e))
@@ -3277,16 +2691,16 @@ test_that("summaryStatsQc: harmonization re-keys SNP and sign-flips Z", {
 # never drop the variant
 # ---------------------------------------------------------------------------
 
-test_that(".ldSketchMatchIds repairs tag ids and leaves clean labels alone", {
+test_that(".ldRefMatchIds repairs tag ids and leaves clean labels alone", {
     h <- .ssQ_makeHandleVid() # ids chr1:100:G:A .. chr1:800:G:A, A1=A A2=G
     h@snpInfo$SNP[h@snpInfo$BP == 200L] <- "chr1:200:INS:A"
-    ids <- pecotmr:::.ldSketchMatchIds(h)
+    ids <- pecotmr:::.ldRefMatchIds(h)
     # the tag id is re-rendered from the panel's own A2/A1 columns ...
     expect_equal(ids[2L], "chr1:200:G:A")
     # ... and every other label is untouched.
-    expect_equal(ids[-2L], pecotmr:::.ldSketchVariantIds(h)[-2L])
+    expect_equal(ids[-2L], pecotmr:::.ldRefVariantIds(h)[-2L])
     # the raw accessor still answers the panel FILE's label (.afreq keys on it)
-    expect_equal(pecotmr:::.ldSketchVariantIds(h)[2L], "chr1:200:INS:A")
+    expect_equal(pecotmr:::.ldRefVariantIds(h)[2L], "chr1:200:INS:A")
 })
 
 test_that(".raissUnsafeToImpute does not refuse a tag-allele id", {
@@ -3318,11 +2732,11 @@ test_that("harmonization keeps a variant on a tag-named panel position", {
         N = c(1000L, 1000L)
     )
     # control: both variants match the panel and survive
-    out0 <- pecotmr:::.matchAgainstSketch(df, h, matchMinProp = 0)
+    out0 <- pecotmr:::.matchAgainstLdRef(df, h, matchMinProp = 0)
     expect_setequal(pecotmr:::parseVariantId(out0$SNP)$pos, c(100L, 200L))
     # tag the pos-200 panel id (A1/A2 columns stay the real alleles)
     h@snpInfo$SNP[h@snpInfo$BP == 200L] <- "chr1:200:INS:A"
-    outT <- pecotmr:::.matchAgainstSketch(df, h, matchMinProp = 0)
+    outT <- pecotmr:::.matchAgainstLdRef(df, h, matchMinProp = 0)
     # the tag costs nothing: both variants survive, with unchanged Z
     expect_setequal(pecotmr:::parseVariantId(outT$SNP)$pos, c(100L, 200L))
     expect_equal(outT$SNP, out0$SNP)
@@ -3336,18 +2750,18 @@ test_that("a tag-named panel entry survives the end-to-end sketch subset", {
         studyName = "g1",
         entry = list(.ssQ_makeEntryGr()),
         genome = "hg19",
-        ldSketch = h
+        ldReference = h
     )
     out <- summaryStatsQc(
         ss,
-        signalScreenArgs = SignalScreenParam(pip = 0),
-        sumstatsFilterArgs = SumstatsFilterParam(nCutoff = 0)
+        signalScreenParam = SignalScreenParam(pip = 0),
+        sumstatsFilterParam = SumstatsFilterParam(nCutoff = 0)
     )
     snp <- as.character(S4Vectors::mcols(out[[1L]])$SNP)
     expect_true("chr1:200:G:A" %in% snp)
     # the retained sketch keeps the panel row the QC'd entry still refers to
     expect_true(
-        "chr1:200:G:A" %in% pecotmr:::.ldSketchMatchIds(ldSketch(out))
+        "chr1:200:G:A" %in% pecotmr:::.ldRefMatchIds(ldReference(out))
     )
 })
 
@@ -3357,8 +2771,8 @@ test_that("the sketch survives a chr:pos:A1:A2 panel (PLINK .bim order)", {
     # allele fields are already valid DNA. A panel keyed the other way round --
     # which is how a PLINK .bim writes ids, whereas a .pvar writes REF:ALT and
     # is already canonical -- matched nothing under string equality, so
-    # .subsetSketchToIds() silently emptied the sketch and RSS fine-mapping /
-    # TWAS weights aborted later with "not present in the LD sketch panel".
+    # .subsetLdRefToIds() silently emptied the sketch and RSS fine-mapping /
+    # TWAS weights aborted later with "not present in the LD reference".
     h <- .ssQ_makeHandleVid()
     si <- snpInfo(h)
     h@snpInfo$SNP <- paste0("chr1:", si$BP, ":", si$A1, ":", si$A2)
@@ -3368,14 +2782,14 @@ test_that("the sketch survives a chr:pos:A1:A2 panel (PLINK .bim order)", {
             snp_ids = paste0("chr1:", c(100L, 200L, 300L, 400L), ":G:A")
         )),
         genome = "hg19",
-        ldSketch = h
+        ldReference = h
     )
     out <- summaryStatsQc(
         ss,
-        signalScreenArgs = SignalScreenParam(pip = 0),
-        sumstatsFilterArgs = SumstatsFilterParam(nCutoff = 0)
+        signalScreenParam = SignalScreenParam(pip = 0),
+        sumstatsFilterParam = SumstatsFilterParam(nCutoff = 0)
     )
-    kept <- pecotmr:::.ldSketchMatchIds(ldSketch(out))
+    kept <- pecotmr:::.ldRefMatchIds(ldReference(out))
     expect_length(kept, 4L)
     expect_setequal(
         pecotmr:::parseVariantId(kept)$pos,
@@ -3386,13 +2800,13 @@ test_that("the sketch survives a chr:pos:A1:A2 panel (PLINK .bim order)", {
 test_that("summaryStatsQc: slalom z-mismatch resolves sign-flipped variants", {
     # Pre-fix regression: a sign-flipped variant kept its input-orientation SNP,
     # which is absent from the panel, so .applyLdMismatchQcToEntry errored with
-    # "absent from the ldSketch panel". After the harmonization re-key the SNP
-    # matches the panel and slalom QC runs to completion.
+    # "absent from the ldReference panel". After the harmonization re-key the
+    # SNP matches the panel and slalom QC runs to completion.
     ss <- GwasSumStats(
         studyName = "g1",
         entry = list(.ssQ_makeFlipEntryGr()),
         genome = "hg19",
-        ldSketch = .ssQ_makeHandleVid()
+        ldReference = .ssQ_makeHandleVid()
     )
     local_mocked_bindings(
         extractBlockGenotypes = .ssQ_mockExtractor(),
@@ -3417,8 +2831,8 @@ test_that("summaryStatsQc: slalom z-mismatch resolves sign-flipped variants", {
         out <- summaryStatsQc(
             ss,
             ldMismatchQcMethod = "slalom",
-            signalScreenArgs = SignalScreenParam(pip = 0),
-            sumstatsFilterArgs = SumstatsFilterParam(nCutoff = 0)
+            signalScreenParam = SignalScreenParam(pip = 0),
+            sumstatsFilterParam = SumstatsFilterParam(nCutoff = 0)
         )
     )
     snp <- as.character(S4Vectors::mcols(out[[1L]])$SNP)
@@ -3429,14 +2843,15 @@ test_that("summaryStatsQc: slalom z-mismatch resolves sign-flipped variants", {
 test_that("summaryStatsQc: ldMismatchQc reconciles a chr-prefix difference", {
     # Panel SNP ids are non-chr-prefixed positional; QC re-keys the entry to the
     # canonical chr-prefixed form, so the opt-in z-mismatch panel match must
-    # reconcile the prefix (previously errored "absent from the ldSketch panel").
+    # reconcile the prefix (previously errored "absent from the ldReference
+    # panel").
     h <- .ssQ_makeHandle()
     h@snpInfo$SNP <- paste0("1:", snpInfo(h)$BP, ":G:A") # non-chr-prefixed
     ss <- GwasSumStats(
         studyName = "g1",
         entry = list(.ssQ_makeEntryGr()),
         genome = "hg19",
-        ldSketch = h
+        ldReference = h
     )
     local_mocked_bindings(
         extractBlockGenotypes = .ssQ_mockExtractor(),
@@ -3461,8 +2876,8 @@ test_that("summaryStatsQc: ldMismatchQc reconciles a chr-prefix difference", {
         out <- summaryStatsQc(
             ss,
             ldMismatchQcMethod = "slalom",
-            signalScreenArgs = SignalScreenParam(pip = 0),
-            sumstatsFilterArgs = SumstatsFilterParam(nCutoff = 0)
+            signalScreenParam = SignalScreenParam(pip = 0),
+            sumstatsFilterParam = SumstatsFilterParam(nCutoff = 0)
         )
     )
     expect_gte(length(out[[1L]]), 1L)
@@ -3555,9 +2970,9 @@ test_that("summaryStatsQc: PIP screen triggers when no variant has signal", {
         studyName = "g1",
         entry = list(gr),
         genome = "hg19",
-        ldSketch = .ssQ_makeHandle()
+        ldReference = .ssQ_makeHandle()
     )
-    res <- summaryStatsQc(ss, signalScreenArgs = SignalScreenParam(pip = 0.99))
+    res <- summaryStatsQc(ss, signalScreenParam = SignalScreenParam(pip = 0.99))
     ea <- qcInfo(res)$entryAudit[[1L]]
     expect_true(isTRUE(ea$pipScreenSkipped))
     expect_match(ea$pipScreenReason, "no signals above PIP threshold")
@@ -3568,14 +2983,14 @@ test_that("summaryStatsQc: harmonized variants count is recorded", {
     ss <- .ssQ_makeGwasSumStats()
     res <- summaryStatsQc(ss)
     ea <- qcInfo(res)$entryAudit[[1L]]
-    expect_equal(ea$matchedAgainstSketch, 4L)
+    expect_equal(ea$matchedAgainstLdReference, 4L)
 })
 
 test_that("summaryStatsQc: options block records the curated knobs", {
     ss <- .ssQ_makeGwasSumStats()
     res <- summaryStatsQc(
         ss,
-        sumstatsFilterArgs = SumstatsFilterParam(
+        sumstatsFilterParam = SumstatsFilterParam(
             removeIndels = TRUE,
             removeStrandAmbiguous = FALSE,
             nCutoff = 10
@@ -3595,7 +3010,7 @@ test_that("summaryStatsQc: round-trips QtlSumStats inputs", {
         trait = "t1",
         entry = list(gr),
         genome = "hg19",
-        ldSketch = .ssQ_makeHandle()
+        ldReference = .ssQ_makeHandle()
     )
     res <- summaryStatsQc(ss)
     expect_s4_class(res, "QtlSumStats")
@@ -3669,7 +3084,7 @@ test_that("summaryStatsQc(effectiveN=TRUE): counts, no N -> N == N_eff", {
         studyName = "g1",
         entry = list(gr),
         genome = "hg19",
-        ldSketch = .ssQ_makeHandle()
+        ldReference = .ssQ_makeHandle()
     )
     res <- summaryStatsQc(ss)
     # 4*case*control/(case+control) per variant.
@@ -3687,7 +3102,7 @@ test_that("summaryStatsQc(effectiveN=TRUE): counts + N -> counts win", {
         studyName = "g1",
         entry = list(gr),
         genome = "hg19",
-        ldSketch = .ssQ_makeHandle()
+        ldReference = .ssQ_makeHandle()
     )
     expect_message(summaryStatsQc(ss), "overridden by effective N")
     res <- summaryStatsQc(ss)
@@ -3713,7 +3128,7 @@ test_that("summaryStatsQc(effectiveN=FALSE): counts + N -> raw N", {
         studyName = "g1",
         entry = list(gr),
         genome = "hg19",
-        ldSketch = .ssQ_makeHandle()
+        ldReference = .ssQ_makeHandle()
     )
     res <- summaryStatsQc(ss, effectiveN = FALSE)
     expect_true(all(.ssQ_entryNByPos(res[[1L]]) == 1000))
@@ -3729,7 +3144,7 @@ test_that("summaryStatsQc(effectiveN=FALSE): counts -> raw total", {
         studyName = "g1",
         entry = list(gr),
         genome = "hg19",
-        ldSketch = .ssQ_makeHandle()
+        ldReference = .ssQ_makeHandle()
     )
     res <- summaryStatsQc(ss, effectiveN = FALSE)
     # Raw total n_case + n_control per variant.
@@ -3744,7 +3159,7 @@ test_that("summaryStatsQc(effectiveN=TRUE): study scalars fill all variants", {
         studyName = "g1",
         entry = list(gr),
         genome = "hg19",
-        ldSketch = .ssQ_makeHandle(),
+        ldReference = .ssQ_makeHandle(),
         nCase = 100,
         nControl = 900
     )
@@ -3765,7 +3180,7 @@ test_that("summaryStatsQc: study nSample is the level-4 fallback", {
         studyName = "g1",
         entry = list(gr),
         genome = "hg19",
-        ldSketch = .ssQ_makeHandle(),
+        ldReference = .ssQ_makeHandle(),
         nSample = 4321
     )
     res <- summaryStatsQc(ss)
@@ -3787,7 +3202,7 @@ test_that("summaryStatsQc: QtlSumStats tuple nSample falls back too", {
         trait = "t1",
         entry = list(gr),
         genome = "hg19",
-        ldSketch = .ssQ_makeHandle(),
+        ldReference = .ssQ_makeHandle(),
         nSample = 838
     )
     res <- summaryStatsQc(ss)
@@ -3807,7 +3222,7 @@ test_that("summaryStatsQc: counts beat nSample, and an N column beats it", {
         studyName = "g1",
         entry = list(gr1),
         genome = "hg19",
-        ldSketch = .ssQ_makeHandle(),
+        ldReference = .ssQ_makeHandle(),
         nSample = 4321
     )
     res1 <- summaryStatsQc(ss1)
@@ -3818,7 +3233,7 @@ test_that("summaryStatsQc: counts beat nSample, and an N column beats it", {
         studyName = "g1",
         entry = list(.ssQ_makeEntryGr()),
         genome = "hg19",
-        ldSketch = .ssQ_makeHandle(),
+        ldReference = .ssQ_makeHandle(),
         nSample = 4321
     )
     res2 <- summaryStatsQc(ss2) # .ssQ_makeEntryGr carries N = 1000
@@ -3844,7 +3259,7 @@ test_that("summaryStatsQc: quantitative QtlSumStats: no effective N", {
         trait = "t1",
         entry = list(gr),
         genome = "hg19",
-        ldSketch = .ssQ_makeHandle()
+        ldReference = .ssQ_makeHandle()
     )
     res <- summaryStatsQc(ss)
     expect_true(all(.ssQ_entryNByPos(res[[1L]]) == 1000))
@@ -3865,7 +3280,7 @@ test_that("summaryStatsQc: ldMismatchQcMethod 'dentist' walks the LD branch", {
             positions = seq(100L, by = 100L, length.out = 8L)
         )),
         genome = "hg19",
-        ldSketch = .ssQ_makeHandleVid(snp_n = 8L)
+        ldReference = .ssQ_makeHandleVid(snp_n = 8L)
     )
     local_mocked_bindings(
         extractBlockGenotypes = .ssQ_mockExtractor(),
@@ -3893,12 +3308,17 @@ test_that("summaryStatsQc: impute = TRUE invokes RAISS, records counts", {
             positions = full_positions[1:4]
         )),
         genome = "hg19",
-        ldSketch = .ssQ_makeHandle(snp_n = 8L, n_samples = 60L)
+        ldReference = .ssQ_makeHandle(snp_n = 8L, n_samples = 60L)
     )
 
     local_mocked_bindings(
         extractBlockGenotypes = .ssQ_mockExtractor(),
-        raiss = function(refPanel, knownZscores, genotypeMatrix, ...) {
+        .raissGenotypePath = function(
+            refPanel,
+            knownZscores,
+            genotypeMatrix,
+            p
+        ) {
             # Pretend RAISS imputed two of the missing panel variants (rs5, rs6)
             # with synthetic z-scores.
             added <- refPanel[
@@ -3917,7 +3337,7 @@ test_that("summaryStatsQc: impute = TRUE invokes RAISS, records counts", {
     res <- summaryStatsQc(
         ss,
         impute = TRUE,
-        imputeArgs = RaissParam(flank = 500)
+        raissParam = RaissParam(flank = 500)
     )
     ea <- qcInfo(res)$entryAudit[[1L]]
     expect_equal(ea$raissTotalVariants, 6L)
@@ -3944,7 +3364,7 @@ test_that("summaryStatsQc: impute scopes panel/dosage to the region", {
             c(100L, 200L, 300L, 400L)
         )),
         genome = "hg19",
-        ldSketch = .ssQ_makeHandle(snp_n = 8L, n_samples = 60L)
+        ldReference = .ssQ_makeHandle(snp_n = 8L, n_samples = 60L)
     )
     inner <- .ssQ_mockExtractor(n_samples = 60L)
     local_mocked_bindings(
@@ -3958,7 +3378,7 @@ test_that("summaryStatsQc: impute scopes panel/dosage to the region", {
     suppressWarnings(summaryStatsQc(
         ss,
         impute = TRUE,
-        sumstatsFilterArgs = SumstatsFilterParam(nCutoff = 0)
+        sumstatsFilterParam = SumstatsFilterParam(nCutoff = 0)
     ))
     expect_gt(length(cap$idx), 0L)
     # No read reaches past the region window's 4 panel variants.
@@ -3976,7 +3396,7 @@ test_that("summaryStatsQc: impute with a NULL raiss records 0 imputed", {
             positions = full_positions[1:4]
         )),
         genome = "hg19",
-        ldSketch = .ssQ_makeHandle(snp_n = 8L, n_samples = 60L)
+        ldReference = .ssQ_makeHandle(snp_n = 8L, n_samples = 60L)
     )
 
     local_mocked_bindings(
@@ -4079,7 +3499,7 @@ test_that("summaryStatsQc: QtlSumStats log lines carry the tuple label", {
         trait = "qtrait",
         entry = list(.ssQ_makeEntryGr()),
         genome = "hg19",
-        ldSketch = .ssQ_makeHandle()
+        ldReference = .ssQ_makeHandle()
     )
     local_mocked_bindings(
         extractBlockGenotypes = .ssQ_mockExtractor(),
@@ -4091,7 +3511,6 @@ test_that("summaryStatsQc: QtlSumStats log lines carry the tuple label", {
     expect_match(joined, "\\[qstudy/qctx/qtrait\\] QC summary")
 })
 
-
 context("sumstatsQc internal helpers")
 
 # ===========================================================================
@@ -4101,8 +3520,8 @@ context("sumstatsQc internal helpers")
 .ssh_makeHandle <- function(snp_n = 6L, n_samples = 30L) {
     new(
         "GenotypeHandle",
-        path = "/tmp/sketch.gds",
-        format = "gds",
+        path = "/tmp/sketch",
+        format = "plink2",
         snpInfo = data.frame(
             SNP = paste0("rs", seq_len(snp_n)),
             CHR = rep("1", snp_n),
@@ -4246,12 +3665,12 @@ test_that("entry GRanges round-trips through df conversion", {
 })
 
 # ===========================================================================
-# .refVariantsFromSketch
+# .refVariantsFromLdRef
 # ===========================================================================
 
-test_that(".refVariantsFromSketch: extracts chr/pos/alleles from snpInfo", {
+test_that(".refVariantsFromLdRef: extracts chr/pos/alleles from snpInfo", {
     h <- .ssh_makeHandle()
-    rv <- pecotmr:::.refVariantsFromSketch(h)
+    rv <- pecotmr:::.refVariantsFromLdRef(h)
     expect_equal(rv$chrom, rep("1", 6)) # "chr" stripped
     expect_equal(rv$pos, c(100L, 200L, 300L, 400L, 500L, 600L))
     expect_equal(rv$variant_id, paste0("rs", 1:6))
@@ -4421,7 +3840,7 @@ test_that("summaryStatsQc: surfaces the sanity audit, honours the knobs", {
         studyName = "g1",
         entry = list(gr),
         genome = "hg19",
-        ldSketch = .ssQ_makeHandle()
+        ldReference = .ssQ_makeHandle()
     )
     res <- summaryStatsQc(ss)
     ea <- qcInfo(res)$entryAudit[[1L]]
@@ -4429,7 +3848,7 @@ test_that("summaryStatsQc: surfaces the sanity audit, honours the knobs", {
     # Disable the knob: zero-effect rows should remain.
     res2 <- summaryStatsQc(
         ss,
-        sumstatsCleaningArgs = SumstatsCleaningParam(dropZeroEffect = FALSE)
+        sumstatsCleaningParam = SumstatsCleaningParam(dropZeroEffect = FALSE)
     )
     ea2 <- qcInfo(res2)$entryAudit[[1L]]
     expect_null(ea2$sanityChecks$zeroEffectDropped)
@@ -4477,10 +3896,10 @@ test_that(".applySkipRegion: rejects non-character non-GRanges input", {
 })
 
 # ===========================================================================
-# .matchAgainstSketch
+# .matchAgainstLdRef
 # ===========================================================================
 
-test_that(".matchAgainstSketch: errors when neither Z nor BETA is present", {
+test_that(".matchAgainstLdRef: errors when neither Z nor BETA is present", {
     df <- data.frame(
         chrom = "1",
         pos = 100L,
@@ -4490,12 +3909,12 @@ test_that(".matchAgainstSketch: errors when neither Z nor BETA is present", {
         stringsAsFactors = FALSE
     )
     expect_error(
-        pecotmr:::.matchAgainstSketch(df, .ssh_makeHandle(), matchMinProp = 0),
+        pecotmr:::.matchAgainstLdRef(df, .ssh_makeHandle(), matchMinProp = 0),
         "must contain at least one of Z or BETA"
     )
 })
 
-test_that(".matchAgainstSketch: errors when A1/A2 columns are missing", {
+test_that(".matchAgainstLdRef: errors when A1/A2 columns are missing", {
     df <- data.frame(
         chrom = "1",
         pos = 100L,
@@ -4504,12 +3923,12 @@ test_that(".matchAgainstSketch: errors when A1/A2 columns are missing", {
         stringsAsFactors = FALSE
     )
     expect_error(
-        pecotmr:::.matchAgainstSketch(df, .ssh_makeHandle(), matchMinProp = 0),
+        pecotmr:::.matchAgainstLdRef(df, .ssh_makeHandle(), matchMinProp = 0),
         "must contain A1 and A2 columns"
     )
 })
 
-test_that(".matchAgainstSketch: harmonizes the input against the sketch", {
+test_that(".matchAgainstLdRef: harmonizes the input against the sketch", {
     df <- data.frame(
         chrom = c("1", "1"),
         pos = c(100L, 200L),
@@ -4519,7 +3938,7 @@ test_that(".matchAgainstSketch: harmonizes the input against the sketch", {
         Z = c(1.0, 2.0),
         stringsAsFactors = FALSE
     )
-    out <- pecotmr:::.matchAgainstSketch(
+    out <- pecotmr:::.matchAgainstLdRef(
         df,
         .ssh_makeHandle(),
         matchMinProp = 0
@@ -4549,7 +3968,7 @@ test_that(".applyLdMismatchQcToEntry: drops variants absent from the sketch", {
     # A variant can survive study-side QC while its LD-panel partner is removed
     # by the panel MAF/MAC/missingness filter, so it is absent from the sketch
     # the QC lookup sees. .panelVariantFilter passes such a variant through and
-    # leaves the drop to .ldFromSketch's onMissing, so the z-mismatch lookup
+    # leaves the drop to .ldFromRef's onMissing, so the z-mismatch lookup
     # drops it (recording the count) instead of aborting the run.
     local_mocked_bindings(
         extractBlockGenotypes = .ssh_mockExtractor(),
@@ -4619,18 +4038,58 @@ test_that(".qcKrigingFlip: no-orphan entry is unchanged (drop is a no-op)", {
     expect_setequal(out$df$SNP, paste0("rs", 1:6))
 })
 
+test_that("the kriging and mismatch checks read an entry's panel once", {
+    # Both run on the same panel-supported variants, so the reference is read
+    # once for the two, and the panel's drop is recorded once.
+    local_mocked_bindings(
+        extractBlockGenotypes = .ssh_mockExtractor(),
+        .package = "pecotmr"
+    )
+    reads <- 0L
+    real <- pecotmr:::.qcPanelSupportedLd
+    local_mocked_bindings(
+        .qcPanelSupportedLd = function(...) {
+            reads <<- reads + 1L
+            real(...)
+        },
+        .package = "pecotmr"
+    )
+    df <- data.frame(
+        SNP = c(paste0("rs", 1:6), "ghost"),
+        Z = c(seq(1.0, by = 0.5, length.out = 6L), 2.0),
+        N = rep(1000L, 7L),
+        stringsAsFactors = FALSE
+    )
+    state <- list(
+        df = df,
+        ldReference = .ssh_makeHandle(snp_n = 6L),
+        opts = list(
+            alleleFlipKriging = TRUE,
+            nForPip = NULL,
+            ldMismatchQcMethod = "slalom"
+        ),
+        lbl = NA_character_,
+        entryAudit = list(),
+        qcCount = list()
+    )
+    out <- pecotmr:::.qcPhaseLdChecks(state)
+    expect_identical(reads, 1L)
+    expect_equal(out$entryAudit$panelUnsupportedDropped, 1L)
+    expect_false("ghost" %in% out$df$SNP)
+})
+
 test_that("fine-mapping keeps onMissing='error' for an absent variant", {
     # The post-QC invariant: QC now drops panel-unsupported variants, so every
-    # variant reaching fine-mapping has a panel entry. .ldFromSketch's default
+    # variant reaching fine-mapping has a panel entry. .ldFromRef's default
     # onMissing='error' (used by the fine-mapping LD build) MUST still abort on
     # a genuinely absent variant, guaranteeing that invariant.
     expect_error(
-        pecotmr:::.ldFromSketch(
+        pecotmr:::.ldFromRef(
             .ssh_makeHandle(snp_n = 6L),
             c("rs1", "ghost"),
             label = "fine-mapping"
         ),
-        "not present in the LD sketch panel"
+        "not present in the LD reference"
     )
 })
 
@@ -4648,8 +4107,8 @@ test_that("fine-mapping keeps onMissing='error' for an absent variant", {
 .ssTwin_makeHandle <- function(nSamples = 60L) {
     new(
         "GenotypeHandle",
-        path = "/tmp/sketch.gds",
-        format = "gds",
+        path = "/tmp/sketch",
+        format = "plink2",
         snpInfo = data.frame(
             SNP = c(
                 "chr1:100:A:G",
@@ -4687,7 +4146,7 @@ test_that("fine-mapping keeps onMissing='error' for an absent variant", {
 .ssTwin_opts <- function() {
     list(
         matchMinProp = 0,
-        sumstatsFilterArgs = SumstatsFilterParam(
+        sumstatsFilterParam = SumstatsFilterParam(
             removeIndels = FALSE,
             removeStrandAmbiguous = TRUE
         ),
@@ -4741,7 +4200,7 @@ test_that("the fine-mapping LD build accepts every harmonized variant", {
         .ssTwin_opts(),
         NA_character_
     ))
-    R <- pecotmr:::.ldFromSketch(
+    R <- pecotmr:::.ldFromRef(
         handle,
         as.character(harm$df$SNP),
         label = "fineMappingPipeline"
@@ -4877,19 +4336,19 @@ test_that("summaryStatsQc: absZ / bf / logBf screens skip a no-signal entry", {
             studyName = "g1",
             entry = list(gr),
             genome = "hg19",
-            ldSketch = .ssQ_makeHandle()
+            ldReference = .ssQ_makeHandle()
         )
     }
     for (arg in list(
-        list(signalScreenArgs = SignalScreenParam(absZ = 5)),
-        list(signalScreenArgs = SignalScreenParam(bf = 100)),
-        list(signalScreenArgs = SignalScreenParam(logBf = 5))
+        list(signalScreenParam = SignalScreenParam(absZ = 5)),
+        list(signalScreenParam = SignalScreenParam(bf = 100)),
+        list(signalScreenParam = SignalScreenParam(logBf = 5))
     )) {
         res <- exec(
             summaryStatsQc,
             mk(),
             !!!arg,
-            sumstatsFilterArgs = SumstatsFilterParam(nCutoff = 0)
+            sumstatsFilterParam = SumstatsFilterParam(nCutoff = 0)
         )
         ea <- qcInfo(res)$entryAudit[[1L]]
         expect_true(isTRUE(ea$pipScreenSkipped))
@@ -4906,12 +4365,12 @@ test_that("summaryStatsQc: absZ screen keeps a strong marginal Z", {
         studyName = "g1",
         entry = list(gr),
         genome = "hg19",
-        ldSketch = .ssQ_makeHandle()
+        ldReference = .ssQ_makeHandle()
     )
     res <- summaryStatsQc(
         ss,
-        signalScreenArgs = SignalScreenParam(absZ = 5),
-        sumstatsFilterArgs = SumstatsFilterParam(nCutoff = 0)
+        signalScreenParam = SignalScreenParam(absZ = 5),
+        sumstatsFilterParam = SumstatsFilterParam(nCutoff = 0)
     )
     ea <- qcInfo(res)$entryAudit[[1L]]
     expect_false(isTRUE(ea$pipScreenSkipped))
@@ -4923,12 +4382,11 @@ test_that("summaryStatsQc: enabling two screens at once errors", {
     expect_error(
         summaryStatsQc(
             ss,
-            signalScreenArgs = SignalScreenParam(pip = 0.5, absZ = 5)
+            signalScreenParam = SignalScreenParam(pip = 0.5, absZ = 5)
         ),
         "only one screening metric"
     )
 })
-
 
 context("dentist_qc")
 library(MASS)
@@ -5003,7 +4461,7 @@ test_that("dentist output has exactly N rows with correctChenEtAlBug = FALSE", {
             data$sumstat,
             R = data$ldMat,
             nSample = data$nSample,
-            methodArgs = DentistParam(correctChenEtAlBug = FALSE)
+            dentistParam = DentistParam(correctChenEtAlBug = FALSE)
         )
     )
     expect_equal(nrow(res), 100)
@@ -5017,7 +4475,7 @@ test_that("dentist stops when missing position", {
             data$sumstat,
             R = data$ldMat,
             nSample = data$nSample,
-            methodArgs = DentistParam(correctChenEtAlBug = FALSE)
+            dentistParam = DentistParam(correctChenEtAlBug = FALSE)
         ),
         regexp = "missing either.*pos.*or.*z"
     )
@@ -5031,7 +4489,7 @@ test_that("dentist stops when missing zscore", {
             data$sumstat,
             R = data$ldMat,
             nSample = data$nSample,
-            methodArgs = DentistParam(correctChenEtAlBug = FALSE)
+            dentistParam = DentistParam(correctChenEtAlBug = FALSE)
         ),
         regexp = "missing either.*pos.*or.*z"
     )
@@ -5075,6 +4533,62 @@ test_that("dentist with X matrix input returns exactly N rows", {
     )
     expect_warning(res <- dentist(sumstat, X = X))
     expect_equal(nrow(res), nSnps)
+})
+
+# Genotypes with strong LD clusters, a near-duplicate pair and a monomorphic
+# variant, plus z-scores with two planted sign errors.
+.dentistFactorData <- function(n = 250, p = 300, seed = 21) {
+    set.seed(seed)
+    base <- matrix(rnorm(n * 30), n)
+    X <- base[, sample(30, p, replace = TRUE)] +
+        matrix(rnorm(n * p, sd = 0.8), n)
+    X[, 7] <- X[, 6] + rnorm(n, sd = 0.01)
+    X[, 40] <- 1
+    R <- computeLd(X)
+    z <- as.vector(R %*% c(rnorm(6) * 3, rep(0, p - 6)) + rnorm(p))
+    z[c(90, 200)] <- -3 * z[c(90, 200)]
+    list(X = X, R = R, z = z, n = n)
+}
+
+test_that("dentistSingleWindow from genotypes matches DENTIST on their LD", {
+    # Genotypes go to DENTIST's factor kernel, which never forms the LD; the
+    # duplicate scan reads the factor a block of rows at a time.
+    d <- .dentistFactorData()
+    viaX <- suppressWarnings(dentistSingleWindow(d$z, X = d$X))
+    viaR <- suppressWarnings(dentistSingleWindow(d$z, R = d$R, nSample = d$n))
+    expect_equal(viaX, viaR, tolerance = 1e-8)
+})
+
+test_that("dentist from genotypes matches DENTIST on their LD per window", {
+    d <- .dentistFactorData()
+    sumStat <- data.frame(pos = seq_along(d$z) * 1000, z = d$z)
+    viaX <- suppressWarnings(
+        dentist(sumStat, X = d$X, windowMode = "count", minDim = 120)
+    )
+    viaR <- suppressWarnings(dentist(
+        sumStat,
+        R = d$R,
+        nSample = d$n,
+        windowMode = "count",
+        minDim = 120
+    ))
+    expect_equal(viaX, viaR, tolerance = 1e-8)
+})
+
+test_that("the duplicate scan reads a factor as it reads the LD", {
+    d <- .dentistFactorData()
+    f <- pecotmr:::.ldFactorFromDosage(d$X)
+    viaR <- pecotmr:::.findDuplicateVariants(d$z, d$R, 0.995)
+    viaF <- pecotmr:::.findDuplicateVariantsFactor(d$z, f, 0.995)
+    expect_gt(sum(viaR$dupBearer != -1), 0L)
+    for (k in c("filteredZ", "dupBearer", "corABS", "sign", "minValue")) {
+        expect_equal(viaF[[k]], viaR[[k]], tolerance = 1e-10)
+    }
+    kept <- viaF$filteredFactor
+    expect_equal(
+        unname(crossprod(kept) / (nrow(kept) - 1)),
+        unname(viaR$filteredLD)
+    )
 })
 
 # ===========================================================================
@@ -5196,7 +4710,7 @@ test_that("dentist with gcControl = TRUE returns N rows", {
             data$sumstat,
             R = data$ldMat,
             nSample = data$nSample,
-            methodArgs = DentistParam(gcControl = TRUE)
+            dentistParam = DentistParam(gcControl = TRUE)
         )
     )
     expect_equal(nrow(res), 100)
@@ -5730,7 +5244,6 @@ test_that("resolve_LD_input uses explicit nSample when X provided", {
     expect_equal(result$nSample, 999)
 })
 
-
 # ===========================================================================
 # build_segment_result (internal)
 # ===========================================================================
@@ -5788,7 +5301,6 @@ test_that("sliding_window_loop errors on infinite loop", {
         "iteration limit exceeded"
     )
 })
-
 
 context("univariate_rss_diagnostics")
 
@@ -5854,15 +5366,15 @@ test_that("summaryStatsQc: preserves nCase/nControl columns through QC", {
         studyName = "g1",
         entry = list(gr),
         genome = "hg19",
-        ldSketch = .ssQ_makeHandle(),
+        ldReference = .ssQ_makeHandle(),
         nCase = 500,
         nControl = 1500
     )
     expect_true(all(c("nCase", "nControl") %in% colnames(S4Vectors::mcols(ss))))
     out <- summaryStatsQc(
         ss,
-        signalScreenArgs = SignalScreenParam(pip = 0),
-        sumstatsFilterArgs = SumstatsFilterParam(nCutoff = 0)
+        signalScreenParam = SignalScreenParam(pip = 0),
+        sumstatsFilterParam = SumstatsFilterParam(nCutoff = 0)
     )
     expect_true(all(
         c("nCase", "nControl") %in% colnames(S4Vectors::mcols(out))
@@ -5870,7 +5382,6 @@ test_that("summaryStatsQc: preserves nCase/nControl columns through QC", {
     expect_equal(out$nCase, 500)
     expect_equal(out$nControl, 1500)
 })
-
 
 # ===========================================================================
 # mergeVariantInfo (data.frame + GRanges, flip-aware, all = TRUE/FALSE)
@@ -6438,70 +5949,6 @@ test_that("raissSingleMatrixFromX emits no-known / no-unknown messages", {
 })
 
 # ===========================================================================
-# raiss: genotypeMatrix dispatch verbose / error branches
-# ===========================================================================
-
-test_that("raiss genotypeMatrix: single, list, all-fail and bad-type", {
-    data <- generateXTestData(n = 60, p = 20, n_known = 10, seed = 3)
-
-    # Single matrix, verbose -> "Processing genotype matrix via SVD..."
-    expect_message(
-        res_single <- raiss(
-            data$ref_panel,
-            data$known_zscores,
-            genotypeMatrix = data$X,
-            r2Threshold = 0,
-            minimumLd = 0,
-            verbose = TRUE
-        ),
-        "Processing genotype matrix"
-    )
-    expect_equal(nrow(res_single$resultNofilter), nrow(data$ref_panel))
-
-    # List of (one) matrix, verbose -> "Processing multiple genotype matrix blocks"
-    expect_message(
-        res_list <- raiss(
-            data$ref_panel,
-            data$known_zscores,
-            genotypeMatrix = list(data$X),
-            r2Threshold = 0,
-            minimumLd = 0,
-            verbose = TRUE
-        ),
-        "Processing multiple genotype matrix blocks"
-    )
-    expect_true(is.list(res_list))
-
-    # List where every block fails (foreign known variants) -> NULL + message
-    ghost <- data.frame(
-        chrom = 1,
-        pos = 99999,
-        variant_id = "zzz",
-        A1 = "A",
-        A2 = "G",
-        z = 1,
-        stringsAsFactors = FALSE
-    )
-    expect_message(
-        res_fail <- raiss(
-            data$ref_panel,
-            ghost,
-            genotypeMatrix = list(
-                data$X[, 1:10, drop = FALSE],
-                data$X[, 11:20, drop = FALSE]
-            ),
-            verbose = TRUE
-        ),
-        "No blocks could be processed"
-    )
-    expect_null(res_fail)
-
-    # Neither matrix nor list -> hard error
-    expect_error(
-        raiss(data$ref_panel, data$known_zscores, genotypeMatrix = 42),
-        "must be a matrix or a list"
-    )
-})
 
 # ===========================================================================
 # .qcRaissMerge: observed-variant AF is preserved through the RAISS merge
@@ -6635,73 +6082,6 @@ ssqcOverlapImputedBlocks <- function(seed = 5) {
     )
 }
 
-test_that("raiss multi-LD-block: messages and an imputed boundary merge", {
-    td <- ssqcOverlapImputedBlocks(seed = 5)
-    expect_message(
-        res <- raiss(
-            td$ref_panel,
-            td$known_zscores,
-            ldMatrix = td$LD_matrix_blocks,
-            lamb = 0.01,
-            rcond = 0.01,
-            r2Threshold = 0,
-            minimumLd = 0,
-            verbose = TRUE
-        ),
-        "Processing multiple LD blocks"
-    )
-    expect_true(is.list(res))
-    # Boundary variant v4 appears exactly once after the merge.
-    expect_equal(sum(res$resultNofilter$variant_id == "chr1:400:A:G"), 1L)
-})
-
-test_that("raiss multi-LD-block: stops on a block dimension mismatch", {
-    td <- generateBlockDiagonalTestData(
-        seed = 2,
-        block_structure = "non_overlapping",
-        n_variants = 30
-    )
-    blocks <- td$LD_matrix_blocks
-    # Shrink block 1's matrix so it no longer matches its variant count.
-    blocks$ldMatrices[[1]] <- blocks$ldMatrices[[1]][-1, -1, drop = FALSE]
-    expect_error(
-        raiss(
-            td$ref_panel,
-            td$known_zscores,
-            ldMatrix = blocks,
-            verbose = FALSE
-        ),
-        "LD matrix dimension does not match"
-    )
-})
-
-test_that("raiss multi-LD-block: NULL when no block has known variants", {
-    td <- generateBlockDiagonalTestData(
-        seed = 3,
-        block_structure = "non_overlapping",
-        n_variants = 30
-    )
-    ghost <- data.frame(
-        chrom = 1,
-        pos = 99999,
-        variant_id = "zzz",
-        A1 = "A",
-        A2 = "G",
-        z = 1,
-        stringsAsFactors = FALSE
-    )
-    expect_message(
-        res <- raiss(
-            td$ref_panel,
-            ghost,
-            ldMatrix = td$LD_matrix_blocks,
-            verbose = TRUE
-        ),
-        "No blocks could be processed"
-    )
-    expect_null(res)
-})
-
 # ===========================================================================
 # raissModel: batch = FALSE with condition-number reporting
 # ===========================================================================
@@ -6719,11 +6099,20 @@ test_that("raissModel batch = FALSE reports the condition number", {
     )
     expect_true(is.numeric(res$conditionNumber))
     expect_true(is.finite(res$conditionNumber))
-    # checkInversion() returns all.equal()'s value: TRUE when the inverse
-    # reproduces sigT within tolerance, otherwise a character diff string.
-    expect_true(
-        isTRUE(res$correctInversion) || is.character(res$correctInversion)
-    )
+    # The inverse is checked against the ridged matrix it was computed from,
+    # so a well-conditioned sigT passes.
+    expect_true(res$correctInversion)
+})
+
+test_that("raissModel flags an inversion the rcond cutoff truncated", {
+    # Ridged, this sigT has eigenvalues 2.01 and 0.01; their ratio is under
+    # rcond = 0.01, so the pseudo-inverse drops one and cannot reproduce it.
+    sig_t <- matrix(1, nrow = 2, ncol = 2)
+    sig_i_t <- matrix(c(0.5, 0.2, 0.1, 0.3), nrow = 2)
+    res <- pecotmr:::raissModel(c(1.2, 0.5), sig_t, sig_i_t)
+    expect_identical(res$correctInversion, c(FALSE, FALSE))
+    ok <- pecotmr:::raissModel(c(1.2, 0.5), diag(2), sig_i_t)
+    expect_identical(ok$correctInversion, c(TRUE, TRUE))
 })
 
 # ===========================================================================
@@ -6832,11 +6221,11 @@ test_that("summaryStatsQc: emit() drops the label for an empty study id", {
         studyName = "",
         entry = list(.ssQ_makeEntryGr()),
         genome = "hg19",
-        ldSketch = .ssQ_makeHandle()
+        ldReference = .ssQ_makeHandle()
     )
     msgs <- capture_messages(summaryStatsQc(
         ss,
-        sumstatsFilterArgs = SumstatsFilterParam(nCutoff = 0)
+        sumstatsFilterParam = SumstatsFilterParam(nCutoff = 0)
     ))
     joined <- paste(msgs, collapse = "")
     expect_match(joined, "QC summary:")
@@ -6851,12 +6240,12 @@ test_that("summaryStatsQc: the N filter emits its message and rollup", {
         studyName = "g1",
         entry = list(gr),
         genome = "hg19",
-        ldSketch = .ssQ_makeHandle()
+        ldReference = .ssQ_makeHandle()
     )
     msgs <- capture_messages(
         res <- summaryStatsQc(
             ss,
-            sumstatsFilterArgs = SumstatsFilterParam(nCutoff = 3)
+            sumstatsFilterParam = SumstatsFilterParam(nCutoff = 3)
         )
     )
     joined <- paste(msgs, collapse = "")
@@ -6883,11 +6272,11 @@ test_that("summaryStatsQc: derives BETA/SE from Z+MAF+N, records it", {
         studyName = "g1",
         entry = list(gr),
         genome = "hg19",
-        ldSketch = .ssQ_makeHandle()
+        ldReference = .ssQ_makeHandle()
     )
     res <- summaryStatsQc(
         ss,
-        sumstatsFilterArgs = SumstatsFilterParam(nCutoff = 0)
+        sumstatsFilterParam = SumstatsFilterParam(nCutoff = 0)
     )
     ea <- qcInfo(res)$entryAudit[[1L]]
     expect_equal(ea$betaSeFromZ$nDerived, 4L)
@@ -6900,11 +6289,11 @@ test_that("summaryStatsQc: clamps tiny Z-derived P and audits it", {
         studyName = "g1",
         entry = list(gr),
         genome = "hg19",
-        ldSketch = .ssQ_makeHandle()
+        ldReference = .ssQ_makeHandle()
     )
     res <- summaryStatsQc(
         ss,
-        sumstatsFilterArgs = SumstatsFilterParam(nCutoff = 0)
+        sumstatsFilterParam = SumstatsFilterParam(nCutoff = 0)
     )
     ea <- qcInfo(res)$entryAudit[[1L]]
     expect_true(!is.null(ea$sanityChecks$smallPClamped))
@@ -6917,11 +6306,11 @@ test_that("summaryStatsQc: early-exits below two pre-harmonization variants", {
         studyName = "g1",
         entry = list(gr),
         genome = "hg19",
-        ldSketch = .ssQ_makeHandle()
+        ldReference = .ssQ_makeHandle()
     )
     res <- summaryStatsQc(
         ss,
-        sumstatsFilterArgs = SumstatsFilterParam(nCutoff = 0)
+        sumstatsFilterParam = SumstatsFilterParam(nCutoff = 0)
     )
     ea <- qcInfo(res)$entryAudit[[1L]]
     expect_match(ea$earlyExit, "fewer than two variants")
@@ -6940,7 +6329,7 @@ test_that("summaryStatsQc: kriging QC records its audit and rollup", {
             positions = seq(100L, by = 100L, length.out = 8L)
         )),
         genome = "hg19",
-        ldSketch = .ssQ_makeHandleVid(snp_n = 8L)
+        ldReference = .ssQ_makeHandleVid(snp_n = 8L)
     )
     local_mocked_bindings(
         extractBlockGenotypes = .ssQ_mockExtractor(),
@@ -6950,8 +6339,8 @@ test_that("summaryStatsQc: kriging QC records its audit and rollup", {
         res <- summaryStatsQc(
             ss,
             alleleFlipKriging = TRUE,
-            signalScreenArgs = SignalScreenParam(pip = 0),
-            sumstatsFilterArgs = SumstatsFilterParam(nCutoff = 0)
+            signalScreenParam = SignalScreenParam(pip = 0),
+            sumstatsFilterParam = SumstatsFilterParam(nCutoff = 0)
         )
     )
     joined <- paste(msgs, collapse = "")
@@ -6987,11 +6376,16 @@ test_that("summaryStatsQc: impute assembles BETA/SE/N, median-fills N", {
         studyName = "g1",
         entry = list(gr),
         genome = "hg19",
-        ldSketch = .ssQ_makeHandle(snp_n = 8L, n_samples = 60L)
+        ldReference = .ssQ_makeHandle(snp_n = 8L, n_samples = 60L)
     )
     local_mocked_bindings(
         extractBlockGenotypes = .ssQ_mockExtractor(),
-        raiss = function(refPanel, knownZscores, genotypeMatrix, ...) {
+        .raissGenotypePath = function(
+            refPanel,
+            knownZscores,
+            genotypeMatrix,
+            p
+        ) {
             added <- refPanel[
                 refPanel$variant_id %in% c("rs5", "rs6"),
                 ,
@@ -7009,7 +6403,7 @@ test_that("summaryStatsQc: impute assembles BETA/SE/N, median-fills N", {
     res <- summaryStatsQc(
         ss,
         impute = TRUE,
-        imputeArgs = RaissParam(flank = 500)
+        raissParam = RaissParam(flank = 500)
     )
     ea <- qcInfo(res)$entryAudit[[1L]]
     expect_equal(ea$raissTotalVariants, 6L)
@@ -7135,7 +6529,7 @@ test_that("summaryStatsQc: the rollup enumerates every removed step", {
         studyName = "g1",
         entry = list(gr),
         genome = "hg19",
-        ldSketch = .ssQ_makeHandle()
+        ldReference = .ssQ_makeHandle()
     )
     # mafCutoff is measured against the panel too, so the fabricated sketch
     # needs a dosage source; the mock puts every variant near MAF 0.3, well
@@ -7147,7 +6541,7 @@ test_that("summaryStatsQc: the rollup enumerates every removed step", {
     msgs <- capture_messages(
         res <- summaryStatsQc(
             ss,
-            sumstatsFilterArgs = SumstatsFilterParam(
+            sumstatsFilterParam = SumstatsFilterParam(
                 infoCutoff = 0.5,
                 nCutoff = 3
             ),
@@ -7309,35 +6703,6 @@ test_that("segmentByDist keeps a last window that clears the cutoff", {
     expect_equal(sort(unique(covered)), seq_along(pos))
 })
 
-test_that("raiss multi-LD-block skips a NULL middle block, keeps the rest", {
-    td <- generateBlockDiagonalTestData(
-        seed = 11,
-        block_structure = "non_overlapping",
-        n_variants = 30
-    )
-    # Drop every known z-score in block 2 (var11..var20) so raissSingleMatrix
-    # returns NULL for it. Blocks 1 and 3 still succeed, so resultsList carries a
-    # NULL hole at index 2 and combineWithBoundaryCheck(accumulated, NULL) returns
-    # the accumulated result unchanged (sumstatsQc.R:1965).
-    kz <- dplyr::filter(td$known_zscores, !variant_id %in% paste0("var", 11:20))
-    res <- raiss(
-        td$ref_panel,
-        kz,
-        ldMatrix = td$LD_matrix_blocks,
-        lamb = 0.01,
-        rcond = 0.01,
-        r2Threshold = 0,
-        minimumLd = 0,
-        verbose = FALSE
-    )
-    expect_true(is.list(res))
-    expect_false(is.null(res$resultNofilter))
-    # Block 2 was skipped entirely, so none of its variants survive.
-    expect_false(any(paste0("var", 11:20) %in% res$resultNofilter$variant_id))
-    # Blocks 1 and 3 (var1..10, var21..30) are present.
-    expect_true(all(c("var1", "var21") %in% res$resultNofilter$variant_id))
-})
-
 test_that("summaryStatsQc kriging QC sign-flips and keeps a bad variant", {
     skip_if_not(
         "kriging_rss" %in% getNamespaceExports("susieR"),
@@ -7397,7 +6762,7 @@ test_that("summaryStatsQc kriging QC sign-flips and keeps a bad variant", {
         studyName = "g1",
         entry = list(gr),
         genome = "hg19",
-        ldSketch = .ssQ_makeHandleVid(snp_n = 8L, n_samples = 300L)
+        ldReference = .ssQ_makeHandleVid(snp_n = 8L, n_samples = 300L)
     )
     local_mocked_bindings(
         extractBlockGenotypes = corrExtractor,
@@ -7407,8 +6772,8 @@ test_that("summaryStatsQc kriging QC sign-flips and keeps a bad variant", {
         summaryStatsQc(
             ss,
             alleleFlipKriging = TRUE,
-            signalScreenArgs = SignalScreenParam(pip = 0),
-            sumstatsFilterArgs = SumstatsFilterParam(nCutoff = 0)
+            signalScreenParam = SignalScreenParam(pip = 0),
+            sumstatsFilterParam = SumstatsFilterParam(nCutoff = 0)
         )
     )
     ea <- qcInfo(res)$entryAudit[[1L]]
@@ -7424,7 +6789,7 @@ test_that("summaryStatsQc kriging QC sign-flips and keeps a bad variant", {
 
 # ---- LD-sketch trimming to the summary-stats range / final variants ----------
 
-test_that(".subsetSketchToRange keeps panel variants in the entry span", {
+test_that(".subsetLdRefToRange keeps panel variants in the entry span", {
     h <- readGenotypeHandle(
         test_path("test_data/test_variants"),
         format = "plink2"
@@ -7438,7 +6803,7 @@ test_that(".subsetSketchToRange keeps panel variants in the entry span", {
         IRanges::IRanges(as.integer(slice$BP), width = 1L)
     )
     S4Vectors::mcols(gr)$SNP <- slice$SNP
-    sub <- snpInfo(pecotmr:::.subsetSketchToRange(h, list(gr)))
+    sub <- snpInfo(pecotmr:::.subsetLdRefToRange(h, list(gr)))
     lo <- min(slice$BP)
     hi <- max(slice$BP)
     expected <- si$SNP[
@@ -7450,7 +6815,7 @@ test_that(".subsetSketchToRange keeps panel variants in the entry span", {
     expect_lt(nrow(sub), nrow(si))
 })
 
-test_that(".subsetSketchToIds keeps exactly the entries' variants", {
+test_that(".subsetLdRefToIds keeps exactly the entries' variants", {
     h <- readGenotypeHandle(
         test_path("test_data/test_variants"),
         format = "plink2"
@@ -7462,18 +6827,17 @@ test_that(".subsetSketchToIds keeps exactly the entries' variants", {
         IRanges::IRanges(as.integer(si$BP[sel]), width = 1L)
     )
     S4Vectors::mcols(gr)$SNP <- si$SNP[sel]
-    sub <- snpInfo(pecotmr:::.subsetSketchToIds(h, list(gr)))
+    sub <- snpInfo(pecotmr:::.subsetLdRefToIds(h, list(gr)))
     expect_setequal(
         normalizeVariantId(sub$SNP),
         normalizeVariantId(si$SNP[sel])
     )
 })
 
-test_that(".subsetSketchToRange / .subsetSketchToIds are NULL-safe", {
-    expect_null(pecotmr:::.subsetSketchToRange(NULL, list()))
-    expect_null(pecotmr:::.subsetSketchToIds(NULL, list()))
+test_that(".subsetLdRefToRange / .subsetLdRefToIds are NULL-safe", {
+    expect_null(pecotmr:::.subsetLdRefToRange(NULL, list()))
+    expect_null(pecotmr:::.subsetLdRefToIds(NULL, list()))
 })
-
 
 # ---------------------------------------------------------------------------
 # summaryStatsQc panel filters: mafCutoff / macCutoff / imissCutoff measured
@@ -7519,7 +6883,7 @@ test_that(".subsetSketchToRange / .subsetSketchToIds are NULL-safe", {
         studyName = "g1",
         entry = list(gr),
         genome = "hg19",
-        ldSketch = handle
+        ldReference = handle
     )
 }
 
@@ -7552,9 +6916,9 @@ test_that(".ssqcPrunePanel is a no-op with no cutoffs / a NULL sketch", {
 
 test_that(".ssqcPrunePanel prunes the RSE sketch's seed handle, not the view", {
     skip_if_not_installed("pgenlibr")
-    # A summaryStatsQc ldSketch is an RSE wrapping the GenotypeHandle;
+    # A summaryStatsQc ldReference is an RSE wrapping the GenotypeHandle;
     # harmonization, kriging, mismatch-QC and RAISS all read the panel through
-    # .ldSketchHandle() (the dosage DelayedArray's seed). Subsetting the RSE
+    # .ldRefHandle() (the dosage DelayedArray's seed). Subsetting the RSE
     # rows leaves that seed carrying the full panel, so the prune must reach
     # the seed -- the real-flow shape the bare-handle tests do not exercise.
     h <- .ssqcPanelHandle()
@@ -7568,7 +6932,7 @@ test_that(".ssqcPrunePanel prunes the RSE sketch's seed handle, not the view", {
         list(mafCutoff = cutoff, macCutoff = 0, imissCutoff = 1),
         "test"
     ))
-    seed <- pecotmr:::.ldSketchHandle(pruned)
+    seed <- pecotmr:::.ldRefHandle(pruned)
     expect_setequal(
         as.character(snpInfo(seed)$SNP),
         ids[!is.na(maf) & maf >= cutoff]
@@ -7586,14 +6950,14 @@ test_that("summaryStatsQc: mafCutoff drops panel-rare observed variants", {
     ss <- .ssqcPanelSumStats(h)
     out <- suppressMessages(summaryStatsQc(
         ss,
-        sumstatsFilterArgs = SumstatsFilterParam(nCutoff = 0),
+        sumstatsFilterParam = SumstatsFilterParam(nCutoff = 0),
         panelFilterParam = PanelFilterParam(mafCutoff = cutoff)
     ))
     entry <- pecotmr:::.collectionEntry(out, 1)
     expect_equal(length(entry), sum(!is.na(maf) & maf >= cutoff))
     # ... and the panel carried on the result -- the seed handle every LD
     # read keys off, not just the row view -- holds no sub-cutoff variant.
-    seed <- pecotmr:::.ldSketchHandle(ldSketch(out))
+    seed <- pecotmr:::.ldRefHandle(ldReference(out))
     keptMaf <- maf[match(
         as.character(snpInfo(seed)$SNP),
         as.character(snpInfo(h)$SNP)
@@ -7611,7 +6975,7 @@ test_that("summaryStatsQc: macCutoff is the stricter of MAF / MAC", {
     mac <- ceiling(cutoff * 2 * nSamples(h))
     out <- suppressMessages(summaryStatsQc(
         ss,
-        sumstatsFilterArgs = SumstatsFilterParam(nCutoff = 0),
+        sumstatsFilterParam = SumstatsFilterParam(nCutoff = 0),
         panelFilterParam = PanelFilterParam(macCutoff = mac)
     ))
     entry <- pecotmr:::.collectionEntry(out, 1)
@@ -7625,7 +6989,7 @@ test_that("summaryStatsQc: the panel filter is off by default", {
     ss <- .ssqcPanelSumStats(h)
     out <- suppressMessages(summaryStatsQc(
         ss,
-        sumstatsFilterArgs = SumstatsFilterParam(nCutoff = 0)
+        sumstatsFilterParam = SumstatsFilterParam(nCutoff = 0)
     ))
     expect_equal(
         length(pecotmr:::.collectionEntry(out, 1)),
@@ -7664,7 +7028,6 @@ test_that("summaryStatsQc validates the panel cutoffs before any panel read", {
         "macCutoff"
     )
 })
-
 
 # ---------------------------------------------------------------------------
 # RAISS imputation: MAF / MAC / missingness cutoffs
@@ -7710,13 +7073,18 @@ test_that("summaryStatsQc validates the panel cutoffs before any panel read", {
     list(dosage = dosage, refPanel = refPanel, knownZ = knownZ, obs = obs)
 }
 
+# The mask as .qcRaissBuildInputs() computes it for a panel of real
+# genotypes: statistics off the window's dosages, only when a cutoff is set,
+# and a MAC cutoff counting the panel's samples.
 # @noRd
 .rmask_run <- function(f, ...) {
+    rp <- as.list(RaissParam(...))
     .qcRaissTargetMask(
         f$refPanel,
         f$knownZ,
-        f$dosage,
-        list(imputeArgs = as.list(RaissParam(...)))
+        .qcRaissTargetStats(NULL, NULL, f$dosage, rp),
+        list(raissParam = rp),
+        nSamples = nrow(f$dosage)
     )
 }
 
@@ -7798,7 +7166,7 @@ test_that(".qcRaissTargetMask drops a target whose MAF is undefined", {
     expect_false(keep[[12]])
 })
 
-test_that("summaryStatsQc imputeArgs cutoffs bound what RAISS imputes", {
+test_that("summaryStatsQc raissParam cutoffs bound what RAISS imputes", {
     data(gwasSumStatsS4Example)
     gss <- gwasSumStatsS4Example
     variants <- unlist(gss)
@@ -7806,7 +7174,7 @@ test_that("summaryStatsQc imputeArgs cutoffs bound what RAISS imputes", {
         studyName = studyName(gss),
         entry = list(variants[seq(1L, length(variants), by = 4L)]),
         genome = unique(unname(GenomeInfoDb::genome(gss))),
-        ldSketch = ldSketch(gss)
+        ldReference = ldReference(gss)
     )
     nObserved <- sum(lengths(thin))
     # The bundled toy panel imputes poorly, so the R2 gate would otherwise
@@ -7816,7 +7184,7 @@ test_that("summaryStatsQc imputeArgs cutoffs bound what RAISS imputes", {
         out <- suppressWarnings(suppressMessages(summaryStatsQc(
             thin,
             impute = TRUE,
-            imputeArgs = do.call(
+            raissParam = do.call(
                 RaissParam,
                 utils::modifyList(base, list(...))
             )
@@ -8091,47 +7459,45 @@ test_that("both trimmers empty the sketch for zero-variant entries", {
     expect_gt(nrow(h), 0L)
     # An empty list and a zero-range GRanges both mean "no variants".
     for (entries in list(list(), list(GenomicRanges::GRanges()))) {
-        expect_equal(nrow(.subsetSketchToRange(h, entries)), 0L)
-        expect_equal(nrow(.subsetSketchToIds(h, entries)), 0L)
+        expect_equal(nrow(.subsetLdRefToRange(h, entries)), 0L)
+        expect_equal(nrow(.subsetLdRefToIds(h, entries)), 0L)
     }
 })
 
 test_that("emptying drops both axes but keeps the panel's identity", {
     h <- .sk_panel()
-    e <- .subsetSketchToRange(h, list())
+    e <- .subsetLdRefToRange(h, list())
     # The sample axis is shed along with the variants: an emptied sketch
     # references no LD, so its anonymous sample names are dead weight (the bulk
     # of a skipped-region file). What is kept is the panel's identity -- where
     # it came from -- not its dimensions.
     expect_equal(nrow(e), 0L)
     expect_equal(ncol(e), 0L)
-    hh <- .ldSketchHandle(h)
-    eh <- .ldSketchHandle(e)
-    expect_equal(genotypeFormat(eh), genotypeFormat(hh))
-    expect_equal(path(eh), path(hh))
+    expect_equal(.ldRefFormat(e), .ldRefFormat(h))
+    expect_equal(.ldRefSource(e)$path, .ldRefSource(h)$path)
 })
 
-test_that(".emptySketch drops the seed's variants, not just the rows", {
+test_that(".emptyLdRef drops the seed, not just the rows", {
     # A panel carries its handle twice: as rowRanges and inside the dosage
     # assay's DelayedArray seed. Dropping rows alone leaves the seed holding
     # the whole panel, which is the weight this exists to shed.
     h <- .sk_panel()
-    e <- .emptySketch(h)
+    e <- .emptyLdRef(h)
     expect_equal(nrow(e), 0L)
-    expect_equal(nrow(snpInfo(.ldSketchHandle(e))), 0L)
+    expect_null(.panelSeed(e))
     expect_lt(
         length(serialize(e, NULL)),
         length(serialize(h, NULL)) / 2
     )
 })
 
-test_that(".emptySketch is NULL-safe and idempotent", {
-    expect_null(.emptySketch(NULL))
-    e <- .emptySketch(.sk_panel())
-    expect_equal(nrow(.emptySketch(e)), 0L)
+test_that(".emptyLdRef is NULL-safe and idempotent", {
+    expect_null(.emptyLdRef(NULL))
+    e <- .emptyLdRef(.sk_panel())
+    expect_equal(nrow(.emptyLdRef(e)), 0L)
 })
 
-test_that(".subsetSketchToIds keeps the panel when ids are unextractable", {
+test_that(".subsetLdRefToIds keeps the panel when ids are unextractable", {
     # Ranges present but no SNP mcol is a different situation from zero
     # variants: the panel cannot be keyed, so blanking it would discard LD the
     # object may well reference. Stay conservative.
@@ -8140,7 +7506,7 @@ test_that(".subsetSketchToIds keeps the panel when ids are unextractable", {
         "chr21",
         IRanges::IRanges(c(17513228L, 17513580L), width = 1L)
     )
-    expect_equal(nrow(.subsetSketchToIds(h, list(gr))), nrow(h))
+    expect_equal(nrow(.subsetLdRefToIds(h, list(gr))), nrow(h))
 })
 
 # ===========================================================================
@@ -8188,13 +7554,13 @@ test_that("an af: key is directional AF; a maf: key is directionless", {
         "af"
     ))
     expect_equal(a$AF, 0.8)
-    expect_null(a$MAF)
+    expect_false("MAF" %in% names(a))
     b <- suppressWarnings(.resolveSumstatCols(
         .afm_df("effect_allele_frequency", 0.8),
         .afm_cm(maf = "effect_allele_frequency"),
         "maf"
     ))
-    expect_null(b$AF)
+    expect_false("AF" %in% names(b))
     expect_equal(b$MAF, 0.8)
 })
 
@@ -8207,7 +7573,7 @@ test_that("an undeclared af warns distinctly and yields no AF column", {
         ),
         "no effect-allele frequency declared"
     )
-    expect_null(out$AF)
+    expect_false("AF" %in% names(out))
 })
 
 test_that("a declared-but-unusable af warns with a different message", {
@@ -8383,6 +7749,7 @@ test_that("RaissParam carries every field the QC imputation path reads", {
         names(a),
         c(
             "lamb",
+            "rcond",
             "svdTol",
             "r2Threshold",
             "minimumLd",
@@ -8394,17 +7761,16 @@ test_that("RaissParam carries every field the QC imputation path reads", {
     )
 })
 
-test_that("RaissParam refuses rcond, which the QC path cannot use", {
-    # summaryStatsQc always hands RAISS a genotype matrix, which solves via
-    # .raissSvdImpute (svdTol). rcond belongs to the LD-matrix path, so it was
-    # advertised in the old imputeOpts default and read by nobody.
-    expect_error(RaissParam(rcond = 0.01), "unused argument")
-    expect_true("rcond" %in% names(formals(raiss)))
-    expect_false("rcond" %in% names(RaissParam()))
+test_that("RaissParam carries rcond for an LdMatrix reference", {
+    # A genotype panel reaches RAISS's SVD route (svdTol); an LdMatrix
+    # reaches its LD-matrix route, which takes rcond. Both are forwarded, and
+    # each route reads its own.
+    expect_equal(RaissParam(rcond = 0.05)$rcond, 0.05)
+    expect_equal(RaissParam()$rcond, formals(raiss)$rcond)
 })
 
 test_that("RaissParam fields split into raiss formals and pecotmr's own", {
-    forwarded <- c("lamb", "svdTol", "r2Threshold", "minimumLd")
+    forwarded <- c("lamb", "rcond", "svdTol", "r2Threshold", "minimumLd")
     expect_true(all(forwarded %in% names(formals(raiss))))
     # The rest scope what RAISS is asked to impute; they are not raiss formals
     # and are consumed before the call.
@@ -8412,15 +7778,15 @@ test_that("RaissParam fields split into raiss formals and pecotmr's own", {
     expect_false(any(ours %in% names(formals(raiss))))
 })
 
-test_that("summaryStatsQc refuses a bare list for imputeArgs", {
+test_that("summaryStatsQc refuses a bare list for raissParam", {
     data(gwasSumStatsS4Example)
     expect_error(
-        summaryStatsQc(gwasSumStatsS4Example, imputeArgs = list(flank = 500)),
+        summaryStatsQc(gwasSumStatsS4Example, raissParam = list(flank = 500)),
         "must be built with RaissParam"
     )
 })
 
-test_that("an empty imputeArgs resolves to the full default bundle", {
+test_that("an empty raissParam resolves to the full default bundle", {
     resolved <- pecotmr:::.ssqcResolveImputeArgs(list())
     expect_equal(resolved, as.list(RaissParam()))
     # Every read site indexes this without a fallback, so a missing field
@@ -8478,5 +7844,79 @@ test_that(".sumstatsCleaningResolve fills defaults an empty bundle omits", {
     expect_error(
         pecotmr:::.sumstatsCleaningResolve(list(coerceNumeric = FALSE)),
         "must be built with SumstatsCleaningParam"
+    )
+})
+
+
+test_that("summaryStatsQc gives one result from an LdMatrix and its panel", {
+    data(gwasSumStatsS4Example)
+    gss <- gwasSumStatsS4Example
+    panel <- ldReference(gss)
+    ld <- LdMatrix(
+        unname(computeLd(panel)),
+        variants = SummarizedExperiment::rowRanges(panel),
+        nSamples = ncol(panel)
+    )
+    withLd <- GwasSumStats(
+        studyName = studyName(gss),
+        entry = list(.collectionEntry(gss, 1L)),
+        genome = "hg19",
+        ldReference = ld,
+        qcInfo = qcInfo(gss)
+    )
+    viaPanel <- suppressMessages(
+        summaryStatsQc(gss, ldMismatchQcMethod = "slalom")
+    )
+    viaMatrix <- suppressMessages(
+        summaryStatsQc(withLd, ldMismatchQcMethod = "slalom")
+    )
+    expect_equal(
+        as.data.frame(unlist(viaMatrix)),
+        as.data.frame(unlist(viaPanel))
+    )
+    # The reference is trimmed to the surviving variants, still a matrix.
+    expect_s4_class(ldReference(viaMatrix), "LdMatrix")
+    expect_equal(length(ldReference(viaMatrix)), length(unlist(viaMatrix)))
+})
+
+test_that("DENTIST needs an LdMatrix's size; SLALOM does not", {
+    ld <- LdMatrix(
+        diag(2),
+        variants = data.frame(chrom = "1", pos = 1:2, A1 = "A", A2 = "G")
+    )
+    expect_error(
+        .qcMismatchNSample(ld, "dentist"),
+        "DENTIST needs the LD reference's sample size"
+    )
+    expect_null(.qcMismatchNSample(ld, "slalom"))
+})
+
+test_that("RAISS imputation in QC runs on an LdMatrix reference", {
+    data(gwasSumStatsS4Example)
+    gss <- gwasSumStatsS4Example
+    panel <- ldReference(gss)
+    ld <- LdMatrix(
+        unname(computeLd(panel)),
+        variants = SummarizedExperiment::rowRanges(panel),
+        nSamples = ncol(panel)
+    )
+    entry <- .collectionEntry(gss, 1L)
+    thin <- GwasSumStats(
+        studyName = studyName(gss),
+        entry = list(entry[seq(1L, length(entry), by = 2L)]),
+        genome = "hg19",
+        ldReference = ld
+    )
+    res <- suppressMessages(summaryStatsQc(thin, impute = TRUE))
+    ea <- qcInfo(res)$entryAudit[[1L]]
+    expect_gt(ea$raissImputedVariants, 0L)
+    # Target filters read the LdMatrix's AF, which this one does not record.
+    expect_error(
+        suppressMessages(summaryStatsQc(
+            thin,
+            impute = TRUE,
+            raissParam = RaissParam(mafCutoff = 0.05)
+        )),
+        "needs allele frequencies"
     )
 })

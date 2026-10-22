@@ -18,8 +18,10 @@ ldMismatchQc(
 
 \item{R}{Square LD correlation matrix. Provide either \code{R} or \code{X}.}
 
-\item{X}{Genotype matrix (samples x SNPs). If provided, LD is computed via
-\code{computeLd} and \code{nSample} defaults to \code{nrow(X)}.}
+\item{X}{Genotype matrix (samples x SNPs). With \code{ldMethod = "sample"}
+both methods work on the genotypes without forming the LD matrix; any
+other \code{ldMethod} computes LD via \code{computeLd}. \code{nSample}
+defaults to \code{nrow(X)}.}
 
 \item{nSample}{Number of samples in the LD reference panel. Required when
 \code{R} is provided and \code{method = "dentist"}; inferred from \code{X}

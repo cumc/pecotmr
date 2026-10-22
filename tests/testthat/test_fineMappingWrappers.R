@@ -372,24 +372,6 @@ test_that("glmnetWeights handles zero-variance columns", {
 })
 
 # =============================================================================
-# init_prior_sd
-# =============================================================================
-
-test_that("init_prior_sd returns n standard deviations", {
-    skip_if_not_installed("susieR")
-    set.seed(42)
-    n_samples <- 50
-    p <- 10
-    X <- matrix(rnorm(n_samples * p), n_samples, p)
-    y <- X[, 1] * 2 + rnorm(n_samples)
-
-    sds <- pecotmr:::initPriorSd(X, y, n = 15)
-    expect_length(sds, 15)
-    expect_equal(sds[1], 0)
-    expect_true(all(diff(sds) >= 0))
-})
-
-# =============================================================================
 # postprocessFinemappingFits: analysisScript and V=NULL branches (Tier 1)
 # =============================================================================
 
@@ -638,6 +620,9 @@ if (!exists(".makeUnivariateData", inherits = FALSE)) {
     "pip",
     "posterior_mean",
     "posterior_sd",
+    # The infinitesimal half of posterior_mean (susieInf / susieAsh), which
+    # coef.susie() already summed into it; 0 for methods without one.
+    "posterior_theta",
     "logBF",
     # CS columns are derived from the coverages the pipeline produced; for the
     # default coverages (0.95/0.70/0.50) memberships lead, then purities.
@@ -782,7 +767,7 @@ if (!exists(".makeUnivariateData", inherits = FALSE)) {
     )
 }
 
-test_that("buildTopLoci returns the exact 22-column schema in order with stable dtypes", {
+test_that("buildTopLoci returns the fixed schema in order with stable dtypes", {
     # `.emptyTopLoci` is a package-internal helper. Use the namespace lookup
     # so the test works both source-loaded and after R CMD INSTALL.
     empty_fn <- if (
@@ -1036,7 +1021,7 @@ test_that("buildTopLoci: per-variant logBF is the max single-effect lbf", {
     expect_true("logBF" %in% names(.fmrRowTopLoci(e, signalCutoff = 0)))
 })
 
-test_that("buildTopLoci emits 22 columns in the fixed order on a non-empty fit", {
+test_that("buildTopLoci emits the fixed columns in order on a non-empty fit", {
     variant_ids <- c("chr1:100:A:G", "chr1:200:C:T")
     inp <- .fakeFitAndCs(
         variant_ids,
@@ -2677,25 +2662,37 @@ test_that(".susie_rss_extract_weights returns correct-length vector", {
     fit <- susieR::susie_rss(z = z, R = R, n = n, L = 5)
     w <- pecotmr:::.susieRssExtractWeights(
         fit = fit,
-        R = R,
+        nVariants = p,
         requiredFields = c("alpha", "mu", "X_column_scale_factors")
     )
     expect_equal(length(w), p)
     expect_true(all(is.finite(w)))
 })
 
-test_that("susieRssWeights follows (stat, LD) convention", {
+test_that("susieRssWeights checks the fit against the statistics' variants", {
     skip_if_not_installed("susieR")
     set.seed(42)
     p <- 20
     n <- 500
     R <- diag(p)
     z <- rnorm(p)
-    stat <- list(b = z / sqrt(n), cor = z / sqrt(n), z = z, n = rep(n, p))
+    stat <- list(z = z, n = rep(n, p), variantNames = .rrwIds(p))
     fit <- susieR::susie_rss(z = z, R = R, n = n, L = 5)
-    w <- susieRssWeights(stat, R, susieRssFit = fit)
+    w <- susieRssWeights(stat, .rrwLdMatrix(R), susieRssFit = fit)
     expect_equal(length(w), p)
     expect_true(all(is.finite(w)))
+    # No LD is read, so the reference is optional: without one the
+    # statistics' own variants are the block.
+    expect_equal(susieRssWeights(stat, susieRssFit = fit), w)
+    # With one, every variant must be in it.
+    stranger <- list_modify(
+        stat,
+        variantNames = replace(stat$variantNames, 1L, "chr2:1:A:G")
+    )
+    expect_error(
+        susieRssWeights(stranger, .rrwLdMatrix(R), susieRssFit = fit),
+        "1 variant id\\(s\\) not present in the LD reference"
+    )
 })
 
 test_that("susieRssWeights retains fit unless fitRetention is none", {
@@ -2705,9 +2702,9 @@ test_that("susieRssWeights retains fit unless fitRetention is none", {
     n <- 500
     R <- diag(p)
     z <- rnorm(p)
-    stat <- list(b = z / sqrt(n), cor = z / sqrt(n), z = z, n = rep(n, p))
+    stat <- list(z = z, n = rep(n, p), variantNames = .rrwIds(p))
     fit <- susieR::susie_rss(z = z, R = R, n = n, L = 5)
-    w <- susieRssWeights(stat, R, susieRssFit = fit, fitRetention = "slim")
+    w <- susieRssWeights(stat, susieRssFit = fit, fitRetention = "slim")
     expect_false(is.null(attr(w, "fit")))
 })
 
@@ -2718,9 +2715,9 @@ test_that("susieInfRssWeights works", {
     n <- 500
     R <- diag(p)
     z <- rnorm(p)
-    stat <- list(b = z / sqrt(n), cor = z / sqrt(n), z = z, n = rep(n, p))
+    stat <- list(z = z, n = rep(n, p), variantNames = .rrwIds(p))
     fit <- susieR::susie_rss(z = z, R = R, n = n, L = 5)
-    w <- susieInfRssWeights(stat, R, susieInfRssFit = fit)
+    w <- susieInfRssWeights(stat, .rrwLdMatrix(R), susieInfRssFit = fit)
     expect_equal(length(w), p)
     expect_true(all(is.finite(w)))
 })
@@ -2752,7 +2749,7 @@ test_that("susieAshRssWeights returns weights of length p", {
         n = median(f$stat$n),
         L = 5
     )
-    w <- susieAshRssWeights(f$stat, f$LD, susieAshRssFit = fit)
+    w <- susieAshRssWeights(f$stat, f$ldReference, susieAshRssFit = fit)
     expect_length(w, f$p)
     expect_true(all(is.finite(w)))
 })
@@ -2765,34 +2762,62 @@ test_that("mvsusieRssWeights returns p x K weights from a supplied fit", {
         coef.mvsusie = function(...) fakeCoef,
         .package = "mvsusieR"
     )
-    w <- mvsusieRssWeights(m$stat, m$LD, mvsusieRssFit = "precomputed_fit")
+    w <- mvsusieRssWeights(
+        m$stat,
+        m$ldReference,
+        mvsusieRssFit = "precomputed_fit"
+    )
     expect_equal(dim(w), c(m$p, m$K))
     expect_true(all(is.finite(w)))
 })
 
-test_that("mvsusieRssWeights checks the fit against the LD block", {
+test_that("mvsusieRssWeights checks the fit against the statistics' block", {
     skip_if_not_installed("mvsusieR")
-    # It takes (stat, LD) like every other *RssWeights wrapper, and used to
-    # read NEITHER -- a fit from a different block was extracted without
-    # complaint. The susie siblings have always checked this.
+    # It used to read neither `stat` nor the LD -- a fit from a different
+    # block was extracted without complaint. The susie siblings have always
+    # checked this.
     m <- .rrwMulti(n = 80, p = 8, K = 2)
     fakeCoef <- matrix(rnorm((m$p + 1) * m$K), nrow = m$p + 1, ncol = m$K)
     local_mocked_bindings(
         coef.mvsusie = function(...) fakeCoef,
         .package = "mvsusieR"
     )
-    # An LD block of the wrong size cannot belong to this fit.
+    # Statistics over fewer variants cannot belong to this fit, with or
+    # without a reference.
+    fewer <- list(
+        z = m$stat$z[-m$p, , drop = FALSE],
+        n = m$stat$n,
+        variantNames = m$stat$variantNames[-m$p]
+    )
+    msg <- "mvsusieRss fit has 8 variants but the statistics describe 7"
     expect_error(
         mvsusieRssWeights(
-            m$stat,
-            m$LD[seq_len(m$p - 1), seq_len(m$p - 1), drop = FALSE],
+            fewer,
+            m$ldReference,
             mvsusieRssFit = "precomputed_fit"
         ),
-        "Dimension mismatch: mvsusieRss fit has 8 variants but LD has 7"
+        msg
+    )
+    expect_error(
+        mvsusieRssWeights(fewer, mvsusieRssFit = "precomputed_fit"),
+        msg
+    )
+    # A variant the reference does not hold cannot be in its block.
+    stranger <- list_modify(
+        m$stat,
+        variantNames = replace(m$stat$variantNames, 1L, "chr2:1:A:G")
+    )
+    expect_error(
+        mvsusieRssWeights(
+            stranger,
+            m$ldReference,
+            mvsusieRssFit = "precomputed_fit"
+        ),
+        "1 variant id\\(s\\) not present in the LD reference"
     )
     # `stat` is validated as the list the contract says it is.
     expect_error(
-        mvsusieRssWeights("not-a-list", m$LD, mvsusieRssFit = "f"),
+        mvsusieRssWeights("not-a-list", m$ldReference, mvsusieRssFit = "f"),
         "stat"
     )
 })
@@ -2801,7 +2826,7 @@ test_that("mvsusieRssWeights refuses to fine-map when no fit is supplied", {
     skip_if_not_installed("mvsusieR")
     m <- .rrwMulti(n = 80, p = 8, K = 2)
     expect_error(
-        mvsusieRssWeights(m$stat, m$LD),
+        mvsusieRssWeights(m$stat, m$ldReference),
         "`mvsusieRssFit` is required"
     )
 })
@@ -2814,7 +2839,7 @@ test_that("mvsusieRssWeights demands a fit before anything else", {
     # the fitting branch; with no fit supplied, the missing fit is the
     # fundamental problem and `stat` is not read at all.
     expect_error(
-        mvsusieRssWeights(oneCol, f$LD),
+        mvsusieRssWeights(oneCol, f$ldReference),
         "`mvsusieRssFit` is required"
     )
 })
@@ -3120,7 +3145,7 @@ test_that("mergeSusieCs: single condition with one credible set", {
     expect_equal(res$credibleSetNames, c("cs_1_1", "cs_1_1"))
 })
 
-test_that("mergeSusieCs: non-FineMappingResult input errors", {
+test_that("mergeSusieCs: input that is not a fine-mapping result errors", {
     expect_error(mergeSusieCs(list(1, 2)), "QtlFineMappingResult")
 })
 
@@ -3157,13 +3182,13 @@ test_that("mergeSusieCs: non-FineMappingResult input errors", {
 test_that("computeCsCorrelation (SumStats) matches get_cs_correlation", {
     data(qtlSumStatsExample)
     ss <- qtlSumStatsExample
-    vids <- rownames(ldSketch(ss))
+    vids <- rownames(ldReference(ss))
     set.seed(1)
     fe <- .ccMakeEntry(vids, list(L1 = c(1L, 2L, 3L), L2 = c(90L, 91L)))
     cc <- computeCsCorrelation(fe, ss)
     # Reference: the same LD (from the sketch, aligned to the fit variables)
     # fed to the same fit. Equality proves the on-demand path + alignment.
-    xcorr <- pecotmr:::.ldFromSketch(ldSketch(ss), vids, onMissing = "error")
+    xcorr <- pecotmr:::.ldFromRef(ldReference(ss), vids, onMissing = "error")
     ref <- susieR::get_cs_correlation(
         list(sets = susieFit(fe)$sets, pip = susieFit(fe)$pip),
         Xcorr = xcorr
@@ -3172,10 +3197,90 @@ test_that("computeCsCorrelation (SumStats) matches get_cs_correlation", {
     expect_equal(unname(cc), unname(ref))
 })
 
+test_that("computeCsCorrelation reads a panel's factor or an LdMatrix alike", {
+    # A genotype reference gives its factor and an LdMatrix its matrix; the
+    # same LD gives the same between-CS correlation.
+    data(gwasSumStatsS4Example)
+    gss <- gwasSumStatsS4Example
+    panel <- ldReference(gss)
+    withLd <- GwasSumStats(
+        studyName = studyName(gss),
+        entry = list(pecotmr:::.collectionEntry(gss, 1L)),
+        genome = "hg19",
+        ldReference = LdMatrix(
+            unname(computeLd(panel)),
+            variants = SummarizedExperiment::rowRanges(panel)
+        ),
+        qcInfo = qcInfo(gss)
+    )
+    vids <- names(SummarizedExperiment::rowRanges(panel))[1:40]
+    set.seed(3)
+    fe <- .ccMakeEntry(vids, list(L1 = c(1L, 2L, 3L), L2 = c(30L, 31L)))
+    expect_equal(
+        computeCsCorrelation(fe, gss),
+        computeCsCorrelation(fe, withLd)
+    )
+})
+
+# A single-row fSuSiE result over `vids`, in fsusieR's own layout: class
+# "susiF", credible sets (indices into vids) in $cs rather than $sets$cs.
+.ccMakeFsusieEntry <- function(vids, cs) {
+    pip <- stats::runif(length(vids))
+    QtlFineMappingResult(
+        studyName = "s1",
+        context = "c1",
+        trait = "t1",
+        method = "fsusie",
+        entry = list(fineMappingRow(
+            variantIds = vids,
+            susieFit = structure(list(cs = cs, pip = pip), class = "susiF"),
+            topLoci = data.frame(
+                variant_id = vids,
+                pip = pip,
+                stringsAsFactors = FALSE
+            )
+        ))
+    )
+}
+
+# The between-set correlation fsusieR::cal_cor_cs() defines: the largest
+# correlation between a member of one set and a member of the other.
+.ccMaxCorrelation <- function(R, cs) {
+    pairMax <- function(l, k) max(R[cs[[l]], cs[[k]]])
+    outer(seq_along(cs), seq_along(cs), Vectorize(pairMax))
+}
+
+test_that("computeCsCorrelation reads an fSuSiE fit's sets, from LD", {
+    # fSuSiE keeps its credible sets in $cs, not $sets$cs; reading only the
+    # latter made every fSuSiE fit look set-less, so this came back NULL.
+    data(qtlSumStatsExample)
+    ss <- qtlSumStatsExample
+    vids <- rownames(ldReference(ss))
+    cs <- list(c(1L, 2L, 3L), c(90L, 91L))
+    set.seed(1)
+    cc <- computeCsCorrelation(.ccMakeFsusieEntry(vids, cs), ss)
+    R <- pecotmr:::.ldFromRef(ldReference(ss), vids, onMissing = "error")
+    expect_equal(cc, .ccMaxCorrelation(R, cs))
+    expect_equal(diag(cc), c(1, 1))
+})
+
+test_that("computeCsCorrelation reads an fSuSiE fit's sets, from genotypes", {
+    # The genotype route hands the sets to fsusieR::cal_cor_cs() itself, a
+    # branch the count bug above kept from ever running.
+    skip_if_not_installed("fsusieR")
+    data(qtlDatasetExample)
+    geno <- genotypes(qtlDatasetExample)
+    vids <- colnames(geno)[1:6]
+    cs <- list(c(1L, 2L), c(4L, 5L, 6L))
+    set.seed(2)
+    cc <- computeCsCorrelation(.ccMakeFsusieEntry(vids, cs), qtlDatasetExample)
+    expect_equal(cc, .ccMaxCorrelation(stats::cor(geno[, vids]), cs))
+})
+
 test_that("computeCsCorrelation is NULL for fewer than two credible sets", {
     data(qtlSumStatsExample)
     ss <- qtlSumStatsExample
-    vids <- rownames(ldSketch(ss))
+    vids <- rownames(ldReference(ss))
     set.seed(1)
     expect_null(computeCsCorrelation(.ccMakeEntry(vids, list()), ss))
     expect_null(
@@ -3185,7 +3290,7 @@ test_that("computeCsCorrelation is NULL for fewer than two credible sets", {
 
 test_that("computeCsCorrelation requires a QtlDataset / SumStats ldSource", {
     data(qtlSumStatsExample)
-    vids <- rownames(ldSketch(qtlSumStatsExample))
+    vids <- rownames(ldReference(qtlSumStatsExample))
     set.seed(1)
     fe <- .ccMakeEntry(vids, list(L1 = c(1L, 2L, 3L), L2 = c(90L, 91L)))
     expect_error(computeCsCorrelation(fe, 42), "requires a QtlDataset")
@@ -3198,11 +3303,14 @@ test_that("computeCsCorrelation requires a QtlDataset / SumStats ldSource", {
 test_that("computeCsCorrelation errors when a fit variant is off-panel", {
     data(qtlSumStatsExample)
     ss <- qtlSumStatsExample
-    vids <- rownames(ldSketch(ss))
+    vids <- rownames(ldReference(ss))
     vids[1] <- "chr22:99999999:A:G"
     set.seed(1)
     fe <- .ccMakeEntry(vids, list(L1 = c(1L, 2L, 3L), L2 = c(90L, 91L)))
-    expect_error(computeCsCorrelation(fe, ss), "not present in the LD sketch")
+    expect_error(
+        computeCsCorrelation(fe, ss),
+        "not present in the LD reference"
+    )
 })
 
 test_that("computeCsCorrelation resolves on the paired fixture", {
@@ -3317,6 +3425,19 @@ test_that("susieResult returns NULL when finemappingEntry missing", {
     expect_null(result)
 })
 
+test_that("susieResult reads a bare FineMappingRow, its documented input", {
+    # The guard used to require a FineMappingResultBase, so the documented
+    # input -- a row -- came back NULL without a word.
+    fit <- list(pip = c(0.2, 0.8), sets = list(cs = list()))
+    ids <- c("chr1:100:A:G", "chr1:200:C:T")
+    row <- fineMappingRow(
+        variantIds = ids,
+        susieFit = fit,
+        topLoci = data.frame(variant_id = ids, pip = c(0.2, 0.8))
+    )
+    expect_equal(susieResult(list(finemappingEntry = row)), fit)
+})
+
 test_that("susieResult returns trimmed result when present", {
     mock_result <- list(pip = c(0.1, 0.5, 0.3), sets = list(cs = list()))
     con_data <- list(
@@ -3413,7 +3534,7 @@ test_that("extractCsInfo extracts single CS correctly", {
 test_that("extractCsInfo builds correlation columns from the ldSource", {
     data(qtlSumStatsExample)
     ss <- qtlSumStatsExample
-    vids <- rownames(ldSketch(ss))
+    vids <- rownames(ldReference(ss))
     set.seed(1)
     fit <- list(
         sets = list(cs = list(L_1 = c(1L, 2L, 3L), L_2 = c(90L, 91L))),
@@ -3498,17 +3619,26 @@ test_that("susieResult returns NULL when the trimmed susie fit is empty", {
 # Weight extraction and variant parsing guards
 # ===========================================================================
 
-test_that("susieRss weight extraction rejects a fit that does not match R", {
-    # A pip vector of a different length than R means the fit and the LD
-    # describe different variant sets; the weights would be silently
-    # mis-assigned rather than wrong-looking.
+test_that("susieRss weight extraction rejects a fit of another block", {
+    # A pip vector of a different length than the statistics means the fit
+    # and the statistics describe different variant sets; the weights would
+    # be silently mis-assigned rather than wrong-looking.
     expect_error(
         pecotmr:::.susieRssExtractWeights(
             fit = list(pip = c(0.1, 0.2)),
-            R = diag(3),
+            nVariants = 3L,
             requiredFields = c("alpha", "mu")
         ),
-        "Dimension mismatch: susieRss fit has 2 variants but R has 3 rows"
+        "susieRss fit has 2 variants but the statistics describe 3"
+    )
+    # With nothing to compare against, the fit is taken as it is.
+    expect_equal(
+        pecotmr:::.susieRssExtractWeights(
+            fit = list(pip = c(0.1, 0.2)),
+            nVariants = NA_integer_,
+            requiredFields = c("alpha", "mu")
+        ),
+        c(0, 0)
     )
 })
 
@@ -3517,7 +3647,7 @@ test_that("susieRss weights are zero when the fit lacks the coefficient fields",
     # contribution is zero rather than an error or a partial answer.
     w <- pecotmr:::.susieRssExtractWeights(
         fit = list(pip = c(0.1, 0.2, 0.3)),
-        R = diag(3),
+        nVariants = 3L,
         requiredFields = c("alpha", "mu", "X_column_scale_factors")
     )
     expect_equal(w, c(0, 0, 0))
@@ -3526,7 +3656,7 @@ test_that("susieRss weights are zero when the fit lacks the coefficient fields",
 test_that("susieRss weights carry the fit when asked to retain it", {
     w <- pecotmr:::.susieRssExtractWeights(
         fit = list(pip = c(0.1, 0.2, 0.3)),
-        R = diag(3),
+        nVariants = 3L,
         requiredFields = "absentField",
         fitRetention = "slim"
     )
@@ -3560,16 +3690,24 @@ test_that("merging overlapping sets with nothing to merge yields nothing", {
     expect_null(pecotmr:::.combineTopLoci(list()))
 })
 
-test_that("correlation extraction reports NA when every value is self-correlation", {
-    # A single-variant set has only the diagonal, so there is no pairwise
-    # correlation to summarise -- reported as NA rather than 1.
-    both <- pecotmr:::.extractCorrelations(c(1, 1, 1))
-    expect_true(is.na(both$max_corr))
-    expect_true(is.na(both$min_corr))
-    # Perfect correlations are excluded, magnitudes are used.
-    mixed <- pecotmr:::.extractCorrelations(c(1, 0.5, -0.9))
-    expect_equal(mixed$max_corr, 0.9)
-    expect_equal(mixed$min_corr, 0.5)
+test_that("correlation extraction drops only each set's own entry", {
+    # By position, not by value: a genuine |r| = 1 between two sets counts,
+    # magnitudes are used, and a diagonal a few ulps short of 1 (as a
+    # factor's correlation gives) is still the set with itself.
+    csCorr <- rbind(c(1 - 2e-16, 0.5, -1), c(0.5, 1, -0.9), c(-1, -0.9, 1))
+    expect_equal(
+        pecotmr:::.extractCorrelations(1L, csCorr),
+        list(max_corr = 1, min_corr = 0.5)
+    )
+    expect_equal(
+        pecotmr:::.extractCorrelations(2L, csCorr),
+        list(max_corr = 0.9, min_corr = 0.5)
+    )
+    out <- pecotmr:::.csAppendCorrelationCols(tibble(cs = 1:3), csCorr)
+    expect_equal(out$cs_corr_max, c(1, 0.9, 1))
+    expect_equal(out$cs_corr_min, c(0.5, 0.5, 0.9))
+    single <- pecotmr:::.csAppendCorrelationCols(tibble(cs = 1L), NULL)
+    expect_true(is.na(single$cs_corr_max))
 })
 
 test_that("susieResult returns NULL when there is no fine-mapping entry", {
@@ -3591,11 +3729,13 @@ test_that("purity lookup answers 0 for a missing or out-of-range set", {
     expect_equal(pecotmr:::.csPurityAt(0L, c(0.5)), 0)
 })
 
-test_that("a cs label parses to its trailing index", {
-    expect_equal(pecotmr:::.cs95ToIndex("susie_3"), 3L)
+test_that("cs labels parse to their trailing index", {
+    expect_identical(
+        pecotmr:::.csLabelIndex(c("susie_3", "susie_inf_12", "susie_0")),
+        c(3L, 12L, 0L)
+    )
     # 0 marks "in no credible set", which is what an empty or NA label means.
-    expect_equal(pecotmr:::.cs95ToIndex(NA_character_), 0L)
-    expect_equal(pecotmr:::.cs95ToIndex(""), 0L)
+    expect_identical(pecotmr:::.csLabelIndex(c(NA, "")), c(0L, 0L))
 })
 
 test_that("the alpha row helper returns a plain numeric row", {
@@ -3875,7 +4015,7 @@ test_that("susieInf is skipped as a result when it was only a chain input", {
         chainOnly,
         "INFFIT",
         z = NULL,
-        R = NULL,
+        ld = list(),
         n = 100L,
         coverage = 0.95,
         methodArgs = list(),
@@ -3913,7 +4053,7 @@ test_that("susieInf is returned as its own fit when it was requested", {
         asked,
         "INFFIT",
         z = NULL,
-        R = NULL,
+        ld = list(),
         n = 100L,
         coverage = 0.95,
         methodArgs = list(),
@@ -4157,7 +4297,7 @@ test_that(".fmRssFitStd threads the shared susieInf fit when chained", {
         chain,
         list(S = TRUE),
         z = NULL,
-        R = NULL,
+        ld = list(),
         n = 100L,
         coverage = 0.95,
         methodArgs = list(),
@@ -4188,7 +4328,7 @@ test_that(".fmFitRssBlock skips a token that produced no fit", {
     )
     out <- pecotmr:::.fmFitRssBlock(
         z = NULL,
-        R = NULL,
+        ld = list(),
         n = 100L,
         toRun = c("susie", "susieAsh"),
         initializeWithSusieInf = FALSE
@@ -4337,7 +4477,7 @@ test_that("susieResult returns NULL for an empty susie fit", {
         method = "susie",
         entry = list(row)
     )
-    # A FineMappingResult is present, but it carries no fit to return.
+    # A fine-mapping result is present, but it carries no fit to return.
     expect_null(susieResult(list(finemappingEntry = res)))
 })
 
@@ -4400,7 +4540,7 @@ test_that("mvsusieRssWeights attaches the fit only when asked", {
     )
     kept <- mvsusieRssWeights(
         m$stat,
-        m$LD,
+        m$ldReference,
         mvsusieRssFit = "precomputed_fit",
         fitRetention = "slim"
     )
@@ -4479,15 +4619,15 @@ test_that("susie*Weights: fitRetention / stat / methodArgs guards fire", {
         "must be one of"
     )
     expect_error(
-        susieRssWeights(stat = "nope", LD = NULL),
+        susieRssWeights(stat = "nope"),
         "stat.*Must be of type 'list'"
     )
     expect_error(
-        susieInfRssWeights(stat = "nope", LD = NULL),
+        susieInfRssWeights(stat = "nope"),
         "stat.*Must be of type 'list'"
     )
     expect_error(
-        susieAshRssWeights(stat = "nope", LD = NULL),
+        susieAshRssWeights(stat = "nope"),
         "stat.*Must be of type 'list'"
     )
 })
@@ -5357,15 +5497,15 @@ test_that("the RSS weight extractors refuse to fine-map themselves", {
     # These read weights off an existing fit; without one there is nothing to
     # extract, and the message says where the fit comes from.
     expect_error(
-        susieRssWeights(stat = list(z = 1), LD = diag(2)),
+        susieRssWeights(stat = list(z = 1)),
         "susieRssWeights: no 'susie' fit supplied"
     )
     expect_error(
-        susieInfRssWeights(stat = list(z = 1), LD = diag(2)),
+        susieInfRssWeights(stat = list(z = 1)),
         "susieInfRssWeights: no 'susieInf' fit supplied"
     )
     expect_error(
-        susieAshRssWeights(stat = list(z = 1), LD = diag(2)),
+        susieAshRssWeights(stat = list(z = 1)),
         "susieAshRssWeights: no 'susieAsh' fit supplied"
     )
 })

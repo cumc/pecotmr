@@ -15,10 +15,10 @@
 # `[[` is left alone on purpose: on a GRangesList it addresses elements, so
 # overloading it for columns would collide. Use `mcols(x)[i, j]` for a cell.
 #
-# Slots hold COLLECTION-LEVEL scalars only (ldSketch, genome, qcInfo). Anything
-# with one value per element belongs in mcols -- a per-element slot silently
-# desyncs on subsetting, because `x[i]` narrows the elements and the mcols but
-# has no idea the slot is parallel to them.
+# Slots hold COLLECTION-LEVEL scalars only (ldReference, genome, qcInfo).
+# Anything with one value per element belongs in mcols -- a per-element slot
+# silently desyncs on subsetting, because `x[i]` narrows the elements and the
+# mcols but has no idea the slot is parallel to them.
 # =============================================================================
 
 #' @include AllGenerics.R
@@ -128,14 +128,6 @@ methods::setValidity("RangedTupleList", function(object) {
     )
 }
 
-# Rebuild `x` from a new list of GRanges elements, carrying every
-# collection-level slot over and narrowing mcols by `keep`.
-#
-# This is the ONLY supported way to produce a modified collection. `endoapply`
-# via a `setAs("list", <class>)` coercion looks like it works but silently
-# drops the subclass's slots -- verified -- which is exactly the desync this
-# class exists to prevent.
-# @noRd
 # Put `x`'s seqinfo back onto a rebuilt GRangesList. Only the seqlevels the
 # rebuild actually spans can be kept, so this restores the genome (and any
 # lengths) for those, and supplies the whole seqinfo when the rebuild spans
@@ -160,6 +152,14 @@ methods::setValidity("RangedTupleList", function(object) {
     )
 }
 
+# Rebuild `x` from a new list of GRanges elements, carrying every
+# collection-level slot over and narrowing mcols by `keep`.
+#
+# This is the ONLY supported way to produce a modified collection. `endoapply`
+# via a `setAs("list", <class>)` coercion looks like it works but silently
+# drops the subclass's slots -- verified -- which is exactly the desync this
+# class exists to prevent.
+# @noRd
 .rtlRebuild <- function(x, elements, keep) {
     # mcols and slots are attached BEFORE new(), not after: new() validates
     # during initialize(), and a subclass's validity method reads its identity
@@ -352,7 +352,7 @@ setMethod("endoapply", "RangedTupleList", function(X, FUN, ...) {
     # Defined explicitly rather than left to the inherited machinery. Stock
     # `endoapply` on a subclass errors unless a `setAs("list", <class>)`
     # coercion exists, and adding that coercion makes it run while silently
-    # DROPPING the subclass's slots (verified: genome / ldSketch come back
+    # DROPPING the subclass's slots (verified: genome / ldReference come back
     # unset). Rebuilding here keeps every collection-level slot.
     #
     # Call this as `endoapply(x, ...)`, NOT `S4Vectors::endoapply(x, ...)`:
@@ -429,6 +429,20 @@ setMethod("subsetRegion", "RangedTupleList", function(x, region) {
         GenomicRanges::GRangesList(split$entry),
         value = md[split$fromIdx, , drop = FALSE]
     )
+}
+
+# Build and validate a RangedTupleList subclass from its payloads and metadata
+# columns -- the shared tail of the TwasWeights and QtlFineMappingResult
+# constructors.
+# @noRd
+.rtlNewValidated <- function(Class, payloads, cols, ldReference) {
+    obj <- new(
+        Class,
+        .rtlGrlWithMetadata(payloads, cols),
+        ldReference = .asLdRef(ldReference)
+    )
+    validObject(obj)
+    obj
 }
 
 # Split any multi-seqname element into one element per seqname, and report the
@@ -621,7 +635,10 @@ setMethod("subsetRegion", "RangedTupleList", function(x, region) {
 # on every call -- pure noise for a collection spanning several chromosomes.
 # @noRd
 .rtlRestrictOne <- function(g, win) {
-    onWindowChrom <- as.character(seqnames(g)) %in% as.character(seqnames(win))
+    onWindowChrom <- is_in(
+        as.character(seqnames(g)),
+        as.character(seqnames(win))
+    )
     if (!any(onWindowChrom)) {
         return(g[0L])
     }

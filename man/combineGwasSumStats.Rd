@@ -4,14 +4,14 @@
 \alias{combineGwasSumStats}
 \title{Combine GwasSumStats collections}
 \usage{
-combineGwasSumStats(..., ldSketch = NULL)
+combineGwasSumStats(..., ldReference = NULL)
 }
 \arguments{
 \item{...}{Two or more \code{GwasSumStats} objects, or a single \code{list}
 of them.}
 
-\item{ldSketch}{Optional genotype panel (see \code{\link{readGenotypes}}) to
-attach to the combined collection, overriding the unioned one. Default
+\item{ldReference}{Optional genotype panel (see \code{\link{readGenotypes}})
+to attach to the combined collection, overriding the unioned one. Default
 \code{NULL}.}
 }
 \value{
@@ -30,10 +30,13 @@ input: \code{genome} and the \code{\link{summaryStatsQc}} options must agree
 across the inputs (a mismatch is an error, not a silent first-wins), the
 per-element \code{qcInfo$entryAudit} concatenates in element order so
 \code{\link{qcDiagnostics}} keeps addressing the right element, and the
-LD sketches union into one panel over the shared genotype handle. That last
-one matters: block-parallel pipelines narrow each piece's panel to its own
-block, so keeping only the first would leave a multi-block collection whose
-LD reference covers one block.
+LD references combine: genotype panels union into one panel over the shared
+genotype handle. That last one matters: block-parallel pipelines narrow each
+piece's panel to its own block, so keeping only the first would leave a
+multi-block collection whose LD reference covers one block. An
+\code{LdMatrix} or a \code{GenotypeMixture} cannot be unioned that way;
+one of the inputs' references must already cover the others, or the
+combined one is passed as \code{ldReference}.
 }
 \examples{
 data(gwasSumStatsS4Example)

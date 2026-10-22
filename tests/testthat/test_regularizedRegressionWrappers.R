@@ -574,7 +574,12 @@ test_that("mrashWeights returns length-p weights and can retain the fit", {
     skip_if_not_installed("susieR")
     skip_if_not_installed("glmnet")
     f <- .rrwXy()
-    w <- mrashWeights(f$X, f$y, fitRetention = "slim")
+    # mr.ash's own default grid is too narrow for this fixture's two strong
+    # effects, and mr.ash says so.
+    expect_warning(
+        w <- mrashWeights(f$X, f$y, fitRetention = "slim"),
+        "larger setting of the prior variance"
+    )
     expect_length(w, f$p)
     expect_false(is.null(attr(w, "fit")))
 })
@@ -783,28 +788,272 @@ test_that("RSS solvers validate their R-matrix / sample-size / length inputs", {
 
 test_that("lassosumRssWeights returns length-p weights and records the selection", {
     f <- .rrwStatLd()
-    w <- lassosumRssWeights(f$stat, f$LD)
+    w <- lassosumRssWeights(f$stat, f$ldReference)
     expect_length(w, f$p)
     expect_equal(unname(attr(w, "lassosum_selection")["mode"]), "ldQuadratic")
     expect_length(
-        lassosumRssWeights(f$stat, f$LD, selection = "minFbeta"),
+        lassosumRssWeights(f$stat, f$ldReference, selection = "minFbeta"),
         f$p
     )
 })
 
 test_that("scadRssWeights / mcpRssWeights / l0learnRssWeights return length-p weights", {
     f <- .rrwStatLd()
-    expect_length(scadRssWeights(f$stat, f$LD), f$p)
-    expect_length(mcpRssWeights(f$stat, f$LD), f$p)
-    expect_length(l0learnRssWeights(f$stat, f$LD), f$p)
+    expect_length(scadRssWeights(f$stat, f$ldReference), f$p)
+    expect_length(mcpRssWeights(f$stat, f$ldReference), f$p)
+    expect_length(l0learnRssWeights(f$stat, f$ldReference), f$p)
 })
 
-test_that("prsCsWeights and sdprWeights follow the (stat, LD) contract", {
+test_that("mrashRssWeights attaches the mr.ash.rss fit on request", {
+    f <- .rrwStatLd()
+    none <- mrashRssWeights(f$stat, f$ldReference)
+    expect_null(attr(none, "fit"))
+    slim <- mrashRssWeights(f$stat, f$ldReference, fitRetention = "slim")
+    expect_equal(as.numeric(slim), as.numeric(none))
+    expect_equal(as.numeric(attr(slim, "fit")$mu1), as.numeric(none))
+})
+
+test_that("the raw RSS solvers are internal behind their weight adapters", {
+    # The adapters are the public route; the Options constructors still read
+    # the now-internal solvers' formals, so they keep rejecting a stray name.
+    exported <- getNamespaceExports("pecotmr")
+    solvers <- c("prsCs", "sdpr", "lassosumRss", "penalizedRss")
+    adapters <- c(
+        "prsCsWeights",
+        "sdprWeights",
+        "lassosumRssWeights",
+        "scadRssWeights",
+        "mcpRssWeights",
+        "l0learnRssWeights"
+    )
+    expect_false(any(is_in(solvers, exported)))
+    expect_true(all(is_in(adapters, exported)))
+    expect_error(PrsCsOptions(notAnOption = 1), "unknown argument")
+    expect_error(SdprOptions(notAnOption = 1), "unknown argument")
+    expect_error(LassosumOptions(notAnOption = 1), "unknown argument")
+    expect_error(PenalizedRssOptions(notAnOption = 1), "unknown argument")
+})
+
+test_that("prsCsWeights and sdprWeights attach the sampler's estimates", {
+    # What the samplers estimate besides the weights reaches the caller as
+    # the "fit" attribute; asking for it leaves the weights unchanged.
+    f <- .rrwStatLd()
+    prsOpts <- PrsCsOptions(nIter = 100, nBurnin = 20, thin = 1, seed = 42L)
+    prsNone <- prsCsWeights(f$stat, f$ldReference, methodArgs = prsOpts)
+    expect_null(attr(prsNone, "fit"))
+    prsSlim <- prsCsWeights(
+        f$stat,
+        f$ldReference,
+        fitRetention = "slim",
+        methodArgs = prsOpts
+    )
+    prsFit <- attr(prsSlim, "fit")
+    expect_named(prsFit, c("betaEst", "psiEst", "sigmaEst", "phiEst"))
+    expect_equal(as.numeric(prsSlim), as.numeric(prsNone))
+    expect_equal(prsFit$betaEst, as.numeric(prsNone))
+    expect_length(prsFit$psiEst, f$p)
+    sdprOpts <- SdprOptions(
+        iter = 100,
+        burn = 20,
+        thin = 1,
+        verbose = FALSE,
+        seed = 42L
+    )
+    sdprNone <- sdprWeights(f$stat, f$ldReference, methodArgs = sdprOpts)
+    expect_null(attr(sdprNone, "fit"))
+    sdprFull <- sdprWeights(
+        f$stat,
+        f$ldReference,
+        fitRetention = "full",
+        methodArgs = sdprOpts
+    )
+    expect_named(attr(sdprFull, "fit"), c("betaEst", "h2"))
+    expect_length(attr(sdprFull, "fit")$h2, 1L)
+    expect_equal(as.numeric(sdprFull), as.numeric(sdprNone))
+    expect_error(
+        prsCsWeights(f$stat, f$ldReference, fitRetention = "all"),
+        "fitRetention"
+    )
+})
+
+test_that("lassosumRssWeights keeps its search: path at slim, beta at full", {
+    f <- .rrwStatLd()
+    s <- c(0.5, 1)
+    none <- lassosumRssWeights(f$stat, f$ldReference, s = s)
+    expect_null(attr(none, "fit"))
+    slim <- lassosumRssWeights(
+        f$stat,
+        f$ldReference,
+        s = s,
+        fitRetention = "slim"
+    )
+    expect_named(attr(slim, "fit"), "path")
+    path <- attr(slim, "fit")$path
+    expect_named(
+        path,
+        c("s", "lambda", "fbeta", "loss", "conv", "nparams", "selected")
+    )
+    # One row per (s, lambda): lassosumRss() traces 20 lambdas by default.
+    expect_equal(nrow(path), length(s) * 20L)
+    expect_equal(sum(path$selected), 1L)
+    expect_equal(as.numeric(slim), as.numeric(none))
+    # The selected row is the one the selection attribute names.
+    sel <- attr(slim, "lassosum_selection")
+    expect_equal(path$s[path$selected], as.numeric(sel[["s"]]))
+    expect_equal(path$lambda[path$selected], as.numeric(sel[["lambda"]]))
+    full <- lassosumRssWeights(
+        f$stat,
+        f$ldReference,
+        s = s,
+        fitRetention = "full"
+    )
+    beta <- attr(full, "fit")$beta
+    expect_equal(dim(beta), c(f$p, nrow(path)))
+    expect_equal(unname(beta[, path$selected]), as.numeric(full))
+    expect_equal(colSums(beta != 0), path$nparams)
+})
+
+test_that("scad, mcp and l0learn RSS weights pass fitRetention through", {
+    f <- .rrwStatLd()
+    cols <- c("s", "lambda", "fbeta", "loss", "conv", "nparams", "selected")
+    scad <- scadRssWeights(f$stat, f$ldReference, s = 1, fitRetention = "slim")
+    mcp <- mcpRssWeights(f$stat, f$ldReference, s = 1, fitRetention = "slim")
+    expect_named(attr(scad, "fit")$path, cols)
+    expect_named(attr(mcp, "fit")$path, cols)
+    l0 <- l0learnRssWeights(
+        f$stat,
+        f$ldReference,
+        s = 1,
+        lambda0 = c(0.01, 0.1),
+        fitRetention = "full"
+    )
+    path <- attr(l0, "fit")$path
+    expect_named(path, c("s", "lambda0", cols[-1]))
+    # Plain L0 traces the single lambda = 0, so one row per lambda0.
+    expect_equal(path$lambda0, c(0.01, 0.1))
+    expect_equal(ncol(attr(l0, "fit")$beta), 2L)
+})
+
+test_that("the RSS solvers run on a factor of the LD as on the LD itself", {
+    # The factor route keeps F beta rather than R_s beta, so R_s is never
+    # formed; the coordinate updates, the L0 swaps and the path are the same.
+    # The dense route applies the shrinkage itself too, as fitting the
+    # pre-shrunk matrix would.
+    set.seed(8)
+    X <- matrix(rbinom(80 * 120, 2, 0.3), 80, 120)
+    F <- pecotmr:::.ldFactorFromDosage(X)
+    R <- crossprod(F) / (nrow(F) - 1)
+    beta <- replace(numeric(120), c(5, 40, 90), c(0.3, -0.2, 0.25))
+    z <- as.vector(R %*% beta) + rnorm(120, sd = 0.05)
+    lambda <- exp(seq(log(0.1), log(0.001), length.out = 8))
+    for (s in c(0.2, 0.9)) {
+        Rs <- (1 - s) * R + s * diag(120)
+        dense <- pecotmr:::lassosumRssCpp(z, list(R), s, lambda, 1e-6, 1000L)
+        expect_equal(
+            dense,
+            pecotmr:::lassosumRssCpp(z, list(Rs), 0, lambda, 1e-6, 1000L),
+            tolerance = 1e-10
+        )
+        expect_equal(
+            pecotmr:::lassosumRssFactorCpp(z, F, s, lambda, 1e-6, 1000L),
+            dense,
+            tolerance = 1e-8
+        )
+        for (pen in c("lasso", "MCP", "SCAD", "L0")) {
+            args <- list(
+                lambdaR = lambda,
+                penaltyStr = pen,
+                gamma = 3.7,
+                alpha = 1,
+                lambda0 = 0.001,
+                lambda2 = 0,
+                thr = 1e-6,
+                maxiter = 1000L,
+                maxSwaps = 10L
+            )
+            dense <- exec(pecotmr:::penalizedRssCpp, z, list(R), s, !!!args)
+            expect_equal(
+                dense,
+                exec(pecotmr:::penalizedRssCpp, z, list(Rs), 0, !!!args),
+                tolerance = 1e-10,
+                label = pen
+            )
+            expect_equal(
+                exec(pecotmr:::penalizedRssFactorCpp, z, F, s, !!!args),
+                dense,
+                tolerance = 1e-8,
+                label = pen
+            )
+        }
+    }
+})
+
+test_that("SDPR on a factor of the LD draws as it does on the matrix", {
+    # The factor route holds SDPR's matrices in low-rank form, B = W W', and
+    # runs SDPR's own sampler on them, so a seeded chain matches the dense one
+    # to rounding. optLlk = 2 reaches B through the Woodbury identity while
+    # its low-rank part is narrower than p (one sample size, three sizes, or
+    # arrays), and otherwise forms it as the dense route does (three sizes
+    # with arrays).
+    set.seed(7)
+    X <- matrix(rbinom(40 * 120, 2, 0.3), 40, 120)
+    F <- pecotmr:::.ldFactorFromDosage(X)
+    R <- crossprod(F) / (nrow(F) - 1)
+    p <- ncol(F)
+    effects <- replace(numeric(p), c(5, 40, 90), c(0.3, -0.25, 0.2))
+    bhat <- as.vector(R %*% effects) + rnorm(p, sd = 0.02)
+    sizes <- sample(c(400, 500, 600), p, replace = TRUE)
+    arrays <- sample(0:2, p, replace = TRUE)
+    base <- list(
+        bhatR = bhat,
+        n = 500L,
+        perVariantSampleSize = NULL,
+        array = NULL,
+        a = 0.1,
+        c = 1,
+        M = 50L,
+        a0k = 0.5,
+        b0k = 0.5,
+        iter = 200L,
+        burn = 50L,
+        thin = 5L,
+        numThreads = 1L,
+        optLlk = 1L,
+        verbose = FALSE,
+        seed = 11L
+    )
+    cases <- list(
+        llk1 = list(),
+        llk2 = list(optLlk = 2L),
+        sizes = list(optLlk = 2L, perVariantSampleSize = sizes),
+        arrays = list(optLlk = 2L, array = arrays),
+        sizesArrays = list(
+            optLlk = 2L,
+            perVariantSampleSize = sizes,
+            array = arrays
+        )
+    )
+    for (nm in names(cases)) {
+        args <- list_modify(base, !!!cases[[nm]])
+        expect_equal(
+            exec(pecotmr:::sdprFactorCpp, factorR = F, !!!args),
+            exec(pecotmr:::sdprCpp, LD = list(R), !!!args),
+            tolerance = 1e-8,
+            label = nm
+        )
+    }
+    expect_error(
+        exec(pecotmr:::sdprFactorCpp, factorR = F[, -1], !!!base),
+        "The LD factor has 119 columns but there are 120 effects"
+    )
+})
+
+test_that("prsCsWeights and sdprWeights take (stat, ldReference)", {
     f <- .rrwStatLd()
     expect_length(
         prsCsWeights(
             f$stat,
-            f$LD,
+            f$ldReference,
             methodArgs = PrsCsOptions(nIter = 100, nBurnin = 20, thin = 1)
         ),
         f$p
@@ -812,7 +1061,7 @@ test_that("prsCsWeights and sdprWeights follow the (stat, LD) contract", {
     expect_length(
         sdprWeights(
             f$stat,
-            f$LD,
+            f$ldReference,
             methodArgs = SdprOptions(
                 iter = 100,
                 burn = 20,
@@ -824,12 +1073,144 @@ test_that("prsCsWeights and sdprWeights follow the (stat, LD) contract", {
     )
 })
 
+test_that("prsCsWeights and sdprWeights hand the engine z / sqrt(n)", {
+    # Both upstream tools fit the standardized marginal effects, so a z-only
+    # stat (the QtlSumStats shape) and b with its standard error both reach
+    # the engine on that scale.
+    f <- .rrwStatLd()
+    want <- as.numeric(f$stat$z) / sqrt(f$n)
+    local_mocked_bindings(
+        .prsCsRun = function(bhat, ld, n, ...) list(betaEst = bhat),
+        .sdprRun = function(bhat, ld, n, ...) list(betaEst = bhat)
+    )
+    ids <- f$stat$variantNames
+    zOnly <- list(z = f$stat$z, n = f$n, variantNames = ids)
+    withSe <- list(
+        b = 3 * f$stat$z,
+        seb = rep(3, f$p),
+        n = rep(f$n, f$p),
+        variantNames = ids
+    )
+    for (stat in list(zOnly, withSe)) {
+        expect_equal(prsCsWeights(stat, f$ldReference), want)
+        expect_equal(sdprWeights(stat, f$ldReference), want)
+    }
+})
+
+# Statistics over the first p variants of the test genotype panel, with the
+# same LD as an LdMatrix: a weight method must read the panel's LD (through
+# its standardized genotypes) as it reads the matrix.
+.rrwPanelStat <- function(p = 40) {
+    panel <- readGenotypes(test_path("test_data", "test_variants.bed"))
+    ids <- names(SummarizedExperiment::rowRanges(panel))[seq_len(p)]
+    R <- pecotmr:::.ldFromRef(panel, ids, "test")
+    set.seed(3)
+    effects <- replace(numeric(p), c(3, 20), c(4, -3))
+    z <- as.vector(R %*% effects) + rnorm(p)
+    list(
+        panel = panel,
+        ldMatrix = LdMatrix(R, nSamples = ncol(panel)),
+        stat = list(z = z, n = rep(500, p), variantNames = ids)
+    )
+}
+
+test_that("RSS weights read a genotype panel's LD as they read the matrix", {
+    # The panel route gives the solvers the panel's factor and never forms
+    # the LD matrix; it must land on the matrix route's weights.
+    d <- .rrwPanelStat()
+    fns <- list(
+        lassosum = lassosumRssWeights,
+        scad = scadRssWeights,
+        mcp = mcpRssWeights,
+        l0learn = l0learnRssWeights
+    )
+    for (nm in names(fns)) {
+        expect_equal(
+            fns[[nm]](d$stat, d$panel),
+            fns[[nm]](d$stat, d$ldMatrix),
+            tolerance = 1e-6,
+            label = nm
+        )
+    }
+    # mr.ash.rss takes only a matrix, formed from the panel.
+    expect_equal(
+        mrashRssWeights(d$stat, d$panel),
+        mrashRssWeights(d$stat, d$ldMatrix),
+        tolerance = 1e-8
+    )
+    # SDPR runs its own sampler on the low-rank form of its matrices, so a
+    # seeded chain lands on the matrix route's.
+    for (optLlk in 1:2) {
+        opts <- SdprOptions(
+            iter = 100,
+            burn = 20,
+            thin = 1,
+            optLlk = optLlk,
+            verbose = FALSE,
+            seed = 1L
+        )
+        expect_equal(
+            sdprWeights(d$stat, d$panel, methodArgs = opts),
+            sdprWeights(d$stat, d$ldMatrix, methodArgs = opts),
+            tolerance = 1e-6,
+            label = str_c("sdpr optLlk ", optLlk)
+        )
+    }
+})
+
+test_that("an RSS weight method matches its LD reference by variant id", {
+    f <- .rrwStatLd()
+    unnamed <- f$stat
+    unnamed$variantNames <- NULL
+    expect_error(
+        lassosumRssWeights(unnamed, f$ldReference),
+        "must carry `variantNames`"
+    )
+    expect_error(
+        mrashRssWeights(unnamed, f$ldReference),
+        "must carry `variantNames`"
+    )
+    # The extractors need the ids only to check against a reference.
+    expect_equal(pecotmr:::.rssVariantCount(unnamed, NULL, "t"), f$p)
+    expect_equal(pecotmr:::.rssVariantCount(f$stat, f$ldReference, "t"), f$p)
+    expect_true(is.na(pecotmr:::.rssVariantCount(list(), NULL, "t")))
+})
+
+test_that(".formalDefaults evaluates a function's own defaults", {
+    expect_equal(
+        pecotmr:::.formalDefaults(prsCs, c("a", "phi", "nIter")),
+        list(a = 1, phi = NULL, nIter = 1000)
+    )
+})
+
+test_that("mrashRssWeights defaults to mr.ash's own prior grid", {
+    # On the standardized scale mr.ash.rss fits, its sufficient statistics
+    # are those of standardized genotypes, whose grid mr.ash builds itself.
+    set.seed(1)
+    X <- scale(matrix(rnorm(200 * 10), 200))
+    fit <- susieR::mr.ash(X, rnorm(200), verbose = FALSE, max.iter = 5)
+    expect_equal(
+        pecotmr:::.mrashRssDefaultGrid(200, rnorm(10), numeric(0), NULL),
+        fit$data$sa2
+    )
+    f <- .rrwStatLd()
+    expect_length(mrashRssWeights(f$stat, f$ldReference), f$p)
+    # With b, seb and varY the unstandardized statistics set the scale.
+    z <- f$stat$z
+    shat <- f$stat$seb
+    w <- 2 * (f$n - 1) / (z^2 + f$n - 2) / shat^2
+    expect_equal(
+        pecotmr:::.mrashRssDefaultGrid(f$n, z, shat, 2),
+        (2^((0:24) / 25) - 1)^2 / median(w) * f$n
+    )
+})
+
 test_that("mrashRssWeights returns posterior-mean weights of length p", {
     skip_if_not_installed("susieR")
     f <- .rrwStatLd()
     w <- mrashRssWeights(
         f$stat,
-        f$LD,
+        f$ldReference,
         varY = 1,
         sigma2E = 1,
         s0 = c(0, 0.01, 0.1, 0.5, 1),
@@ -843,7 +1224,7 @@ test_that("mrashRssWeights returns posterior-mean weights of length p", {
 test_that("mrmashRssWeights fits mr.mash.rss and returns p x K weights", {
     skip_if_not_installed("mr.mashr")
     m <- .rrwMulti(n = 60, p = 6, K = 3)
-    w <- mrmashRssWeights(m$stat, m$LD)
+    w <- mrmashRssWeights(m$stat, m$ldReference)
     expect_equal(dim(w), c(m$p, m$K))
     expect_true(all(is.finite(w)))
 })
@@ -851,17 +1232,21 @@ test_that("mrmashRssWeights fits mr.mash.rss and returns p x K weights", {
 test_that("mrmashRssWeights errors on single-context stat$z", {
     skip_if_not_installed("mr.mashr")
     f <- .rrwStatLd()
-    oneCol <- list(z = matrix(f$stat$z, ncol = 1), n = f$n)
-    expect_error(mrmashRssWeights(oneCol, f$LD), ">= 2 columns")
+    oneCol <- list(
+        z = matrix(f$stat$z, ncol = 1),
+        n = f$n,
+        variantNames = f$stat$variantNames
+    )
+    expect_error(mrmashRssWeights(oneCol, f$ldReference), ">= 2 columns")
 })
 
 
 # ------------------------------- pure helpers -------------------------------
 
-test_that(".lassosumCorFromStat reads cor / z / b and validates length", {
+test_that(".rssMarginalCor reads cor / z / b and validates length", {
     f <- .rrwStatLd()
     expect_length(
-        pecotmr:::.lassosumCorFromStat(
+        pecotmr:::.rssMarginalCor(
             list(cor = f$stat$cor),
             n = f$n,
             p = f$p
@@ -869,19 +1254,28 @@ test_that(".lassosumCorFromStat reads cor / z / b and validates length", {
         f$p
     )
     expect_equal(
-        pecotmr:::.lassosumCorFromStat(list(z = f$stat$z), n = f$n, p = f$p),
+        pecotmr:::.rssMarginalCor(list(z = f$stat$z), n = f$n, p = f$p),
         as.numeric(f$stat$z) / sqrt(f$n)
     )
     expect_equal(
-        pecotmr:::.lassosumCorFromStat(list(b = f$stat$b), n = f$n, p = f$p),
+        pecotmr:::.rssMarginalCor(list(b = f$stat$b), n = f$n, p = f$p),
         as.numeric(f$stat$b)
     )
+    # With its standard error, b is a z-score on any scale.
+    expect_equal(
+        pecotmr:::.rssMarginalCor(
+            list(b = 2 * f$stat$z, seb = rep(2, f$p)),
+            n = f$n,
+            p = f$p
+        ),
+        as.numeric(f$stat$z) / sqrt(f$n)
+    )
     expect_error(
-        pecotmr:::.lassosumCorFromStat(list(), n = f$n, p = f$p),
+        pecotmr:::.rssMarginalCor(list(), n = f$n, p = f$p),
         "one of"
     )
     expect_error(
-        pecotmr:::.lassosumCorFromStat(
+        pecotmr:::.rssMarginalCor(
             list(z = f$stat$z[-1]),
             n = f$n,
             p = f$p
@@ -916,7 +1310,7 @@ test_that(".lassosumSelectLdQuadratic scores candidates by c'b / sqrt(b'Rb)", {
     f <- .rrwStatLd()
     set.seed(8)
     cb <- matrix(rnorm(f$p * 4), f$p, 4)
-    r <- pecotmr:::.lassosumSelectLdQuadratic(cb, f$stat$b, f$LD)
+    r <- pecotmr:::.lassosumSelectLdQuadratic(cb, f$stat$b, list(R = f$LD))
     expect_equal(r$mode, "ldQuadratic")
     expect_true(r$index %in% seq_len(4))
     expect_equal(r$beta, cb[, r$index])
@@ -1058,10 +1452,6 @@ test_that("MCMC / optimiser control arguments are guarded", {
         "nfolds.*Must be >= 1"
     )
     expect_error(
-        mrashWeights(NULL, NULL, initPriorSd = NA),
-        "initPriorSd.*May not be NA"
-    )
-    expect_error(
         computeCoefficientsGlasso(NULL, NULL, standardize = NA, numThreads = 1),
         "standardize.*May not be NA"
     )
@@ -1086,23 +1476,23 @@ test_that("RSS solver control arguments are guarded", {
         "maxiter.*Must be >= 1"
     )
     expect_error(
-        scadRssWeights(stat = "nope", LD = NULL),
+        scadRssWeights(stat = "nope", ldReference = NULL),
         "stat.*Must be of type 'list'"
     )
     expect_error(
-        scadRssWeights(stat = list(), LD = NULL, s = -1),
+        scadRssWeights(stat = list(), ldReference = NULL, s = -1),
         "s.*is not >= 0"
     )
     expect_error(
-        mcpRssWeights(stat = "nope", LD = NULL),
+        mcpRssWeights(stat = "nope", ldReference = NULL),
         "stat.*Must be of type 'list'"
     )
     expect_error(
-        mrashRssWeights(stat = "nope", LD = NULL, NULL, NULL, NULL, NULL),
+        mrashRssWeights(stat = "nope", ldReference = NULL),
         "stat.*Must be of type 'list'"
     )
     expect_error(
-        mrmashRssWeights(stat = "nope", LD = NULL),
+        mrmashRssWeights(stat = "nope", ldReference = NULL),
         "stat.*Must be of type 'list'"
     )
 })

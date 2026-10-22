@@ -70,6 +70,37 @@ test_that("a path slot refuses options built for the other path", {
     )
 })
 
+test_that("a method's names are checked against the path that runs it", {
+    skip_if_not_installed("susieR")
+    indiv <- pecotmr:::.methodsPathAccepted(
+        "FineMappingMethodsParam",
+        "susie",
+        "QtlDataset"
+    )
+    sumst <- pecotmr:::.methodsPathAccepted(
+        "FineMappingMethodsParam",
+        "susie",
+        "QtlSumStats"
+    )
+    # `z` is a susie_rss argument and not a susie one.
+    expect_false(is_in("z", indiv))
+    expect_true(is_in("z", sumst))
+    # `y` is susie-only, so the mirror image holds.
+    expect_true(is_in("y", indiv))
+    expect_false(is_in("y", sumst))
+    # A name both callees accept is fine either way.
+    expect_true(is_in("L", indiv))
+    expect_true(is_in("L", sumst))
+    # Why this matters: validating against the UNION of both callees accepts
+    # `z` even for an individual-level run, and the setting then reaches an
+    # engine that never reads it.
+    both <- pecotmr:::.engineAcceptedNames(
+        c("susieR::susie", "susieR::susie_rss")
+    )
+    expect_true(is_in("z", both))
+    expect_false(is_in("z", pecotmr:::.engineAcceptedNames("susieR::susie")))
+})
+
 test_that("a path slot offers only the methods that run on it", {
     expect_error(
         FineMappingMethodsParam(qtlSumStatsMethods = list(fsusie = list())),
@@ -641,4 +672,176 @@ test_that(".methodsParamFor and ...ForMulti route each input shape", {
         m(42, "FineMappingMethodsParam", "fineMappingPipeline", TRUE),
         "must be a character vector, a named list"
     )
+})
+
+# ---- argument naming -----------------------------------------------------
+
+# Every closure pecotmr defines: the namespace's functions plus the methods of
+# its own generics. A method whose signature differs from its generic's is
+# stored as a wrapper around an inner `.local`, whose formals the caller sees.
+.mpUnwrapLocal <- function(f) {
+    b <- body(f)
+    isLocal <- is.call(b) &&
+        identical(b[[1]], as.name("{")) &&
+        is.call(b[[2]]) &&
+        identical(b[[2]][[2]], as.name(".local"))
+    if (isLocal) eval(b[[2]][[3]]) else f
+}
+
+.mpMethodsOf <- function(g, ns) {
+    defs <- methods::findMethods(g, where = ns)
+    set_names(
+        map(defs, .mpUnwrapLocal),
+        str_c(g, "[", map_chr(defs, .mpSignatureLabel), "]")
+    )
+}
+
+.mpSignatureLabel <- function(m) str_flatten(m@defined, ",")
+
+.mpClosures <- function(exportedOnly = FALSE) {
+    ns <- asNamespace("pecotmr")
+    nms <- if (exportedOnly) {
+        getNamespaceExports(ns)
+    } else {
+        ls(ns, all.names = TRUE)
+    }
+    fns <- keep(
+        mget(nms, envir = ns, inherits = TRUE, ifnotfound = list(NULL)),
+        is.function
+    )
+    gens <- intersect(as.character(methods::getGenerics(where = ns)), nms)
+    c(fns, list_flatten(map(gens, .mpMethodsOf, ns = ns)))
+}
+
+# The symbols a call tree passes as a function VALUE: the `.f` / FUN slot of
+# the iteration helpers and the first argument of exec() and friends.
+.mpFunSlot <- c(
+    exec = 1L,
+    do.call = 1L,
+    match.fun = 1L,
+    Filter = 1L,
+    Reduce = 1L,
+    Map = 1L,
+    mapply = 1L,
+    map = 2L,
+    map_lgl = 2L,
+    map_int = 2L,
+    map_dbl = 2L,
+    map_chr = 2L,
+    imap = 2L,
+    walk = 2L,
+    keep = 2L,
+    discard = 2L,
+    reduce = 2L,
+    accumulate = 2L,
+    detect = 2L,
+    lapply = 2L,
+    sapply = 2L,
+    vapply = 2L,
+    pmap = 2L,
+    map2 = 3L,
+    imap_chr = 2L,
+    apply = 3L
+)
+
+.mpFunValueSymbols <- function(e) {
+    if (!is.call(e)) {
+        return(character(0))
+    }
+    head <- if (is.symbol(e[[1]])) as.character(e[[1]]) else ""
+    here <- character(0)
+    if (is_in(head, names(.mpFunSlot)) && length(e) > .mpFunSlot[[head]]) {
+        named <- intersect(names(e), c(".f", ".fn", "FUN", "f", "what"))
+        a <- if (length(named)) {
+            e[[named[[1]]]]
+        } else {
+            e[[.mpFunSlot[[head]] + 1L]]
+        }
+        if (is.symbol(a)) here <- as.character(a)
+    }
+    rest <- map(as.list(e)[-1], .mpFunValueSymbolsSafe)
+    unique(c(here, unlist(rest, use.names = FALSE)))
+}
+
+.mpFunValueSymbolsSafe <- function(a) {
+    if (missing(a) || is.null(a)) character(0) else .mpFunValueSymbols(a)
+}
+
+.mpIsNsFunction <- function(n, ns) is.function(get(n, envir = ns))
+
+.mpShadowedValues <- function(f, label, own) {
+    hit <- intersect(
+        intersect(.mpFunValueSymbols(body(f)), names(formals(f))),
+        own
+    )
+    if (length(hit)) hit else NULL
+}
+
+test_that("no formal that shadows a pecotmr function is passed as a value", {
+    # Arguments are named after their class (credibleSetParam =
+    # CredibleSetParam()), so a few share a name with an accessor generic --
+    # credibleSetParam(), susieRssParam(), panelFilterParam(). That is safe
+    # while the function only CALLS the accessor, because R skips non-function
+    # bindings when it looks up a call. It breaks the moment the accessor is
+    # passed as a value -- map(objs, credibleSetParam) -- because the formal
+    # is found instead. This pins the condition the shadowing relies on.
+    ns <- asNamespace("pecotmr")
+    own <- keep(ls(ns, all.names = TRUE), .mpIsNsFunction, ns = ns)
+    # The detector is not vacuous: it flags exactly that shape.
+    probe <- function(credibleSetParam, fits) map(fits, credibleSetParam)
+    expect_equal(
+        .mpShadowedValues(probe, "probe", own = own),
+        "credibleSetParam"
+    )
+    closures <- .mpClosures()
+    bad <- compact(imap(closures, .mpShadowedValues, own = own))
+    expect_equal(
+        str_c(names(bad), ": ", map_chr(bad, str_flatten, ", ")),
+        character(0)
+    )
+})
+
+.mpParamFormals <- function(f, label) {
+    # formals() is a pairlist, which purrr deprecated as an input.
+    fm <- as.list(formals(f))
+    isParam <- map_lgl(fm, .mpIsParamCall)
+    map(names(fm)[isParam], .mpFormalRecord, fm = fm, label = label)
+}
+
+.mpIsParamCall <- function(d) {
+    is.call(d) &&
+        is.symbol(d[[1]]) &&
+        methods::extends(as.character(d[[1]]), "MethodParam")
+}
+
+.mpFormalRecord <- function(nm, fm, label) {
+    list(fn = label, formal = nm, class = as.character(fm[[nm]][[1]]))
+}
+
+.mpDescribeFormal <- function(r) {
+    str_c(r$fn, ": ", r$formal, " = ", r$class, "()")
+}
+
+.mpNamedAfterClass <- function(r, roleNamed) {
+    expected <- str_c(tolower(substr(r$class, 1, 1)), substring(r$class, 2))
+    identical(r$formal, expected) || is_in(r$formal, roleNamed)
+}
+
+test_that("an argument taking a *Param record is named after its class", {
+    # Settings pecotmr reads travel as *Param records, passed under the
+    # class's own name (crossValidationParam = CrossValidationParam()); engine
+    # argument bundles (*Options) keep the *Args / methodArgs names. The four
+    # below are named for their role instead, and are the only exceptions.
+    roleNamed <- c("prior", "priors", "columns", "pruning")
+    expect_false(.mpNamedAfterClass(
+        list(formal = "crossValidationArgs", class = "CrossValidationParam"),
+        roleNamed = roleNamed
+    ))
+    found <- list_flatten(imap(
+        .mpClosures(exportedOnly = TRUE),
+        .mpParamFormals
+    ))
+    misnamed <- discard(found, .mpNamedAfterClass, roleNamed = roleNamed)
+    expect_gt(length(found), 0L)
+    expect_equal(unname(map_chr(misnamed, .mpDescribeFormal)), character(0))
 })

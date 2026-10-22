@@ -50,7 +50,7 @@ including non-credible-set variants in top loci), \code{minAbsCorr} and
 \item{fitRetention}{How much of each fit is kept: \code{"slim"} (default)
 trims the retained fit to what downstream needs, \code{"full"} keeps the
 whole fit object. The \code{topLoci} table's per-credible-set columns
-are governed by \code{credibleSet}'s \code{perCsColumns} instead.}
+are governed by \code{credibleSetParam}'s \code{perCsColumns} instead.}
 
 \item{otherQuantities}{Optional named list of extra per-method quantities to
 carry on the result untouched (returned as the \code{otherQuantities}

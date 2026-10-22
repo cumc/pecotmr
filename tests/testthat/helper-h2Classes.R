@@ -63,8 +63,8 @@ makeTestAnnotationMeta <- function() {
 .testGenotypeHandle <- function() {
     new(
         "GenotypeHandle",
-        path = "/tmp/test.gds",
-        format = "gds",
+        path = "/tmp/test",
+        format = "plink2",
         snpInfo = data.frame(),
         nSamples = 0L,
         sampleIds = character(),
@@ -112,7 +112,7 @@ makeGwasSumStatsFromDf <- function(
         studyName = traitName,
         entry = list(.dfToSumstatsGr(df)),
         genome = genome,
-        ldSketch = .testGenotypeHandle(),
+        ldReference = .testGenotypeHandle(),
         varY = varY
     )
 }
@@ -165,7 +165,7 @@ makeGwasBlock <- function(
         studyName = "trait1",
         entry = list(.dfToSumstatsGr(df)),
         genome = genome,
-        ldSketch = .blockGenotypeHandle(bp),
+        ldReference = .blockGenotypeHandle(bp),
         blockId = blockId,
         qcInfo = list(
             timestamp = NA_character_,
@@ -178,80 +178,115 @@ makeGwasBlock <- function(
 
 
 # =============================================================================
-# LdData fixtures for buildLdEigen() / buildLdScore()
+# LdMatrix fixtures for buildLdEigen() / buildLdScore()
 # =============================================================================
 
-# The mcols a loadLdMatrix() LdData carries: variant_id rather than SNP, and
-# allele_freq rather than MAF. The builders have to cope with that shape.
+# One block's variants as LdMatrix() takes them: SNP ids, alleles and an AF
+# column, at 100 bp spacing.
 .testLdVariants <- function(n, chrom, startBp) {
     bp <- seq(startBp, by = 100L, length.out = n)
-    gr <- GenomicRanges::GRanges(
-        seqnames = chrom,
-        ranges = IRanges::IRanges(start = as.integer(bp), width = 1L)
+    data.frame(
+        chrom = chrom,
+        pos = as.integer(bp),
+        SNP = paste0(chrom, ":", bp, ":C:T"),
+        A1 = "T",
+        A2 = "C",
+        AF = seq(0.2, 0.8, length.out = n)
     )
-    S4Vectors::mcols(gr) <- S4Vectors::DataFrame(
-        variant_id = paste0(chrom, ":", bp, ":C:T"),
-        A1 = rep("T", n),
-        A2 = rep("C", n),
-        allele_freq = seq(0.2, 0.8, length.out = n)
-    )
-    gr
 }
 
 .testArBlock <- function(n, rho) {
     rho^abs(outer(seq_len(n), seq_len(n), "-"))
 }
 
-.testBlockMetadata <- function(sizes, chrom, gr) {
-    ends <- cumsum(sizes)
-    starts <- ends - sizes + 1L
-    tibble::tibble(
-        blockId = seq_along(sizes),
-        chrom = sub("^chr", "", chrom),
-        blockStart = as.integer(GenomicRanges::start(gr)[starts]),
-        blockEnd = as.integer(GenomicRanges::start(gr)[ends]),
-        size = as.integer(sizes),
-        startIdx = as.integer(starts),
-        endIdx = as.integer(ends)
-    )
-}
-
-# One block: correlation is a single matrix.
-makeTestLdData <- function(
+# One LD block: an LdMatrix with AR(1) LD.
+makeTestLdMatrix <- function(
     n = 6L,
     chrom = "chr1",
     startBp = 1000L,
     rho = 0.5,
     nSamples = 500L
 ) {
-    gr <- .testLdVariants(n, chrom, startBp)
-    R <- .testArBlock(n, rho)
-    dimnames(R) <- list(
-        S4Vectors::mcols(gr)$variant_id,
-        S4Vectors::mcols(gr)$variant_id
-    )
-    LdData(
-        correlation = R,
-        variants = gr,
-        blockMetadata = .testBlockMetadata(n, chrom, gr),
+    LdMatrix(
+        .testArBlock(n, rho),
+        variants = .testLdVariants(n, chrom, startBp),
         nSamples = nSamples
     )
 }
 
-# Several blocks in one LdData: correlation is a list of per-block matrices
-# and blockMetadata carries the startIdx/endIdx mapping into the variants.
-makeTestLdDataMultiBlock <- function(
+# Several consecutive LD blocks along one chromosome, one LdMatrix each.
+makeTestLdMatrixBlocks <- function(
     sizes = c(4L, 3L),
     chrom = "chr1",
     startBp = 1000L,
     rho = 0.5,
     nSamples = 500L
 ) {
-    gr <- .testLdVariants(sum(sizes), chrom, startBp)
-    LdData(
-        correlation = map(sizes, .testArBlock, rho = rho),
-        variants = gr,
-        blockMetadata = .testBlockMetadata(sizes, chrom, gr),
-        nSamples = nSamples
+    starts <- startBp + 100L * c(0L, cumsum(head(sizes, -1L)))
+    map2(
+        sizes,
+        starts,
+        function(n, s) makeTestLdMatrix(n, chrom, s, rho, nSamples)
     )
+}
+
+# A genotype panel of 100 samples cut into three LD blocks of 60, 140 and 100
+# variants, with the same blocks' LD as LdMatrix objects: a statistic read
+# from the panel should agree with one built from the matrices. The middle
+# block has more variants than the panel has samples, so its LD has 40 zero
+# eigenvalues that the SVD of the panel's factor does not list.
+.h2PanelFixture <- function() {
+    panel <- readGenotypes(test_path("test_data", "test_variants.bed"))
+    gr <- SummarizedExperiment::rowRanges(panel)
+    pos <- GenomicRanges::start(gr)
+    cuts <- list(1:60, 61:200, 201:300)
+    blocks <- data.frame(
+        chrom = "chr21",
+        start = map_int(cuts, function(i) pos[[min(i)]]),
+        end = map_int(cuts, function(i) pos[[max(i)]])
+    )
+    ld <- map(cuts, function(i) {
+        LdMatrix(
+            unname(computeLd(panel, snpIdx = i)),
+            variants = gr[i],
+            nSamples = ncol(panel)
+        )
+    })
+    list(panel = panel, blocks = blocks, ld = ld)
+}
+
+# Two baseline annotations (binary and continuous) and one candidate over the
+# variants of `ref`.
+.h2PanelAnnotations <- function(ref) {
+    set.seed(11)
+    p <- length(ref)
+    mat <- cbind(
+        coding = rbinom(p, 1, 0.3),
+        cons = runif(p),
+        cand = rbinom(p, 1, 0.2)
+    )
+    AnnotationMatrix(
+        mat,
+        GenomicRanges::granges(ref, use.mcols = FALSE),
+        data.frame(
+            name = colnames(mat),
+            tier = c("baseline", "baseline", "candidate"),
+            type = c("binary", "continuous", "binary")
+        ),
+        genome = "hg19"
+    )
+}
+
+# GWAS z-scores over the fixture's blocks with heritability `h2`:
+# z = sqrt(n) R beta + e, e ~ N(0, R), block by block.
+.h2PanelZ <- function(ld, n, h2, seed = 3) {
+    set.seed(seed)
+    M <- sum(map_int(ld, length))
+    list_c(map(ld, function(x) {
+        R <- ldMatrix(x)
+        beta <- rnorm(nrow(R), sd = sqrt(h2 / M))
+        e <- eigen(R, symmetric = TRUE)
+        noise <- e$vectors %*% (sqrt(pmax(e$values, 0)) * rnorm(nrow(R)))
+        as.vector(sqrt(n) * R %*% beta + noise)
+    }))
 }

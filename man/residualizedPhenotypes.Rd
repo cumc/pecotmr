@@ -16,7 +16,7 @@ residualizedPhenotypes(x, ...)
   outlierAction = c("keep", "drop"),
   outlierPvalThreshold = 0.001,
   outlierArgs = CovMcdOptions(),
-  residualizationArgs = ResidualizationParam()
+  residualizationParam = ResidualizationParam()
 )
 }
 \arguments{
@@ -51,7 +51,7 @@ robust covariance estimator the outlier rule is built on, supplied with
 \code{\link{CovMcdOptions}} -- \code{alpha} in particular. Only
 consulted when \code{outlierAction = "drop"}.}
 
-\item{residualizationArgs}{What the data is residualized on, built with
+\item{residualizationParam}{What the data is residualized on, built with
 \code{\link{ResidualizationParam}}: \code{phenotypeCovariates} and
 \code{genotypeCovariates} choose the covariate sets,
 \code{residualizePhenotype} / \code{residualizeGenotype} turn each

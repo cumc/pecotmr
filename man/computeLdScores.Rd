@@ -24,7 +24,9 @@ A numeric matrix of LD scores (SNPs x annotations+1).
 }
 \description{
 Compute LD scores from an LD reference, optionally stratified by
-  annotations.
+  annotations. Each r-squared is ldsc's small-sample unbiased estimate,
+  \eqn{r^2 - (1 - r^2)/(n - 2)} for a reference of \eqn{n} samples, as
+  \code{\link{buildLdScore}} stores, so the two agree.
 }
 \examples{
 data(ldEigenExample)

@@ -18,7 +18,9 @@
     list(X = X, y = y, n = n, p = p)
 }
 
-# Single-context summary statistics + LD for the *_rss_weights(stat, LD) contract.
+# Single-context summary statistics + LD for the RSS weights contract:
+# `stat` names its variants, and `ldReference` holds the same LD as an
+# LdMatrix for the weight functions to match them to.
 .rrwStatLd <- function(n = 50, p = 6, seed = 1) {
     d <- .rrwXy(n, p, seed)
     bhat <- map_dbl(
@@ -40,7 +42,7 @@
         var_y = 1,
         variantNames = colnames(LD)
     )
-    list(stat = stat, LD = LD, p = p, n = n)
+    list(stat = stat, LD = LD, ldReference = LdMatrix(LD), p = p, n = n)
 }
 
 # Multi-context (variants x conditions) fixture for mr.mash / mvSuSiE wrappers.
@@ -66,5 +68,24 @@
         })
     )
     colnames(Z) <- colnames(Y)
-    list(X = X, Y = Y, LD = cor(X), stat = list(z = Z, n = n), p = p, K = K)
+    list(
+        X = X,
+        Y = Y,
+        LD = cor(X),
+        ldReference = LdMatrix(cor(X)),
+        stat = list(z = Z, n = n, variantNames = colnames(X)),
+        p = p,
+        K = K
+    )
+}
+
+# Variant ids chr1:100:A:G, chr1:200:A:G, ... for p variants, and an LdMatrix
+# over `R` named by them, for tests that build their own statistics and LD.
+.rrwIds <- function(p) {
+    sprintf("chr1:%d:A:G", 100L * seq_len(p))
+}
+
+.rrwLdMatrix <- function(R) {
+    ids <- .rrwIds(nrow(R))
+    LdMatrix(`dimnames<-`(R, list(ids, ids)))
 }

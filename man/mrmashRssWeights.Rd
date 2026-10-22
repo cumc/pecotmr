@@ -6,7 +6,7 @@
 \usage{
 mrmashRssWeights(
   stat,
-  LD,
+  ldReference,
   mrmashRssFit = NULL,
   dataDrivenPriorMatrices = NULL,
   canonicalPriorMatrices = TRUE,
@@ -19,11 +19,16 @@ mrmashRssWeights(
 )
 }
 \arguments{
-\item{stat}{A list with \code{z} (variants x conditions matrix) and \code{n}
-(per-context numeric vector or scalar). May also include \code{Bhat},
-\code{Shat} matrices.}
+\item{stat}{A list with \code{z} (variants x conditions matrix),
+\code{n} (per-context numeric vector or scalar) and \code{variantNames}.
+May also include \code{Bhat}, \code{Shat} matrices.}
 
-\item{LD}{LD correlation matrix.}
+\item{ldReference}{The LD reference the statistics' variants are matched
+to by \code{stat$variantNames}: a genotype panel (see
+\code{\link{readGenotypes}}), a \code{\link{GenotypeMixture}} or an
+\code{\link{LdMatrix}}. \code{mr.mash.rss} takes an LD matrix, which is
+formed from the reference over these variants; it is not read when
+\code{mrmashRssFit} is supplied.}
 
 \item{mrmashRssFit}{Optional pre-fitted \code{mr.mash.rss} object; skips
 fitting when supplied.}
@@ -93,8 +98,9 @@ X <- eqtlRegionExample$X[, 1:30]
 cond <- c("brain", "blood", "muscle")
 zmat <- matrix(rnorm(30 * 3), 30, 3,
   dimnames = list(colnames(X), cond))
-stat <- list(z = zmat, n = matrix(nrow(X), 30, 3))
-mrmashRssWeights(stat, cor(X),
+stat <- list(z = zmat, n = matrix(nrow(X), 30, 3),
+  variantNames = colnames(X))
+mrmashRssWeights(stat, LdMatrix(cor(X)),
   dataDrivenPriorMatrices = multiTraitData$priorMatrices,
   canonicalPriorMatrices = TRUE)
 }

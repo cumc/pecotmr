@@ -3,7 +3,7 @@
 # -----------------------------------------------------------------------------
 # DFrame-subclass collection keyed by the identity tuple (study, context,
 # trait). Each row holds a per-tuple GRanges of summary statistics
-# (variant_id + per-variant Z/N/MAF mcols). Class-level slots ldSketch
+# (variant_id + per-variant Z/N/MAF mcols). Class-level slots ldReference
 # (a GenotypeHandle for the LD reference) + genome (the genome build)
 # apply uniformly across rows. Built-in qcInfo slot tracks which
 # summaryStatsQc() passes have been run.
@@ -19,7 +19,7 @@ NULL
 #'   Z / N / MAF mcols.
 #' @details Required columns: \code{study}, \code{context} and \code{trait};
 #'   the 3-tuple is unique. The class-level slots inherited from
-#'   \code{\linkS4class{SumStatsBase}} -- \code{ldSketch}, \code{genome} and
+#'   \code{\linkS4class{SumStatsBase}} -- \code{ldReference}, \code{genome} and
 #'   \code{qcInfo} -- apply uniformly to every row, and \code{qcInfo} records
 #'   which \code{\link{summaryStatsQc}} passes have run.
 #' @seealso \code{\link{QtlSumStats}} for the constructor and
@@ -97,7 +97,7 @@ NULL
 #' @title Create a QtlSumStats Collection Object
 #' @description Construct a \code{QtlSumStats} S4 DFrame-subclass collection
 #'   from per-tuple vectors and a list of \code{GRanges} entries (one per
-#'   tuple), plus a single LD sketch handle and a single genome build that apply
+#'   tuple), plus a single LD reference and a single genome build that apply
 #'   to the whole collection. Each \code{GRanges} entry must carry per-variant
 #'   statistics in its mcols (\code{SNP}, \code{A1}, \code{A2}, \code{Z},
 #'   \code{N}; plus optional \code{MAF}, \code{INFO}, \code{BETA}, \code{SE},
@@ -109,9 +109,10 @@ NULL
 #'   Same length as \code{study}, \code{context}, and \code{trait}.
 #' @param genome Single character string giving the genome build (e.g.,
 #'   \code{"hg19"}, \code{"hg38"}). Uniform across the collection because all
-#'   entries share the same LD sketch.
-#' @param ldSketch A genotype panel (see \code{\link{readGenotypes}})
-#'   carrying the LD reference.
+#'   entries share the same LD reference.
+#' @param ldReference The LD reference: a genotype panel (see
+#'   \code{\link{readGenotypes}}), a \code{\link{GenotypeMixture}} or an
+#'   \code{\link{LdMatrix}}.
 #' @param varY Optional numeric vector of per-tuple phenotype variances
 #'   (\code{NA_real_} entries allowed).
 #' @param nSample Optional per-tuple total sample size (numeric; default
@@ -141,7 +142,7 @@ NULL
 #' S4Vectors::mcols(gr) <- S4Vectors::DataFrame(SNP = paste0("rs", 1:3),
 #'   A1 = "A", A2 = "G", Z = rnorm(3), N = 100L)
 #' QtlSumStats(studyName = "s1", context = "brain", trait = "g1", entry =
-#'   list(gr), genome = "hg38", ldSketch = panel)
+#'   list(gr), genome = "hg38", ldReference = panel)
 #' @export
 QtlSumStats <- function(
     studyName,
@@ -149,7 +150,7 @@ QtlSumStats <- function(
     trait,
     entry,
     genome,
-    ldSketch = NULL,
+    ldReference = NULL,
     varY = NA_real_,
     nSample = NULL,
     qcInfo = list(),
@@ -190,7 +191,7 @@ QtlSumStats <- function(
         GenomicRanges::GRangesList(split$entry),
         value = md[split$fromIdx, , drop = FALSE]
     )
-    .sumStatsNewValidated("QtlSumStats", grl, ldSketch, genome, qcInfo)
+    .sumStatsNewValidated("QtlSumStats", grl, ldReference, genome, qcInfo)
 }
 
 # Validate genome / entry / length consistency and recycle varY. Returns the
@@ -200,7 +201,7 @@ QtlSumStats <- function(
     if (length(genome) != 1L) {
         msg <- glue(
             "`genome` must be a single character string (one build per ",
-            "collection, because all entries share the LD sketch)."
+            "collection, because all entries share the LD reference)."
         )
         abort(msg)
     }
@@ -523,20 +524,16 @@ setMethod("show", "QtlSumStats", function(object) {
             .trim = FALSE
         ))
     }
-    ld <- ldSketch(object)
+    ld <- ldReference(object)
     ldSrc <- if (is.null(ld)) {
         "none (LD-free)"
     } else {
-        .ldSketchLabel(ld)
+        .ldRefLabel(ld)
     }
-    cat(glue("  LD sketch: {ldSrc}\n", .trim = FALSE))
+    cat(glue("  LD reference: {ldSrc}\n", .trim = FALSE))
 })
 
 # ---- map/apply helpers (lambda-free callbacks) ---------------------------
-
-# Column `cn` of `object`, via `[[` (preserves the required `entry` column that
-# `object[, cn]` would drop).
-# @noRd
 
 # Append tss_distance / tes_distance mcols to entry `i` from traitPos[i] (no-op
 # when the entry is empty or the trait position is unset). Existing distance
@@ -573,10 +570,6 @@ setMethod("show", "QtlSumStats", function(object) {
     )
 }
 
-# Entry `i` of a SumStats collection restricted to chromosome `chrName`. Shared
-# by the QtlSumStats and GwasSumStats subsetChr methods.
-# @noRd
-
 #' Combine QtlSumStats collections
 #'
 #' Row-bind two or more \code{\link{QtlSumStats}} collections into one -- e.g.
@@ -587,14 +580,14 @@ setMethod("show", "QtlSumStats", function(object) {
 #' The three collection-level slots are merged rather than taken from the first
 #' input, on the same rules as \code{\link{combineGwasSumStats}}: \code{genome}
 #' and the \code{\link{summaryStatsQc}} options must agree, the per-element
-#' \code{qcInfo$entryAudit} concatenates in element order, and the LD sketches
-#' union over the shared genotype handle (all-\code{NULL} stays \code{NULL},
-#' which is the usual case for individual-level QTL data).
+#' \code{qcInfo$entryAudit} concatenates in element order, and the LD
+#' references combine the same way (all-\code{NULL} stays \code{NULL}, which
+#' is the usual case for individual-level QTL data).
 #'
 #' @param ... Two or more \code{QtlSumStats} objects, or a single \code{list}
 #'   of them.
-#' @param ldSketch Optional genotype panel (see \code{\link{readGenotypes}}) to
-#'   attach to the combined collection, overriding the unioned one. Default
+#' @param ldReference Optional genotype panel (see \code{\link{readGenotypes}})
+#'   to attach to the combined collection, overriding the unioned one. Default
 #'   \code{NULL}.
 #' @return A single combined \code{QtlSumStats}.
 #' @seealso \code{\link{combineGwasSumStats}},
@@ -603,7 +596,7 @@ setMethod("show", "QtlSumStats", function(object) {
 #' data(qtlSumStatsExample)
 #' combineQtlSumStats(qtlSumStatsExample)
 #' @export
-combineQtlSumStats <- function(..., ldSketch = NULL) {
+combineQtlSumStats <- function(..., ldReference = NULL) {
     parts <- .asCombineList(
         list(...),
         "QtlSumStats",
@@ -612,5 +605,5 @@ combineQtlSumStats <- function(..., ldSketch = NULL) {
     if (length(parts) == 1L) {
         return(parts[[1L]])
     }
-    .rbindSumStats(parts, ldSketch, "combineQtlSumStats")
+    .rbindSumStats(parts, ldReference, "combineQtlSumStats")
 }

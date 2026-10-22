@@ -10,8 +10,8 @@ context("colocPipeline")
 .cp_makeHandle <- function(snp_n = 6L, n_samples = 30L, sample_prefix = "s") {
     new(
         "GenotypeHandle",
-        path = "/tmp/sketch.gds",
-        format = "gds",
+        path = "/tmp/sketch",
+        format = "plink2",
         snpInfo = data.frame(
             SNP = sprintf("chr1:%d:A:G", 100L * seq_len(snp_n)),
             CHR = rep("1", snp_n),
@@ -89,7 +89,7 @@ context("colocPipeline")
         trait = map_chr(tuples, 3L),
         method = map_chr(tuples, 4L),
         entry = entries,
-        ldSketch = if (with_sketch) .cp_makeHandle() else NULL
+        ldReference = if (with_sketch) .cp_makeHandle() else NULL
     )
 }
 
@@ -109,7 +109,7 @@ context("colocPipeline")
         studyName = map_chr(tuples, 1L),
         method = map_chr(tuples, 2L),
         entry = entries,
-        ldSketch = if (with_sketch) .cp_makeHandle() else NULL
+        ldReference = if (with_sketch) .cp_makeHandle() else NULL
     )
 }
 
@@ -132,7 +132,7 @@ context("colocPipeline")
         studyName = studyName,
         entry = list(gr),
         genome = "hg19",
-        ldSketch = .cp_makeHandle(),
+        ldReference = .cp_makeHandle(),
         qcInfo = if (qc) list(step1 = "ok") else list()
     )
 }
@@ -158,7 +158,7 @@ context("colocPipeline")
         trait = "t1",
         entry = list(gr),
         genome = "hg19",
-        ldSketch = .cp_makeHandle(),
+        ldReference = .cp_makeHandle(),
         qcInfo = if (qc) list(step1 = "ok") else list()
     )
 }
@@ -222,10 +222,10 @@ test_that("colocPipeline: rejects un-QCd GwasSumStats input", {
 })
 
 # ===========================================================================
-# .colocRequireMatchingLdSketches
+# .colocRequireMatchingLdRefs
 # ===========================================================================
 
-test_that(".colocRequireMatchingLdSketches: NULL qtl-side ldSketch is allowed", {
+test_that(".colocRequireMatchingLdRefs: NULL qtl-side ldReference is allowed", {
     qfmr <- .cp_makeQtlFmr(with_sketch = FALSE)
     gfmr <- .cp_makeGwasFmr()
     local_mocked_bindings(coloc.bf_bf = .cp_mockColocBfBf(), .package = "coloc")
@@ -236,23 +236,23 @@ test_that(".colocRequireMatchingLdSketches: NULL qtl-side ldSketch is allowed", 
     expect_s4_class(out, "ColocResult")
 })
 
-test_that(".colocRequireMatchingLdSketches: non-NULL qtl + NULL gwas errors", {
+test_that(".colocRequireMatchingLdRefs: non-NULL qtl + NULL gwas errors", {
     qfmr <- .cp_makeQtlFmr()
     gfmr <- .cp_makeGwasFmr(with_sketch = FALSE)
     expect_error(
         colocPipeline(qtlFineMappingResult = qfmr, gwasInput = gfmr),
-        "ldSketch is NULL"
+        "ldReference is NULL"
     )
 })
 
-test_that(".colocRequireMatchingLdSketches: sample set mismatch errors", {
+test_that(".colocRequireMatchingLdRefs: sample set mismatch errors", {
     qfmr <- .cp_makeQtlFmr()
     otherPanel <- .cp_makeHandle(sample_prefix = "other")
     gfmr <- GwasFineMappingResult(
         studyName = "G1",
         method = "susie",
         entry = list(.cp_makeFmEntry()),
-        ldSketch = otherPanel
+        ldReference = otherPanel
     )
     expect_error(
         colocPipeline(qtlFineMappingResult = qfmr, gwasInput = gfmr),
@@ -260,11 +260,11 @@ test_that(".colocRequireMatchingLdSketches: sample set mismatch errors", {
     )
 })
 
-test_that(".colocRequireMatchingLdSketches: differently trimmed panels pass", {
+test_that(".colocRequireMatchingLdRefs: differently trimmed panels pass", {
     # The two sides QC'd separately keep different subsets of one LD
     # reference; the panels overlap, so the check warns rather than aborting.
     expect_warning(
-        expect_null(pecotmr:::.colocRequireMatchingLdSketches(
+        expect_null(pecotmr:::.colocRequireMatchingLdRefs(
             .cp_makeHandle(snp_n = 6L),
             .cp_makeHandle(snp_n = 7L)
         )),
@@ -473,7 +473,7 @@ test_that("colocPipeline: empty result has the documented schema", {
         studyName = "G1",
         method = "susie",
         entry = list(e),
-        ldSketch = .cp_makeHandle()
+        ldReference = .cp_makeHandle()
     )
     out <- suppressWarnings(
         colocPipeline(qtlFineMappingResult = qfmr, gwasInput = gfmr)
@@ -563,7 +563,7 @@ test_that(".colocExtractLbfFromEntry: filterLbfCs subsets by cs_index", {
     )
     out <- pecotmr:::.colocExtractLbfFromEntry(
         e,
-        lbfFilterArgs = ColocLbfFilterParam(
+        colocLbfFilterParam = ColocLbfFilterParam(
             filterLbfCs = TRUE,
             secondary = NULL
         )
@@ -927,7 +927,7 @@ test_that("colocPipeline: attaches gwasFineMapping when no pairs survive", {
         studyName = "G1",
         method = "susie",
         entry = list(e),
-        ldSketch = .cp_makeHandle()
+        ldReference = .cp_makeHandle()
     )
     local_mocked_bindings(coloc.bf_bf = .cp_mockColocBfBf(), .package = "coloc")
     local_mocked_bindings(
@@ -1050,7 +1050,7 @@ test_that(".colocExtractLbfFromEntry: stacks fSuSiE lBF list into a matrix", {
     )
     out <- pecotmr:::.colocExtractLbfFromEntry(
         e,
-        lbfFilterArgs = ColocLbfFilterParam(
+        colocLbfFilterParam = ColocLbfFilterParam(
             filterLbfCs = FALSE,
             secondary = NULL,
             concentration = 0.5
@@ -1075,7 +1075,7 @@ test_that(".colocExtractLbfFromEntry: stacks nested fSuSiE lBF (fit[[1]] path)",
     )
     out <- pecotmr:::.colocExtractLbfFromEntry(
         e,
-        lbfFilterArgs = ColocLbfFilterParam(
+        colocLbfFilterParam = ColocLbfFilterParam(
             filterLbfCs = FALSE,
             secondary = NULL,
             concentration = 0.5
@@ -1094,7 +1094,7 @@ test_that(".colocExtractLbfFromEntry: refuses a fit carrying no LBF slot", {
     expect_error(
         pecotmr:::.colocExtractLbfFromEntry(
             e,
-            lbfFilterArgs = ColocLbfFilterParam(
+            colocLbfFilterParam = ColocLbfFilterParam(
                 filterLbfCs = FALSE,
                 secondary = NULL,
                 concentration = 0.5
@@ -1134,7 +1134,7 @@ test_that(".colocExtractLbfFromEntry: refuses an empty LBF matrix", {
     expect_error(
         pecotmr:::.colocExtractLbfFromEntry(
             e,
-            lbfFilterArgs = ColocLbfFilterParam(
+            colocLbfFilterParam = ColocLbfFilterParam(
                 filterLbfCs = FALSE,
                 secondary = NULL,
                 concentration = 0.5
@@ -1167,7 +1167,7 @@ test_that(".colocExtractLbfFromEntry: secondary CS filter subsets rows", {
     )
     out <- pecotmr:::.colocExtractLbfFromEntry(
         e,
-        lbfFilterArgs = ColocLbfFilterParam(
+        colocLbfFilterParam = ColocLbfFilterParam(
             filterLbfCs = FALSE,
             secondary = 0.95,
             concentration = 0.5
@@ -1186,7 +1186,7 @@ test_that(".colocExtractLbfFromEntry: assigns colnames from variantIds when fit 
     )
     out <- pecotmr:::.colocExtractLbfFromEntry(
         e,
-        lbfFilterArgs = ColocLbfFilterParam(
+        colocLbfFilterParam = ColocLbfFilterParam(
             filterLbfCs = FALSE,
             secondary = NULL,
             concentration = 0.5
@@ -1213,7 +1213,7 @@ test_that(".colocExtractLbfFromEntry: NULL when every variant column is NA-named
     )
     out <- pecotmr:::.colocExtractLbfFromEntry(
         e,
-        lbfFilterArgs = ColocLbfFilterParam(
+        colocLbfFilterParam = ColocLbfFilterParam(
             filterLbfCs = FALSE,
             secondary = NULL,
             concentration = 0.5
@@ -1335,7 +1335,7 @@ test_that("gwasFineMapping is refused when the GWAS is already fine-mapped", {
         colocPipeline(
             qtlFineMappingExample,
             gwasFineMappingExample,
-            gwasFineMappingArgs = GwasFineMappingParam(methods = "susieInf")
+            gwasFineMappingParam = GwasFineMappingParam(methods = "susieInf")
         ),
         "there is no run to configure"
     )

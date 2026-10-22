@@ -1,7 +1,7 @@
 # =============================================================================
 # Tuple row matchers
 # -----------------------------------------------------------------------------
-# Internal helpers shared by the FineMappingResult / TwasWeights / SumStats
+# Internal helpers shared by the fine-mapping result / TwasWeights / SumStats
 # collections to resolve a tuple-keyed selection to a single row index. Every
 # collection is a RangedTupleList, so these read identity columns off mcols
 # and payloads off the elements -- there is no second shape to branch on.
@@ -398,14 +398,14 @@
 }
 
 # Internal: append a validated `region` GRanges to a constructor's column list
-# (no-op when NULL). Shared by the TwasWeights / FineMappingResult
+# (no-op when NULL). Shared by the TwasWeights / FineMappingResultBase
 # constructors so the provenance column is added identically everywhere.
 # Internal: an optional per-row provenance column. One helper for all three
 # (`dataType`, `dataSource`, `standardized`) since they differ only in name and
 # coercion.
 #
 # `dataSource` is per ROW, not per collection: it used to be derived from the
-# collection's single `ldSketch` slot, so after combineFineMappingResults()
+# collection's single `ldReference` slot, so after combineFineMappingResults()
 # folded individual-level and RSS-derived fits together every row got the
 # combined object's answer.
 #
@@ -424,11 +424,6 @@
         abort(glue("`{nm}` must be length 1 or the same length as `study`."))
     }
     c(cols, set_names(list(rep(v, length.out = n)), nm))
-}
-
-# @noRd
-.appendDataTypeCol <- function(cols, dataType, n) {
-    .appendProvenanceCol(cols, dataType, "dataType", n)
 }
 
 # @noRd
@@ -458,7 +453,7 @@
 }
 
 # Internal: validate the optional `region` GRanges column (one range per row),
-# shared by the TwasWeights / FineMappingResult validity methods. Returns a
+# shared by the TwasWeights / FineMappingResultBase validity methods. Returns a
 # character vector of errors (empty when valid or the column is absent).
 .validateRegionColumn <- function(object) {
     if (!is_in("region", .tupleColumnNames(object))) {
@@ -554,23 +549,23 @@
 }
 
 # Internal: row-bind two or more per-tuple collection objects (TwasWeights /
-# FineMappingResult subclasses), carrying forward EVERY column. Columns are
+# FineMappingResultBase subclasses), carrying forward EVERY column. Columns are
 # unioned, and a collection lacking an optional column (e.g. jointContexts or
 # region) is padded with `.naLikeColumn` -- so adding a column to a class flows
 # through combines automatically rather than being hand-listed at each site.
-# Preserves the concrete class and sets the `ldSketch` slot explicitly (rbind
+# Preserves the concrete class and sets the `ldReference` slot explicitly (rbind
 # does not reliably carry it). Returns NULL when given no inputs. Every
 # collection is a RangedTupleList now, so this only drops the NULL parts and
 # hands off; the old DFrame path went with the rebase onto GRangesList.
 #
 # `slots` carries the collection-level state a concrete subclass adds beyond
-# `ldSketch` (SumStatsBase's `genome` / `qcInfo`). It is passed in rather than
-# read off `parts[[1L]]` because those slots describe the WHOLE collection, so
-# merging them is the caller's decision -- first-wins would silently drop the
+# `ldReference` (SumStatsBase's `genome` / `qcInfo`). It is passed in rather
+# than read off `parts[[1L]]` because those slots describe the WHOLE collection,
+# so merging them is the caller's decision -- first-wins would silently drop the
 # other parts' QC audit.
 .rbindCollections <- function(
     parts,
-    ldSketch = NULL,
+    ldReference = NULL,
     slots = list(),
     genome = NULL
 ) {
@@ -578,7 +573,7 @@
     if (length(parts) == 0L) {
         return(NULL)
     }
-    .rbindRangedCollections(parts, ldSketch, slots, genome)
+    .rbindRangedCollections(parts, ldReference, slots, genome)
 }
 
 # Internal: aggregate a per-entry accessor across every row of a
@@ -706,7 +701,7 @@
 .fmrEntryPart <- function(i, x, perEntry, meta, viewArgs) {
     # `perEntry` is an internal per-row function taking the stored payload, not
     # an S4 generic dispatching on a rebuilt entry. That indirection is what
-    # the FineMappingRow class existed for.
+    # the retired FineMappingEntry class existed for.
     raw <- exec(perEntry, .fmrRowParts(x, i), !!!viewArgs)
     if (is.null(raw) || nrow(raw) == 0L) {
         return(NULL)
@@ -737,8 +732,6 @@
     }
 }
 
-# Concatenate column `cn` across all parts (NA-filling parts that lack it).
-# @noRd
 # Row-binding a collection: the elements append and the mcols rbind.
 #
 # S4Vectors::combineRows() does the union-with-NA-fill this needs, but it
@@ -749,7 +742,7 @@
 # @noRd
 .rbindRangedCollections <- function(
     parts,
-    ldSketch,
+    ldReference,
     slots = list(),
     genome = NULL
 ) {
@@ -775,12 +768,14 @@
         methods::new,
         cls,
         grl,
-        !!!c(list(ldSketch = ldSketch), slots)
+        !!!c(list(ldReference = ldReference), slots)
     )
     validObject(out)
     out
 }
 
+# Concatenate column `cn` across all parts (NA-filling parts that lack it).
+# @noRd
 .rbindColumn <- function(cn, parts) {
     pieces <- map(parts, .rbindColPiece, cn = cn, parts = parts)
     # GRanges concat may warn on seqinfo.
@@ -790,7 +785,7 @@
 # =============================================================================
 # Per-row primitives
 # -----------------------------------------------------------------------------
-# The per-row views a collection projects. These replace the FineMappingRow
+# The per-row views a collection projects. These replace the FineMappingEntry
 # S4 class, which existed only to be the DISPATCH TARGET for exactly this work:
 # a collection method would rebuild an entry for each row and call the exported
 # generic on it. That indirection cost a whole class, a validity method and a
@@ -819,11 +814,6 @@
     )
 }
 
-# The same, for a set of rows collapsed into one logical entry (a multi-block
-# row group). The fit payload comes from the first row, matching the previous
-# .fmeEntryFromRows behaviour.
-# @noRd
-
 # @noRd
 .fmrPartsVariantIds <- function(parts) {
     variantIds(.asFmRowPayload(parts))
@@ -845,7 +835,7 @@
 }
 
 # ---- per-row views ----------------------------------------------------------
-# Each of these is the body of what used to be a FineMappingRow method,
+# Each of these is the body of what used to be a FineMappingEntry method,
 # reading the stored form through `parts` instead of through S4 slots. They are
 # what .fmrAggregateView() maps over.
 
@@ -1024,7 +1014,7 @@
     list(variantIds = vids[ok], weights = w[ok])
 }
 
-# Class-aware row payload: the TwasWeights and FineMappingResult shapes differ
+# Class-aware row payload: the TwasWeights and fine-mapping shapes differ
 # (weights vs a susie fit), so callers that accept either weight source route
 # through here. Replaces the old .collectionEntry bridge.
 # @noRd
@@ -1051,7 +1041,7 @@
 # A fine-mapping row deliberately reports NULL: cTWAS would otherwise
 # renormalize alpha into an UNstandardized weight, which is inconsistent with
 # the standardized posterior effect the topLoci view already carries. Preserved
-# verbatim from the FineMappingRow methodFits method.
+# verbatim from the retired FineMappingEntry methodFits method.
 # @noRd
 .rowFits <- function(parts) {
     if (methods::is(parts, "TwasWeightsRow")) methodFits(parts) else NULL
@@ -1070,15 +1060,12 @@
     TRUE
 }
 
-# ---- row-payload builders ---------------------------------------------------
-# What callers use in place of the retired FineMappingRow / TwasWeightsRow
-# constructors. Same arguments, but they return the STORED form directly -- a
-# plain list holding one GRanges plus the fit payload -- so nothing has to be
-# converted on the way into a collection.
+# ---- row-payload normalizers ------------------------------------------------
+# The per-row views read a FineMappingRow / TwasWeightsRow. Callers may also
+# hold a single-row collection -- what fineMappingResult() returns -- so these
+# accept either and hand back the row.
 
-# Accept either a row payload (the stored form) or a legacy entry object, so
-# the constructors can be flipped independently of their ~300 call sites.
-# Delete the entry branch once nothing constructs entries.
+# A FineMappingRow from a row or from a fine-mapping collection's rows.
 # @noRd
 .asFmRowPayload <- function(e) {
     # A single-row collection is the other shape callers hand over -- it is
@@ -1120,8 +1107,6 @@
     abort(msg)
 }
 
-# @noRd
-
 # Shape-tolerant readers for values that may still be a legacy entry object
 # while the flip is in progress. Delete the entry branch (and these) once
 # nothing produces entries.
@@ -1155,7 +1140,7 @@
 # =============================================================================
 # Combining summary-statistics collections
 # -----------------------------------------------------------------------------
-# A SumStatsBase subclass carries three COLLECTION-level slots -- ldSketch,
+# A SumStatsBase subclass carries three COLLECTION-level slots -- ldReference,
 # genome and qcInfo -- on top of the elements and their mcols, so row-binding
 # per-block pieces back into one collection has to say what happens to each.
 # The rules live here once, shared by combineGwasSumStats() and
@@ -1165,9 +1150,9 @@
 #   qcInfo    `entryAudit` concatenates in element order (it is indexed BY
 #             element); the rest is carried from the first part after checking
 #             the QC options agree
-#   ldSketch  the panels union, read through the parts' shared GenotypeHandle
+#   ldReference  the panels union, read through the parts' shared GenotypeHandle
 #
-# The ldSketch rule is the one that matters for correctness. A block-parallel
+# The ldReference rule is the one that matters for correctness. A block-parallel
 # pipeline narrows each piece's panel to that block, so first-wins would hand
 # back a collection spanning every block whose LD reference covers only the
 # first -- and cTWAS computes its full-panel LD from exactly that slot.
@@ -1192,14 +1177,14 @@
     invisible(NULL)
 }
 
-# The collection-level slots BEYOND ldSketch that a combine has to merge, for
+# The collection-level slots BEYOND ldReference that a combine has to merge, for
 # whatever concrete class `parts` are. A slot describes the whole collection,
 # so first-wins would silently drop the other parts' state; each gets its own
 # rule and an unrecognised slot is an error rather than a quiet default, so
 # adding one to a class cannot slip through a combine unnoticed.
 # @noRd
 .rtlExtraSlots <- function(parts, fn) {
-    own <- setdiff(.rtlOwnSlots(parts[[1L]]), "ldSketch")
+    own <- setdiff(.rtlOwnSlots(parts[[1L]]), "ldReference")
     out <- compact(list(
         qcInfo = if (is_in("qcInfo", own)) .ssCombineQcInfo(parts, fn)
     ))
@@ -1217,9 +1202,9 @@
 
 # Merge `parts` into one collection, reconciling every collection-level slot.
 # The single path behind `c()` / `append()` and the four combine*() wrappers.
-# A non-NULL `ldSketch` overrides the unioned panel.
+# A non-NULL `ldReference` overrides the unioned panel.
 # @noRd
-.combineTupleCollections <- function(parts, ldSketch, fn) {
+.combineTupleCollections <- function(parts, ldReference, fn) {
     .rtlRequireSameClass(parts, fn)
     # Forced before the rebuild: GRangesList() merges seqinfo and rejects
     # mismatched builds itself, with a message about sequence-level genomes
@@ -1227,7 +1212,7 @@
     genome <- .rtlCombineGenome(parts, fn)
     .rbindCollections(
         parts,
-        ldSketch = ldSketch %||% .combineLdSketch(parts, fn),
+        ldReference = ldReference %||% .combineLdRef(parts, fn),
         slots = .rtlExtraSlots(parts, fn),
         genome = genome
     )
@@ -1244,10 +1229,10 @@
 }
 
 # Row-bind summary-statistics parts, merging the three collection-level slots.
-# `ldSketch` (when non-NULL) overrides the unioned panel.
+# `ldReference` (when non-NULL) overrides the unioned panel.
 # @noRd
-.rbindSumStats <- function(parts, ldSketch, fn) {
-    .combineTupleCollections(parts, ldSketch, fn)
+.rbindSumStats <- function(parts, ldReference, fn) {
+    .combineTupleCollections(parts, ldReference, fn)
 }
 
 # One genome build per collection (every entry shares the LD sketch), so the
@@ -1340,8 +1325,8 @@
 # collection has no panel); a mix is an error, because silently keeping the
 # panels that exist would leave elements harmonized against nothing.
 # @noRd
-.combineLdSketch <- function(parts, fn) {
-    sketches <- map(parts, ldSketch)
+.combineLdRef <- function(parts, fn) {
+    sketches <- map(parts, ldReference)
     present <- !map_lgl(sketches, is.null)
     if (!any(present)) {
         return(NULL)
@@ -1349,38 +1334,159 @@
     if (!all(present)) {
         msg <- glue(
             "{fn}: {sum(!present)} of {length(parts)} inputs carry no ",
-            "ldSketch. Combine collections that all have an LD reference, or ",
-            "all have none."
+            "ldReference. Combine collections that all have an LD reference, ",
+            "or all have none."
         )
         abort(msg)
     }
-    handles <- map(sketches, .ldSketchHandle)
-    .ssCheckSameSource(handles, fn)
+    if (any(map_lgl(sketches, .ldIsMatrixRef))) {
+        return(.combineLdMatrixRefs(sketches, fn))
+    }
+    if (any(map_lgl(sketches, .ldIsMixtureRef))) {
+        return(.combineMixtureRefs(sketches, fn))
+    }
+    .ssCheckSameSource(sketches, fn)
+    chromPaths <- .ssUnionChromPaths(sketches, fn)
+    handles <- map(sketches, .ldRefHandle)
+    if (any(map_lgl(handles, is.null))) {
+        return(.ssUnionPanels(sketches, chromPaths))
+    }
     handle <- methods::initialize(
         handles[[1L]],
         snpInfo = .ssUnionSnpInfo(handles),
-        chromPaths = .ssUnionChromPaths(handles, fn)
+        chromPaths = chromPaths
     )
-    .asLdSketch(handle)
+    .asLdRef(handle)
 }
 
-# Union the per-chromosome shard paths across handles. Two sketches trimmed
-# from one genoMeta panel to different chromosomes share path/format/samples
-# and differ ONLY here, so unioning is what lets their snpInfo rows keep
-# routing: a row reaches its file by its own CHR. One chromosome mapping to
-# two different files means the parts are not the same panel after all.
+# The union of panels from one source that read through no handle -- a VCF,
+# GDS or PLINK1 panel, or a per-chromosome set of them: their rows, each
+# once, in genomic order, over the first panel's samples. The parts' assays
+# are bound, not read. Parts that are all the same panel union to it.
 # @noRd
-.ssUnionChromPaths <- function(handles, fn) {
-    combined <- .ssConcatChr(map(handles, .ssHandleChromPaths))
+.ssUnionPanels <- function(panels, chromPaths) {
+    first <- panels[[1L]]
+    if (all(map_lgl(map(panels, rownames), identical, rownames(first)))) {
+        return(first)
+    }
+    rr <- suppressWarnings(
+        exec(c, !!!unname(map(panels, SummarizedExperiment::rowRanges)))
+    )
+    stacked <- SummarizedExperiment::SummarizedExperiment(
+        assays = list(
+            dosage = exec(
+                BiocGenerics::rbind,
+                !!!unname(map(panels, .seDosage))
+            )
+        ),
+        rowRanges = rr,
+        colData = SummarizedExperiment::colData(first),
+        metadata = S4Vectors::metadata(first)
+    )
+    kept <- which(!duplicated(names(rr)))
+    ord <- kept[order(
+        canonChrom(as.character(seqnames(rr)[kept])),
+        start(rr)[kept]
+    )]
+    md <- S4Vectors::metadata(stacked)
+    if (!is.null(md$genotypeSource)) {
+        md$genotypeSource$chromPaths <- chromPaths
+    }
+    S4Vectors::`metadata<-`(stacked[ord, ], value = md)
+}
+
+# LdMatrix references, unlike panels, cannot be unioned: the LD between
+# variants held by different parts is recorded in neither. They combine only
+# when one of them already holds every other's variants with the same LD --
+# the same matrix, or one part that kept all of the others' variants.
+# Otherwise the caller passes the matrix covering them all as `ldReference`.
+# @noRd
+.combineLdMatrixRefs <- function(refs, fn) {
+    if (!all(map_lgl(refs, .ldIsMatrixRef))) {
+        msg <- glue(
+            "{fn}: inputs mix genotype-panel and LdMatrix references; ",
+            "combine collections that share one LD reference."
+        )
+        abort(msg)
+    }
+    widest <- refs[[which.max(map_int(refs, length))]]
+    if (all(map_lgl(refs, .ldmCoveredBy, by = widest))) {
+        return(widest)
+    }
+    abort(c(
+        glue(
+            "{fn}: the inputs' LdMatrix references cover different variants, ",
+            "and the LD between them is held by none."
+        ),
+        i = "Pass an LdMatrix covering all of their variants as `ldReference`."
+    ))
+}
+
+# Mixture references combine like LdMatrix ones: when one of them already
+# holds every other's variants and they average the same panels with the
+# same weights. Their panels stay lazy, so the widest mixture loses nothing.
+# @noRd
+.combineMixtureRefs <- function(refs, fn) {
+    if (!all(map_lgl(refs, .ldIsMixtureRef))) {
+        msg <- glue(
+            "{fn}: inputs mix GenotypeMixture references with other kinds; ",
+            "combine collections that share one LD reference."
+        )
+        abort(msg)
+    }
+    widest <- refs[[which.max(map_int(refs, .ldRefNVariants))]]
+    sameMix <- map_lgl(refs, .gmSameMixture, y = widest)
+    covered <- map_lgl(refs, .ldRefVariantsCoveredBy, by = widest)
+    if (all(sameMix & covered)) {
+        return(widest)
+    }
+    abort(c(
+        glue(
+            "{fn}: the inputs' GenotypeMixture references differ or cover ",
+            "different variants."
+        ),
+        i = "Pass the mixture covering all of their variants as `ldReference`."
+    ))
+}
+
+# TRUE when every variant of `x` is in `by`, coded the same way.
+# @noRd
+.ldRefVariantsCoveredBy <- function(x, by) {
+    m <- matchVariants(
+        .ldRefMatchIds(x),
+        .ldRefMatchIds(by),
+        removeStrandAmbiguous = FALSE
+    )
+    length(m$idxA) == .ldRefNVariants(x) && all(m$sign > 0)
+}
+
+# TRUE when every variant of `x` is in `by`, coded the same way, with the
+# same LD.
+# @noRd
+.ldmCoveredBy <- function(x, by) {
+    m <- matchVariants(
+        .ldRefMatchIds(x),
+        .ldRefMatchIds(by),
+        removeStrandAmbiguous = FALSE
+    )
+    length(m$idxA) == length(x) &&
+        all(m$sign > 0) &&
+        .ldmAgreesOn(x, by, m$idxA, m$idxB)
+}
+
+# Union the per-chromosome shard paths across LD references (panels, or
+# bare handles). Two sketches trimmed from one genoMeta panel to different
+# chromosomes share path/format/samples and differ ONLY here, so unioning is
+# what lets their rows keep routing: a row reaches its file by its own CHR.
+# One chromosome mapping to two different files means the parts are not the
+# same panel after all.
+# @noRd
+.ssUnionChromPaths <- function(refs, fn) {
+    combined <- .ssConcatChr(map(refs, .ldRefChromPaths))
     byChrom <- split(unname(combined), names(combined))
     walk2(names(byChrom), byChrom, .ssCheckOneFilePerChrom, fn = fn)
     # Every chromosome agrees, so the first mapping stands for all of them.
     combined[!duplicated(names(combined))]
-}
-
-# @noRd
-.ssHandleChromPaths <- function(h) {
-    h@chromPaths
 }
 
 # @noRd
@@ -1400,41 +1506,48 @@
     }
     msg <- glue(
         "{fn}: chromosome '{ch}' maps to two different genotype ",
-        "files across the inputs, so their LD sketches cannot ",
+        "files across the inputs, so their LD references cannot ",
         "be unioned."
     )
     abort(msg)
 }
 
-# Every panel must read from the same file(s): the union keeps the first
-# handle and widens its snpInfo, and each row's `fileIdx` addresses a position
-# in THAT file, so rows from another panel would read the wrong variants.
+# Every panel must read from the same file(s) and samples: a handle union
+# keeps the first handle and widens its snpInfo, each row's `fileIdx`
+# addressing a position in THAT file, and a panel union binds the parts over
+# the first one's samples.
 # @noRd
-.ssCheckSameSource <- function(handles, fn) {
-    same <- map_lgl(handles, .ssSameGenotypeSource, first = handles[[1L]])
+.ssCheckSameSource <- function(sketches, fn) {
+    same <- map_lgl(sketches, .ssSameGenotypeSource, first = sketches[[1L]])
     if (all(same)) {
         return(invisible(NULL))
     }
     msg <- glue(
         "{fn}: inputs reference different genotype panels (input ",
-        "{which(!same)[[1L]]} differs from the first). Their LD sketches ",
+        "{which(!same)[[1L]]} differs from the first). Their LD references ",
         "cannot be unioned."
     )
     abort(msg)
 }
 
 # @noRd
-.ssSameGenotypeSource <- function(h, first) {
+.ssSameGenotypeSource <- function(x, first) {
     # chromPaths is deliberately NOT compared: two sketches trimmed from the
     # same genoMeta panel to different chromosomes differ there and nowhere
     # else, and .ssUnionChromPaths() merges them (erroring on a genuine
     # conflict). Everything below must match for the union to mean anything --
-    # snpInfo rows carry file POSITIONS, which only make sense against the
-    # same files and the same sample axis.
-    identical(h@path, first@path) &&
-        identical(h@format, first@format) &&
-        identical(h@nSamples, first@nSamples) &&
-        identical(h@sampleIds, first@sampleIds)
+    # rows address the same files, over the same sample axis.
+    a <- .ldRefSource(x)
+    b <- .ldRefSource(first)
+    identical(a$path, b$path) &&
+        identical(a$format, b$format) &&
+        identical(.ssSampleIds(x), .ssSampleIds(first))
+}
+
+# An LD reference's samples: a panel's columns, a bare handle's sample ids.
+# @noRd
+.ssSampleIds <- function(x) {
+    if (methods::is(x, "GenotypeHandle")) sampleIds(x) else colnames(x)
 }
 
 # The parts' snpInfo rows, de-duplicated by variant id and returned in genomic

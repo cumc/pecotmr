@@ -1,9 +1,11 @@
 # =============================================================================
 # GenotypeHandle S4 class
 # -----------------------------------------------------------------------------
-# Lazy file handle for genotype data (PLINK1, PLINK2, VCF/BCF, GDS). Opens
-# the file for metadata only (sample IDs and SNP info); dosage extraction
-# is deferred until extractBlockGenotypes() is called.
+# Lazy file handle for genotype data (PLINK2, BGEN). Opens the file for
+# metadata only (sample IDs and SNP info); dosage extraction is deferred until
+# extractBlockGenotypes() is called. A VCF, GDS or PLINK1 file is read as a
+# panel directly, through a GenotypeDosageSeed (genotypeIo.R), not through a
+# handle.
 # =============================================================================
 
 #' @include AllGenerics.R
@@ -11,13 +13,13 @@ NULL
 
 #' @title Genotype File Handle
 #' @description S4 container holding a path + format + metadata for lazy
-#'   genotype access. Supports PLINK1 (.bed/.bim/.fam), PLINK2
-#'   (.pgen/.pvar/.psam), VCF/BCF, and GDS.
+#'   genotype access. Supports PLINK2 (.pgen/.pvar/.psam) and BGEN (.bgen
+#'   with its .bgi index); a VCF, GDS or PLINK1 file is read as a panel by
+#'   \code{readGenotypes()} without one.
 #' @slot path Character, file path. For a one-file-per-chromosome handle this is
 #'   the chrom-meta file path (a display/provenance value); the per-chromosome
 #'   payload files live in \code{chromPaths}.
-#' @slot format Character, one of \code{"plink1"}, \code{"plink2"},
-#'   \code{"vcf"}, \code{"gds"}.
+#' @slot format Character, \code{"plink2"} or \code{"bgen"}.
 #' @slot snpInfo data.frame, SNP metadata read from the index/sidecar. For a
 #'   sharded handle this is the union across chromosomes (row-bound in the order
 #'   the shards were supplied), so \code{snpIdx} stays a single global index
@@ -49,7 +51,7 @@ setClass(
         chromPaths = character(0)
     ),
     validity = function(object) {
-        validFormats <- c("gds", "vcf", "plink1", "plink2")
+        validFormats <- c("plink2", "bgen")
         nm <- names(object@chromPaths)
         badChromPaths <- length(object@chromPaths) > 0L &&
             (is.null(nm) || any(str_length(nm) == 0L) || anyDuplicated(nm))
@@ -100,54 +102,51 @@ setMethod("show", "GenotypeHandle", function(object) {
 #'   forms. Exactly one of the following must be specified:
 #'   \describe{
 #'     \item{\code{path}}{A single file path with a recognized extension:
-#'       \code{.vcf}, \code{.vcf.gz}, \code{.vcf.bgz}, \code{.bcf}, or
-#'       \code{.gds}. Format is auto-detected from the extension.}
-#'     \item{\code{plink1Prefix}}{A path prefix; the constructor appends
-#'       \code{.bed}, \code{.bim}, and \code{.fam} to locate the triplet.}
+#'       \code{.bgen} or \code{.pgen}. Format is auto-detected from the
+#'       extension. A BGEN file needs its \code{.bgi} index beside it, and
+#'       its sample ids in the file or in a \code{.sample} file beside it. A
+#'       VCF, GDS or PLINK1 file is refused: it is read as a panel by
+#'       \code{readGenotypes()}.}
 #'     \item{\code{plink2Prefix}}{A path prefix; the constructor appends
 #'       \code{.pgen}, \code{.pvar} (or \code{.pvar.zst}), and \code{.psam}
 #'       to locate the triplet.}
-#'     \item{\code{bed} + \code{bim} + \code{fam}}{Explicit PLINK1 triplet.
-#'       The three files must share a stem; if they don't, use
-#'       \code{plink1Prefix} or arrange symlinks at a common stem.}
 #'     \item{\code{pgen} + \code{pvar} + \code{psam}}{Explicit PLINK2
-#'       triplet. Same shared-stem requirement.}
+#'       triplet. The three files must share a stem; if they don't, use
+#'       \code{plink2Prefix} or arrange symlinks at a common stem.}
 #'     \item{\code{genoMeta}}{One genotype file per chromosome. Either a path
 #'       to a whitespace/TSV meta file whose first column is the chromosome
 #'       (\code{#chr}) and second column the per-chromosome payload
-#'       (a \code{.bed}/\code{.pgen}/\code{.vcf[.gz]}/\code{.bcf}/\code{.gds}
-#'       file or a PLINK prefix; relative paths resolve against the meta
-#'       file's directory), or a named character vector mapping chromosome to
-#'       payload. All shards must share one format and identical sample IDs in
-#'       the same order. Extraction is routed to the correct file by the
-#'       requested region's chromosome.}
+#'       (a \code{.pgen}/\code{.bgen} file or a PLINK2 prefix;
+#'       relative paths resolve against the meta file's directory), or a
+#'       named character vector mapping chromosome to payload. All shards
+#'       must share one format and identical sample IDs in the same order.
+#'       Extraction is routed to the correct file by the requested region's
+#'       chromosome.}
 #'   }
 #'   The constructor opens the file for metadata only (sample IDs and SNP
 #'   info); dosage extraction is deferred until \code{extractBlockGenotypes()}
 #'   is called.
 #'
-#' @param path Single file path (.vcf/.vcf.gz/.vcf.bgz/.bcf/.gds), or
-#'   \code{NULL}.
-#' @param plink1Prefix Path prefix for a PLINK1 triplet, or \code{NULL}.
+#' @param path Single file path (.bgen/.pgen), or \code{NULL}.
 #' @param plink2Prefix Path prefix for a PLINK2 triplet, or \code{NULL}.
-#' @param bed,bim,fam Explicit paths to the PLINK1 triplet, or all \code{NULL}.
 #' @param pgen,pvar,psam Explicit paths to the PLINK2 triplet, or all
 #'   \code{NULL}.
 #' @param ldMeta Path to an LD-meta TSV file (columns \code{chrom},
 #'   \code{start}, \code{end}, \code{path}; the \code{path} column may be
 #'   comma-separated as \code{ld_file,bim_file}). Requires \code{region}. The
 #'   constructor resolves the row covering \code{region}, then delegates to the
-#'   appropriate file-based handler. When the resolved row points at PLINK1 /
-#'   PLINK2 / VCF / GDS files, the corresponding reader is used; \code{.cor.xz}
-#'   (pre-computed LD-matrix) rows are not supported here -- use
-#'   \code{\link{loadLdMatrix}} for that case.
+#'   appropriate file-based handler. When the resolved row points at PLINK2
+#'   or BGEN files, the corresponding reader is used; a row pointing
+#'   at a pre-computed LD matrix (\code{.cor.xz}) is refused, as pecotmr reads
+#'   no pre-computed LD from disk -- wrap such a matrix in an
+#'   \code{\link{LdMatrix}} instead.
 #' @param region Region specification for \code{ldMeta} lookup:
 #'   \code{"chr:start-end"} string or a one-row data.frame with \code{chrom},
 #'   \code{start}, \code{end}.
 #' @param genoMeta One-file-per-chromosome specification: a path to a
 #'   \code{#chr,path} meta file or a named character vector (names =
 #'   chromosomes, values = payload paths/prefixes). Optionally pass
-#'   \code{format} via \code{...} to force a single backend for every shard.
+#'   \code{format} to force a single backend for every shard.
 #' @param chroms Optional character vector of chromosomes. With \code{genoMeta}
 #'   (a sharded, one-file-per-chromosome panel) only the shards whose chromosome
 #'   is listed are read, skipping the rest -- an I/O optimisation when the panel
@@ -157,18 +156,15 @@ setMethod("show", "GenotypeHandle", function(object) {
 #'   shard is read (so the caller's own absence check can report the mismatch).
 #'   Only meaningful with \code{genoMeta}; supplying it with any other source is
 #'   an error (a single-file panel has no per-chromosome shards to skip).
-#' @param vcfArgs Optional named list of arguments forwarded to
-#'   \code{VariantAnnotation::readVcf} when the source is a VCF.
+#' @param format Character, \code{"plink2"} or \code{"bgen"}, forcing the
+#'   backend of \code{path} or of every \code{genoMeta} shard. If NULL,
+#'   inferred from the file extension.
 #' @return A \code{GenotypeHandle} object.
 #' @keywords internal
 #' @rdname GenotypeHandle-class
 GenotypeHandle <- function(
     path = NULL,
-    plink1Prefix = NULL,
     plink2Prefix = NULL,
-    bed = NULL,
-    bim = NULL,
-    fam = NULL,
     pgen = NULL,
     pvar = NULL,
     psam = NULL,
@@ -176,13 +172,12 @@ GenotypeHandle <- function(
     region = NULL,
     genoMeta = NULL,
     chroms = NULL,
-    format = NULL,
-    vcfArgs = list()
+    format = NULL
 ) {
     flags <- .ghValidateArgs(
-        bed = bed,
-        bim = bim,
-        fam = fam,
+        bed = NULL,
+        bim = NULL,
+        fam = NULL,
         pgen = pgen,
         pvar = pvar,
         psam = psam,
@@ -191,28 +186,20 @@ GenotypeHandle <- function(
     )
     sources <- .ghResolveSources(
         path = path,
-        plink1Prefix = plink1Prefix,
+        plink1Prefix = NULL,
         plink2Prefix = plink2Prefix,
         ldMeta = ldMeta,
         genoMeta = genoMeta,
         chroms = chroms,
         flags = flags
     )
-    # .ghResolveSources() has already enforced that exactly one is TRUE, so
-    # the chosen name is well defined and the switch is total.
     switch(
         names(sources)[which(sources)],
-        path = .readGenotypeHandle(path, format = format, vcfArgs = vcfArgs),
-        plink1Prefix = .makePlink1Handle(plink1Prefix),
+        path = .readGenotypeHandle(path, format = format),
         plink2Prefix = .makePlink2Handle(plink2Prefix),
-        plink1Triplet = .genotypeHandleFromPlink1Triplet(bed, bim, fam),
         plink2Triplet = .genotypeHandleFromPlink2Triplet(pgen, pvar, psam),
-        ldMeta = .genotypeHandleFromLdMeta(ldMeta, region, vcfArgs = vcfArgs),
-        genoMeta = .genotypeHandleFromChromMeta(
-            genoMeta,
-            chroms = chroms,
-            format = format
-        )
+        ldMeta = .genotypeHandleFromLdMeta(ldMeta, region),
+        genoMeta = .genotypeHandleFromChromMeta(genoMeta, chroms, format)
     )
 }
 
@@ -250,7 +237,8 @@ GenotypeHandle <- function(
 }
 
 # Build the exactly-one-source indicator vector; error unless exactly one input
-# source was supplied, and gate `chroms` to the genoMeta path.
+# source was supplied, and gate `chroms` to the genoMeta path. Because exactly
+# one entry is TRUE, GenotypeHandle()'s switch on its name is total.
 # @noRd
 .ghResolveSources <- function(
     path,
@@ -290,9 +278,8 @@ GenotypeHandle <- function(
     sources
 }
 
-.genotypeHandleFromLdMeta <- function(ldMeta, region, vcfArgs = list()) {
-    ldPath <- .ghResolveLdPath(ldMeta, region)
-    .ghLdPathToHandle(ldPath, vcfArgs = vcfArgs)
+.genotypeHandleFromLdMeta <- function(ldMeta, region) {
+    .ghLdPathToHandle(.ghResolveLdPath(ldMeta, region))
 }
 
 # Resolve the single genotype-payload path for `region` from an LD meta,
@@ -303,7 +290,7 @@ GenotypeHandle <- function(
     if (length(ldPaths) == 0L) {
         regionStr <- deparse(region)
         msg <- glue(
-            "GenotypeHandle: no LD-meta row covers region {regionStr} ",
+            "ldMeta: no LD-meta row covers region {regionStr} ",
             "in {ldMeta}."
         )
         abort(msg)
@@ -311,10 +298,9 @@ GenotypeHandle <- function(
     if (length(ldPaths) > 1L) {
         regionStr <- deparse(region)
         msg <- glue(
-            "GenotypeHandle: region {regionStr} spans multiple LD-meta ",
-            "rows; the GenotypeHandle constructor only resolves single-row ",
-            "regions. Use loadLdMatrix() for multi-row regions, or restrict ",
-            "the region to a single LD block."
+            "ldMeta: region {regionStr} spans multiple LD-meta rows; ",
+            "only a region within one row is resolved. Restrict the region ",
+            "to a single LD block."
         )
         abort(msg)
     }
@@ -322,53 +308,49 @@ GenotypeHandle <- function(
     if (str_detect(ldPath, regex("\\.cor(\\.xz)?$", ignore_case = TRUE))) {
         regionStr <- deparse(region)
         msg <- glue(
-            "GenotypeHandle: the LD-meta row for region {regionStr} points ",
-            "at a pre-computed correlation matrix ({ldPath}). Use ",
-            "loadLdMatrix() for .cor.xz inputs; ",
-            "GenotypeHandle accepts only genotype payloads (VCF/GDS/PLINK)."
+            "ldMeta: the LD-meta row for region {regionStr} points at a ",
+            "pre-computed correlation matrix ({ldPath}). pecotmr does not ",
+            "read pre-computed LD from disk; wrap the matrix in an LdMatrix ",
+            "instead. An LD-meta row names genotypes (VCF/GDS/BGEN/PLINK)."
         )
         abort(msg)
     }
     ldPath
 }
 
-# Dispatch a resolved genotype path to the format-specific reader by extension.
+# The handle of the genotype file or PLINK prefix an LD-meta row names, for a
+# format a GenotypeHandle reads.
 # @noRd
-.ghLdPathToHandle <- function(ldPath, vcfArgs = list()) {
-    lower <- str_to_lower(ldPath)
-    if (str_detect(lower, "\\.vcf(\\.b?gz)?$") || str_ends(lower, "\\.bcf")) {
-        return(.readGenotypeHandle(ldPath, format = "vcf", vcfArgs = vcfArgs))
-    }
-    if (str_ends(lower, "\\.gds")) {
-        return(.readGenotypeHandle(ldPath, format = "gds"))
-    }
-    if (str_ends(lower, "\\.bed")) {
-        return(.makePlink1Handle(
-            str_remove(ldPath, regex("\\.bed$", ignore_case = TRUE))
-        ))
-    }
-    if (str_ends(lower, "\\.pgen")) {
-        return(.makePlink2Handle(
-            str_remove(ldPath, regex("\\.pgen$", ignore_case = TRUE))
-        ))
-    }
-    msg <- glue(
-        "GenotypeHandle: unsupported LD-meta file extension on ",
-        "'{ldPath}'. Expected one of ",
-        ".vcf/.vcf.gz/.vcf.bgz/.bcf/.gds/.bed/.pgen."
+.ghLdPathToHandle <- function(ldPath) {
+    .readGenotypeHandle(
+        ldPath,
+        format = .requireGenotypeFormat(ldPath, "ldMeta")
     )
-    abort(msg)
 }
 
+# The panel of the genotype file or PLINK prefix an LD-meta row names, in any
+# format.
+# @noRd
+.ghLdPathToPanel <- function(ldPath, vcfArgs = list()) {
+    .readGenotypePanel(
+        ldPath,
+        format = .requireGenotypeFormat(ldPath, "ldMeta"),
+        vcfArgs = vcfArgs
+    )
+}
+
+# The stem the three files of a PLINK1 triplet share, which is how its panel
+# is read.
+# @noRd
 #' @importFrom checkmate assertString
-.genotypeHandleFromPlink1Triplet <- function(bed, bim, fam) {
+.plink1TripletStem <- function(bed, bim, fam) {
     assertString(bed)
     assertString(bim)
     assertString(fam)
     stems <- c(
-        bed = file_path_sans_ext(bed),
-        bim = file_path_sans_ext(bim),
-        fam = file_path_sans_ext(fam)
+        bed = .genotypeStem(bed),
+        bim = .genotypeStem(bim),
+        fam = .genotypeStem(fam)
     )
     if (n_distinct(stems) != 1L) {
         stemList <- str_c("  ", names(stems), ": ", stems, collapse = "\n")
@@ -382,7 +364,7 @@ GenotypeHandle <- function(
         )
         abort(msg)
     }
-    .makePlink1Handle(unname(stems[1L]))
+    unname(stems[1L])
 }
 
 .genotypeHandleFromPlink2Triplet <- function(pgen, pvar, psam) {
@@ -391,11 +373,10 @@ GenotypeHandle <- function(
             abort("Each of `pgen`, `pvar`, `psam` must be a single file path.")
         }
     }
-    pvarStem <- str_remove(pvar, regex("\\.zst$", ignore_case = TRUE))
     stems <- c(
-        pgen = file_path_sans_ext(pgen),
-        pvar = file_path_sans_ext(pvarStem),
-        psam = file_path_sans_ext(psam)
+        pgen = .genotypeStem(pgen),
+        pvar = .genotypeStem(pvar),
+        psam = .genotypeStem(psam)
     )
     if (n_distinct(stems) != 1L) {
         stemList <- str_c("  ", names(stems), ": ", stems, collapse = "\n")
@@ -447,7 +428,7 @@ GenotypeHandle <- function(
     if (length(multi) > 0L) {
         multiStr <- str_flatten(multi, ", ")
         msg <- glue(
-            "GenotypeHandle(genoMeta): chromosome(s) {multiStr} map to ",
+            "genoMeta: chromosome(s) {multiStr} map to ",
             "multiple genotype payloads; each chromosome must map to ",
             "exactly one payload (no sub-chromosomal blocks)."
         )
@@ -480,7 +461,7 @@ GenotypeHandle <- function(
         )))
     }
     msg <- glue(
-        "GenotypeHandle(genoMeta): expected a path to a `#chr,path` meta ",
+        "genoMeta: expected a path to a `#chr,path` meta ",
         "file or a named character vector (names = chromosomes, ",
         "values = paths)."
     )
@@ -508,7 +489,7 @@ GenotypeHandle <- function(
     )
     if (ncol(meta) < 2L) {
         msg <- glue(
-            "GenotypeHandle(genoMeta): meta file '{genoMeta}' must have ",
+            "genoMeta: meta file '{genoMeta}' must have ",
             "at least 2 columns (chromosome, path)."
         )
         abort(msg)
@@ -536,51 +517,50 @@ GenotypeHandle <- function(
     map_chr(pth, .ghResolvePath, base = base)
 }
 
-# Build a single-file GenotypeHandle for one shard payload, dispatching to the
-# right reader. `format` (optional) forces a backend; otherwise it is detected
-# from the file extension, falling back to PLINK prefix probing.
+# The format of one shard payload: `format` when it is forced, else told by
+# the file extension, falling back to probing a PLINK prefix's sidecars.
+# Nothing is read, so a set's shards can be checked to share one format
+# before any of them is.
+# @noRd
+.shardFormat <- function(p, format = NULL) {
+    format %||% .requireGenotypeFormat(p, "genoMeta")
+}
+
+# Build a single-file GenotypeHandle for one shard payload, of a format a
+# handle reads. `format` (optional) forces a backend; otherwise it is detected
+# as .shardFormat() detects it.
 #' @keywords internal
 .resolveGenotypeShard <- function(p, format = NULL) {
-    lower <- str_to_lower(p)
-    if (!is.null(format)) {
-        if (format == "plink1") {
-            return(.makePlink1Handle(p))
-        }
-        if (format == "plink2") {
-            return(.makePlink2Handle(p))
-        }
-        return(.readGenotypeHandle(p, format = format))
+    .readGenotypeHandle(p, format = .shardFormat(p, format))
+}
+
+# The panel of a per-chromosome meta. A VCF, GDS or PLINK1 set is its
+# shards' panels stacked (.stackDosagePanels()); a set in a format a handle
+# reads, one sharded handle's panel. `chroms` (optional) restricts the read
+# to the shards for those chromosomes, as for .genotypeHandleFromChromMeta().
+# @noRd
+.chromMetaPanel <- function(genoMeta, chroms = NULL, format = NULL) {
+    parsed <- .parseChromMeta(genoMeta)
+    if (nrow(parsed) == 0L) {
+        abort(
+            "genoMeta: no chromosomes found in the meta input."
+        )
     }
-    if (str_detect(lower, "\\.vcf(\\.b?gz)?$") || str_ends(lower, "\\.bcf")) {
-        return(.readGenotypeHandle(p, format = "vcf"))
-    }
-    if (str_ends(lower, "\\.gds")) {
-        return(.readGenotypeHandle(p, format = "gds"))
-    }
-    if (str_ends(lower, "\\.bed")) {
-        return(.makePlink1Handle(
-            str_remove(p, regex("\\.bed$", ignore_case = TRUE))
+    selected <- .chromMetaSelect(parsed, chroms)
+    formats <- map_chr(selected$path, .shardFormat, format = format)
+    shared <- .chromMetaCheckFormats(formats)
+    if (!is_in(shared, .DOSAGE_PANEL_FORMATS)) {
+        return(.genotypeExperiment(
+            .genotypeHandleFromChromMeta(genoMeta, chroms, format)
         ))
     }
-    if (str_ends(lower, "\\.pgen")) {
-        return(.makePlink2Handle(
-            str_remove(p, regex("\\.pgen$", ignore_case = TRUE))
-        ))
-    }
-    # No recognized extension: treat as a PLINK prefix, probe for the sidecar.
-    if (file.exists(str_c(p, ".bed"))) {
-        return(.makePlink1Handle(p))
-    }
-    if (file.exists(str_c(p, ".pgen"))) {
-        return(.makePlink2Handle(p))
-    }
-    msg <- glue(
-        "GenotypeHandle(genoMeta): cannot determine genotype format for ",
-        "'{p}'. Use a recognized extension ",
-        "(.bed/.pgen/.vcf[.gz]/.bcf/.gds), a PLINK prefix, or pass ",
-        "`format=`."
-    )
-    abort(msg)
+    panels <- map2(selected$path, formats, .readDosagePanel)
+    .withSourceProjection(.stackDosagePanels(
+        panels,
+        shared,
+        .chromMetaPath(genoMeta),
+        selected$path
+    ))
 }
 
 # Assemble a sharded handle from a per-chromosome meta. Reads each shard's
@@ -599,12 +579,12 @@ GenotypeHandle <- function(
     parsed <- .parseChromMeta(genoMeta)
     if (nrow(parsed) == 0L) {
         abort(
-            "GenotypeHandle(genoMeta): no chromosomes found in the meta input."
+            "genoMeta: no chromosomes found in the meta input."
         )
     }
     selected <- .chromMetaSelect(parsed, chroms)
     shards <- map(selected$path, .resolveGenotypeShard, format = format)
-    sharedFormat <- .chromMetaCheckFormats(shards)
+    sharedFormat <- .chromMetaCheckFormats(map_chr(shards, .ghFormat))
     .chromMetaCheckSamples(shards, selected)
     unifiedSnpInfo <- bind_rows(map(shards, .ghSnpInfo))
     new(
@@ -635,14 +615,13 @@ GenotypeHandle <- function(
     if (any(keep)) filter(parsed, keep) else parsed
 }
 
-# Require a single shared format across shards; returns it.
+# Require a single shared format across shards' `formats`; returns it.
 # @noRd
-.chromMetaCheckFormats <- function(shards) {
-    formats <- map_chr(shards, .ghFormat)
+.chromMetaCheckFormats <- function(formats) {
     if (n_distinct(formats) != 1L) {
         formatStr <- str_flatten(unique(formats), ", ")
         msg <- glue(
-            "GenotypeHandle(genoMeta): all per-chromosome files must share ",
+            "genoMeta: all per-chromosome files must share ",
             "one format; got: {formatStr}."
         )
         abort(msg)
@@ -658,7 +637,7 @@ GenotypeHandle <- function(
         if (!identical(shards[[i]]@sampleIds, sample0)) {
             mismatchPath <- parsed$path[[i]]
             msg <- glue(
-                "GenotypeHandle(genoMeta): all per-chromosome files must ",
+                "genoMeta: all per-chromosome files must ",
                 "have identical sample IDs in the same order (mismatch ",
                 "at '{mismatchPath}')."
             )
@@ -683,7 +662,7 @@ GenotypeHandle <- function(
         return(invisible(NULL))
     }
     msg <- glue(
-        "GenotypeHandle(genoMeta): chromosome '{ch}' appears ",
+        "genoMeta: chromosome '{ch}' appears ",
         "in more than one per-chromosome file."
     )
     abort(msg)

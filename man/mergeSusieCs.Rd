@@ -8,7 +8,7 @@ mergeSusieCs(fineMappingResult, coverage = 0.95)
 }
 \arguments{
 \item{fineMappingResult}{A \code{\link{QtlFineMappingResult}} (or any
-\code{FineMappingResult}) produced by per-condition SuSiE fine-mapping.
+\code{FineMappingResultBase}) produced by per-condition SuSiE fine-mapping.
 Each entry's \code{topLoci} must carry a credible-set column
 (\code{cs_<coverage*100>}, e.g. \code{cs_95}, with values such as
 \code{"susie_1"} where the trailing integer is the set index and \code{_0}

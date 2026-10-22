@@ -11,71 +11,40 @@
 # topologically orders the Collate field for us.
 # =============================================================================
 
-#' @include AllGenerics.R GenotypeHandle.R RangedTupleList.R
+#' @include AllGenerics.R GenotypeHandle.R RangedTupleList.R LdMatrix.R
+#' @include GenotypeMixture.R
 #' @importFrom methods setClass setMethod new is validObject
-NULL
-
-# The LD reference panel a collection was harmonized against, as the same
-# RangedSummarizedExperiment shape QtlDataset uses for its genotypes: variants
-# in rowRanges, dosages in a DelayedArray assay that reads lazily through a
-# GenotypeHandle. NULL when a collection carries no panel.
-#
-# A union rather than "ANY": the slot has always been documented as holding a
-# panel, and an untyped slot with a typed docstring is the kind of thing that
-# is only true until someone puts something else in it.
-#' @importClassesFrom SummarizedExperiment RangedSummarizedExperiment
-setClassUnion(
-    "LdSketch_OR_NULL",
-    c("RangedSummarizedExperiment", "NULL")
-)
-
-# What an LdData can read genotypes from. Four shapes, all real:
-#
-#   GenotypeHandle  a lazy file-backed panel; `snpIdx` selects into its whole
-#                   snpInfo, so the handle must not be pre-narrowed
-#   list            one handle per panel for a mixture reference, averaged by
-#                   `mixtureWeights`
-#   matrix          dosages already extracted and filtered, kept so
-#                   genotypes() answers without reopening the file (see
-#                   .loadLdFromBlocks); `snpIdx` is NULL in this case because
-#                   the matrix is already the subset
-#   NULL            no genotypes -- the object carries a pre-computed R
-#
-# A panel (RangedSummarizedExperiment) is what callers pass; the constructor
-# unwraps it to its handle, so the slot itself never holds one.
-#
-# A union rather than "ANY", for the same reason as above: the slot's
-# docstring named two of these four shapes and nothing enforced even that.
-setClassUnion(
-    "LdGenotypeSource",
-    c("GenotypeHandle", "matrix", "list", "NULL")
-)
-
-# The rest of LdData's payload, typed for the same reason. Each union is the
-# set of shapes the class is actually built with, confirmed by recording slot
-# classes at validity across the LD test files (validity runs for every
-# object, however it was constructed).
-#
-# `correlation` is a single matrix, or one matrix per block for
-# block-diagonal LD, or NULL when it has to be computed from genotypes.
-setClassUnion("LdCorrelation", c("matrix", "list", "NULL"))
-
-# `snpIdx` selects into the genotype source's snpInfo; NULL when the
-# correlation is pre-computed, or when the source is already the subset. The
-# constructor coerces to integer, so a caller may pass doubles.
-setClassUnion("LdSnpIndex", c("integer", "NULL"))
-
-# Mixing proportions, one per panel, when `genotypeHandle` is a list.
 #' @importClassesFrom GenomicRanges GRanges
 #' @importClassesFrom S4Vectors DataFrame
-setClassUnion("LdMixtureWeights", c("numeric", "NULL"))
+NULL
+
+# The LD reference a collection was harmonized against -- the one place every
+# pipeline reads LD from. It is one of two things:
+#
+#   RangedSummarizedExperiment  a genotype panel, the same shape QtlDataset
+#                               uses for its genotypes: variants in rowRanges,
+#                               dosages in a DelayedArray assay that reads
+#                               lazily through a GenotypeHandle
+#   GenotypeMixture             several such panels, their LD averaged
+#   LdMatrix                    a correlation matrix the caller built
+#
+# NULL when a collection carries no LD reference.
+#
+# A union rather than "ANY": the slot has always been documented as holding
+# one of these, and an untyped slot with a typed docstring is the kind of
+# thing that is only true until someone puts something else in it.
+#' @importClassesFrom SummarizedExperiment RangedSummarizedExperiment
+setClassUnion(
+    "LdReference_OR_NULL",
+    c("RangedSummarizedExperiment", "GenotypeMixture", "LdMatrix", "NULL")
+)
 
 # =============================================================================
 # SumStatsBase
 # -----------------------------------------------------------------------------
 # Shared parent of the QTL and GWAS summary statistics collections.
 # Concrete subclasses (QtlSumStats, GwasSumStats) inherit from
-# RangedTupleList and share the ldSketch / qcInfo slots (the genome build
+# RangedTupleList and share the ldReference / qcInfo slots (the genome build
 # lives in seqinfo, not a slot). Each element
 # is one tuple's per-variant GRanges: x[[i]], formerly x$entry[[i]].
 #
@@ -89,17 +58,20 @@ setClassUnion("LdMixtureWeights", c("numeric", "NULL"))
 #' @description Virtual base class for QTL and GWAS summary statistics
 #'   collections. Concrete subclasses (\code{QtlSumStats}, \code{GwasSumStats})
 #'   inherit from \code{\linkS4class{RangedTupleList}} and share the
-#'   \code{ldSketch} / \code{qcInfo} slots, and the genome build in
+#'   \code{ldReference} / \code{qcInfo} slots, and the genome build in
 #'   \code{seqinfo()}.
 #'
 #'   Each element is the per-variant \code{GRanges} of one tuple, so
 #'   \code{x[[i]]} is that tuple's summary statistics and the identity columns
 #'   live in \code{mcols(x)}. There is no \code{entry} column: what used to be
 #'   \code{x$entry[[i]]} is now simply \code{x[[i]]}.
-#' @slot ldSketch The \code{GenotypeHandle} the QC pipeline harmonized against,
-#'   or \code{NULL}. Optional: LD-free workflows (e.g. mash, which operates
-#'   across conditions per variant) carry \code{NULL}; pipelines that need LD
-#'   validate its presence when they consume the collection.
+#' @slot ldReference The LD reference the collection was harmonized against
+#'   and every pipeline reads LD from: a genotype panel (see
+#'   \code{\link{readGenotypes}}), a \code{\link{GenotypeMixture}} or an
+#'   \code{\link{LdMatrix}}, or \code{NULL}. Optional: LD-free workflows
+#'   (e.g. mash, which operates across conditions per variant) carry
+#'   \code{NULL}; pipelines that need LD validate its presence when they
+#'   consume the collection.
 #' @slot qcInfo A \code{list} recording which QC steps ran. Empty \code{list()}
 #'   on construction; populated by \code{summaryStatsQc()} with a per-step audit
 #'   record (filter names, drop counts, liftover target, RAISS settings, etc.).
@@ -111,7 +83,7 @@ setClass(
     "SumStatsBase",
     contains = c("VIRTUAL", "RangedTupleList"),
     representation(
-        ldSketch = "LdSketch_OR_NULL",
+        ldReference = "LdReference_OR_NULL",
         qcInfo = "list"
     )
 )
@@ -164,8 +136,10 @@ setClass(
         return(gr)
     }
     win <- .asGRegion(ranges)
-    onWindowChrom <- as.character(seqnames(gr)) %in%
+    onWindowChrom <- is_in(
+        as.character(seqnames(gr)),
         as.character(seqnames(win))
+    )
     if (!any(onWindowChrom)) {
         return(gr[0L])
     }
@@ -246,12 +220,12 @@ setMethod("qcDiagnostics", "SumStatsBase", function(x, entry = 1L) {
     }
 })
 
-#' @rdname ldSketch
+#' @rdname ldReference
 #' @examples
 #' data(qtlSumStatsExample)
-#' ldSketch(qtlSumStatsExample)
+#' ldReference(qtlSumStatsExample)
 #' @export
-setMethod("ldSketch", "SumStatsBase", function(x) x@ldSketch)
+setMethod("ldReference", "SumStatsBase", function(x) x@ldReference)
 
 #' @rdname studyName
 #' @examples
@@ -729,7 +703,7 @@ setMethod(
 # -----------------------------------------------------------------------------
 # Shared parent of the QTL and GWAS fine-mapping result collections.
 # Concrete subclasses (QtlFineMappingResult, GwasFineMappingResult) carry
-# a DFrame of per-fit rows plus a shared ldSketch slot. Downstream
+# a DFrame of per-fit rows plus a shared ldReference slot. Downstream
 # pipelines dispatch on FineMappingResultBase for behaviors that apply to
 # either flavour, and on the concrete subclass when the tuple shape
 # matters.
@@ -738,19 +712,20 @@ setMethod(
 #' @title Fine-Mapping Result Base Class
 #' @description Virtual base class for fine-mapping result collections. Concrete
 #'   subclasses (\code{QtlFineMappingResult}, \code{GwasFineMappingResult})
-#'   carry a \code{DFrame} of per-fit rows and a shared \code{ldSketch} slot.
+#'   carry a \code{DFrame} of per-fit rows and a shared \code{ldReference} slot.
 #'   Downstream pipelines should dispatch on \code{FineMappingResultBase} for
 #'   behaviors that apply to either flavour, and on the concrete subclass when
 #'   the tuple shape matters.
-#' @slot ldSketch The LD reference \code{GenotypeHandle} the fits were computed
-#'   against, or \code{NULL} when the fits were derived from individual-level
-#'   data (no LD reference). Used downstream for cross-pipeline LD-sketch
-#'   identity validation.
+#' @slot ldReference The LD reference the fits were computed against (a
+#'   genotype panel, a \code{GenotypeMixture} or an \code{LdMatrix}), or
+#'   \code{NULL} when the fits were derived from individual-level data. Used
+#'   downstream to check that pipelines combining results share one LD
+#'   reference.
 #' @export
 setClass(
     "FineMappingResultBase",
     contains = c("VIRTUAL", "RangedTupleList"),
-    representation(ldSketch = "LdSketch_OR_NULL")
+    representation(ldReference = "LdReference_OR_NULL")
 )
 
 #' @rdname studyName
@@ -759,9 +734,9 @@ setMethod("studyName", "FineMappingResultBase", function(x) {
     unique(as.character(x$study))
 })
 
-#' @rdname ldSketch
+#' @rdname ldReference
 #' @export
-setMethod("ldSketch", "FineMappingResultBase", function(x) x@ldSketch)
+setMethod("ldReference", "FineMappingResultBase", function(x) x@ldReference)
 
 #' @rdname methodNames
 #' @examples
@@ -846,7 +821,7 @@ setMethod(
         GenomicRanges::GRangesList(map(entries, variants)),
         value = .withEntryPayload(mcols(x, use.names = FALSE), entries)
     )
-    new(class(x), grl, ldSketch = .asLdSketch(ldSketch(x)))
+    new(class(x), grl, ldReference = .asLdRef(ldReference(x)))
 }
 
 # TRUE when an entry shares at least one variant with `keepVariants`, matched

@@ -1,7 +1,7 @@
 # =============================================================================
 # Joint-specification grammar and ragged input-argument parsing for the
-# fineMapping / twasWeights pipelines. Pure validation + normalization;
-# no pipeline dispatch or fits live here.
+# fineMapping / twasWeights pipelines, plus the joint-specification
+# dispatchers and multi-region / multi-study merges they share.
 # =============================================================================
 
 # -----------------------------------------------------------------------------
@@ -76,9 +76,6 @@
     abort(msg)
 }
 
-# Return character vector of contexts in `data` (across all studies when
-# `study = NULL`, or for one study otherwise).
-# @noRd
 # Concatenate a list of pieces into one, the way `c()` did, but safe on the
 # empty case (`list_c()` has no zero-length identity to return).
 # @noRd
@@ -89,6 +86,9 @@
     list_c(pieces)
 }
 
+# Return character vector of contexts in `data` (across all studies when
+# `study = NULL`, or for one study otherwise).
+# @noRd
 .spListContexts <- function(data, studyName = NULL) {
     if (is(data, "QtlDataset")) {
         if (!is.null(studyName) && !identical(studyName, studyName(data))) {
@@ -134,9 +134,6 @@
     abort(msg)
 }
 
-# Return character vector of traits in `data` (filtered by study and/or
-# context when supplied).
-# @noRd
 # The trait ids present in one context of a QtlDataset.
 # @noRd
 .spTraitsInContext <- function(context, data) {
@@ -193,6 +190,9 @@
     character(0)
 }
 
+# Return character vector of traits in `data` (filtered by study and/or
+# context when supplied).
+# @noRd
 .spListTraits <- function(data, studyName = NULL, context = NULL) {
     if (is(data, "QtlDataset")) {
         return(.spListTraitsQtlDataset(data, studyName, context))
@@ -230,7 +230,6 @@
 
 .spValidJointAxes <- c("study", "context", "trait")
 
-# @noRd
 # --- parseJointSpecification helpers ----------------------------------------
 
 # Extract (axes, scope) from a spec (character vector or named list).
@@ -341,6 +340,7 @@
     list(axes = axes, scope = scope)
 }
 
+# @noRd
 parseJointSpecification <- function(jointSpecification, data) {
     if (is.null(jointSpecification)) {
         return(list())
@@ -371,16 +371,24 @@ parseJointSpecification <- function(jointSpecification, data) {
 # of selected contexts. NULL input is preserved as NULL ("all contexts").
 # -----------------------------------------------------------------------------
 
-# @noRd
 # --- parseContexts helpers --------------------------------------------------
 
-# Vector form: apply uniformly to every study, filtering to availability.
+# Vector form: apply uniformly to every study, filtering to availability. A
+# context no study has is a mistake rather than a gap -- with one study it
+# is the only way to name a missing context -- so that is an error; one that
+# only some studies lack is dropped for those, with a warning.
 .parseContextsVec <- function(contexts, studies, data) {
     if (length(contexts) == 0L) {
         msg <- glue(
             "`contexts` must be NULL or a non-empty character vector ",
             "(or named list)."
         )
+        abort(msg)
+    }
+    unknown <- setdiff(contexts, .spListContexts(data))
+    if (length(unknown) > 0L) {
+        unknownStr <- str_flatten(unknown, ", ")
+        msg <- glue("`contexts` names context(s) no study has: {unknownStr}")
         abort(msg)
     }
     set_names(
@@ -454,6 +462,7 @@ parseJointSpecification <- function(jointSpecification, data) {
     )
 }
 
+# @noRd
 parseContexts <- function(contexts, data) {
     if (is.null(contexts)) {
         return(NULL)
@@ -482,7 +491,6 @@ parseContexts <- function(contexts, data) {
 # available traits). Validates IDs against `.spListTraits` lookups.
 # -----------------------------------------------------------------------------
 
-# @noRd
 # --- parseTraitIds helpers --------------------------------------------------
 
 # Validate a per-(study, context) trait vector against the data.
@@ -561,6 +569,7 @@ parseContexts <- function(contexts, data) {
     abort(msg)
 }
 
+# @noRd
 parseTraitIds <- function(traitId, data) {
     if (is.null(traitId)) {
         return(NULL)
@@ -614,379 +623,100 @@ parseTraitIds <- function(traitId, data) {
 }
 
 # -----------------------------------------------------------------------------
-# parseMethods -- normalize and validate the `methods` argument with optional
-# `sumStatsMethods` / `qtlDatasetMethods` overrides. Validates:
-#   * mutual exclusivity (methods XOR split-by-data-form)
-#   * nested list structure (vector OR named list at each level; never both)
-#   * method names against the capability table
-#   * multi-axis methods may NOT appear at per-context or per-trait levels
-#   * mr.mash and mvsusie pipeline scope
-#
-# `caps` is the capability table for the pipeline (see
-# `.fineMappingMethodCapabilities` and `.twasMethodCapabilities`).
-# `multivariateMethods` is the subset of tokens whose `multivariate = TRUE`;
-#   used for per-context / per-trait placement rejection.
-# `rejectedAtUser` is a character vector of tokens forbidden as user-requested
-#   methods on this pipeline (e.g. "mrmash" in fineMapping, "mvsusie" in twas).
-#
-# Returns a list with components:
-#   methods            (NULL if not given)
-#   sumStatsMethods    (NULL if not given)
-#   qtlDatasetMethods  (NULL if not given)
-#   shape              "primary" if `methods` was given, "split" otherwise
+# Reading a parsed selection. The pipelines normalize `contexts` / `traitId`
+# once, at entry, with parseContexts() / parseTraitIds(); these answer "what
+# does it select here?" for one study, context or row. A study or context the
+# selection does not mention keeps everything it has.
 # -----------------------------------------------------------------------------
 
-# Walk a (possibly nested) methods spec and return the depth at which leaf
-# vectors live: 1 = top-level vector, 2 = per-study, 3 = per-(study,context),
-# 4 = per-(study,context,trait). Returns a tibble-like list of (path, vec).
-# `levelNames` is c("study", "context", "trait"); the leaf level is where
-# the vector lives.
+# The contexts selected for study `s` (possibly none), or NULL for all.
 # @noRd
-# Validate a named-list method node before recursing into it.
-.spWalkValidate <- function(spec, label, depth, maxDepth) {
-    if (!is.list(spec)) {
-        cls <- class(spec)[[1L]]
-        msg <- glue(
-            "{label}: every node must be a character vector or a named ",
-            "list (got class '{cls}')"
-        )
-        abort(msg)
-    }
-    if (depth >= maxDepth) {
-        msg <- glue(
-            "{label}: cannot nest below the trait level (depth ",
-            "{maxDepth} is the deepest a vector may appear at)."
-        )
-        abort(msg)
-    }
-    specNm <- names(spec)
-    if (is.null(specNm) || any(str_length(specNm) == 0L, na.rm = TRUE)) {
-        d <- depth + 1L
-        msg <- glue(
-            "{label}: named-list nodes must have non-empty names at ",
-            "depth {d}"
-        )
-        abort(msg)
-    }
-    if (length(spec) == 0L) {
-        d <- depth + 1L
-        msg <- glue("{label}: empty named list at depth {d}")
-        abort(msg)
-    }
+.selectedContexts <- function(contexts, s) {
+    if (is.null(contexts)) NULL else contexts[[s]]
 }
 
-.spWalkMethods <- function(
-    spec,
-    label = "methods",
-    depth = 0L,
-    maxDepth = 3L,
-    path = character(0)
-) {
-    if (is.character(spec)) {
-        return(list(list(depth = depth, path = path, methods = unique(spec))))
+# The traits selected for study `s` in context `cx`, or NULL for all.
+# @noRd
+.selectedTraits <- function(traitId, s, cx) {
+    if (!is.list(traitId)) {
+        return(traitId)
     }
-    .spWalkValidate(spec, label, depth, maxDepth)
-    out <- .spConcat(map(
-        names(spec),
-        .spWalkMethodsAt,
-        spec = spec,
-        label = label,
-        depth = depth,
-        maxDepth = maxDepth,
-        path = path
-    ))
-    out
+    entry <- traitId[[s]]
+    if (is.list(entry)) entry[[cx]] else entry
 }
 
-# Walk one named branch of a methods spec.
+# TRUE when trait `tid` is selected for study `s` in context `cx`.
 # @noRd
-.spWalkMethodsAt <- function(nm, spec, label, depth, maxDepth, path) {
-    .spWalkMethods(
-        spec[[nm]],
-        label = label,
-        depth = depth + 1L,
-        maxDepth = maxDepth,
-        path = c(path, nm)
+.traitSelectedAt <- function(tid, traitId, s, cx) {
+    sel <- .selectedTraits(traitId, s, cx)
+    is.null(sel) || is_in(tid, sel)
+}
+
+# The traits study `s` takes part with across `studyContexts`, the contexts in
+# play for it -- what a fit spanning those contexts draws on: the union of
+# their selections, or NULL when any of them keeps all of its traits.
+# @noRd
+.selectedStudyTraits <- function(traitId, s, studyContexts) {
+    entry <- if (is.list(traitId)) traitId[[s]] else traitId
+    if (!is.list(entry)) {
+        return(entry)
+    }
+    if (!all(is_in(studyContexts, names(entry)))) {
+        return(NULL)
+    }
+    unique(as.character(list_c(unname(entry[studyContexts]))))
+}
+
+# TRUE when some study's traits are chosen context by context. Only then can
+# a (context, trait) pair inside a study's selected traits still be left out.
+# @noRd
+.hasNestedTraitSelection <- function(traitId) {
+    is.list(traitId) && any(map_lgl(traitId, is.list))
+}
+
+# Which rows of a summary-statistics collection the parsed `contexts` /
+# `traitId` selection keeps.
+# @noRd
+.sumStatsRowsSelected <- function(data, contexts, traitId) {
+    map_lgl(
+        seq_len(nrow(data)),
+        .sumStatsRowSelectedAt,
+        studyCol = as.character(data$study),
+        contextCol = as.character(data$context),
+        traitCol = as.character(data$trait),
+        contexts = contexts,
+        traitId = traitId
     )
 }
 
-# Validate one leaf method vector: non-empty character, all tokens known (in
-# `caps`), and none in `rejectedAtUser`.
+# Whether the selection keeps row `i`.
 # @noRd
-.jointValidateLeafVec <- function(vec, label, caps, rejectedAtUser) {
-    if (!is.character(vec) || length(vec) == 0L) {
-        msg <- glue(
-            "{label}: method vector must be a non-empty character vector"
-        )
-        abort(msg)
-    }
-    bad <- setdiff(vec, names(caps))
-    if (length(bad) > 0L) {
-        badStr <- str_flatten(bad, ", ")
-        knownStr <- str_flatten(names(caps), ", ")
-        msg <- glue(
-            "{label}: unknown method token(s): {badStr}. ",
-            "Known tokens: {knownStr}"
-        )
-        abort(msg)
-    }
-    rejected <- intersect(vec, rejectedAtUser)
-    if (length(rejected) > 0L) {
-        rejectedStr <- str_flatten(rejected, ", ")
-        msg <- glue(
-            "{label}: method(s) cannot be user-requested on this ",
-            "pipeline: {rejectedStr}"
-        )
-        abort(msg)
-    }
-    invisible(NULL)
+.sumStatsRowSelectedAt <- function(
+    i,
+    studyCol,
+    contextCol,
+    traitCol,
+    contexts,
+    traitId
+) {
+    s <- studyCol[[i]]
+    cx <- contextCol[[i]]
+    ctxSel <- .selectedContexts(contexts, s)
+    (is.null(ctxSel) || is_in(cx, ctxSel)) &&
+        .traitSelectedAt(traitCol[[i]], traitId, s, cx)
 }
 
+# Study `s`'s share of a parsed `traitId`, in a form the single-study entry
+# point parses back to the same selection: unchanged when it is one vector
+# for every study, else that study's entry, keyed by the study when it is
+# chosen context by context. NULL when the study keeps all of its traits.
 # @noRd
-# --- parseMethods helpers ---------------------------------------------------
-
-# Validate mutual exclusivity of primary vs split method specs.
-#' @importFrom checkmate assertCharacter
-.parseMethodsValidateArgs <- function(
-    primaryGiven,
-    splitGiven,
-    sumStatsMethods,
-    qtlDatasetMethods
-) {
-    if (primaryGiven && splitGiven) {
-        msg <- glue(
-            "Use either `methods` or (`sumStatsMethods` + ",
-            "`qtlDatasetMethods`), not both."
-        )
-        abort(msg)
+.studyTraitIdArg <- function(traitId, s) {
+    if (!is.list(traitId)) {
+        return(traitId)
     }
-    if (!primaryGiven && !splitGiven) {
-        msg <- glue(
-            "Specify `methods`, or both `sumStatsMethods` and ",
-            "`qtlDatasetMethods`."
-        )
-        abort(msg)
-    }
-    if (splitGiven) {
-        if (is.null(sumStatsMethods) || is.null(qtlDatasetMethods)) {
-            msg <- glue(
-                "`sumStatsMethods` and `qtlDatasetMethods` must be given ",
-                "together."
-            )
-            abort(msg)
-        }
-        assertCharacter(sumStatsMethods, min.len = 1L)
-        assertCharacter(qtlDatasetMethods, min.len = 1L)
-    }
-}
-
-# Multi-axis methods may not appear below the per-study level.
-.parseMethodsCheckMultiAxis <- function(leaf, lab, multivariateMethods) {
-    if (leaf$depth < 2L) {
-        return(invisible(NULL))
-    }
-    bad <- intersect(leaf$methods, multivariateMethods)
-    if (length(bad) > 0L) {
-        badStr <- str_flatten(bad, ", ")
-        levelName <- c("per-study", "per-context", "per-trait")[[leaf$depth]]
-        msg <- glue(
-            "{lab}: multi-axis method(s) {badStr} cannot be assigned at ",
-            "the {levelName} level (multi-axis methods operate across ",
-            "axes)."
-        )
-        abort(msg)
-    }
-}
-
-# Study/context/trait keys of a method leaf must reference valid entities.
-.parseMethodsCheckPath <- function(leaf, lab, data, studyNames) {
-    # The path is (study, context, trait); each level is only checked once the
-    # leaf is deep enough to name it -- a shallower leaf has no such entry to
-    # read, so the depth guard has to come before the extraction.
-    if (leaf$depth < 1L) {
-        return(invisible(NULL))
-    }
-    s <- leaf$path[[1L]]
-    if (!is_in(s, studyNames)) {
-        msg <- glue("{lab}: unknown study '{s}'")
-        abort(msg)
-    }
-    if (leaf$depth < 2L) {
-        return(invisible(NULL))
-    }
-    cx <- leaf$path[[2L]]
-    if (!is_in(cx, .spListContexts(data, s))) {
-        msg <- glue("{lab}: unknown context '{cx}' for study '{s}'")
-        abort(msg)
-    }
-    if (leaf$depth < 3L) {
-        return(invisible(NULL))
-    }
-    tr <- leaf$path[[3L]]
-    if (!is_in(tr, .spListTraits(data, studyName = s, context = cx))) {
-        msg <- glue(
-            "{lab}: unknown trait '{tr}' for (study '{s}', ",
-            "context '{cx}')"
-        )
-        abort(msg)
-    }
-}
-
-# Validate one method leaf (leaf vector + multi-axis + path references).
-.parseMethodsCheckLeaf <- function(
-    leaf,
-    data,
-    caps,
-    multivariateMethods,
-    rejectedAtUser,
-    studyNames
-) {
-    lab <- if (length(leaf$path) == 0L) {
-        "methods"
-    } else {
-        pathStr <- str_flatten(str_c("'", leaf$path, "'"), "$")
-        glue("methods[[{pathStr}]]")
-    }
-    .jointValidateLeafVec(leaf$methods, lab, caps, rejectedAtUser)
-    .parseMethodsCheckMultiAxis(leaf, lab, multivariateMethods)
-    .parseMethodsCheckPath(leaf, lab, data, studyNames)
-}
-
-# Walk a primary `methods` tree and validate every leaf.
-.parseMethodsWalked <- function(
-    methods,
-    data,
-    caps,
-    multivariateMethods,
-    rejectedAtUser
-) {
-    walked <- .spWalkMethods(methods, label = "methods", maxDepth = 3L)
-    studyNames <- .spListStudies(data)
-    for (leaf in walked) {
-        .parseMethodsCheckLeaf(
-            leaf,
-            data,
-            caps,
-            multivariateMethods,
-            rejectedAtUser,
-            studyNames
-        )
-    }
-}
-
-parseMethods <- function(
-    methods,
-    sumStatsMethods = NULL,
-    qtlDatasetMethods = NULL,
-    data,
-    caps,
-    multivariateMethods,
-    rejectedAtUser = character(0)
-) {
-    primaryGiven <- !is.null(methods)
-    splitGiven <- !is.null(sumStatsMethods) || !is.null(qtlDatasetMethods)
-    .parseMethodsValidateArgs(
-        primaryGiven,
-        splitGiven,
-        sumStatsMethods,
-        qtlDatasetMethods
-    )
-    if (splitGiven) {
-        .jointValidateLeafVec(
-            sumStatsMethods,
-            "sumStatsMethods",
-            caps,
-            rejectedAtUser
-        )
-        .jointValidateLeafVec(
-            qtlDatasetMethods,
-            "qtlDatasetMethods",
-            caps,
-            rejectedAtUser
-        )
-    } else {
-        .parseMethodsWalked(
-            methods,
-            data,
-            caps,
-            multivariateMethods,
-            rejectedAtUser
-        )
-    }
-    list(
-        methods = methods,
-        sumStatsMethods = sumStatsMethods,
-        qtlDatasetMethods = qtlDatasetMethods,
-        shape = if (primaryGiven) "primary" else "split"
-    )
-}
-
-
-# -----------------------------------------------------------------------------
-# validateMethodsVsJointSpec -- cross-validation. A per-axis method assignment
-# at or below the axis being jointed in any spec contradicts user intent.
-# E.g. axes = "context" + per-context methods = contradiction. Joint flags
-# operate on axes that haven't been pinned to per-axis methods.
-#
-# The rule: for each jointSpec, every axis in `axes` must NOT be a level at
-# which the methods list nests. Concretely:
-#   - "study"   in axes -> methods must not be a named list keyed by study
-#                          (i.e. methods must be a top-level vector OR the
-#                          split form). Per-study methods would mean different
-#                          methods per study, incompatible with cross-study
-#                          joints.
-#   - "context" in axes -> no per-(study, context) nesting at any study.
-#   - "trait"   in axes -> no per-(study, context, trait) nesting at any
-#                          (study, context).
-# -----------------------------------------------------------------------------
-
-# @noRd
-validateMethodsVsJointSpec <- function(methodsParsed, jointSpecParsed) {
-    # Split-form methods are flat per-data-form vectors -- nothing to check.
-    if (methodsParsed$shape == "split") {
-        return(invisible(NULL))
-    }
-    if (length(jointSpecParsed) == 0L) {
-        return(invisible(NULL))
-    }
-    methods <- methodsParsed$methods
-    if (is.character(methods)) {
-        return(invisible(NULL))
-    } # top-level vector OK
-
-    walked <- .spWalkMethods(methods, label = "methods", maxDepth = 3L)
-    # depth observed at leaves; max depth in the spec reflects nesting level.
-    maxDepth <- max(map_int(walked, "depth"))
-
-    for (i in seq_along(jointSpecParsed)) {
-        axes <- jointSpecParsed[[i]]$axes
-        lab <- glue("jointSpecification[[{i}]]")
-        if (is_in("study", axes) && maxDepth >= 1L) {
-            msg <- glue(
-                "{lab}: `axes` includes 'study' but `methods` nests ",
-                "per-study; remove per-study method assignment when ",
-                "joining over studies."
-            )
-            abort(msg)
-        }
-        if (is_in("context", axes) && maxDepth >= 2L) {
-            msg <- glue(
-                "{lab}: `axes` includes 'context' but `methods` nests ",
-                "per-context; remove per-context method assignment when ",
-                "joining over contexts."
-            )
-            abort(msg)
-        }
-        if (is_in("trait", axes) && maxDepth >= 3L) {
-            msg <- glue(
-                "{lab}: `axes` includes 'trait' but `methods` nests ",
-                "per-trait; remove per-trait method assignment when ",
-                "joining over traits."
-            )
-            abort(msg)
-        }
-    }
-    invisible(NULL)
+    entry <- traitId[[s]]
+    if (is.list(entry)) set_names(list(entry), s) else entry
 }
 
 # =============================================================================
@@ -1019,7 +749,6 @@ validateMethodsVsJointSpec <- function(methodsParsed, jointSpecParsed) {
             avail = .spListContexts,
             scopeLimit = scope$context,
             userSpec = contexts,
-            requireCharacter = FALSE,
             data = data
         ),
         studies
@@ -1027,16 +756,23 @@ validateMethodsVsJointSpec <- function(methodsParsed, jointSpecParsed) {
     traitsOut <- set_names(
         map(
             studies,
-            .fmScopeAxis,
-            avail = .fmScopeTraits,
+            .fmScopeStudyTraits,
             scopeLimit = scope$trait,
-            userSpec = traitIds,
-            requireCharacter = TRUE,
+            traitIds = traitIds,
+            contextsOut = contextsOut,
             data = data
         ),
         studies
     )
-    list(studies = studies, contexts = contextsOut, traits = traitsOut)
+    # A joint fit spans a study's contexts, so its traits are the union of
+    # the per-context selections; when the selection is per context, the
+    # cell runner then drops each (context, trait) pair it leaves out.
+    list(
+        studies = studies,
+        contexts = contextsOut,
+        traits = traitsOut,
+        traitSelection = if (.hasNestedTraitSelection(traitIds)) traitIds
+    )
 }
 
 # `.spListTraits` takes the study by name, so give it the same (data, s)
@@ -1046,41 +782,32 @@ validateMethodsVsJointSpec <- function(methodsParsed, jointSpecParsed) {
     .spListTraits(data, studyName = s)
 }
 
-# What a pipeline-level `contexts` / `traitIds` argument narrows study `s` to,
-# or NULL when it says nothing about it. `requireCharacter` mirrors the trait
-# axis, which ignores a non-character per-study entry.
+# What a pipeline-level `contexts` argument narrows study `s` to, or NULL when
+# it says nothing about it: one vector for every study, or parseContexts()'s
+# per-study list.
 # @noRd
-.fmScopeUserLimit <- function(spec, s, requireCharacter) {
-    if (is.null(spec)) {
-        return(NULL)
-    }
-    if (is.character(spec)) {
-        return(spec)
-    }
-    if (!is.list(spec) || !is_in(s, names(spec))) {
-        return(NULL)
-    }
-    entry <- spec[[s]]
-    if (!requireCharacter || is.character(entry)) entry else NULL
+.fmScopeUserLimit <- function(spec, s) {
+    if (is.list(spec)) .selectedContexts(spec, s) else spec
 }
 
 # One axis for one study: everything it has, narrowed by the spec's scope and
 # then by the caller's argument. Each narrowing is an intersect, so the chain
 # is a fold rather than a variable rewritten in place.
 # @noRd
-.fmScopeAxis <- function(
-    s,
-    avail,
-    scopeLimit,
-    userSpec,
-    requireCharacter,
-    data
-) {
+.fmScopeAxis <- function(s, avail, scopeLimit, userSpec, data) {
+    limits <- compact(list(scopeLimit, .fmScopeUserLimit(userSpec, s)))
+    reduce(limits, intersect, .init = avail(data, s))
+}
+
+# Study `s`'s traits: everything it has, narrowed by the spec's scope and by
+# the caller's `traitId` over the contexts in play for it.
+# @noRd
+.fmScopeStudyTraits <- function(s, scopeLimit, traitIds, contextsOut, data) {
     limits <- compact(list(
         scopeLimit,
-        .fmScopeUserLimit(userSpec, s, requireCharacter)
+        .selectedStudyTraits(traitIds, s, contextsOut[[s]])
     ))
-    reduce(limits, intersect, .init = avail(data, s))
+    reduce(limits, intersect, .init = .fmScopeTraits(data, s))
 }
 
 
@@ -1094,7 +821,7 @@ validateMethodsVsJointSpec <- function(methodsParsed, jointSpecParsed) {
     tupleRows,
     colLabels,
     errorLabel,
-    ldSketch = NULL,
+    ldReference = NULL,
     cutoffs = NULL
 ) {
     cols <- list(
@@ -1113,7 +840,7 @@ validateMethodsVsJointSpec <- function(methodsParsed, jointSpecParsed) {
     # entry's ids filters the group: Z is built against this vector and each
     # entry is checked against it.
     firstDf <- allDf[
-        .panelKeepMask(allDf$variant_id, ldSketch, cutoffs, errorLabel),
+        .panelKeepMask(allDf$variant_id, ldReference, cutoffs, errorLabel),
         ,
         drop = FALSE
     ]
@@ -1196,20 +923,16 @@ validateMethodsVsJointSpec <- function(methodsParsed, jointSpecParsed) {
 }
 
 
-# Build a multi-context Y matrix for a single (study, trait) from an
-# individual-level QtlDataset. Returns list(X, Y, perTraitContexts) or
-# NULL when fewer than 2 contexts carry `tid` or the sample / complete-Y
-# subset is too small to fit.
-# @noRd
 # --- .buildIndividualCrossContextXy helpers ---------------------------------
 
-# Scoped contexts in which a trait is present; NULL if fewer than 2.
 # Does context `cx` carry trait `tid`?
 # @noRd
 .ccContextHasTrait <- function(cx, data, tid) {
     is_in(tid, rownames(molecularTraits(data, contexts = cx)))
 }
 
+# Scoped contexts in which a trait is present; NULL if fewer than 2.
+# @noRd
 .crossContextPerTrait <- function(data, tid, scopedContexts, verbose, label) {
     perTraitContexts <- keep(
         scopedContexts,
@@ -1283,6 +1006,11 @@ validateMethodsVsJointSpec <- function(methodsParsed, jointSpecParsed) {
     )
 }
 
+# Build a multi-context Y matrix for a single (study, trait) from an
+# individual-level QtlDataset. Returns list(X, Y, perTraitContexts) or
+# NULL when fewer than 2 contexts carry `tid` or the sample / complete-Y
+# subset is too small to fit.
+# @noRd
 .buildIndividualCrossContextXy <- function(
     data,
     tid,
@@ -1291,7 +1019,7 @@ validateMethodsVsJointSpec <- function(methodsParsed, jointSpecParsed) {
     verbose,
     label,
     region = NULL,
-    residualizationArgs
+    residualizationParam
 ) {
     perTraitContexts <- .crossContextPerTrait(
         data,
@@ -1309,13 +1037,13 @@ validateMethodsVsJointSpec <- function(methodsParsed, jointSpecParsed) {
         tid,
         cisWindow,
         region,
-        residualizationArgs
+        residualizationParam
     )
     Yres <- .fmResidPheno(
         data,
         contexts = perTraitContexts,
         traitId = tid,
-        residualizationArgs = residualizationArgs
+        residualizationParam = residualizationParam
     )
     .crossContextAssemble(X, Yres, perTraitContexts, verbose, label, tid)
 }
@@ -1335,12 +1063,8 @@ validateMethodsVsJointSpec <- function(methodsParsed, jointSpecParsed) {
     traits[IRanges::overlapsAny(rr[traits], region)]
 }
 
-# Build a multi-trait Y matrix for a single (study, context) from an
-# individual-level QtlDataset. Returns list(X, Y, traitsHere, se) or NULL
-# when fewer than 2 traits live in the context or the sample / complete-Y
-# subset is too small.
-# @noRd
 # Warn + signal skip when a context has fewer than 2 scoped traits.
+# @noRd
 .crossTraitTooFew <- function(traitsHere, cx, studyName, verbose, label) {
     if (length(traitsHere) >= 2L) {
         return(FALSE)
@@ -1356,6 +1080,11 @@ validateMethodsVsJointSpec <- function(methodsParsed, jointSpecParsed) {
     TRUE
 }
 
+# Build a multi-trait Y matrix for a single (study, context) from an
+# individual-level QtlDataset. Returns list(X, Y, traitsHere, se) or NULL
+# when fewer than 2 traits live in the context or the sample / complete-Y
+# subset is too small.
+# @noRd
 .buildIndividualCrossTraitXy <- function(
     data,
     cx,
@@ -1365,7 +1094,7 @@ validateMethodsVsJointSpec <- function(methodsParsed, jointSpecParsed) {
     label,
     studyName,
     region = NULL,
-    residualizationArgs
+    residualizationParam
 ) {
     se <- molecularTraits(data, contexts = cx)
     # scopedTraits is already region-restricted upstream (.runJointSpecs) when
@@ -1380,13 +1109,13 @@ validateMethodsVsJointSpec <- function(methodsParsed, jointSpecParsed) {
         traitsHere,
         cisWindow,
         region,
-        residualizationArgs
+        residualizationParam
     )
     allY <- .fmResidPheno(
         data,
         contexts = cx,
         traitId = traitsHere,
-        residualizationArgs = residualizationArgs
+        residualizationParam = residualizationParam
     )
     common <- intersect(rownames(allX), rownames(allY))
     if (length(common) < 2L) {
@@ -1407,18 +1136,16 @@ validateMethodsVsJointSpec <- function(methodsParsed, jointSpecParsed) {
 }
 
 
-# Build a composed-axes (context, trait) X/Y for individual-level
-# QtlDataset. Returns list(X, Y, tuples) or NULL.
-# @noRd
 # Residualized genotype for the cross-* / composed builders (cis-window or an
 # explicit region). Shared by the individual multi-axis Xy builders.
+# @noRd
 .buildResidGeno <- function(
     data,
     contexts,
     traitId,
     cisWindow,
     region,
-    residualizationArgs
+    residualizationParam
 ) {
     if (is.null(region)) {
         .fmResidGeno(
@@ -1426,14 +1153,14 @@ validateMethodsVsJointSpec <- function(methodsParsed, jointSpecParsed) {
             contexts = contexts,
             traitId = traitId,
             cisWindow = cisWindow,
-            residualizationArgs = residualizationArgs
+            residualizationParam = residualizationParam
         )
     } else {
         .fmResidGeno(
             data,
             contexts = contexts,
             region = region,
-            residualizationArgs = residualizationArgs
+            residualizationParam = residualizationParam
         )
     }
 }
@@ -1515,7 +1242,7 @@ validateMethodsVsJointSpec <- function(methodsParsed, jointSpecParsed) {
     allTraits,
     cisWindow,
     region,
-    residualizationArgs
+    residualizationParam
 ) {
     # Genotypes first, as the inline version did: reading them is what
     # fails on a missing panel file, and that error must stay the one the
@@ -1526,13 +1253,13 @@ validateMethodsVsJointSpec <- function(methodsParsed, jointSpecParsed) {
         allTraits,
         cisWindow,
         region,
-        residualizationArgs
+        residualizationParam
     )
     resid <- .fmResidPheno(
         data,
         contexts = allContexts,
         traitId = allTraits,
-        residualizationArgs = residualizationArgs
+        residualizationParam = residualizationParam
     )
     list(
         X = allX,
@@ -1545,6 +1272,9 @@ validateMethodsVsJointSpec <- function(methodsParsed, jointSpecParsed) {
     )
 }
 
+# Build a composed-axes (context, trait) X/Y for individual-level
+# QtlDataset. Returns list(X, Y, tuples) or NULL.
+# @noRd
 .buildComposedIndividualXy <- function(
     data,
     scope,
@@ -1553,7 +1283,7 @@ validateMethodsVsJointSpec <- function(methodsParsed, jointSpecParsed) {
     verbose,
     label,
     region = NULL,
-    residualizationArgs
+    residualizationParam
 ) {
     tuples <- .composedTuples(data, scope, studyName, verbose, label)
     if (is.null(tuples)) {
@@ -1567,7 +1297,7 @@ validateMethodsVsJointSpec <- function(methodsParsed, jointSpecParsed) {
         allTraits,
         cisWindow,
         region,
-        residualizationArgs
+        residualizationParam
     )
     allX <- sides$X
     YresList <- sides$YresList
@@ -1662,8 +1392,6 @@ validateMethodsVsJointSpec <- function(methodsParsed, jointSpecParsed) {
     )
 }
 
-# Top-level joint dispatcher for fineMappingPipeline(QtlDataset).
-# @noRd
 # Merge per-region QtlFineMappingResult collections (same keys across regions)
 # into one by merging each (study, context, trait, method) row's entry via
 # .fmMergeEntries (per-region susieFit list + renumbered credible sets).
@@ -1690,7 +1418,7 @@ validateMethodsVsJointSpec <- function(methodsParsed, jointSpecParsed) {
             entry = mergedEntries
         ),
         .jointCols(base),
-        list(ldSketch = NULL)
+        list(ldReference = NULL)
     )
     exec(QtlFineMappingResult, !!!qfmrArgs)
 }
@@ -1726,22 +1454,12 @@ validateMethodsVsJointSpec <- function(methodsParsed, jointSpecParsed) {
     )
 }
 
-# Shared tail of the MultiStudyQtlDataset fineMapping / twasWeights pipeline
-# methods: recurse into each embedded QtlDataset then the embedded QtlSumStats,
-# row-bind the per-study results, build the per-tuple result object, and combine
-# it with any joint-specification result. `perStudyFn` / `sumStatsFn` are the
-# (method-specific) single-study recursions; `rbindFn` / `resultCtor` /
-# `pipelineName` supply the per-pipeline pieces. Each method keeps its own
-# (divergent) method-gating / joint-dispatch preamble and passes the computed
-# `jointResult` in.
-# @noRd
 # --- .multiStudyPipelineDriver helpers --------------------------------------
 
-# Accumulate per-study + sumstats results (tracking the embedded LD sketch).
 # rbind two results with no LD sketch -- the per-study combine.
 # @noRd
 .msRbindNoLd <- function(acc, x, rbindFn) {
-    rbindFn(acc, x, ldSketch = NULL)
+    rbindFn(acc, x, ldReference = NULL)
 }
 
 # Fold per-study results together, skipping studies that produced nothing.
@@ -1755,6 +1473,8 @@ validateMethodsVsJointSpec <- function(methodsParsed, jointSpecParsed) {
     reduce(kept, .msRbindNoLd, rbindFn = rbindFn)
 }
 
+# Accumulate per-study + sumstats results (tracking the embedded LD sketch).
+# @noRd
 .msDriverAccumulate <- function(
     qtlDatasets,
     sumStats,
@@ -1771,19 +1491,19 @@ validateMethodsVsJointSpec <- function(methodsParsed, jointSpecParsed) {
     if (is.null(ssRes)) {
         return(list(out = fromStudies, embeddedLd = NULL))
     }
-    embeddedLd <- ldSketch(ssRes)
+    embeddedLd <- ldReference(ssRes)
     out <- if (is.null(fromStudies)) {
         ssRes
     } else {
-        rbindFn(fromStudies, ssRes, ldSketch = embeddedLd)
+        rbindFn(fromStudies, ssRes, ldReference = embeddedLd)
     }
     list(out = out, embeddedLd = embeddedLd)
 }
 
 # Reconstruct the per-tuple result object from the accumulated rows.
 .msDriverPerTuple <- function(out, resultCtor, embeddedLd) {
-    # ldSketch: NULL if all studies were individual-level; the embedded
-    # sumStats's ldSketch otherwise.
+    # ldReference: NULL if all studies were individual-level; the embedded
+    # sumStats's ldReference otherwise.
     ctorArgs <- c(
         list(
             study = as.character(out$study),
@@ -1793,11 +1513,20 @@ validateMethodsVsJointSpec <- function(methodsParsed, jointSpecParsed) {
             entry = .collectionEntries(out)
         ),
         .jointCols(out),
-        list(ldSketch = embeddedLd)
+        list(ldReference = embeddedLd)
     )
     exec(resultCtor, !!!ctorArgs)
 }
 
+# Shared tail of the MultiStudyQtlDataset fineMapping / twasWeights pipeline
+# methods: recurse into each embedded QtlDataset then the embedded QtlSumStats,
+# row-bind the per-study results, build the per-tuple result object, and combine
+# it with any joint-specification result. `perStudyFn` / `sumStatsFn` are the
+# (method-specific) single-study recursions; `rbindFn` / `resultCtor` /
+# `pipelineName` supply the per-pipeline pieces. Each method keeps its own
+# (divergent) method-gating / joint-dispatch preamble and passes the computed
+# `jointResult` in.
+# @noRd
 .multiStudyPipelineDriver <- function(
     data,
     jointResult,
@@ -1837,7 +1566,7 @@ validateMethodsVsJointSpec <- function(methodsParsed, jointSpecParsed) {
     if (is.null(perTupleResult)) {
         return(jointResult)
     }
-    rbindFn(perTupleResult, jointResult, ldSketch = embeddedLd)
+    rbindFn(perTupleResult, jointResult, ldReference = embeddedLd)
 }
 
 # Synthesize a jointSpecification for the AUTO-DETECTION path (no explicit
@@ -1859,57 +1588,224 @@ validateMethodsVsJointSpec <- function(methodsParsed, jointSpecParsed) {
         list()
     }
 }
+# ---- fine-mapping joint dispatch --------------------------------------------
+#
+# Every fine-mapping joint dispatch hands the engine a pipeline config and an
+# `args` list built from ONE record: the pipeline's own joint record
+# (.fmIndividualJointCfg() / .fmQssConfigs()), or, for a component of a
+# MultiStudyQtlDataset, that record with the component's data in it.
+# Re-listing the settings at each dispatch layer is how they went missing --
+# the per-study dispatch dropped cross-validation, residualization, the
+# screen, fitRetention and the seed, and passed the rest positionally into
+# the wrong slots.
 
-
+# Run joint specs on a QtlDataset, once per region block, merging per (study,
+# context, trait, method) across the blocks. A study axis has no meaning on
+# individual-level data, and rejecting it up front keeps the error ahead of
+# the fit.
+# @noRd
 .fmDispatchJointSpecsQtlDataset <- function(
     parsedJointSpec,
-    data,
-    methods,
-    contexts,
-    traitIds,
-    cisWindow,
-    credibleSetParam = CredibleSetParam(includeAllCs = FALSE),
-    verbose,
-    methodArgs = list(),
-    xRegions = list(NULL),
-    mrmashPrior = NULL,
-    dataDrivenPriorWeightsCutoff = 1e-10,
-    crossValidationArgs = CrossValidationParam(),
-    residualizationArgs = ResidualizationParam(),
-    pipCutoffToSkip = 0,
-    fineMappingResult = NULL,
-    fitRetention = c("slim", "none", "full"),
-    seed = NULL
+    tokens,
+    methodArgs,
+    cfg
 ) {
-    fitRetention <- arg_match(fitRetention)
-    # Run the joint dispatch once per region block, then merge per
-    # (study, context, trait, method) across regions. A single block (cis or
-    # jointRegions=TRUE concatenated) returns its result directly.
-    # xRegions is deliberately absent: each region is supplied per call.
-    perRegion <- map(
-        xRegions,
+    .jointRejectStudyOnIndividual(parsedJointSpec)
+    perRegion <- compact(map(
+        cfg$xRegions,
         .fmDispatchJointSpecRegion,
         parsedJointSpec = parsedJointSpec,
-        data = data,
-        methods = methods,
-        contexts = contexts,
-        traitIds = traitIds,
-        cisWindow = cisWindow,
-        credibleSetParam = credibleSetParam,
-        verbose = verbose,
+        tokens = tokens,
         methodArgs = methodArgs,
-        mrmashPrior = mrmashPrior,
-        dataDrivenPriorWeightsCutoff = dataDrivenPriorWeightsCutoff,
-        crossValidationArgs = crossValidationArgs,
-        residualizationArgs = residualizationArgs,
-        pipCutoffToSkip = pipCutoffToSkip,
-        fineMappingResult = fineMappingResult,
-        fitRetention = fitRetention,
-        seed = seed
-    ) |>
-        compact()
+        cfg = cfg
+    ))
     .fmCombineRegionResults(perRegion)
 }
+
+# One region block of .fmDispatchJointSpecsQtlDataset().
+# @noRd
+.fmDispatchJointSpecRegion <- function(
+    region,
+    parsedJointSpec,
+    tokens,
+    methodArgs,
+    cfg
+) {
+    .runJointSpecs(
+        parsedJointSpec,
+        cfg$data,
+        dataForm = "individual",
+        pipeline = .fmJointPipeline(cfg, cfg$crossValidationParam, NULL),
+        jointMethods = intersect(tokens, c("mvsusie", "fsusie")),
+        contexts = cfg$contexts,
+        traitIds = cfg$traitId,
+        args = .fmJointIndividualArgs(cfg, methodArgs, region)
+    )
+}
+
+# The FmJointPipeline a joint run fits under: the settings the fitters read
+# off the pipeline. Summary statistics pass the no-CV record (there are no
+# samples to hold out) and the collection's LD sketch; individual-level data
+# pass the caller's resolved CV record and no sketch.
+# @noRd
+.fmJointPipeline <- function(cfg, crossValidationParam, ldReference) {
+    new(
+        "FmJointPipeline",
+        config = list(
+            credibleSetParam = cfg$credibleSetParam,
+            dataDrivenPriorWeightsCutoff = cfg$dataDrivenPriorWeightsCutoff,
+            crossValidationParam = crossValidationParam,
+            verbose = cfg$verbose,
+            fitRetention = cfg$fitRetention,
+            seed = cfg$seed,
+            ldReference = ldReference
+        )
+    )
+}
+
+# The engine `args` of an individual-level joint run over one region block.
+# Residualization rides here rather than on the pipeline config: the group
+# enumerators read it while extracting X and Y.
+# @noRd
+.fmJointIndividualArgs <- function(cfg, methodArgs, region) {
+    list(
+        mrmashPrior = cfg$mrmashPrior,
+        dataDrivenPriorWeightsCutoff = cfg$dataDrivenPriorWeightsCutoff,
+        methodArgs = methodArgs,
+        cisWindow = cfg$cisWindow,
+        region = region,
+        verbose = cfg$verbose,
+        pipCutoffToSkip = cfg$screen,
+        cache = cfg$fineMappingResult,
+        residualizationParam = cfg$residualizationParam
+    )
+}
+
+# Run joint specs on a QtlSumStats collection. `cfg` is the summary-statistics
+# joint record (.fmQssConfigs()$joint), or a MultiStudy record with the
+# collection as its data.
+# @noRd
+.fmDispatchJointSpecsQtlSumStats <- function(
+    parsedJointSpec,
+    tokens,
+    methodArgs,
+    cfg
+) {
+    .runJointSpecs(
+        parsedJointSpec,
+        cfg$data,
+        dataForm = "sumstats",
+        pipeline = .fmJointPipeline(
+            cfg,
+            .cvResolve(CrossValidationParam()),
+            ldReference(cfg$data)
+        ),
+        jointMethods = intersect(tokens, c("mvsusie", "fsusie")),
+        contexts = cfg$contexts,
+        traitIds = cfg$traitId,
+        args = list(
+            mrmashPrior = cfg$mrmashPrior,
+            dataDrivenPriorWeightsCutoff = cfg$dataDrivenPriorWeightsCutoff,
+            methodArgs = methodArgs,
+            verbose = cfg$verbose,
+            cache = cfg$fineMappingResult,
+            cutoffs = .panelCutoffs(
+                cfg$panelFilterParam %||% PanelFilterParam()
+            )
+        )
+    )
+}
+
+# Joint dispatch for a MultiStudyQtlDataset. Per component AND per axis: a
+# spec with a `study` axis only touches the summary statistics, while the
+# other specs run on every individual-level component -- each under the same
+# settings, with the component's own data (its genotype-filter overrides
+# applied, as the per-study recursion applies them) -- and on the summary
+# statistics too. `cfg` is the individual-level joint record plus
+# `genotypeFilterParam` and `panelFilterParam`, with the collection as data.
+# @noRd
+.fmDispatchJointSpecsMultiStudy <- function(
+    parsedJointSpec,
+    tokens,
+    methodArgs,
+    cfg
+) {
+    qtlDatasets <- qtlDatasets(cfg$data)
+    specs <- .fmSplitStudyAxisSpecs(parsedJointSpec)
+    .fmMultiStudyWarnExcluded(specs$study, qtlDatasets, cfg$verbose)
+    out <- if (length(specs$nonStudy) == 0L) {
+        NULL
+    } else {
+        .msFoldStudyResults(
+            map(
+                qtlDatasets,
+                .fmStudyJointResult,
+                specs = specs$nonStudy,
+                tokens = tokens,
+                methodArgs = methodArgs,
+                cfg = cfg
+            ),
+            .rbindFineMappingResult
+        )
+    }
+    .fmMultiStudySumStats(
+        parsedJointSpec,
+        specs$study,
+        out,
+        tokens,
+        methodArgs,
+        cfg
+    )
+}
+
+# One individual-level component's joint fits: the shared record with the
+# component as its data.
+# @noRd
+.fmStudyJointResult <- function(qd, specs, tokens, methodArgs, cfg) {
+    studyCfg <- list_assign(
+        cfg,
+        data = .qtlApplyFilterOverrides(qd, cfg$genotypeFilterParam)
+    )
+    .fmDispatchJointSpecsQtlDataset(specs, tokens, methodArgs, studyCfg)
+}
+
+# Fine-map every spec on the summary-statistics component and rbind onto the
+# individual-level results `out`.
+# @noRd
+.fmMultiStudySumStats <- function(
+    parsedJointSpec,
+    studyAxisSpecs,
+    out,
+    tokens,
+    methodArgs,
+    cfg
+) {
+    sumStats <- sumStats(cfg$data)
+    if (is.null(sumStats)) {
+        if (length(studyAxisSpecs) > 0L && cfg$verbose >= 1) {
+            msg <- glue(
+                "jointCrossStudy: no sumStats slot present on this ",
+                "MultiStudyQtlDataset; cross-study specs produce no result."
+            )
+            inform(msg)
+        }
+        return(out)
+    }
+    ssRes <- .fmDispatchJointSpecsQtlSumStats(
+        parsedJointSpec,
+        tokens,
+        methodArgs,
+        list_assign(cfg, data = sumStats)
+    )
+    if (is.null(ssRes)) {
+        return(out)
+    }
+    if (is.null(out)) {
+        return(ssRes)
+    }
+    .rbindFineMappingResult(out, ssRes, ldReference = ldReference(ssRes))
+}
+
 
 # Merge the per-region joint results by (study, context, trait, method). A
 # single block -- cis, or jointRegions = TRUE concatenated -- is returned
@@ -1925,187 +1821,7 @@ validateMethodsVsJointSpec <- function(methodsParsed, jointSpecParsed) {
     .fmMergeResultsByKey(perRegion)
 }
 
-# FmJointPipeline for individual-level fine-mapping, built from the call params.
-.fmJointPipeline <- function(
-    credibleSetParam = CredibleSetParam(includeAllCs = FALSE),
-    dataDrivenPriorWeightsCutoff,
-    crossValidationArgs,
-    residualizationArgs,
-    verbose,
-    fitRetention = c("slim", "none", "full"),
-    seed
-) {
-    fitRetention <- arg_match(fitRetention)
-    new(
-        "FmJointPipeline",
-        config = list(
-            credibleSetParam = credibleSetParam,
-            dataDrivenPriorWeightsCutoff = dataDrivenPriorWeightsCutoff,
-            crossValidationArgs = crossValidationArgs,
-            residualizationArgs = residualizationArgs,
-            verbose = verbose,
-            fitRetention = fitRetention,
-            seed = seed,
-            ldSketch = NULL
-        )
-    )
-}
 
-# The joint pipeline record, once the spec has been checked against the
-# individual-level form -- a study axis has no meaning there, and building
-# a pipeline for a spec that names one would defer the error past the fit.
-# @noRd
-.fmJointPipelineChecked <- function(
-    parsedJointSpec,
-    credibleSetParam,
-    dataDrivenPriorWeightsCutoff,
-    crossValidationArgs,
-    residualizationArgs,
-    verbose,
-    fitRetention,
-    seed
-) {
-    .jointRejectStudyOnIndividual(parsedJointSpec)
-    .fmJointPipeline(
-        credibleSetParam = credibleSetParam,
-        dataDrivenPriorWeightsCutoff = dataDrivenPriorWeightsCutoff,
-        crossValidationArgs = crossValidationArgs,
-        residualizationArgs = residualizationArgs,
-        verbose = verbose,
-        fitRetention = fitRetention,
-        seed = seed
-    )
-}
-
-# Engine routing (jointEngine.R) for one region block; the caller loops the
-# regions.
-# @noRd
-.fmDispatchJointSpecsQtlDatasetOneRegion <- function(
-    parsedJointSpec,
-    data,
-    methods,
-    contexts,
-    traitIds,
-    cisWindow,
-    verbose,
-    methodArgs = list(),
-    region = NULL,
-    mrmashPrior = NULL,
-    dataDrivenPriorWeightsCutoff = 1e-10,
-    crossValidationArgs = CrossValidationParam(),
-    residualizationArgs = ResidualizationParam(),
-    pipCutoffToSkip = 0,
-    fineMappingResult = NULL,
-    seed = NULL,
-    credibleSetParam,
-    fitRetention
-) {
-    pipeline <- .fmJointPipelineChecked(
-        parsedJointSpec,
-        credibleSetParam = credibleSetParam,
-        dataDrivenPriorWeightsCutoff = dataDrivenPriorWeightsCutoff,
-        crossValidationArgs = crossValidationArgs,
-        residualizationArgs = residualizationArgs,
-        verbose = verbose,
-        fitRetention = fitRetention,
-        seed = seed
-    )
-    .runJointSpecs(
-        parsedJointSpec,
-        data,
-        dataForm = "individual",
-        pipeline = pipeline,
-        jointMethods = intersect(methods, c("mvsusie", "fsusie")),
-        contexts = contexts,
-        traitIds = traitIds,
-        args = list(
-            mrmashPrior = mrmashPrior,
-            dataDrivenPriorWeightsCutoff = dataDrivenPriorWeightsCutoff,
-            methodArgs = methodArgs,
-            cisWindow = cisWindow,
-            region = region,
-            verbose = verbose,
-            pipCutoffToSkip = pipCutoffToSkip,
-            cache = fineMappingResult
-        )
-    )
-}
-
-
-# Top-level joint dispatcher for fineMappingPipeline(QtlSumStats).
-# @noRd
-# FmJointPipeline for summary-statistics fine-mapping (RSS: no sample folds;
-# LD sketch drawn from the data).
-.fmSumStatsPipeline <- function(
-    data,
-    credibleSetParam,
-    dataDrivenPriorWeightsCutoff,
-    verbose,
-    fitRetention
-) {
-    new(
-        "FmJointPipeline",
-        config = list(
-            credibleSetParam = credibleSetParam,
-            dataDrivenPriorWeightsCutoff = dataDrivenPriorWeightsCutoff,
-            verbose = verbose,
-            fitRetention = fitRetention,
-            crossValidationArgs = .cvResolve(CrossValidationParam()),
-            ldSketch = ldSketch(data)
-        )
-    )
-}
-
-.fmDispatchJointSpecsQtlSumStats <- function(
-    parsedJointSpec,
-    data,
-    methods,
-    contexts,
-    traitIds,
-    verbose,
-    methodArgs = list(),
-    mrmashPrior = NULL,
-    dataDrivenPriorWeightsCutoff = 1e-10,
-    fineMappingResult = NULL,
-    panelFilterParam = PanelFilterParam(),
-    credibleSetParam,
-    fitRetention
-) {
-    # Engine routing (jointEngine.R): the dispatch table + .runJointCell replace
-    # the per-axis switch + the cross-context/trait/study/composed leaf
-    # dispatchers.
-    pipeline <- .fmSumStatsPipeline(
-        data = data,
-        credibleSetParam = credibleSetParam,
-        dataDrivenPriorWeightsCutoff = dataDrivenPriorWeightsCutoff,
-        verbose = verbose,
-        fitRetention = fitRetention
-    )
-    .runJointSpecs(
-        parsedJointSpec,
-        data,
-        dataForm = "sumstats",
-        pipeline = pipeline,
-        jointMethods = intersect(methods, c("mvsusie", "fsusie")),
-        contexts = contexts,
-        traitIds = traitIds,
-        args = list(
-            mrmashPrior = mrmashPrior,
-            dataDrivenPriorWeightsCutoff = dataDrivenPriorWeightsCutoff,
-            methodArgs = methodArgs,
-            verbose = verbose,
-            cache = fineMappingResult,
-            cutoffs = .panelCutoffs(panelFilterParam)
-        )
-    )
-}
-
-
-# Top-level joint dispatcher for fineMappingPipeline(MultiStudyQtlDataset).
-# Routes per-component AND per-axis: a spec with `axes = "study"` only
-# touches the sumStats slot; `axes = "context"` and `axes = "trait"` run
-# on every component.
-# @noRd
 # --- .fmDispatchJointSpecsMultiStudy helpers --------------------------------
 
 # Partition joint specs into those with a `study` axis and the rest.
@@ -2125,176 +1841,11 @@ validateMethodsVsJointSpec <- function(methodsParsed, jointSpecParsed) {
         qdNames <- str_flatten(names(qtlDatasets), ", ")
         msg <- glue(
             "jointCrossStudy: excluding individual-level studies ",
-            "({qdNames}) from cross-study fits (no LD sketch available); ",
+            "({qdNames}) from cross-study fits (no LD reference available); ",
             "sumstats studies participate."
         )
         inform(msg)
     }
-}
-
-# Fine-map the non-study-axis specs on each individual-level QtlDataset.
-.fmMultiStudyQtlLoop <- function(
-    nonStudyAxisSpecs,
-    qtlDatasets,
-    methods,
-    contexts,
-    traitIds,
-    cisWindow,
-    credibleSetParam,
-    verbose,
-    methodArgs,
-    xRegions,
-    mrmashPrior,
-    dataDrivenPriorWeightsCutoff
-) {
-    if (length(nonStudyAxisSpecs) == 0L) {
-        return(NULL)
-    }
-    .msFoldStudyResults(
-        map(
-            qtlDatasets,
-            .fmDispatchForStudy,
-            nonStudyAxisSpecs = nonStudyAxisSpecs,
-            methods = methods,
-            contexts = contexts,
-            traitIds = traitIds,
-            cisWindow = cisWindow,
-            credibleSetParam = credibleSetParam,
-            verbose = verbose,
-            methodArgs = methodArgs,
-            xRegions = xRegions,
-            mrmashPrior = mrmashPrior,
-            dataDrivenPriorWeightsCutoff = dataDrivenPriorWeightsCutoff
-        ),
-        .rbindFineMappingResult
-    )
-}
-
-# `map()` hands the dataset first; the dispatcher wants the specs first.
-# @noRd
-.fmDispatchForStudy <- function(
-    qd,
-    nonStudyAxisSpecs,
-    methods,
-    contexts,
-    traitIds,
-    cisWindow,
-    verbose,
-    methodArgs,
-    xRegions,
-    mrmashPrior,
-    dataDrivenPriorWeightsCutoff,
-    credibleSetParam
-) {
-    .fmDispatchJointSpecsQtlDataset(
-        nonStudyAxisSpecs,
-        qd,
-        methods = methods,
-        contexts = contexts,
-        traitIds = traitIds,
-        cisWindow = cisWindow,
-        credibleSetParam = credibleSetParam,
-        verbose = verbose,
-        methodArgs = methodArgs,
-        xRegions = xRegions,
-        mrmashPrior = mrmashPrior,
-        dataDrivenPriorWeightsCutoff = dataDrivenPriorWeightsCutoff
-    )
-}
-
-# Fine-map all specs on the sumstats collection; rbind onto `out`.
-.fmMultiStudySumStats <- function(
-    parsedJointSpec,
-    sumStats,
-    studyAxisSpecs,
-    out,
-    methods,
-    contexts,
-    traitIds,
-    verbose,
-    methodArgs,
-    mrmashPrior,
-    dataDrivenPriorWeightsCutoff,
-    credibleSetParam
-) {
-    if (is.null(sumStats)) {
-        if (length(studyAxisSpecs) > 0L && verbose >= 1) {
-            msg <- glue(
-                "jointCrossStudy: no sumStats slot present on this ",
-                "MultiStudyQtlDataset; cross-study specs produce no result."
-            )
-            inform(msg)
-        }
-        return(out)
-    }
-    ssRes <- .fmDispatchJointSpecsQtlSumStats(
-        parsedJointSpec,
-        sumStats,
-        methods = methods,
-        contexts = contexts,
-        traitIds = traitIds,
-        credibleSetParam = credibleSetParam,
-        verbose = verbose,
-        methodArgs = methodArgs,
-        mrmashPrior = mrmashPrior,
-        dataDrivenPriorWeightsCutoff = dataDrivenPriorWeightsCutoff
-    )
-    if (is.null(ssRes)) {
-        return(out)
-    }
-    embeddedLd <- ldSketch(ssRes)
-    if (is.null(out)) {
-        ssRes
-    } else {
-        .rbindFineMappingResult(out, ssRes, ldSketch = embeddedLd)
-    }
-}
-
-.fmDispatchJointSpecsMultiStudy <- function(
-    parsedJointSpec,
-    data,
-    methods,
-    contexts,
-    traitIds,
-    cisWindow,
-    credibleSetParam,
-    verbose,
-    methodArgs = list(),
-    xRegions = list(NULL),
-    mrmashPrior = NULL,
-    dataDrivenPriorWeightsCutoff = 1e-10
-) {
-    qtlDatasets <- qtlDatasets(data)
-    sumStats <- sumStats(data)
-    specs <- .fmSplitStudyAxisSpecs(parsedJointSpec)
-    .fmMultiStudyWarnExcluded(specs$study, qtlDatasets, verbose)
-    out <- .fmMultiStudyQtlLoop(
-        specs$nonStudy,
-        qtlDatasets,
-        methods = methods,
-        contexts = contexts,
-        traitIds = traitIds,
-        cisWindow = cisWindow,
-        credibleSetParam = credibleSetParam,
-        verbose = verbose,
-        methodArgs = methodArgs,
-        xRegions = xRegions,
-        mrmashPrior = mrmashPrior,
-        dataDrivenPriorWeightsCutoff = dataDrivenPriorWeightsCutoff
-    )
-    .fmMultiStudySumStats(
-        parsedJointSpec,
-        sumStats,
-        specs$study,
-        out,
-        methods = methods,
-        contexts = contexts,
-        traitIds = traitIds,
-        verbose = verbose,
-        methodArgs = methodArgs,
-        mrmashPrior = mrmashPrior,
-        dataDrivenPriorWeightsCutoff = dataDrivenPriorWeightsCutoff
-    )
 }
 
 
@@ -2302,8 +1853,6 @@ validateMethodsVsJointSpec <- function(methodsParsed, jointSpecParsed) {
 # TWAS-weights dispatchers
 # =============================================================================
 
-# Top-level joint dispatcher for twasWeightsPipeline(QtlDataset).
-# @noRd
 # Merge per-region TwasWeights collections (same keys across regions) into one
 # by concatenating each (study, context, trait, method) row's entry via
 # .twasMergeRegionEntries (stacked weights + flat per-region cvResult).
@@ -2338,145 +1887,175 @@ validateMethodsVsJointSpec <- function(methodsParsed, jointSpecParsed) {
     exec(TwasWeights, !!!twArgs)
 }
 
+# ---- TWAS joint dispatch ----------------------------------------------------
+#
+# An explicit jointSpecification fits under the same pipeline marker and the
+# same engine `args` as the per-tuple multivariate grid (.twasJointSetup() /
+# .twasRunJointSpecGrid()), so cross-validation, residualization,
+# fitRetention, the per-method options and the mash prior reach an explicit
+# joint fit exactly as they reach the rest. The explicit path used to build a
+# bare pipeline record of its own -- default cross-validation, no
+# fitRetention -- and to hand the engine no residualization and no options.
+
+# Explicit joint specs (mr.mash) on a QtlDataset.
+# @noRd
 .twasDispatchJointSpecsQtlDataset <- function(
     parsedJointSpec,
-    data,
-    methods,
+    tokens,
+    marker,
+    ctx,
     contexts,
-    traitIds,
-    cisWindow,
-    weightsDataType,
-    verbose,
-    xRegions = list(NULL),
-    fitRetention = c("slim", "none", "full"),
-    seed = NULL
+    traitIds
 ) {
-    fitRetention <- arg_match(fitRetention)
-    # Run the joint dispatch once per region block, then merge per
-    # (study, context, trait, method) across regions. A single block (cis or
-    # jointRegions=TRUE concatenated) returns its result directly.
-    allRegions <- map(
-        xRegions,
-        .twasDispatchJointSpecRegion,
-        parsedJointSpec = parsedJointSpec,
-        data = data,
-        methods = methods,
-        contexts = contexts,
-        traitIds = traitIds,
-        cisWindow = cisWindow,
-        weightsDataType = weightsDataType,
-        verbose = verbose,
-        fitRetention = fitRetention,
-        seed = seed
-    )
-    allLabs <- map_chr(xRegions, .twasRegionLabel)
-    keep <- !map_lgl(allRegions, is.null)
-    perRegion <- allRegions[keep]
-    labs <- allLabs[keep]
-    if (length(perRegion) == 0L) {
-        return(NULL)
-    }
-    if (length(perRegion) == 1L) {
-        return(perRegion[[1L]])
-    }
-    .twasMergeResultsByKey(perRegion, labs)
-}
-
-.twasDispatchJointSpecsQtlDatasetOneRegion <- function(
-    parsedJointSpec,
-    data,
-    methods,
-    contexts,
-    traitIds,
-    cisWindow,
-    weightsDataType,
-    verbose,
-    region = NULL,
-    fitRetention = c("slim", "none", "full"),
-    seed = NULL
-) {
-    fitRetention <- arg_match(fitRetention)
-    # Engine routing (jointEngine.R); one region block (the caller loops
-    # regions).
     .jointRejectStudyOnIndividual(parsedJointSpec)
-    pipeline <- new(
-        "TwasJointPipeline",
-        config = list(
-            dataType = weightsDataType,
-            crossValidationArgs = .cvResolve(CrossValidationParam()),
-            fitFullData = TRUE,
-            # What the accessor will actually do on this path. No
-            # residualization bundle reaches the TWAS joint dispatcher, so
-            # `residualizedGenotypes()` falls back to the dataset's own
-            # `scaleResiduals` slot -- which is therefore the honest answer
-            # here, and `NULL` says that explicitly rather than by omission.
-            standardized = .qtlScaleResiduals(data, NULL),
-            seed = seed,
-            ldSketch = NULL
-        )
-    )
-    .runJointSpecs(
+    .twasRunJointSpecGrid(
         parsedJointSpec,
-        data,
-        dataForm = "individual",
-        pipeline = pipeline,
-        jointMethods = intersect(methods, "mrmash"),
-        contexts = contexts,
-        traitIds = traitIds,
-        args = list(
-            methodArgs = list(),
-            cisWindow = cisWindow,
-            region = region,
-            verbose = verbose
-        )
+        intersect(tokens, "mrmash"),
+        contexts,
+        traitIds,
+        marker,
+        ctx
     )
 }
 
-
-# Top-level joint dispatcher for twasWeightsPipeline(QtlSumStats).
+# Explicit joint specs (mr.mash RSS) on a QtlSumStats collection. `cfg` is
+# the summary-statistics joint record, or a MultiStudy record with the
+# collection as its data; `methodArgs` are the summary-statistics path's
+# per-method options.
 # @noRd
 .twasDispatchJointSpecsQtlSumStats <- function(
     parsedJointSpec,
-    data,
-    methods,
-    contexts,
-    traitIds,
-    weightsDataType,
-    verbose,
-    fitRetention = c("slim", "none", "full"),
-    panelFilterParam = PanelFilterParam()
+    tokens,
+    methodArgs,
+    cfg
 ) {
-    fitRetention <- arg_match(fitRetention)
-    # Engine routing (jointEngine.R).
     pipeline <- new(
         "TwasJointPipeline",
         config = list(
-            dataType = weightsDataType,
-            crossValidationArgs = .cvResolve(CrossValidationParam()),
-            fitFullData = TRUE,
+            dataType = cfg$weightsDataType,
+            crossValidationParam = .cvResolve(CrossValidationParam()),
+            fitRetention = cfg$fitRetention,
             standardized = TRUE,
-            ldSketch = ldSketch(data)
+            verbose = cfg$verbose,
+            seed = cfg$seed,
+            ldReference = ldReference(cfg$data)
         )
     )
     .runJointSpecs(
         parsedJointSpec,
-        data,
+        cfg$data,
         dataForm = "sumstats",
         pipeline = pipeline,
-        jointMethods = intersect(methods, "mrmash"),
-        contexts = contexts,
-        traitIds = traitIds,
+        jointMethods = intersect(tokens, "mrmash"),
+        contexts = cfg$contexts,
+        traitIds = cfg$traitId,
         args = list(
-            methodArgs = list(),
-            verbose = verbose,
-            cutoffs = .panelCutoffs(panelFilterParam)
+            methodArgs = methodArgs,
+            verbose = cfg$verbose,
+            cutoffs = .panelCutoffs(
+                cfg$panelFilterParam %||% PanelFilterParam()
+            )
         )
     )
 }
 
-
-# Top-level joint dispatcher for twasWeightsPipeline(MultiStudyQtlDataset).
+# Joint dispatch for a MultiStudyQtlDataset. Non-study specs run on every
+# individual-level component, each fitting under the setup its own QtlDataset
+# run would use (.twasJointSetup() on the component, its genotype-filter
+# overrides applied); every spec runs on the summary-statistics component.
+# `cfg` is .twasJointCfg()'s record plus the collection, `genotypeFilterParam`
+# and `panelFilterParam`; `methods` is the translated methods record.
 # @noRd
+.twasDispatchJointSpecsMultiStudy <- function(
+    parsedJointSpec,
+    tokens,
+    methods,
+    cfg
+) {
+    qtlDatasets <- qtlDatasets(cfg$data)
+    specs <- .fmSplitStudyAxisSpecs(parsedJointSpec)
+    .twasMultiStudyWarnExcluded(specs$study, qtlDatasets, cfg$verbose)
+    out <- if (length(specs$nonStudy) == 0L) {
+        NULL
+    } else {
+        .msFoldStudyResults(
+            map(
+                qtlDatasets,
+                .twasStudyJointResult,
+                specs = specs$nonStudy,
+                tokens = tokens,
+                methods = methods,
+                cfg = cfg
+            ),
+            .rbindTwasWeights
+        )
+    }
+    .twasMultiStudySumStats(
+        parsedJointSpec,
+        specs$study,
+        out,
+        tokens,
+        methods,
+        cfg
+    )
+}
+
+# One individual-level component's joint fits.
+# @noRd
+.twasStudyJointResult <- function(qd, specs, tokens, methods, cfg) {
+    setup <- .twasJointSetup(
+        .qtlApplyFilterOverrides(qd, cfg$genotypeFilterParam),
+        .twasNormalizeMethods(methods),
+        cfg
+    )
+    .twasDispatchJointSpecsQtlDataset(
+        specs,
+        tokens,
+        setup$marker,
+        setup$ctx,
+        cfg$contexts,
+        cfg$traitId
+    )
+}
+
+# Fit every spec on the summary-statistics component and rbind onto the
+# individual-level results `out`.
+# @noRd
+.twasMultiStudySumStats <- function(
+    parsedJointSpec,
+    studyAxisSpecs,
+    out,
+    tokens,
+    methods,
+    cfg
+) {
+    sumStats <- sumStats(cfg$data)
+    if (is.null(sumStats)) {
+        if (length(studyAxisSpecs) > 0L && cfg$verbose >= 1) {
+            msg <- glue(
+                "jointCrossStudy (twas): no sumStats slot present on this ",
+                "MultiStudyQtlDataset; cross-study specs produce no result."
+            )
+            inform(msg)
+        }
+        return(out)
+    }
+    ssRes <- .twasDispatchJointSpecsQtlSumStats(
+        parsedJointSpec,
+        tokens,
+        .twasSumStatsMethodTokens(methods)$methodArgs,
+        list_assign(cfg, data = sumStats)
+    )
+    if (is.null(ssRes)) {
+        return(out)
+    }
+    if (is.null(out)) {
+        return(ssRes)
+    }
+    .rbindTwasWeights(out, ssRes, ldReference = ldReference(ssRes))
+}
+
+
 # --- .twasDispatchJointSpecsMultiStudy helpers ------------------------------
 
 # Note that individual-level studies are excluded from cross-study TWAS fits.
@@ -2494,160 +2073,6 @@ validateMethodsVsJointSpec <- function(methodsParsed, jointSpecParsed) {
     }
 }
 
-# Learn weights for the non-study-axis specs on each individual-level dataset.
-.twasMultiStudyQtlLoop <- function(
-    nonStudyAxisSpecs,
-    qtlDatasets,
-    methods,
-    contexts,
-    traitIds,
-    cisWindow,
-    weightsDataType,
-    verbose,
-    xRegions,
-    fitRetention,
-    seed
-) {
-    if (length(nonStudyAxisSpecs) == 0L) {
-        return(NULL)
-    }
-    .msFoldStudyResults(
-        map(
-            qtlDatasets,
-            .twasDispatchForStudy,
-            nonStudyAxisSpecs = nonStudyAxisSpecs,
-            methods = methods,
-            contexts = contexts,
-            traitIds = traitIds,
-            cisWindow = cisWindow,
-            weightsDataType = weightsDataType,
-            verbose = verbose,
-            xRegions = xRegions,
-            fitRetention = fitRetention,
-            seed = seed
-        ),
-        .rbindTwasWeights
-    )
-}
-
-# `map()` hands the dataset first; the dispatcher wants the specs first.
-# @noRd
-.twasDispatchForStudy <- function(
-    qd,
-    nonStudyAxisSpecs,
-    methods,
-    contexts,
-    traitIds,
-    cisWindow,
-    weightsDataType,
-    verbose,
-    xRegions,
-    fitRetention,
-    seed
-) {
-    .twasDispatchJointSpecsQtlDataset(
-        nonStudyAxisSpecs,
-        qd,
-        methods = methods,
-        contexts = contexts,
-        traitIds = traitIds,
-        cisWindow = cisWindow,
-        weightsDataType = weightsDataType,
-        verbose = verbose,
-        xRegions = xRegions,
-        fitRetention = fitRetention,
-        seed = seed
-    )
-}
-
-# Learn weights for all specs on the sumstats collection; rbind onto `out`.
-.twasMultiStudySumStats <- function(
-    parsedJointSpec,
-    sumStats,
-    studyAxisSpecs,
-    out,
-    methods,
-    contexts,
-    traitIds,
-    weightsDataType,
-    verbose,
-    fitRetention
-) {
-    if (is.null(sumStats)) {
-        if (length(studyAxisSpecs) > 0L && verbose >= 1) {
-            msg <- glue(
-                "jointCrossStudy (twas): no sumStats slot present on this ",
-                "MultiStudyQtlDataset; cross-study specs produce no result."
-            )
-            inform(msg)
-        }
-        return(out)
-    }
-    ssRes <- .twasDispatchJointSpecsQtlSumStats(
-        parsedJointSpec,
-        sumStats,
-        methods = methods,
-        contexts = contexts,
-        traitIds = traitIds,
-        weightsDataType = weightsDataType,
-        verbose = verbose,
-        fitRetention = fitRetention
-    )
-    if (is.null(ssRes)) {
-        return(out)
-    }
-    embeddedLd <- ldSketch(ssRes)
-    if (is.null(out)) {
-        ssRes
-    } else {
-        .rbindTwasWeights(out, ssRes, ldSketch = embeddedLd)
-    }
-}
-
-.twasDispatchJointSpecsMultiStudy <- function(
-    parsedJointSpec,
-    data,
-    methods,
-    contexts,
-    traitIds,
-    cisWindow,
-    weightsDataType,
-    verbose,
-    xRegions = list(NULL),
-    fitRetention = c("slim", "none", "full"),
-    seed = NULL
-) {
-    fitRetention <- arg_match(fitRetention)
-    qtlDatasets <- qtlDatasets(data)
-    sumStats <- sumStats(data)
-    specs <- .fmSplitStudyAxisSpecs(parsedJointSpec)
-    .twasMultiStudyWarnExcluded(specs$study, qtlDatasets, verbose)
-    out <- .twasMultiStudyQtlLoop(
-        specs$nonStudy,
-        qtlDatasets,
-        methods = methods,
-        contexts = contexts,
-        traitIds = traitIds,
-        cisWindow = cisWindow,
-        weightsDataType = weightsDataType,
-        verbose = verbose,
-        xRegions = xRegions,
-        fitRetention = fitRetention,
-        seed = seed
-    )
-    .twasMultiStudySumStats(
-        parsedJointSpec,
-        sumStats,
-        specs$study,
-        out,
-        methods = methods,
-        contexts = contexts,
-        traitIds = traitIds,
-        weightsDataType = weightsDataType,
-        verbose = verbose,
-        fitRetention = fitRetention
-    )
-}
 
 # ---- map/apply helpers (lambda-free callbacks) ---------------------------
 
@@ -2719,78 +2144,4 @@ validateMethodsVsJointSpec <- function(methodsParsed, jointSpecParsed) {
 # @noRd
 .jsHasStudyAxis <- function(s) {
     is_in("study", s$axes)
-}
-
-# One region's FM joint-spec dispatch; `args` bundles the shared call arguments.
-# @noRd
-.fmDispatchJointSpecRegion <- function(
-    rg,
-    parsedJointSpec,
-    data,
-    methods,
-    contexts,
-    traitIds,
-    cisWindow,
-    credibleSetParam,
-    verbose,
-    methodArgs,
-    mrmashPrior,
-    dataDrivenPriorWeightsCutoff,
-    crossValidationArgs,
-    residualizationArgs,
-    pipCutoffToSkip,
-    fineMappingResult,
-    fitRetention,
-    seed
-) {
-    .fmDispatchJointSpecsQtlDatasetOneRegion(
-        parsedJointSpec = parsedJointSpec,
-        data = data,
-        methods = methods,
-        contexts = contexts,
-        traitIds = traitIds,
-        cisWindow = cisWindow,
-        credibleSetParam = credibleSetParam,
-        verbose = verbose,
-        methodArgs = methodArgs,
-        mrmashPrior = mrmashPrior,
-        dataDrivenPriorWeightsCutoff = dataDrivenPriorWeightsCutoff,
-        crossValidationArgs = crossValidationArgs,
-        residualizationArgs = residualizationArgs,
-        pipCutoffToSkip = pipCutoffToSkip,
-        fineMappingResult = fineMappingResult,
-        fitRetention = fitRetention,
-        seed = seed,
-        region = rg
-    )
-}
-
-# One region's TWAS joint-spec dispatch over a QtlDataset.
-# @noRd
-.twasDispatchJointSpecRegion <- function(
-    rg,
-    parsedJointSpec,
-    data,
-    methods,
-    contexts,
-    traitIds,
-    cisWindow,
-    weightsDataType,
-    verbose,
-    fitRetention,
-    seed = NULL
-) {
-    .twasDispatchJointSpecsQtlDatasetOneRegion(
-        parsedJointSpec,
-        data,
-        methods,
-        contexts,
-        traitIds,
-        cisWindow,
-        weightsDataType,
-        verbose,
-        region = rg,
-        fitRetention = fitRetention,
-        seed = seed
-    )
 }

@@ -7,7 +7,7 @@
 qtlEnrichmentPipeline(
   gwasFineMappingResult,
   qtlFineMappingResult,
-  methodArgs = QtlEnrichmentParam(),
+  qtlEnrichmentParam = QtlEnrichmentParam(),
   numThreads = 1L,
   seed = NULL,
   verbose = TRUE
@@ -18,7 +18,7 @@ qtlEnrichmentPipeline(
 
 \item{qtlFineMappingResult}{The annotation side; see above.}
 
-\item{methodArgs}{The estimator's algorithmic settings, built with
+\item{qtlEnrichmentParam}{The estimator's algorithmic settings, built with
 \code{\link{QtlEnrichmentParam}}: \code{numGwas}, \code{piQtl},
 \code{lambda}, \code{impN}, \code{doubleShrinkage} and
 \code{besselCorrection}. A bare list is refused, since it cannot be
@@ -78,27 +78,30 @@ genome of outcome PIPs and the full collection of annotation fits at once.
 
 \itemize{
   \item \code{gwasFineMappingResult}: the genome-wide outcome collection.
-    Each entry's \code{FineMappingRow$trimmedFit} must carry a \code{pip}
+    Each row's stored fit (\code{\link{susieFit}}) must carry a \code{pip}
     vector. One PIP vector is built per outcome trait -- keyed by
     \code{study} for a GWAS collection (one trait per study) and by
     (\code{study}, \code{context}, \code{trait}) for a QTL one, since a
     variant's PIP differs between molecular traits and pooling them would
     collide.
-  \item \code{qtlFineMappingResult}: the annotation collection. Each entry's
-    \code{trimmedFit} must carry \code{alpha}, \code{pip}, and
+  \item \code{qtlFineMappingResult}: the annotation collection. Each row's
+    stored fit must carry \code{alpha}, \code{pip}, and
     prior-variance fields (\code{V}). Its region fits are pooled per
     (\code{study}, \code{context}) -- per \code{study} alone for a GWAS
     collection, which has no context axis.
 }
 }
 
-\section{LD-sketch compatibility check}{
- A GWAS outcome collection must have
-  a non-NULL \code{ldSketch} (it should be RSS-derived). Where both sides
-  carry one, the two must come from the same reference panel --- same
-  samples, same allele orientation on the variants they share --- but need
-  NOT carry the same variants: QC-ing the two sides separately trims each
-  sketch to its own surviving variants, and a partial overlap only warns. A
+\section{LD reference compatibility check}{
+ A GWAS outcome collection
+  must have a non-NULL \code{ldReference} (it should be RSS-derived). Where
+  both sides carry one, the two must be the same LD reference.
+  The two must be the same kind of reference. Two genotype panels must
+  share their samples and allele orientation; two \code{LdMatrix} objects
+  must agree on the LD they share; two \code{GenotypeMixture} objects must
+  average the same panels with the same weights. They need NOT carry the
+  same variants: QC-ing the two sides separately trims each reference to
+  its own surviving variants, and a partial overlap only warns. A
   \code{NULL} on either side (an individual-level fit) skips the check.
 }
 

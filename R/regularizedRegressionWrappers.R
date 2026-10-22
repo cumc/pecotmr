@@ -2,23 +2,35 @@
 NULL
 
 #' Extract weights from mr.ash.rss (susieR)
-#' @param stat A list of summary statistics with elements \code{b} (effect
-#'   sizes), \code{seb} (standard errors) and \code{n} (per-variant sample
-#'   sizes).
-#' @param LD Numeric LD (correlation) matrix aligned to the variants in
-#'   \code{stat}.
-#' @param varY Numeric. Variance of the phenotype.
-#' @param sigma2E Numeric. Residual error variance estimate.
-#' @param s0 Numeric vector of prior mixture standard deviations (the sigma0
-#'   grid).
-#' @param w0 Numeric vector of prior mixture weights (summing to 1).
-#' @param z Optional numeric vector of z-scores; defaults to \code{numeric(0)}
-#'   (derived from \code{stat}).
+#' @param stat A list of summary statistics: \code{n} (per-variant sample
+#'   sizes), \code{variantNames}, and the marginal effects as \code{z}, or as
+#'   \code{b} with \code{seb}.
+#' @param ldReference The LD reference the statistics' variants are matched
+#'   to by \code{stat$variantNames}: a genotype panel (see
+#'   \code{\link{readGenotypes}}), a \code{\link{GenotypeMixture}} or an
+#'   \code{\link{LdMatrix}}. \code{mr.ash.rss} takes an LD matrix, which is
+#'   formed from the reference over these variants.
+#' @param varY Variance of the phenotype, or \code{NULL} (default) to fit on
+#'   the standardized scale. Used only with \code{b} and \code{seb}.
+#' @param sigma2E Initial residual variance, or \code{NULL} (default) for
+#'   \code{mr.ash.rss}'s own.
+#' @param s0 Prior variances of the mixture components, relative to the
+#'   residual variance, or \code{NULL} (default) for the grid
+#'   \code{susieR::mr.ash} uses by default, built for these statistics.
+#' @param w0 Prior mixture weights (summing to 1), or \code{NULL} (default)
+#'   for equal weights.
+#' @param fitRetention How much of the fit is kept as the \code{"fit"}
+#'   attribute of the returned weights: \code{"none"} (default) attaches
+#'   nothing, \code{"slim"} and \code{"full"} attach the fitted
+#'   \code{mr.ash.rss} model. This engine keeps no trimmable intermediates,
+#'   so the two retaining levels behave alike here.
 #' @param methodArgs Options forwarded to \code{susieR::mr.ash.rss}, built
-#'   with \code{\link{MrashOptions}}. A bare list is refused: it cannot be
+#'   with \code{\link{MrashRssOptions}}. A bare list is refused: it cannot be
 #'   checked against the engine, so a misspelled option would be
 #'   silently ignored.
-#' @return A numeric vector of the posterior mean of the coefficients.
+#' @return A numeric vector of the posterior mean of the coefficients. Unless
+#'   \code{fitRetention = "none"}, the fitted model is attached as attribute
+#'   \code{"fit"}.
 #' @importFrom susieR mr.ash.rss
 #' @examples
 #' data(eqtlRegionExample)
@@ -28,41 +40,78 @@ NULL
 #'   coef(summary(lm(y ~ X[, j])))[2, 1:2]
 #' })
 #' stat <- list(b = vapply(ss, `[`, numeric(1), 1L),
-#'   seb = vapply(ss, `[`, numeric(1), 2L), n = rep(nrow(X), ncol(X)))
-#' mrashRssWeights(stat, cor(X), varY = var(y), sigma2E = var(y),
-#'   s0 = c(0, 0.1, 0.5), w0 = c(0.8, 0.1, 0.1))
-#' @importFrom checkmate assertList assertNumeric
+#'   seb = vapply(ss, `[`, numeric(1), 2L), n = rep(nrow(X), ncol(X)),
+#'   variantNames = colnames(X))
+#' mrashRssWeights(stat, LdMatrix(cor(X)))
+#' @importFrom checkmate assertList
 #' @export
 mrashRssWeights <- function(
     stat,
-    LD,
-    varY,
-    sigma2E,
-    s0,
-    w0,
-    z = numeric(0),
+    ldReference,
+    varY = NULL,
+    sigma2E = NULL,
+    s0 = NULL,
+    w0 = NULL,
+    fitRetention = c("none", "slim", "full"),
     methodArgs = MrashRssOptions()
 ) {
+    fitRetention <- arg_match(fitRetention)
     .assertMethodOptions(methodArgs, "MrashRssOptions", "methodArgs")
     assertList(stat)
-    assertNumeric(z)
+    R <- .rssLdMatrix(stat, ldReference, "mrashRssWeights")
+    n <- median(stat$n)
+    shat <- as.numeric(stat$seb %||% numeric(0))
+    z <- .mrashRssZ(stat)
+    s0 <- s0 %||% .mrashRssDefaultGrid(n, z, shat, varY)
     callArgs <- list_modify(
         list(
-            bhat = stat$b,
-            shat = stat$seb,
+            bhat = as.numeric(stat$b %||% numeric(0)),
+            shat = shat,
             z = z,
-            R = LD,
+            R = R,
             var_y = varY,
-            n = median(stat$n),
+            n = n,
             sigma2_e = sigma2E,
             s0 = s0,
-            w0 = w0
+            # A copy: mr.ash.rss() writes its fitted weights over the vector
+            # it is given, which would otherwise be the caller's.
+            w0 = (w0 %||% rep(1 / length(s0), length(s0))) + 0
         ),
         !!!methodArgs
     )
     model <- exec(mr.ash.rss, !!!callArgs)
+    if (identical(fitRetention, "none")) {
+        return(model$mu1)
+    }
+    `attr<-`(model$mu1, "fit", model)
+}
 
-    return(model$mu1)
+# The z-scores mr.ash.rss() fits: the statistics' own, or b / seb.
+# @noRd
+.mrashRssZ <- function(stat) {
+    hasBetaSe <- !is.null(stat$b) && !is.null(stat$seb)
+    z <- stat$z %||% (if (hasBetaSe) stat$b / stat$seb)
+    if (is.null(z)) {
+        abort("mrashRssWeights: `stat` must carry `z`, or `b` with `seb`.")
+    }
+    as.numeric(z)
+}
+
+# susieR::mr.ash()'s own default prior grid, (2^((k - 1) / 25) - 1)^2 scaled
+# by n / median(w) with w the columns' sums of squares, for the sufficient
+# statistics mr.ash.rss() builds from these: w = n - 1 on the standardized
+# scale it fits without both a finite varY and seb, and otherwise
+# varY * adj / seb^2, with adj = (n - 1) / (z^2 + n - 2) the shrinkage it
+# applies.
+# @noRd
+.mrashRssDefaultGrid <- function(n, z, shat, varY) {
+    unstandardized <- length(shat) > 0L && !is.null(varY) && is.finite(varY)
+    w <- if (unstandardized) {
+        varY * (n - 1) / (z^2 + n - 2) / shat^2
+    } else {
+        rep(n - 1, length(z))
+    }
+    (2^((0:24) / 25) - 1)^2 / median(w) * n
 }
 
 #' PRS-CS: a polygenic prediction method that infers posterior SNP effect sizes
@@ -72,6 +121,11 @@ mrashRssWeights <- function(
 #' marginal effect size estimates from regression and an external LD reference
 #' panel and infers posterior SNP effect sizes using Bayesian regression with
 #' continuous shrinkage priors.
+#'
+#' Internal: \code{\link{prsCsWeights}} is the public interface. It forwards
+#' the arguments below other than \code{bhat}, \code{R} and \code{n} through
+#' \code{\link{PrsCsOptions}}, and with \code{fitRetention} returns this
+#' function's list as the \code{"fit"} attribute of its weights.
 #'
 #' @param bhat A vector of marginal effect sizes.
 #' @param R The LD correlation matrix (a single matrix over the analysed
@@ -93,48 +147,7 @@ mrashRssWeights <- function(
 #'   estimates of SNP effect sizes. - psiEst: Posterior estimates of psi
 #'   (shrinkage parameters). - sigmaEst: Posterior estimate of the residual
 #'   variance. - phiEst: Posterior estimate of the global shrinkage parameter.
-#' @examples
-#' # Generate example data
-#' set.seed(985115)
-#' n <- 350
-#' p <- 16
-#' sigmasq_error <- 0.5
-#' zeroes <- rbinom(p, 1, 0.6)
-#' beta.true <- rnorm(p, 1, sd = 4)
-#' beta.true[zeroes] <- 0
-#'
-#' X <- cbind(matrix(rnorm(n * p), nrow = n))
-#' X <- scale(X, center = TRUE, scale = FALSE)
-#' y <- X %*% matrix(beta.true, ncol = 1) + rnorm(n, 0, sqrt(sigmasq_error))
-#' y <- scale(y, center = TRUE, scale = FALSE)
-#'
-#' # Calculate sufficient statistics
-#' XtX <- t(X) %*% X
-#' Xty <- t(X) %*% y
-#' yty <- t(y) %*% y
-#'
-#' # Set the prior
-#' K <- 9
-#' sigma0 <- c(0.001, .1, .5, 1, 5, 10, 20, 30, .005)
-#' omega0 <- rep(1 / K, K)
-#'
-#' # Calculate summary statistics
-#' b.hat <- sapply(1:p, function(j) {
-#'   summary(lm(y ~ X[, j]))$coefficients[-1, 1]
-#' })
-#' s.hat <- sapply(1:p, function(j) {
-#'   summary(lm(y ~ X[, j]))$coefficients[-1, 2]
-#' })
-#' R.hat <- cor(X)
-#' var_y <- var(y)
-#' sigmasq_init <- 1.5
-#'
-#' # Run PRS CS
-#' maf <- rep(0.5, length(b.hat)) # fake MAF
-#' out <- prsCs(b.hat, R.hat, n, maf = maf)
-#' # In sample prediction correlations
-#' cor(X %*% out$betaEst, y) # 0.9944553
-#' @export
+#' @keywords internal
 prsCs <- function(
     bhat,
     R,
@@ -149,29 +162,63 @@ prsCs <- function(
     verbose = FALSE,
     seed = NULL
 ) {
-    # Shared LD-matrix validation, then the prsCs-specific maf length check.
     .rssValidateInputs(bhat, R, n)
+    .prsCsRun(
+        bhat,
+        list(R = R),
+        n,
+        a,
+        b,
+        phi,
+        maf,
+        nIter,
+        nBurnin,
+        thin,
+        verbose,
+        seed
+    )
+}
+
+# PRS-CS on an LD source (.ldSourceRows()): the sampler that factors R for a
+# matrix, or for a factor the one that never forms R (prscs_mcmc.h), which
+# draws differently from the same posterior.
+# @noRd
+.prsCsRun <- function(
+    bhat,
+    ld,
+    n,
+    a,
+    b,
+    phi,
+    maf,
+    nIter,
+    nBurnin,
+    thin,
+    verbose,
+    seed
+) {
     if (!is.null(maf) && length(bhat) != length(maf)) {
         abort("The length of 'bhat' must be the same as 'maf'.")
     }
-
-    # Run PRS-CS
     # cpp11 requires exact integer types for int parameters
-    result <- prsCsRcpp(
+    settings <- list(
         a = a,
         b = b,
         phi = phi,
         bhat = bhat,
         maf = maf,
         n = as.integer(n),
-        ldBlk = list(blk1 = R),
         nIter = as.integer(nIter),
         nBurnin = as.integer(nBurnin),
         thin = as.integer(thin),
         verbose = verbose,
         seed = seed
     )
-
+    result <- if (is.null(ld$F)) {
+        exec(prsCsCpp, !!!settings, ldBlk = list(blk1 = ld$R))
+    } else {
+        exec(prsCsFactorCpp, !!!settings, factorR = ld$F)
+    }
     # Return the result as a list (camelCase to match the rest of the package
     # API).
     list(
@@ -183,15 +230,30 @@ prsCs <- function(
 }
 
 #' Extract weights from prsCs function
-#' @param stat A list of summary statistics with elements \code{b} (effect
-#'   sizes) and \code{n} (per-variant sample sizes).
-#' @param LD Numeric LD (correlation) matrix aligned to the variants in
-#'   \code{stat}.
-#' @param methodArgs Options forwarded to \code{prsCs}, built
-#'   with \code{\link{PrsCsOptions}}. A bare list is refused: it cannot be
-#'   checked against the engine, so a misspelled option would be
+#' @param stat A list of summary statistics: \code{n} (per-variant sample
+#'   sizes) and the marginal effects as \code{cor} (standardized), \code{z},
+#'   \code{b} with \code{seb}, or \code{b} alone, taken as already
+#'   standardized. The engine receives the standardized effects z / sqrt(n),
+#'   with n the median of \code{n}.
+#' @param ldReference The LD reference the statistics' variants are matched
+#'   to by \code{stat$variantNames}: a genotype panel (see
+#'   \code{\link{readGenotypes}}), a \code{\link{GenotypeMixture}} or an
+#'   \code{\link{LdMatrix}}. A genotype reference's LD is used through its
+#'   standardized genotypes, never formed as a matrix.
+#' @param fitRetention How much of the fit is kept as the \code{"fit"}
+#'   attribute of the returned weights: \code{"none"} (default) attaches
+#'   nothing, \code{"slim"} and \code{"full"} attach the sampler's posterior
+#'   estimates: \code{betaEst}, the local shrinkage parameters
+#'   \code{psiEst}, the residual variance \code{sigmaEst} and the global
+#'   shrinkage \code{phiEst}. This engine keeps no trimmable intermediates,
+#'   so the two retaining levels behave alike here.
+#' @param methodArgs Options forwarded to the sampler, \code{\link{prsCs}},
+#'   built with \code{\link{PrsCsOptions}}. A bare list is refused: it cannot
+#'   be checked against the engine, so a misspelled option would be
 #'   silently ignored.
-#' @return A numeric vector of the posterior SNP coefficients.
+#' @return A numeric vector of the posterior SNP coefficients. Unless
+#'   \code{fitRetention = "none"}, the sampler's estimates are attached as
+#'   attribute \code{"fit"}.
 #' @examples
 #' data(eqtlRegionExample)
 #' X <- eqtlRegionExample$X[, 1:30]
@@ -201,20 +263,51 @@ prsCs <- function(
 #' stat <- list(
 #'   b = vapply(ss, `[`, numeric(1), 1L),
 #'   seb = vapply(ss, `[`, numeric(1), 2L),
-#'   n = rep(nrow(X), ncol(X))
+#'   n = rep(nrow(X), ncol(X)),
+#'   variantNames = colnames(X)
 #' )
-#' LD <- cor(X)
-#' prsCsWeights(stat, LD, methodArgs = PrsCsOptions(maf = rep(0.3, ncol(X))))
+#' w <- prsCsWeights(
+#'   stat,
+#'   LdMatrix(cor(X)),
+#'   fitRetention = "slim",
+#'   methodArgs = PrsCsOptions(maf = rep(0.3, ncol(X)))
+#' )
+#' attr(w, "fit")$phiEst
 #' @export
-prsCsWeights <- function(stat, LD, methodArgs = PrsCsOptions()) {
+prsCsWeights <- function(
+    stat,
+    ldReference,
+    fitRetention = c("none", "slim", "full"),
+    methodArgs = PrsCsOptions()
+) {
+    fitRetention <- arg_match(fitRetention)
     .assertMethodOptions(methodArgs, "PrsCsOptions", "methodArgs")
-    callArgs <- list_modify(
-        list(bhat = stat$b, R = LD, n = median(stat$n)),
-        !!!methodArgs
+    ld <- .rssLdSource(stat, ldReference, "prsCsWeights")
+    n <- median(stat$n)
+    bhat <- .rssMarginalCor(stat, n = n, p = .ldSourceSize(ld))
+    .rssValidateSource(bhat, ld, n)
+    settings <- list_modify(
+        .formalDefaults(
+            prsCs,
+            c(
+                "a",
+                "b",
+                "phi",
+                "maf",
+                "nIter",
+                "nBurnin",
+                "thin",
+                "verbose",
+                "seed"
+            )
+        ),
+        !!!as.list(methodArgs)
     )
-    model <- exec(prsCs, !!!callArgs)
-
-    return(model$betaEst)
+    model <- exec(.prsCsRun, bhat = bhat, ld = ld, n = n, !!!settings)
+    if (identical(fitRetention, "none")) {
+        return(model$betaEst)
+    }
+    `attr<-`(model$betaEst, "fit", model)
 }
 
 #' SDPR (Summary-Statistics-Based Dirichelt Process Regression for Polygenic
@@ -223,6 +316,11 @@ prsCsWeights <- function(stat, LD, methodArgs = PrsCsOptions()) {
 #' This function is a wrapper for the SDPR C++ implementation, which performs
 #' Markov Chain Monte Carlo (MCMC) for estimating effect sizes and heritability
 #' based on summary statistics and reference LD matrices.
+#'
+#' Internal: \code{\link{sdprWeights}} is the public interface. It forwards
+#' the arguments below other than \code{bhat}, \code{R} and \code{n} through
+#' \code{\link{SdprOptions}}, and with \code{fitRetention} returns this
+#' function's list as the \code{"fit"} attribute of its weights.
 #'
 #' @param bhat A vector of marginal beta values for each SNP.
 #' @param R The LD correlation matrix (a single matrix over the analysed
@@ -251,56 +349,14 @@ prsCsWeights <- function(stat, LD, methodArgs = PrsCsOptions()) {
 #' @param seed Integer or \code{NULL}. Random seed for the Gibbs sampler;
 #'   \code{NULL} leaves the RNG state unchanged.
 #' @return A list with \code{betaEst} (the estimated effect sizes) and
-#'   \code{h2} (the estimated heritability). \code{sdprWeights()} returns
-#'   only \code{betaEst}; call this directly when you also want \code{h2}.
-#' @examples
-#' # Generate example data
-#' set.seed(985115)
-#' n <- 350
-#' p <- 16
-#' sigmasq_error <- 0.5
-#' zeroes <- rbinom(p, 1, 0.6)
-#' beta.true <- rnorm(p, 1, sd = 4)
-#' beta.true[zeroes] <- 0
-#'
-#' X <- cbind(matrix(rnorm(n * p), nrow = n))
-#' X <- scale(X, center = TRUE, scale = FALSE)
-#' y <- X %*% matrix(beta.true, ncol = 1) + rnorm(n, 0, sqrt(sigmasq_error))
-#' y <- scale(y, center = TRUE, scale = FALSE)
-#'
-#' # Calculate sufficient statistics
-#' XtX <- t(X) %*% X
-#' Xty <- t(X) %*% y
-#' yty <- t(y) %*% y
-#'
-#' # Set the prior
-#' K <- 9
-#' sigma0 <- c(0.001, .1, .5, 1, 5, 10, 20, 30, .005)
-#' omega0 <- rep(1 / K, K)
-#'
-#' # Calculate summary statistics
-#' b.hat <- sapply(1:p, function(j) {
-#'   summary(lm(y ~ X[, j]))$coefficients[-1, 1]
-#' })
-#' s.hat <- sapply(1:p, function(j) {
-#'   summary(lm(y ~ X[, j]))$coefficients[-1, 2]
-#' })
-#' R.hat <- cor(X)
-#' var_y <- var(y)
-#' sigmasq_init <- 1.5
-#'
-#' # Run SDPR
-#' out <- sdpr(b.hat, R.hat, n)
-#' # In sample prediction correlations
-#' cor(X %*% out$betaEst, y) #
-#'
+#'   \code{h2} (the estimated heritability).
 #' @note This function wraps a rewritten and adapted version of the SDPR C++
 #'   implementation. SDPR is described in Zhou G, Zhao H (2021), "A fast and
 #'   robust Bayesian nonparametric method for prediction of complex traits
 #'   using summary statistics", PLoS Genetics 17(7): e1009697.
 #'   \doi{10.1371/journal.pgen.1009697}
 #'
-#' @export
+#' @keywords internal
 sdpr <- function(
     bhat,
     R,
@@ -320,12 +376,55 @@ sdpr <- function(
     verbose = TRUE,
     seed = NULL
 ) {
-    .sdprValidate(bhat, R, n, M, perVariantSampleSize, array)
-    # The C++ backend takes a block list; wrap the single-window matrix R as one
-    # block. cpp11 requires exact integer types for int params + sexp vectors.
-    sdprRcpp(
+    .rssValidateInputs(bhat, R, n)
+    .sdprRun(
+        bhat,
+        list(R = R),
+        n,
+        perVariantSampleSize,
+        array,
+        a,
+        c,
+        M,
+        a0k,
+        b0k,
+        iter,
+        burn,
+        thin,
+        numThreads,
+        optLlk,
+        verbose,
+        seed
+    )
+}
+
+# SDPR on an LD source (.ldSourceRows()): the sampler on the matrix, or the
+# same sampler on the low-rank form of SDPR's matrices from a factor of it
+# (sdpr_mcmc.h), which draws as the matrix route does without forming R.
+# @noRd
+.sdprRun <- function(
+    bhat,
+    ld,
+    n,
+    perVariantSampleSize,
+    array,
+    a,
+    c,
+    M,
+    a0k,
+    b0k,
+    iter,
+    burn,
+    thin,
+    numThreads,
+    optLlk,
+    verbose,
+    seed
+) {
+    .sdprValidate(M, perVariantSampleSize, array)
+    # cpp11 requires exact integer types for int params + sexp vectors.
+    settings <- list(
         bhatR = bhat,
-        LD = list(blk1 = R),
         n = as.integer(n),
         perVariantSampleSize = perVariantSampleSize,
         array = if (!is.null(array)) as.integer(array) else NULL,
@@ -342,13 +441,18 @@ sdpr <- function(
         verbose = verbose,
         seed = seed
     )
+    if (is.null(ld$F)) {
+        # The C++ backend takes a block list; the window is one block.
+        return(exec(sdprCpp, !!!settings, LD = list(blk1 = ld$R)))
+    }
+    exec(sdprFactorCpp, !!!settings, factorR = ld$F)
 }
 
-# Validate the SDPR inputs: RSS contract, M >= 4 (SDPR uses M-2 indexing in
-# sample_V; M < 4 overflows), positive per-variant N, and array in {0, 1, 2}.
+# Validate the SDPR settings: M >= 4 (SDPR uses M-2 indexing in sample_V;
+# M < 4 overflows), positive per-variant N, and array in {0, 1, 2}. The RSS
+# contract (bhat, LD, n) is checked by the callers.
 # @noRd
-.sdprValidate <- function(bhat, R, n, M, perVariantSampleSize, array) {
-    .rssValidateInputs(bhat, R, n)
+.sdprValidate <- function(M, perVariantSampleSize, array) {
     if (M < 4) {
         abort("'M' must be at least 4.")
     }
@@ -366,15 +470,31 @@ sdpr <- function(
 }
 
 #' Extract weights from sdpr function
-#' @param stat A list of summary statistics with elements \code{b} (effect
-#'   sizes) and \code{n} (per-variant sample sizes).
-#' @param LD Numeric LD (correlation) matrix aligned to the variants in
-#'   \code{stat}.
-#' @param methodArgs Options forwarded to \code{sdpr}, built
-#'   with \code{\link{SdprOptions}}. A bare list is refused: it cannot be
-#'   checked against the engine, so a misspelled option would be
+#' @param stat A list of summary statistics: \code{n} (per-variant sample
+#'   sizes) and the marginal effects as \code{cor} (standardized), \code{z},
+#'   \code{b} with \code{seb}, or \code{b} alone, taken as already
+#'   standardized. The engine receives the standardized effects z / sqrt(n),
+#'   with n the median of \code{n}.
+#' @param ldReference The LD reference the statistics' variants are matched
+#'   to by \code{stat$variantNames}: a genotype panel (see
+#'   \code{\link{readGenotypes}}), a \code{\link{GenotypeMixture}} or an
+#'   \code{\link{LdMatrix}}. A genotype reference's LD is used through its
+#'   standardized genotypes and not formed as a matrix, except under
+#'   \code{optLlk = 2} when the per-variant sample sizes and arrays are
+#'   too varied for its low-rank form to pay.
+#' @param fitRetention How much of the fit is kept as the \code{"fit"}
+#'   attribute of the returned weights: \code{"none"} (default) attaches
+#'   nothing, \code{"slim"} and \code{"full"} attach the sampler's
+#'   estimates, \code{betaEst} and the heritability \code{h2}. This engine
+#'   keeps no trimmable intermediates, so the two retaining levels behave
+#'   alike here.
+#' @param methodArgs Options forwarded to the sampler, \code{\link{sdpr}},
+#'   built with \code{\link{SdprOptions}}. A bare list is refused: it cannot
+#'   be checked against the engine, so a misspelled option would be
 #'   silently ignored.
-#' @return A numeric vector of the posterior SNP coefficients.
+#' @return A numeric vector of the posterior SNP coefficients. Unless
+#'   \code{fitRetention = "none"}, the sampler's estimates, the heritability
+#'   among them, are attached as attribute \code{"fit"}.
 #' @examples
 #' data(eqtlRegionExample)
 #' X <- eqtlRegionExample$X[, 1:30]
@@ -384,20 +504,51 @@ sdpr <- function(
 #' stat <- list(
 #'   b = vapply(ss, `[`, numeric(1), 1L),
 #'   seb = vapply(ss, `[`, numeric(1), 2L),
-#'   n = rep(nrow(X), ncol(X))
+#'   n = rep(nrow(X), ncol(X)),
+#'   variantNames = colnames(X)
 #' )
-#' LD <- cor(X)
-#' sdprWeights(stat, LD)
+#' w <- sdprWeights(stat, LdMatrix(cor(X)), fitRetention = "slim")
+#' attr(w, "fit")$h2
 #' @export
-sdprWeights <- function(stat, LD, methodArgs = SdprOptions()) {
+sdprWeights <- function(
+    stat,
+    ldReference,
+    fitRetention = c("none", "slim", "full"),
+    methodArgs = SdprOptions()
+) {
+    fitRetention <- arg_match(fitRetention)
     .assertMethodOptions(methodArgs, "SdprOptions", "methodArgs")
-    callArgs <- list_modify(
-        list(bhat = stat$b, R = LD, n = median(stat$n)),
-        !!!methodArgs
+    ld <- .rssLdSource(stat, ldReference, "sdprWeights")
+    n <- median(stat$n)
+    bhat <- .rssMarginalCor(stat, n = n, p = .ldSourceSize(ld))
+    .rssValidateSource(bhat, ld, n)
+    settings <- list_modify(
+        .formalDefaults(
+            sdpr,
+            c(
+                "perVariantSampleSize",
+                "array",
+                "a",
+                "c",
+                "M",
+                "a0k",
+                "b0k",
+                "iter",
+                "burn",
+                "thin",
+                "numThreads",
+                "optLlk",
+                "verbose",
+                "seed"
+            )
+        ),
+        !!!as.list(methodArgs)
     )
-    model <- exec(sdpr, !!!callArgs)
-
-    return(model$betaEst)
+    model <- exec(.sdprRun, bhat = bhat, ld = ld, n = n, !!!settings)
+    if (identical(fitRetention, "none")) {
+        return(model$betaEst)
+    }
+    `attr<-`(model$betaEst, "fit", model)
 }
 
 
@@ -537,10 +688,15 @@ mrmashWeights <- function(
 #' \code{\link{computeCovDiag}}, or \code{mashr::cov_flash}) to add
 #' data-driven covariance components alongside the canonical mixture.
 #'
-#' @param stat A list with \code{z} (variants x conditions matrix) and \code{n}
-#'   (per-context numeric vector or scalar). May also include \code{Bhat},
-#'   \code{Shat} matrices.
-#' @param LD LD correlation matrix.
+#' @param stat A list with \code{z} (variants x conditions matrix),
+#'   \code{n} (per-context numeric vector or scalar) and \code{variantNames}.
+#'   May also include \code{Bhat}, \code{Shat} matrices.
+#' @param ldReference The LD reference the statistics' variants are matched
+#'   to by \code{stat$variantNames}: a genotype panel (see
+#'   \code{\link{readGenotypes}}), a \code{\link{GenotypeMixture}} or an
+#'   \code{\link{LdMatrix}}. \code{mr.mash.rss} takes an LD matrix, which is
+#'   formed from the reference over these variants; it is not read when
+#'   \code{mrmashRssFit} is supplied.
 #' @param mrmashRssFit Optional pre-fitted \code{mr.mash.rss} object; skips
 #'   fitting when supplied.
 #' @param dataDrivenPriorMatrices Optional list with element \code{U} (list of
@@ -579,15 +735,16 @@ mrmashWeights <- function(
 #' cond <- c("brain", "blood", "muscle")
 #' zmat <- matrix(rnorm(30 * 3), 30, 3,
 #'   dimnames = list(colnames(X), cond))
-#' stat <- list(z = zmat, n = matrix(nrow(X), 30, 3))
-#' mrmashRssWeights(stat, cor(X),
+#' stat <- list(z = zmat, n = matrix(nrow(X), 30, 3),
+#'   variantNames = colnames(X))
+#' mrmashRssWeights(stat, LdMatrix(cor(X)),
 #'   dataDrivenPriorMatrices = multiTraitData$priorMatrices,
 #'   canonicalPriorMatrices = TRUE)
 #' @export
 #' @importFrom checkmate assertFlag assertList
 mrmashRssWeights <- function(
     stat,
-    LD,
+    ldReference,
     mrmashRssFit = NULL,
     dataDrivenPriorMatrices = NULL,
     canonicalPriorMatrices = TRUE,
@@ -606,7 +763,7 @@ mrmashRssWeights <- function(
     if (is.null(mrmashRssFit)) {
         mrmashRssFit <- .mrmashRssComputeFit(
             stat,
-            LD,
+            .rssLdMatrix(stat, ldReference, "mrmashRssWeights"),
             dataDrivenPriorMatrices,
             canonicalPriorMatrices,
             S0,
@@ -630,11 +787,7 @@ mrmashRssWeights <- function(
 # @noRd
 .mrmashRssRequirePackage <- function() {
     if (!requireNamespace("mr.mashr", quietly = TRUE)) {
-        msg <- glue(
-            "Package 'mr.mashr' is required. ",
-            "is required."
-        )
-        abort(msg)
+        abort("Package 'mr.mashr' is required for mrmashRssWeights().")
     }
 }
 
@@ -712,18 +865,6 @@ mrmashRssWeights <- function(
     exec(mr.mashr::mr.mash.rss, !!!callArgs)
 }
 
-
-# Get a reasonable setting for the standard deviations of the mixture
-# components in the mixture-of-normals prior based on the data (X, y).
-# Input se is an estimate of the residual *variance*, and n is the
-# number of standard deviations to return. This code is adapted from
-# the autoselect.mixsd function in the ashr package.
-#' @importFrom susieR univariate_regression
-initPriorSd <- function(X, y, n = 30) {
-    res <- univariate_regression(X, y)
-    smax <- 3 * max(res$betahat)
-    seq(0, smax, length.out = n)
-}
 
 # Identify zero-variance columns of X and warn the caller before they are
 # dropped. Returns a logical vector of length ncol(X) where TRUE indicates a
@@ -1002,16 +1143,16 @@ MrashRssOptions <- function(...) {
         c(
             bhat = "supplied from the data by the pipeline",
             shat = "supplied from the data by the pipeline",
+            z = "supplied from the data by the pipeline",
             R = "supplied from the data by the pipeline",
             n = "supplied from the data by the pipeline",
-            # The engine writes these five in snake_case while the wrapper
-            # spells them camelCase, so they read as unrelated names; every
-            # one is still fed straight from a formal.
-            z = "the wrapper's `z`",
-            var_y = "the wrapper's `varY`",
-            sigma2_e = "the wrapper's `sigma2E`",
             s0 = "the wrapper's `s0`",
-            w0 = "the wrapper's `w0`"
+            w0 = "the wrapper's `w0`",
+            # The engine writes these two in snake_case while the wrapper
+            # spells them camelCase, so they read as unrelated names; both
+            # are still fed straight from a formal.
+            var_y = "the wrapper's `varY`",
+            sigma2_e = "the wrapper's `sigma2E`"
         ),
         "MrashRssOptions"
     )
@@ -1338,9 +1479,10 @@ lassoWeights <- function(X, y, methodArgs = GlmnetOptions()) {
 #' Compute Weights Using mr.ash Shrinkage
 #'
 #' This function fits the `mr.ash` model (adaptive shrinkage regression) to
-#' estimate weights for a given set of predictors and response. It uses optional
-#' prior standard deviation initialization and can accept custom initial beta
-#' values.
+#' estimate weights for a given set of predictors and response. The prior is
+#' \code{susieR::mr.ash}'s own default mixture grid unless \code{sa2} is
+#' supplied through \code{methodArgs}, and custom initial beta values are
+#' accepted.
 #'
 #' @examples
 #' set.seed(1)
@@ -1351,14 +1493,11 @@ lassoWeights <- function(X, y, methodArgs = GlmnetOptions()) {
 #' @importFrom stats predict
 #' @param X Numeric genotype / design matrix (samples x variants).
 #' @param y Numeric response (phenotype) vector of length \code{nrow(X)}.
-#' @param initPriorSd Logical. Initialize the prior standard-deviation grid
-#' from the data. Default \code{TRUE}.
 #' @param fitRetention How much of the fit is kept as the \code{"fit"}
 #'   attribute of the returned weights: \code{"none"} (default) attaches
 #'   nothing, \code{"slim"} and \code{"full"} attach the fitted model. This
 #'   engine keeps no trimmable intermediates, so the two retaining levels
 #'   behave alike here.
-#' Default \code{FALSE}.
 #' @param methodArgs Options forwarded to \code{susieR::mr.ash}, built
 #'   with \code{\link{MrashOptions}}. A bare list is refused: it cannot be
 #'   checked against the engine, so a misspelled option would be
@@ -1367,17 +1506,14 @@ lassoWeights <- function(X, y, methodArgs = GlmnetOptions()) {
 #'   zero-variance columns receive weight 0. Unless
 #'   \code{fitRetention = "none"} the fitted \code{mr.ash} object is
 #'   attached as attribute \code{"fit"}.
-#' @importFrom checkmate assertFlag
 #' @export
 mrashWeights <- function(
     X,
     y,
-    initPriorSd = TRUE,
     fitRetention = c("none", "slim", "full"),
     methodArgs = MrashOptions()
 ) {
     .assertMethodOptions(methodArgs, "MrashOptions", "methodArgs")
-    assertFlag(initPriorSd)
     fitRetention <- arg_match(fitRetention)
     keep <- .dropZeroVariance(X, "mrashWeights")
     XKeep <- X[, keep, drop = FALSE]
@@ -1387,15 +1523,7 @@ mrashWeights <- function(
         as.list(methodArgs),
         !!!.mrashBetaInit(methodArgs, XKeep, y, X, keep)
     )
-    MrashOptions <- c(
-        list(
-            X = XKeep,
-            y = y,
-            sa2 = if (initPriorSd) initPriorSd(XKeep, y)^2 else NULL
-        ),
-        argsList
-    )
-    fit.mr.ash <- exec(mr.ash, !!!MrashOptions)
+    fit.mr.ash <- exec(mr.ash, X = XKeep, y = y, !!!argsList)
     # Zero-variance columns were never fitted and keep a zero weight.
     eff.wgt <- replace(
         rep(0, ncol(X)),
@@ -2153,6 +2281,12 @@ bayesRWeights <- function(
 #' Based on Mak et al (2017) "Polygenic scores via penalized regression on
 #' summary statistics", Genetic Epidemiology 41(6):469-480.
 #'
+#' Internal: \code{\link{lassosumRssWeights}} is the public interface. It
+#' runs this over a grid of LD shrinkage values, forwards \code{lambda},
+#' \code{thr} and \code{maxiter} through \code{\link{LassosumOptions}}, and
+#' with \code{fitRetention} returns the paths as the \code{"fit"} attribute
+#' of its weights.
+#'
 #' @param bhat A vector of marginal effect sizes.
 #' @param R The LD correlation matrix (a single matrix over the analysed
 #'   window), as in \code{susieR::susie_rss()}. If shrinkage is desired, apply
@@ -2172,18 +2306,7 @@ bayesRWeights <- function(
 #'   \item{fbeta}{Full objective value at each lambda.}
 #'   \item{nparams}{Number of non-zero coefficients at each lambda.}
 #'
-#' @examples
-#' set.seed(42)
-#' p <- 10
-#' n <- 100
-#' bhat <- rnorm(p, sd = 0.1)
-#' R <- diag(p)
-#' for (i in 1:(p - 1)) {
-#'   R[i, i + 1] <- 0.3
-#'   R[i + 1, i] <- 0.3
-#' }
-#' out <- lassosumRss(bhat, R, n)
-#' @export
+#' @keywords internal
 #' @importFrom checkmate assertCount assertNumber assertNumeric
 lassosumRss <- function(
     bhat,
@@ -2193,14 +2316,19 @@ lassosumRss <- function(
     thr = 1e-4,
     maxiter = 10000
 ) {
+    .lassosumRssPath(bhat, list(R = R), n, lambda, thr, maxiter)
+}
+
+# lassosumRss() on an LD source: the matrix, or a factor of it with its
+# shrinkage, which the factor solver applies without forming R.
+# @noRd
+.lassosumRssPath <- function(bhat, ld, n, lambda, thr, maxiter) {
     assertNumeric(lambda, lower = 0, any.missing = FALSE)
     assertNumber(thr, lower = 0, finite = TRUE)
     assertCount(maxiter, positive = TRUE)
-    # cpp11 requires exact integer types; the C++ backend takes a block list, so
-    # the single-window matrix R is wrapped as one block here.
     .rssSolvePath(
         bhat,
-        R,
+        ld,
         n,
         lambda,
         .rssLassosumSolve,
@@ -2208,25 +2336,49 @@ lassosumRss <- function(
     )
 }
 
-.lassosumCorFromStat <- function(stat, n, p) {
+# .lassosumRssPath() with lassosumRss()'s own defaults under `args`, the
+# caller's options. A matrix takes exactly the path lassosumRss() does.
+# @noRd
+.lassosumRssOn <- function(bhat, ld, n, args) {
+    settings <- list_modify(
+        .formalDefaults(lassosumRss, c("lambda", "thr", "maxiter")),
+        !!!args
+    )
+    exec(.lassosumRssPath, bhat = bhat, ld = ld, n = n, !!!settings)
+}
+
+# The values `fn` declares as the defaults of its formals `fmlNames`,
+# evaluated as the function itself would evaluate them. The internal LD-source
+# paths run lassosumRss(), penalizedRss(), prsCs() and sdpr() on a factor of
+# the LD, and take those functions' defaults from here rather than restating
+# them.
+# @noRd
+#' @importFrom rlang fn_fmls fn_env eval_bare
+.formalDefaults <- function(fn, fmlNames) {
+    map(fn_fmls(fn)[fmlNames], eval_bare, env = fn_env(fn))
+}
+
+# The standardized marginal effects, z / sqrt(n): the scale lassosum, PRS-CS
+# and SDPR all fit. Read from `cor` as given, else from `z`, else from
+# `b / seb`, which is a z-score whatever scale `b` is on, else from `b` alone,
+# taken as already standardized.
+.rssMarginalCor <- function(stat, n, p) {
     corInput <- if (!is.null(stat$cor)) {
         as.numeric(stat$cor)
     } else if (!is.null(stat$z)) {
         as.numeric(stat$z) / sqrt(n)
+    } else if (!is.null(stat$b) && !is.null(stat$seb)) {
+        as.numeric(stat$b) / as.numeric(stat$seb) / sqrt(n)
     } else if (!is.null(stat$b)) {
         as.numeric(stat$b)
     } else {
-        msg <- glue(
-            "stat must contain one of 'cor', 'z', or 'b' for lassosum ",
-            "selection."
-        )
-        abort(msg)
+        abort("stat must contain one of 'cor', 'z', or 'b'.")
     }
     if (length(corInput) != p) {
         nInput <- length(corInput)
         msg <- glue(
-            "The length of lassosum input statistics ({nInput}) must ",
-            "equal nrow(LD) ({p})."
+            "The length of the input statistics ({nInput}) must equal the ",
+            "number of LD variants ({p})."
         )
         abort(msg)
     }
@@ -2254,10 +2406,9 @@ lassosumRss <- function(
     )
 }
 
-.lassosumSelectLdQuadratic <- function(candidateBeta, corInput, LD) {
-    ldBeta <- LD %*% candidateBeta
+.lassosumSelectLdQuadratic <- function(candidateBeta, corInput, ld) {
     bxy <- as.numeric(crossprod(corInput, candidateBeta))
-    bxxb <- colSums(candidateBeta * ldBeta)
+    bxxb <- .ldQuadForms(ld, candidateBeta)
     positive <- is.finite(bxxb) & bxxb > 0
     scores <- replace(
         rep(-Inf, length(bxy)),
@@ -2276,9 +2427,9 @@ lassosumRss <- function(
 # penalizedRss via .rssSolvePath, prsCs, and sdpr). R is a single LD correlation
 # matrix over one cis-window, matching susieR::susie_rss; bhat must match
 # nrow(R). missing() guards turn an omitted R / n into a clear message instead
-# of an "argument is missing" error, and propagate through the public wrappers
-# (verified two levels deep). Method-specific checks -- prsCs's maf length,
-# sdpr's M / perVariantSampleSize / array -- stay in the caller.
+# of an "argument is missing" error, and propagate through the solvers'
+# callers (verified two levels deep). Method-specific checks -- prsCs's maf
+# length, sdpr's M / perVariantSampleSize / array -- stay in the caller.
 #' @importFrom checkmate assertVector
 .rssValidateInputs <- function(bhat, R, n) {
     if (missing(R) || !is.matrix(R)) {
@@ -2291,19 +2442,35 @@ lassosumRss <- function(
     invisible(NULL)
 }
 
-# Validate (bhat, LD, n), run a decreasing-lambda coordinate-descent sweep via
-# `solveFn` (the penalty-specific Rcpp backend), then reorder back to the input
+# .rssValidateInputs() for an LD source (.ldSourceRows()): the matrix
+# checks for a matrix, and for a factor the same checks against its columns.
+# @noRd
+.rssValidateSource <- function(bhat, ld, n) {
+    if (!is.null(ld$R)) {
+        return(.rssValidateInputs(bhat, ld$R, n))
+    }
+    if (missing(n) || n <= 0) {
+        abort("Please provide a valid sample size using 'n'.")
+    }
+    assertVector(bhat, len = ncol(ld$F))
+    invisible(NULL)
+}
+
+# Validate (bhat, ld, n), run a decreasing-lambda coordinate-descent sweep via
+# `solveFn` (the penalty-specific C++ solver), then reorder back to the input
 # lambda order via the inverse permutation and assemble the standard result
-# list. Shared by lassosumRss and penalizedRss, which differ only in which Rcpp
+# list. Shared by lassosumRss and penalizedRss, which differ only in which C++
 # solver they pass as `solveFn` (and penalizedRss's per-penalty gamma default).
-.rssSolvePath <- function(bhat, R, n, lambda, solveFn, solveArgs = list()) {
-    .rssValidateInputs(bhat, R, n)
+# `ld` is an LD source: the matrix, or a factor of it with the shrinkage the
+# factor solver applies itself.
+.rssSolvePath <- function(bhat, ld, n, lambda, solveFn, solveArgs = list()) {
+    .rssValidateSource(bhat, ld, n)
     z <- bhat / sqrt(n)
     order <- order(lambda, decreasing = TRUE)
     # `solveArgs` rather than `...`: the two solvers take different fixed
     # argument sets, and both callers know theirs statically, so an unknown
     # solver argument should be an error here rather than reaching the solver.
-    solved <- exec(solveFn, z, lambda[order], R, !!!solveArgs)
+    solved <- exec(solveFn, z, lambda[order], ld, !!!solveArgs)
     # Reorder back to original lambda order via the inverse permutation.
     invOrder <- order(order)
     beta <- solved$beta[, invOrder, drop = FALSE]
@@ -2324,44 +2491,42 @@ lassosumRss <- function(
 # fields apply). Returns list(beta, meta); l0learn's inner lambda0 sweep is
 # here.
 # @noRd
-.rssFitOne <- function(method, solverInput, LDs, n, sVal, config) {
+.rssFitOne <- function(method, solverInput, ld, n, sVal, config) {
     switch(
         method,
-        lassosum = .rssFitLassosum(solverInput, LDs, n, sVal, config),
-        penalized = .rssFitPenalized(solverInput, LDs, n, sVal, config),
-        l0learn = .rssFitL0learn(solverInput, LDs, n, sVal, config)
+        lassosum = .rssFitLassosum(solverInput, ld, n, sVal, config),
+        penalized = .rssFitPenalized(solverInput, ld, n, sVal, config),
+        l0learn = .rssFitL0learn(solverInput, ld, n, sVal, config)
     )
 }
 
-# Shared (s, lambda, fbeta) path-metadata frame for a single-path model.
+# Shared per-candidate frame for a single-path model: the shrinkage s and
+# each lambda, with the solver's objective, loss, convergence flag and number
+# of non-zero coefficients there.
 # @noRd
 .rssPathMeta <- function(sVal, model) {
     tibble(
         s = rep(sVal, length(model$lambda)),
         lambda = model$lambda,
-        fbeta = model$fbeta
+        fbeta = model$fbeta,
+        loss = model$loss,
+        conv = model$conv,
+        nparams = model$nparams
     )
 }
 
-# lassosum shrinkage path for one s.
+# lassosum shrinkage path for one s, against `ld` shrunk to that s.
 # @noRd
-.rssFitLassosum <- function(solverInput, LDs, n, sVal, config) {
-    lsArgs <- c(
-        list(bhat = solverInput, R = LDs, n = n),
-        as.list(config$dotArgs)
-    )
-    model <- exec(lassosumRss, !!!lsArgs)
+.rssFitLassosum <- function(solverInput, ld, n, sVal, config) {
+    model <- .lassosumRssOn(solverInput, ld, n, as.list(config$dotArgs))
     list(beta = model$beta, meta = .rssPathMeta(sVal, model))
 }
 
-# ncvreg-penalized shrinkage path for one s.
+# ncvreg-penalized shrinkage path for one s, against `ld` shrunk to that s.
 # @noRd
-.rssFitPenalized <- function(solverInput, LDs, n, sVal, config) {
-    penArgs <- c(
+.rssFitPenalized <- function(solverInput, ld, n, sVal, config) {
+    settings <- c(
         list(
-            bhat = solverInput,
-            R = LDs,
-            n = n,
             penalty = config$penalty,
             gamma = config$gamma,
             alpha = config$alpha,
@@ -2370,18 +2535,18 @@ lassosumRss <- function(
         ),
         as.list(config$dotArgs)
     )
-    model <- exec(penalizedRss, !!!penArgs)
+    model <- .penalizedRssOn(solverInput, ld, n, settings)
     list(beta = model$beta, meta = .rssPathMeta(sVal, model))
 }
 
 # L0Learn path for one s: one penalizedRss fit per lambda0, column-bound.
 # @noRd
-.rssFitL0learn <- function(solverInput, LDs, n, sVal, config) {
+.rssFitL0learn <- function(solverInput, ld, n, sVal, config) {
     fits <- map(
         config$lambda0,
         .rssL0LambdaFit,
         solverInput = solverInput,
-        LDs = LDs,
+        ld = ld,
         n = n,
         sVal = sVal,
         config = config
@@ -2428,57 +2593,147 @@ lassosumRss <- function(
     `attr<-`(bestBeta, attrName, selection)
 }
 
-# Shared scaffold for the RSS shrinkage-grid weight functions
-# (lassosumRssWeights / .penalizedRssWeights / l0learnRssWeights). Standardizes
-# the stat -> solverInput conversion, the outer LD-shrinkage grid over `s`, the
-# candidate accumulation, and the ldQuadratic / minFbeta selection. `method` +
-# `config` pick the per-`s` solver (.rssFitOne) and the finalizer
-# (.rssFinalize).
-# One shrinkage level's fit against the correspondingly shrunk LD.
+# The LD the RSS weight methods read, matched to the statistics' variants
+# (`stat$variantNames`): a factor of it for a genotype reference, which the
+# factor solvers use without forming the p x p matrix, or the matrix an
+# LdMatrix holds. Matching, allele flips, standardizing and padding are the
+# LD reference layer's own (.ldFactorFromRef(), .ldFromRef()).
 # @noRd
-.rssFitAtS <- function(sVal, method, solverInput, LD, n, p, config) {
-    .rssFitOne(
-        method,
-        solverInput,
-        (1 - sVal) * LD + sVal * diag(p),
-        n,
-        sVal,
-        config
-    )
+.rssLdSource <- function(stat, ldReference, label) {
+    ids <- .rssStatVariantIds(stat, label)
+    if (.ldIsGenotypeRef(ldReference)) {
+        return(list(F = .ldFactorFromRef(ldReference, ids, label)))
+    }
+    list(R = .ldFromRef(ldReference, ids, label))
 }
 
+# The LD matrix itself, for the engines that take nothing else (mr.ash.rss,
+# mr.mash.rss).
+# @noRd
+.rssLdMatrix <- function(stat, ldReference, label) {
+    .ldFromRef(ldReference, .rssStatVariantIds(stat, label), label)
+}
+
+# The variant ids an LD reference is matched on.
+# @noRd
+.rssStatVariantIds <- function(stat, label) {
+    ids <- stat$variantNames
+    if (is.null(ids)) {
+        abort(glue(
+            "{label}: `stat` must carry `variantNames`, the variant ids ",
+            "`ldReference` is matched on."
+        ))
+    }
+    ids
+}
+
+# How many variants the statistics describe, for the weight extractors that
+# check a fit against them: their variant ids, all of which must be in
+# `ldReference` when one is given, or else their z-scores or effects (rows,
+# for a multi-condition matrix). NA when the statistics carry none of these.
+# @noRd
+.rssVariantCount <- function(stat, ldReference, label) {
+    if (!is.null(ldReference)) {
+        ids <- .rssStatVariantIds(stat, label)
+        .ldFromRefValidate(ldReference, label)
+        .ldFromRefMatch(ldReference, ids, label, "error")
+        return(length(ids))
+    }
+    described <- stat$variantNames %||% stat$z %||% stat$b
+    if (is.null(described)) NA_integer_ else NROW(described)
+}
+
+# One shrinkage level's fit against R_s = (1 - s) R + s I.
+# @noRd
+.rssFitAtS <- function(sVal, method, solverInput, ld, n, config) {
+    .rssFitOne(method, solverInput, .rssShrunkLd(ld, sVal), n, sVal, config)
+}
+
+# An LD source shrunk to R_s = (1 - s) R + s I: the source carries s to the
+# solver, which applies it to the matrix or the factor without forming R_s,
+# so the grid over s shares one LD matrix rather than copying it per s.
+# @noRd
+.rssShrunkLd <- function(ld, s) {
+    list_assign(ld, shrink = s)
+}
+
+# Shared scaffold for the RSS shrinkage-grid weight functions
+# (lassosumRssWeights / .penalizedRssWeights / l0learnRssWeights), run for the
+# statistics `stat` against the LD source `ld` (see .rssLdSource()).
+# Standardizes the stat -> solverInput conversion, the outer LD-shrinkage grid
+# over `s`, the candidate accumulation, and the ldQuadratic / minFbeta
+# selection. `method` + `config` pick the per-`s` solver (.rssFitOne) and the
+# finalizer (.rssFinalize); `fitRetention` how much of the search is kept.
+# @noRd
 .rssShrinkGridWeights <- function(
     stat,
-    LD,
+    ld,
     s,
     method,
     config,
-    selection = c("ldQuadratic", "minFbeta")
+    selection = c("ldQuadratic", "minFbeta"),
+    fitRetention = c("none", "slim", "full")
 ) {
     selection <- arg_match(selection)
+    fitRetention <- arg_match(fitRetention)
     n <- median(stat$n)
-    p <- nrow(LD)
-    corInput <- .lassosumClampCor(.lassosumCorFromStat(stat, n = n, p = p))
+    p <- .ldSourceSize(ld)
+    corInput <- .lassosumClampCor(.rssMarginalCor(stat, n = n, p = p))
     solverInput <- corInput * sqrt(n)
     fits <- map(
         s,
         .rssFitAtS,
         method = method,
         solverInput = solverInput,
-        LD = LD,
+        ld = ld,
         n = n,
-        p = p,
         config = config
     )
     candidateBeta <- exec(cbind, !!!map(fits, "beta"))
     candidateMeta <- bind_rows(map(fits, "meta"))
     selectorResult <- if (selection == "ldQuadratic") {
-        .lassosumSelectLdQuadratic(candidateBeta, corInput, LD)
+        .lassosumSelectLdQuadratic(candidateBeta, corInput, ld)
     } else {
         .lassosumSelectMinFbeta(candidateBeta, candidateMeta)
     }
     bestBeta <- as.numeric(selectorResult$beta)
-    .rssFinalize(method, bestBeta, selectorResult, candidateMeta, config)
+    weights <- .rssFinalize(
+        method,
+        bestBeta,
+        selectorResult,
+        candidateMeta,
+        config
+    )
+    .rssAttachGridFit(
+        weights,
+        candidateBeta,
+        candidateMeta,
+        selectorResult$index,
+        fitRetention
+    )
+}
+
+# The search behind the grid weights as their "fit" attribute: `path`, one
+# row per candidate fit with the solver's diagnostics and `selected` marking
+# the one returned, and at fitRetention = "full" also `beta`, the candidates'
+# coefficients (variants x candidates, in path's row order). Returns `weights`
+# unchanged at fitRetention = "none".
+# @noRd
+.rssAttachGridFit <- function(
+    weights,
+    candidateBeta,
+    candidateMeta,
+    index,
+    fitRetention
+) {
+    if (identical(fitRetention, "none")) {
+        return(weights)
+    }
+    fit <- c(
+        list(path = mutate(candidateMeta, selected = row_number() == index)),
+        compact(list(beta = if (fitRetention == "full") candidateBeta))
+    )
+    `attr<-`(weights, "fit", fit)
 }
 
 #' Extract weights from lassosumRss with shrinkage grid search
@@ -2501,20 +2756,36 @@ lassosumRss <- function(
 #' This implementation therefore uses the supplied LD matrix directly for
 #' selection. \code{min(fbeta)} is retained only as an explicit debug option.
 #'
-#' @param stat A list with \code{$b} (effect sizes) and \code{$n} (per-variant
-#'   sample sizes).
-#' @param LD LD correlation matrix R (single matrix, NOT pre-shrunk).
+#' @param stat A list of summary statistics: \code{n} (per-variant sample
+#'   sizes) and the marginal effects as \code{cor} (standardized), \code{z},
+#'   \code{b} with \code{seb}, or \code{b} alone, taken as already
+#'   standardized. The engine receives the standardized effects z / sqrt(n),
+#'   with n the median of \code{n}.
+#' @param ldReference The LD reference the statistics' variants are matched
+#'   to by \code{stat$variantNames}: a genotype panel (see
+#'   \code{\link{readGenotypes}}), a \code{\link{GenotypeMixture}} or an
+#'   \code{\link{LdMatrix}}. A genotype reference's LD is used through its
+#'   standardized genotypes, never formed as a matrix.
 #' @param s Numeric vector of shrinkage parameters to search over. Default:
 #'   \code{c(0.2, 0.5, 0.9, 1.0)} following Mak et al (2017) and OTTERS.
 #' @param selection Selection strategy. Default \code{"ldQuadratic"} uses
 #'   \eqn{c^T \beta / \sqrt{\beta^T R \beta}} on the supplied LD matrix.
 #'   \code{"minFbeta"} is retained as an explicit alternative for debugging.
-#' @param methodArgs Options forwarded to \code{lassosumRss}, built
-#'   with \code{\link{LassosumOptions}}. A bare list is refused: it cannot be
-#'   checked against the engine, so a misspelled option would be
-#'   silently ignored.
+#' @param fitRetention How much of the search is kept as the \code{"fit"}
+#'   attribute of the returned weights. \code{"none"} (default) attaches
+#'   nothing. \code{"slim"} keeps \code{path}, a table with one row per
+#'   candidate (\code{s}, \code{lambda}) giving the solver's objective
+#'   \code{fbeta}, \code{loss}, convergence flag \code{conv} and number of
+#'   non-zero coefficients \code{nparams}, with \code{selected} marking the
+#'   candidate returned. \code{"full"} also keeps \code{beta}, the
+#'   candidates' coefficients (variants x candidates, in the rows' order).
+#' @param methodArgs Options forwarded to the solver,
+#'   \code{\link{lassosumRss}}, built with \code{\link{LassosumOptions}}. A
+#'   bare list is refused: it cannot be checked against the engine, so a
+#'   misspelled option would be silently ignored.
 #' @return A numeric vector of the posterior SNP coefficients at the best (s,
-#'   lambda).
+#'   lambda). Unless \code{fitRetention = "none"}, the search is attached as
+#'   attribute \code{"fit"}.
 #' @examples
 #' data(eqtlRegionExample)
 #' X <- eqtlRegionExample$X[, 1:30]
@@ -2524,27 +2795,31 @@ lassosumRss <- function(
 #' stat <- list(
 #'   b = vapply(ss, `[`, numeric(1), 1L),
 #'   seb = vapply(ss, `[`, numeric(1), 2L),
-#'   n = rep(nrow(X), ncol(X))
+#'   n = rep(nrow(X), ncol(X)),
+#'   variantNames = colnames(X)
 #' )
-#' LD <- cor(X)
-#' lassosumRssWeights(stat, LD)
+#' w <- lassosumRssWeights(stat, LdMatrix(cor(X)), fitRetention = "slim")
+#' head(attr(w, "fit")$path)
 #' @export
 lassosumRssWeights <- function(
     stat,
-    LD,
+    ldReference,
     s = c(0.2, 0.5, 0.9, 1.0),
     selection = c("ldQuadratic", "minFbeta"),
+    fitRetention = c("none", "slim", "full"),
     methodArgs = LassosumOptions()
 ) {
     .assertMethodOptions(methodArgs, "LassosumOptions", "methodArgs")
     selection <- arg_match(selection)
+    fitRetention <- arg_match(fitRetention)
     .rssShrinkGridWeights(
         stat,
-        LD,
+        .rssLdSource(stat, ldReference, "lassosumRssWeights"),
         s,
         "lassosum",
         list(dotArgs = methodArgs),
-        selection
+        selection,
+        fitRetention
     )
 }
 
@@ -2555,6 +2830,13 @@ lassosumRssWeights <- function(
 #' \deqn{\beta^T R \beta - 2 \beta^T z + \mathrm{penalty}(\beta)}
 #' where \eqn{R} is a (possibly pre-shrunk) LD matrix and \eqn{z = \hat\beta /
 #' \sqrt{n}}.
+#'
+#' Internal: \code{\link{scadRssWeights}}, \code{\link{mcpRssWeights}} and
+#' \code{\link{l0learnRssWeights}} are the public interface, with
+#' \code{\link{lassosumRssWeights}} for the lasso. They run this over a grid
+#' of LD shrinkage values, forward its options through
+#' \code{\link{PenalizedRssOptions}}, and with \code{fitRetention} return
+#' the paths as the \code{"fit"} attribute of their weights.
 #'
 #' @param bhat Numeric vector of marginal effect estimates (length p).
 #' @param R The LD correlation matrix (a single matrix over the analysed
@@ -2590,19 +2872,7 @@ lassosumRssWeights <- function(
 #'   \item{betaEst}{Coefficient vector at the lambda minimizing fbeta.}
 #' }
 #'
-#' @examples
-#' set.seed(42)
-#' p <- 10; n <- 100
-#' bhat <- rnorm(p, sd = 0.1)
-#' R <- diag(p)
-#' # MCP
-#' penalizedRss(bhat, R, n, penalty = "MCP")
-#' # SCAD
-#' penalizedRss(bhat, R, n, penalty = "SCAD")
-#' # L0
-#' penalizedRss(bhat, R, n, penalty = "L0", lambda0 = 0.01,
-#'               lambda = c(0))
-#' @export
+#' @keywords internal
 penalizedRss <- function(
     bhat,
     R,
@@ -2617,16 +2887,44 @@ penalizedRss <- function(
     maxiter = 10000,
     maxSwaps = 100
 ) {
-    penalty <- arg_match(penalty)
+    .penalizedRssPath(
+        bhat,
+        list(R = R),
+        n,
+        arg_match(penalty),
+        lambda,
+        gamma,
+        alpha,
+        lambda0,
+        lambda2,
+        thr,
+        maxiter,
+        maxSwaps
+    )
+}
+
+# penalizedRss() on an LD source: the matrix, or a factor of it with its
+# shrinkage, which the factor solver applies without forming R.
+# @noRd
+.penalizedRssPath <- function(
+    bhat,
+    ld,
+    n,
+    penalty,
+    lambda,
+    gamma,
+    alpha,
+    lambda0,
+    lambda2,
+    thr,
+    maxiter,
+    maxSwaps
+) {
     # Default gamma per penalty
-    if (is.null(gamma)) {
-        gamma <- switch(penalty, SCAD = 3.7, MCP = 3.0, 0.0)
-    }
-    # C++ backend takes a block list; wrap the single-window matrix R as one
-    # block.
+    gamma <- gamma %||% switch(penalty, SCAD = 3.7, MCP = 3.0, 0.0)
     .rssSolvePath(
         bhat,
-        R,
+        ld,
         n,
         lambda,
         .rssPenalizedSolve,
@@ -2643,6 +2941,30 @@ penalizedRss <- function(
     )
 }
 
+# .penalizedRssPath() with penalizedRss()'s own defaults under `args`, the
+# caller's settings, which always name the penalty. A matrix takes exactly
+# the path penalizedRss() does.
+# @noRd
+.penalizedRssOn <- function(bhat, ld, n, args) {
+    settings <- list_modify(
+        .formalDefaults(
+            penalizedRss,
+            c(
+                "lambda",
+                "gamma",
+                "alpha",
+                "lambda0",
+                "lambda2",
+                "thr",
+                "maxiter",
+                "maxSwaps"
+            )
+        ),
+        !!!args
+    )
+    exec(.penalizedRssPath, bhat = bhat, ld = ld, n = n, !!!settings)
+}
+
 #' RSS Weights Helper for Penalized Methods
 #'
 #' Shared implementation for \code{scadRssWeights()} and \code{mcpRssWeights()}.
@@ -2652,15 +2974,17 @@ penalizedRss <- function(
 #' sI}) and selects the best candidate via LD-quadratic pseudovalidation or
 #' minimum penalized objective.
 #'
-#' @param stat,LD,s,selection,penalty,gamma,alpha,lambda0,lambda2 See the
-#'   public wrappers for details.
+#' @param stat,ldReference,s,selection,penalty,gamma,alpha,lambda0,lambda2 See
+#'   the public wrappers for details.
+#' @param fitRetention How much of the search is kept as the \code{"fit"}
+#'   attribute; see \code{\link{scadRssWeights}}.
 #' @param methodArgs Options forwarded to \code{penalizedRss}, built with
 #'   \code{\link{PenalizedRssOptions}}.
-#' @return Numeric weight vector of length \code{nrow(LD)}.
+#' @return Numeric weight vector, one weight per variant of \code{stat}.
 #' @keywords internal
 .penalizedRssWeights <- function(
     stat,
-    LD,
+    ldReference,
     penalty,
     s = c(0.2, 0.5, 0.9, 1.0),
     gamma = NULL,
@@ -2668,13 +2992,19 @@ penalizedRss <- function(
     lambda0 = 0,
     lambda2 = 0,
     selection = c("ldQuadratic", "minFbeta"),
+    fitRetention = c("none", "slim", "full"),
     methodArgs = PenalizedRssOptions()
 ) {
     .assertMethodOptions(methodArgs, "PenalizedRssOptions", "methodArgs")
     selection <- arg_match(selection)
+    fitRetention <- arg_match(fitRetention)
     .rssShrinkGridWeights(
         stat,
-        LD,
+        .rssLdSource(
+            stat,
+            ldReference,
+            str_c(str_to_lower(penalty), "RssWeights")
+        ),
         s,
         "penalized",
         list(
@@ -2685,7 +3015,8 @@ penalizedRss <- function(
             lambda2 = lambda2,
             dotArgs = methodArgs
         ),
-        selection
+        selection,
+        fitRetention
     )
 }
 
@@ -2695,20 +3026,31 @@ penalizedRss <- function(
 #' shrinkage grid \code{s} and lambda path. Model selection uses LD-quadratic
 #' pseudovalidation by default.
 #'
-#' @param stat A list with \code{$b} (effect sizes) and \code{$n} (per-variant
-#'   sample sizes).
-#' @param LD LD correlation matrix R (single matrix, NOT pre-shrunk).
+#' @param stat A list of summary statistics: \code{n} (per-variant sample
+#'   sizes) and the marginal effects as \code{cor} (standardized), \code{z},
+#'   \code{b} with \code{seb}, or \code{b} alone, taken as already
+#'   standardized. The engine receives the standardized effects z / sqrt(n),
+#'   with n the median of \code{n}.
+#' @param ldReference The LD reference the statistics' variants are matched
+#'   to by \code{stat$variantNames}: a genotype panel (see
+#'   \code{\link{readGenotypes}}), a \code{\link{GenotypeMixture}} or an
+#'   \code{\link{LdMatrix}}. A genotype reference's LD is used through its
+#'   standardized genotypes, never formed as a matrix.
 #' @param s Numeric vector of LD shrinkage parameters. Default: \code{c(0.2,
 #'   0.5, 0.9, 1.0)}.
 #' @param gamma SCAD concavity parameter. Default 3.7.
 #' @param alpha Elastic-net mixing (1 = pure L1). Default 1.
 #' @param selection Selection strategy: \code{"ldQuadratic"} (default) or
 #'   \code{"minFbeta"}.
-#' @param methodArgs Options forwarded to \code{penalizedRss}, built
-#'   with \code{\link{PenalizedRssOptions}}. A bare list is refused: it
-#'   cannot be checked against the engine, so a misspelled option would
-#'   be silently ignored.
-#' @return A numeric vector of SNP coefficient weights.
+#' @param methodArgs Options forwarded to the solver,
+#'   \code{\link{penalizedRss}}, built with
+#'   \code{\link{PenalizedRssOptions}}. A bare list is refused: it cannot
+#'   be checked against the engine, so a misspelled option would be
+#'   silently ignored.
+#' @inheritParams lassosumRssWeights
+#' @return A numeric vector of SNP coefficient weights. Unless
+#'   \code{fitRetention = "none"}, the search is attached as attribute
+#'   \code{"fit"}.
 #' @examples
 #' data(eqtlRegionExample)
 #' X <- eqtlRegionExample$X[, 1:30]
@@ -2718,34 +3060,37 @@ penalizedRss <- function(
 #' stat <- list(
 #'   b = vapply(ss, `[`, numeric(1), 1L),
 #'   seb = vapply(ss, `[`, numeric(1), 2L),
-#'   n = rep(nrow(X), ncol(X))
+#'   n = rep(nrow(X), ncol(X)),
+#'   variantNames = colnames(X)
 #' )
-#' LD <- cor(X)
-#' scadRssWeights(stat, LD)
+#' scadRssWeights(stat, LdMatrix(cor(X)))
 #' @importFrom checkmate assertList assertNumeric assertNumber
 #' @export
 scadRssWeights <- function(
     stat,
-    LD,
+    ldReference,
     s = c(0.2, 0.5, 0.9, 1.0),
     gamma = 3.7,
     alpha = 1.0,
     selection = c("ldQuadratic", "minFbeta"),
+    fitRetention = c("none", "slim", "full"),
     methodArgs = PenalizedRssOptions()
 ) {
     .assertMethodOptions(methodArgs, "PenalizedRssOptions", "methodArgs")
+    fitRetention <- arg_match(fitRetention)
     assertList(stat)
     assertNumeric(s, lower = 0, any.missing = FALSE)
     assertNumber(gamma, finite = TRUE)
     assertNumber(alpha, finite = TRUE)
     .penalizedRssWeights(
         stat = stat,
-        LD = LD,
+        ldReference = ldReference,
         penalty = "SCAD",
         s = s,
         gamma = gamma,
         alpha = alpha,
         selection = selection,
+        fitRetention = fitRetention,
         methodArgs = methodArgs
     )
 }
@@ -2756,20 +3101,31 @@ scadRssWeights <- function(
 #' shrinkage grid \code{s} and lambda path. Model selection uses LD-quadratic
 #' pseudovalidation by default.
 #'
-#' @param stat A list with \code{$b} (effect sizes) and \code{$n} (per-variant
-#'   sample sizes).
-#' @param LD LD correlation matrix R (single matrix, NOT pre-shrunk).
+#' @param stat A list of summary statistics: \code{n} (per-variant sample
+#'   sizes) and the marginal effects as \code{cor} (standardized), \code{z},
+#'   \code{b} with \code{seb}, or \code{b} alone, taken as already
+#'   standardized. The engine receives the standardized effects z / sqrt(n),
+#'   with n the median of \code{n}.
+#' @param ldReference The LD reference the statistics' variants are matched
+#'   to by \code{stat$variantNames}: a genotype panel (see
+#'   \code{\link{readGenotypes}}), a \code{\link{GenotypeMixture}} or an
+#'   \code{\link{LdMatrix}}. A genotype reference's LD is used through its
+#'   standardized genotypes, never formed as a matrix.
 #' @param s Numeric vector of LD shrinkage parameters. Default: \code{c(0.2,
 #'   0.5, 0.9, 1.0)}.
 #' @param gamma MCP concavity parameter. Default 3.
 #' @param alpha Elastic-net mixing (1 = pure L1). Default 1.
 #' @param selection Selection strategy: \code{"ldQuadratic"} (default) or
 #'   \code{"minFbeta"}.
-#' @param methodArgs Options forwarded to \code{penalizedRss}, built
-#'   with \code{\link{PenalizedRssOptions}}. A bare list is refused: it
-#'   cannot be checked against the engine, so a misspelled option would
-#'   be silently ignored.
-#' @return A numeric vector of SNP coefficient weights.
+#' @param methodArgs Options forwarded to the solver,
+#'   \code{\link{penalizedRss}}, built with
+#'   \code{\link{PenalizedRssOptions}}. A bare list is refused: it cannot
+#'   be checked against the engine, so a misspelled option would be
+#'   silently ignored.
+#' @inheritParams lassosumRssWeights
+#' @return A numeric vector of SNP coefficient weights. Unless
+#'   \code{fitRetention = "none"}, the search is attached as attribute
+#'   \code{"fit"}.
 #' @examples
 #' data(eqtlRegionExample)
 #' X <- eqtlRegionExample$X[, 1:30]
@@ -2779,34 +3135,37 @@ scadRssWeights <- function(
 #' stat <- list(
 #'   b = vapply(ss, `[`, numeric(1), 1L),
 #'   seb = vapply(ss, `[`, numeric(1), 2L),
-#'   n = rep(nrow(X), ncol(X))
+#'   n = rep(nrow(X), ncol(X)),
+#'   variantNames = colnames(X)
 #' )
-#' LD <- cor(X)
-#' mcpRssWeights(stat, LD)
+#' mcpRssWeights(stat, LdMatrix(cor(X)))
 #' @importFrom checkmate assertList assertNumeric assertNumber
 #' @export
 mcpRssWeights <- function(
     stat,
-    LD,
+    ldReference,
     s = c(0.2, 0.5, 0.9, 1.0),
     gamma = 3.0,
     alpha = 1.0,
     selection = c("ldQuadratic", "minFbeta"),
+    fitRetention = c("none", "slim", "full"),
     methodArgs = PenalizedRssOptions()
 ) {
     .assertMethodOptions(methodArgs, "PenalizedRssOptions", "methodArgs")
+    fitRetention <- arg_match(fitRetention)
     assertList(stat)
     assertNumeric(s, lower = 0, any.missing = FALSE)
     assertNumber(gamma, finite = TRUE)
     assertNumber(alpha, finite = TRUE)
     .penalizedRssWeights(
         stat = stat,
-        LD = LD,
+        ldReference = ldReference,
         penalty = "MCP",
         s = s,
         gamma = gamma,
         alpha = alpha,
         selection = selection,
+        fitRetention = fitRetention,
         methodArgs = methodArgs
     )
 }
@@ -2821,9 +3180,16 @@ mcpRssWeights <- function(
 #' converges, non-zero coefficients are tested for swaps with zero ones to
 #' escape local optima.
 #'
-#' @param stat A list with \code{$b} (effect sizes) and \code{$n} (per-variant
-#'   sample sizes).
-#' @param LD LD correlation matrix R (single matrix, NOT pre-shrunk).
+#' @param stat A list of summary statistics: \code{n} (per-variant sample
+#'   sizes) and the marginal effects as \code{cor} (standardized), \code{z},
+#'   \code{b} with \code{seb}, or \code{b} alone, taken as already
+#'   standardized. The engine receives the standardized effects z / sqrt(n),
+#'   with n the median of \code{n}.
+#' @param ldReference The LD reference the statistics' variants are matched
+#'   to by \code{stat$variantNames}: a genotype panel (see
+#'   \code{\link{readGenotypes}}), a \code{\link{GenotypeMixture}} or an
+#'   \code{\link{LdMatrix}}. A genotype reference's LD is used through its
+#'   standardized genotypes, never formed as a matrix.
 #' @param penalty L0 variant: \code{"L0"}, \code{"L0L1"}, or \code{"L0L2"}.
 #'   Default \code{"L0"}.
 #' @param s Numeric vector of LD shrinkage parameters. Default: \code{c(0.2,
@@ -2836,11 +3202,22 @@ mcpRssWeights <- function(
 #' @param selection Selection strategy: \code{"ldQuadratic"} (default) or
 #'   \code{"minFbeta"}.
 #' @param maxSwaps Maximum swap rounds per lambda. Default 100.
-#' @param methodArgs Options forwarded to \code{penalizedRss}, built
-#'   with \code{\link{PenalizedRssOptions}}. A bare list is refused: it
-#'   cannot be checked against the engine, so a misspelled option would
-#'   be silently ignored.
-#' @return A numeric vector of SNP coefficient weights.
+#' @param fitRetention How much of the search is kept as the \code{"fit"}
+#'   attribute of the returned weights. \code{"none"} (default) attaches
+#'   nothing. \code{"slim"} keeps \code{path}, a table with one row per
+#'   candidate (\code{s}, \code{lambda0}, \code{lambda}) giving the solver's
+#'   objective \code{fbeta}, \code{loss}, convergence flag \code{conv} and
+#'   number of non-zero coefficients \code{nparams}, with \code{selected}
+#'   marking the candidate returned. \code{"full"} also keeps \code{beta},
+#'   the candidates' coefficients (variants x candidates, in the rows' order).
+#' @param methodArgs Options forwarded to the solver,
+#'   \code{\link{penalizedRss}}, built with
+#'   \code{\link{PenalizedRssOptions}}. A bare list is refused: it cannot be
+#'   checked against the engine, so a misspelled option would be silently
+#'   ignored.
+#' @return A numeric vector of SNP coefficient weights. Unless
+#'   \code{fitRetention = "none"}, the search is attached as attribute
+#'   \code{"fit"}.
 #' @examples
 #' data(eqtlRegionExample)
 #' X <- eqtlRegionExample$X[, 1:30]
@@ -2850,14 +3227,14 @@ mcpRssWeights <- function(
 #' stat <- list(
 #'   b = vapply(ss, `[`, numeric(1), 1L),
 #'   seb = vapply(ss, `[`, numeric(1), 2L),
-#'   n = rep(nrow(X), ncol(X))
+#'   n = rep(nrow(X), ncol(X)),
+#'   variantNames = colnames(X)
 #' )
-#' LD <- cor(X)
-#' l0learnRssWeights(stat, LD)
+#' l0learnRssWeights(stat, LdMatrix(cor(X)))
 #' @export
 l0learnRssWeights <- function(
     stat,
-    LD,
+    ldReference,
     penalty = c("L0", "L0L1", "L0L2"),
     s = c(0.2, 0.5, 0.9, 1.0),
     lambda0 = exp(seq(log(0.001), log(1), length.out = 10)),
@@ -2865,11 +3242,13 @@ l0learnRssWeights <- function(
     lambda2 = 0,
     selection = c("ldQuadratic", "minFbeta"),
     maxSwaps = 100,
+    fitRetention = c("none", "slim", "full"),
     methodArgs = PenalizedRssOptions()
 ) {
     .assertMethodOptions(methodArgs, "PenalizedRssOptions", "methodArgs")
     penalty <- arg_match(penalty)
     selection <- arg_match(selection)
+    fitRetention <- arg_match(fitRetention)
 
     # Default lambda (L1 component) depends on variant
     if (is.null(lambda)) {
@@ -2882,7 +3261,7 @@ l0learnRssWeights <- function(
 
     .rssShrinkGridWeights(
         stat,
-        LD,
+        .rssLdSource(stat, ldReference, "l0learnRssWeights"),
         s,
         "l0learn",
         list(
@@ -2893,7 +3272,8 @@ l0learnRssWeights <- function(
             maxSwaps = maxSwaps,
             dotArgs = methodArgs
         ),
-        selection
+        selection,
+        fitRetention
     )
 }
 
@@ -3259,7 +3639,6 @@ bLassoWeights <- function(
 #'   nothing, \code{"slim"} and \code{"full"} attach the fitted model. This
 #'   engine keeps no trimmable intermediates, so the two retaining levels
 #'   behave alike here.
-#'   Default \code{FALSE}.
 #' @param nK Integer. Number of variational mixture components for the VB fit
 #'   (\code{dprVbWeights}). Default \code{8}.
 #' @param sStep Integer. Number of Gibbs sampling steps for the Gibbs fit
@@ -3422,7 +3801,7 @@ dprAdaptiveGibbsWeights <- function(
     numThreads
 ) {
     .mrmashRequirePackages()
-    .assertMethodParam(prior, "MrmashPriorParam", "prior")
+    .assertMethodParam(prior, "MrmashPriorParam")
     .assertMethodOptions(methodArgs, "MrmashOptions", "methodArgs")
     priorOpts <- as.list(prior)
     .mrmashValidateWrapper(
@@ -3658,6 +4037,7 @@ mrmashWrapper <- function(
         Y,
         alpha = 0.5,
         standardize = standardize,
+        numThreads = numThreads,
         Xnew = NULL
     )
 }
@@ -3701,12 +4081,11 @@ mrmashWrapper <- function(
     )
 }
 
-# Run mr.mash with the resolved prior / init / V.
-# @noRd
-# The mr.mash call. Everything pecotmr derives -- the prior, the residual
-# covariance, the coefficient initialisation -- is supplied here and cannot be
-# overridden; the rest of mr.mash's arguments come from `methodArgs` under
-# mr.mash's own names, with pecotmr's defaults underneath.
+# Run mr.mash with the resolved prior / init / V. Everything pecotmr derives --
+# the prior, the residual covariance, the coefficient initialisation -- is
+# supplied here and cannot be overridden; the rest of mr.mash's arguments come
+# from `methodArgs` under mr.mash's own names, with pecotmr's defaults
+# underneath.
 # @noRd
 .mrmashFit <- function(
     S0,
@@ -3860,17 +4239,34 @@ computeCoefficientsGlasso <- function(
     return(res)
 }
 
-### Function to compute coefficients for univariate glmnet
+# Initial mr.mash coefficients from one cv.glmnet per response. The fits are
+# independent, so with `numThreads` >= 2 they run in parallel, each worker on
+# its own seeded RNG stream (cv.glmnet draws its folds at random); one thread
+# runs them in turn on the session RNG, as before.
+# @noRd
 computeCoefficientsUnivGlmnet <- function(
     X,
     Y,
     alpha,
     standardize,
+    numThreads = 1L,
     Xnew = NULL
 ) {
     r <- ncol(Y)
-
-    out <- map(seq_len(r), .linreg, X, Y, alpha, standardize, Xnew)
+    out <- if (numThreads >= 2L) {
+        bplapply(
+            seq_len(r),
+            .linreg,
+            X = X,
+            Y = Y,
+            alpha = alpha,
+            standardize = standardize,
+            Xnew = Xnew,
+            BPPARAM = .bpSeedParam(numThreads)
+        )
+    } else {
+        map(seq_len(r), .linreg, X, Y, alpha, standardize, Xnew)
+    }
 
     bhatList <- map(out, "bhat")
     Bhat <- exec(cbind, !!!bhatList)
@@ -3952,10 +4348,11 @@ rescaleCovW0 <- function(w0) {
 # ceiling(log2(gmax/gmin)/log2(mult)), carried fewer points than mr.mash
 # would have used.
 #
-# `mult = sqrt(2)` (finer than upstream's default 2) and the square are
-# pecotmr's own choices: this grid scales variances, not standard
-# deviations. autoselect.mixsd() drops Shat that is zero or non-finite,
-# which covers NA, so the port's extra is.na() term was redundant.
+# `mult = sqrt(2)` and the square follow mr.mashr's own documented recipe
+# (the mr.mash() and mr.mash.rss() examples build their grids exactly so):
+# this grid scales variances, not standard deviations. autoselect.mixsd()
+# drops Shat that is zero or non-finite, which covers NA, so the port's extra
+# is.na() term was redundant.
 # @noRd
 computeGrid <- function(bhat, sbhat) {
     mr.mashr::autoselect.mixsd(
@@ -4192,22 +4589,12 @@ buildMrmashPriorMatrices <- function(
     if (is.null(priorGrid)) {
         priorGrid <- computeGrid(bhat = Bhat, sbhat = Shat)
     }
-
-    if (isTRUE(canonicalPriorMatrices)) {
-        canonical <- exec(
-            mr.mashr::compute_canonical_covs,
-            K,
-            !!!as.list(canonicalCovs)
-        )
-        S0_raw <- if (!is.null(dataDrivenPriorMatrices)) {
-            c(canonical, dataDrivenPriorMatrices$U)
-        } else {
-            canonical
-        }
-    } else {
-        S0_raw <- dataDrivenPriorMatrices$U
-    }
-
+    S0_raw <- .mrmashRawPriorCovs(
+        K,
+        dataDrivenPriorMatrices,
+        canonicalPriorMatrices,
+        canonicalCovs
+    )
     S0 <- exec(
         mr.mashr::expand_covs,
         S0_raw,
@@ -4217,26 +4604,62 @@ buildMrmashPriorMatrices <- function(
     list(S0 = S0, priorGrid = priorGrid)
 }
 
+# The unexpanded prior covariances: the canonical set (when requested) plus
+# any data-driven matrices, or the data-driven matrices alone.
+# @noRd
+.mrmashRawPriorCovs <- function(
+    K,
+    dataDrivenPriorMatrices,
+    canonicalPriorMatrices,
+    canonicalCovs
+) {
+    if (!isTRUE(canonicalPriorMatrices)) {
+        return(dataDrivenPriorMatrices$U)
+    }
+    canonical <- exec(
+        mr.mashr::compute_canonical_covs,
+        K,
+        !!!as.list(canonicalCovs)
+    )
+    if (is.null(dataDrivenPriorMatrices)) {
+        return(canonical)
+    }
+    c(canonical, dataDrivenPriorMatrices$U)
+}
+
 # ---- map/apply helpers (lambda-free callbacks) ---------------------------
 
-# `.rssSolvePath` solver for lassosum: RSS lasso over the ordered lambda path.
+# `.rssSolvePath` solver for lassosum: RSS lasso over the ordered lambda path,
+# on the LD matrix or on a factor of it (never forming R).
 # @noRd
-.rssLassosumSolve <- function(z, lam, R, thr, maxiter) {
-    lassosumRssRcpp(
+.rssLassosumSolve <- function(z, lam, ld, thr, maxiter) {
+    if (!is.null(ld$F)) {
+        return(lassosumRssFactorCpp(
+            zR = z,
+            factorR = ld$F,
+            shrink = ld$shrink %||% 0,
+            lambdaR = lam,
+            thr = thr,
+            maxiter = as.integer(maxiter)
+        ))
+    }
+    lassosumRssCpp(
         zR = z,
-        LD = list(blk1 = R),
+        LD = list(blk1 = ld$R),
+        shrink = ld$shrink %||% 0,
         lambdaR = lam,
         thr = thr,
         maxiter = as.integer(maxiter)
     )
 }
 
-# `.rssSolvePath` solver for the penalized (MCP/SCAD/L0...) RSS path.
+# `.rssSolvePath` solver for the penalized (MCP/SCAD/L0...) RSS path, on the
+# LD matrix or on a factor of it (never forming R).
 # @noRd
 .rssPenalizedSolve <- function(
     z,
     lam,
-    R,
+    ld,
     penalty,
     gamma,
     alpha,
@@ -4246,9 +4669,7 @@ buildMrmashPriorMatrices <- function(
     maxiter,
     maxSwaps
 ) {
-    penalizedRssRcpp(
-        zR = z,
-        LD = list(blk1 = R),
+    settings <- list(
         lambdaR = lam,
         penaltyStr = penalty,
         gamma = gamma,
@@ -4259,16 +4680,29 @@ buildMrmashPriorMatrices <- function(
         maxiter = as.integer(maxiter),
         maxSwaps = as.integer(maxSwaps)
     )
+    if (!is.null(ld$F)) {
+        return(exec(
+            penalizedRssFactorCpp,
+            zR = z,
+            factorR = ld$F,
+            shrink = ld$shrink %||% 0,
+            !!!settings
+        ))
+    }
+    exec(
+        penalizedRssCpp,
+        zR = z,
+        LD = list(blk1 = ld$R),
+        shrink = ld$shrink %||% 0,
+        !!!settings
+    )
 }
 
 # One L0Learn fit at lambda0 = `l0Val`: penalizedRss over the lambda path.
 # @noRd
-.rssL0LambdaFit <- function(l0Val, solverInput, LDs, n, sVal, config) {
-    penArgs <- c(
+.rssL0LambdaFit <- function(l0Val, solverInput, ld, n, sVal, config) {
+    settings <- c(
         list(
-            bhat = solverInput,
-            R = LDs,
-            n = n,
             penalty = config$penalty,
             lambda = config$lambda,
             lambda0 = l0Val,
@@ -4277,15 +4711,10 @@ buildMrmashPriorMatrices <- function(
         ),
         as.list(config$dotArgs)
     )
-    model <- exec(penalizedRss, !!!penArgs)
+    model <- .penalizedRssOn(solverInput, ld, n, settings)
     list(
         beta = model$beta,
-        meta = tibble(
-            s = rep(sVal, length(model$lambda)),
-            lambda0 = rep(l0Val, length(model$lambda)),
-            lambda = model$lambda,
-            fbeta = model$fbeta
-        )
+        meta = mutate(.rssPathMeta(sVal, model), lambda0 = l0Val, .after = "s")
     )
 }
 

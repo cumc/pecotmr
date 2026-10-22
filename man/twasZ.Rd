@@ -25,8 +25,9 @@ name defaults to \code{"method1"}.}
 
 \item{R}{Optional LD correlation matrix.}
 
-\item{X}{Optional genotype matrix used to compute \code{R} when \code{R} is
-missing.}
+\item{X}{Optional genotype matrix (samples x variants) standing in for
+\code{R} when \code{R} is missing; its LD is taken as
+\code{\link{computeLd}}'s, without forming it.}
 
 \item{V, D, nSketch}{SVD components of the LD sketch (right-singular vectors,
 singular values, panel sample size). Supplying all three selects the SVD
@@ -70,8 +71,10 @@ combined p-value trivially equals the per-tuple p-value.
 The SVD path (\code{V}, \code{D}, \code{nSketch}) lets the caller avoid
 materializing the full LD matrix: \code{covY = (V^TW * sqrt(Lambda))^T (V^TW
 * sqrt(Lambda))} with \code{Lambda_i = D_i^2 / (nSketch - 1)}. Use the
-\code{R} path when an LD correlation matrix is already available; use the
-\code{X} path to compute \code{R} from a genotype matrix.
+\code{R} path when an LD correlation matrix is already available; the
+\code{X} path works from a genotype matrix directly, as
+\code{covY = (F W)^T (F W) / (n - 1)} for its standardized dosages
+\code{F}, never forming \code{R}.
 }
 \examples{
 data(eqtlRegionExample)

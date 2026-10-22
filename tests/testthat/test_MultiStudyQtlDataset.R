@@ -45,7 +45,7 @@ test_that("MultiStudyQtlDataset: rejects unnamed qtlDatasets list", {
 })
 
 
-test_that("MultiStudyQtlDataset: rejects trait/position conflicts across studies", {
+test_that("MultiStudyQtlDataset: rejects a trait at two positions", {
     se1 <- .sc_makeSe(traits = "ENSG1")
     # Build se2 from scratch (see note in the QtlDataset trait-conflict test).
     rng2 <- GenomicRanges::GRanges(
@@ -85,7 +85,7 @@ test_that("MultiStudyQtlDataset: rejects trait/position conflicts across studies
 })
 
 
-test_that("MultiStudyQtlDataset: tolerates chr-prefix-only seqname differences across studies", {
+test_that("MultiStudyQtlDataset: allows studies differing only in chr prefix", {
     # se1 uses "chr1"; se2 is the SAME locus (chr1:1000-1499) but seqnames "1".
     se1 <- .sc_makeSe(traits = "ENSG1")
     rng2 <- GenomicRanges::GRanges(
@@ -142,7 +142,7 @@ test_that("sumStats(MultiStudyQtlDataset) rejects selection arguments", {
         trait = "t1",
         entry = list(gr),
         genome = "hg19",
-        ldSketch = .sc_makeGenotypeHandle()
+        ldReference = .sc_makeGenotypeHandle()
     )
     qd1 <- QtlDataset(
         studyName = "s1",
@@ -186,6 +186,8 @@ test_that("MultiStudyQtlDataset: rejects duplicated study names", {
 })
 
 test_that("MultiStudyQtlDataset: rejects a non-QtlSumStats sumStats", {
+    # The slot is typed QtlSumStats_OR_NULL, so S4 refuses the value when the
+    # object is built.
     qd <- QtlDataset(
         studyName = "s1",
         genotypes = .sc_makeGenotypeHandle(),
@@ -196,7 +198,7 @@ test_that("MultiStudyQtlDataset: rejects a non-QtlSumStats sumStats", {
             qtlDatasets = list(s1 = qd, s2 = qd),
             sumStats = "not a QtlSumStats"
         ),
-        "'sumStats' must be a QtlSumStats object or NULL"
+        'invalid object for slot "sumStats"'
     )
 })
 

@@ -24,17 +24,21 @@ requirements:
     - ${{ compiler('cxx') }}
   host:
     - bioconductor-biocparallel
+    - bioconductor-biocsingular
+    - bioconductor-gdsarray
     - bioconductor-genomicranges
     - bioconductor-iranges
     - bioconductor-qvalue
     - bioconductor-s4vectors
     - bioconductor-snprelate
     - bioconductor-snpstats
-    - bioconductor-mungesumstats
     - bioconductor-multiassayexperiment
+    - bioconductor-plinkmatrix
     - bioconductor-rsamtools
     - bioconductor-rtracklayer
+    - bioconductor-seqarray
     - bioconductor-summarizedexperiment
+    - bioconductor-variantannotation
     - r-archive
     - r-arrow
     - r-aspu
@@ -49,6 +53,7 @@ requirements:
     - r-cpp11
     - r-cpp11armadillo
     - r-ctwas
+    - r-dbi
     - r-dplyr
     - r-flashier
     - r-fsusier
@@ -79,6 +84,7 @@ requirements:
     - r-rfast
     - r-rlang
     - r-robustbase
+    - r-rsqlite
     - r-softimpute
     - r-stringr
     - r-susier
@@ -92,6 +98,8 @@ requirements:
     - r-yaml
   run:
     - bioconductor-biocparallel
+    - bioconductor-biocsingular
+    - bioconductor-gdsarray
     - bioconductor-genomicranges
     - bioconductor-iranges
     - bioconductor-qvalue
@@ -99,10 +107,12 @@ requirements:
     - bioconductor-snprelate
     - bioconductor-snpstats
     - bioconductor-multiassayexperiment
-    - bioconductor-mungesumstats
+    - bioconductor-plinkmatrix
     - bioconductor-rsamtools
     - bioconductor-rtracklayer
+    - bioconductor-seqarray
     - bioconductor-summarizedexperiment
+    - bioconductor-variantannotation
     - r-archive
     - r-arrow
     - r-aspu
@@ -117,6 +127,7 @@ requirements:
     - r-cpp11
     - r-cpp11armadillo
     - r-ctwas
+    - r-dbi
     - r-dplyr
     - r-flashier
     - r-fsusier
@@ -147,6 +158,7 @@ requirements:
     - r-rfast
     - r-rlang
     - r-robustbase
+    - r-rsqlite
     - r-softimpute
     - r-stringr
     - r-susier

@@ -55,3 +55,57 @@
     rec(body(f))
     unique(out)
 }
+
+# The arguments an S4 method takes, minus `data` and `...`. A method whose
+# signature differs from its generic's is stored as a wrapper around an inner
+# `.local`, whose formals are the ones the caller sees.
+.methodFormalNames <- function(generic, cls) {
+    f <- methods::getMethod(generic, cls)@.Data
+    b <- body(f)
+    isLocal <- is.call(b) &&
+        identical(b[[1]], as.name("{")) &&
+        is.call(b[[2]]) &&
+        identical(b[[2]][[2]], as.name(".local"))
+    if (isLocal) {
+        f <- eval(b[[2]][[3]])
+    }
+    setdiff(names(formals(f)), c("data", "..."))
+}
+
+# Stand in for the joint engine's entry point and record what each joint
+# dispatcher hands it: the data form, the dataset, the pipeline config and the
+# engine `args`. One record per call in `cap$calls`. It returns NULL (no fits),
+# so a run whose joint phase consumed every method then stops with "no joint
+# fits produced" -- the tests expect that and read the records afterwards.
+.captureJointEngine <- function(cap, env = parent.frame()) {
+    cap$calls <- list()
+    testthat::local_mocked_bindings(
+        .runJointSpecs = function(
+            parsedJointSpec,
+            data,
+            dataForm,
+            pipeline,
+            jointMethods,
+            contexts,
+            traitIds,
+            args = list()
+        ) {
+            cap$calls[[length(cap$calls) + 1L]] <- list(
+                dataForm = dataForm,
+                data = data,
+                config = pecotmr:::.jpConfig(pipeline),
+                args = args,
+                jointMethods = jointMethods
+            )
+            NULL
+        },
+        .package = "pecotmr",
+        .env = env
+    )
+}
+
+# The recorded call for one data form ("individual" / "sumstats").
+.capturedCall <- function(cap, dataForm) {
+    hits <- Filter(function(r) identical(r$dataForm, dataForm), cap$calls)
+    if (length(hits) == 0L) NULL else hits[[1L]]
+}

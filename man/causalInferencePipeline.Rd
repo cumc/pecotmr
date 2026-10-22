@@ -8,8 +8,8 @@ causalInferencePipeline(
   gwasSumStats,
   twasWeights = NULL,
   fineMappingResult = NULL,
-  weightSelectionArgs = WeightSelectionParam(),
-  mrArgs = MrParam(),
+  weightSelectionParam = WeightSelectionParam(),
+  mrParam = MrParam(),
   combineMethods = NULL,
   alleleFlip = TRUE
 )
@@ -27,7 +27,7 @@ supplied, drives the MR computation and (when \code{twasWeights = NULL})
 the TWAS-Z weights via the SuSiE-style coefficients on each entry's
 \code{topLoci}.}
 
-\item{weightSelectionArgs}{How one TWAS method's weights are picked per
+\item{weightSelectionParam}{How one TWAS method's weights are picked per
 \code{(study, context, trait, gwasStudy)} tuple, built with
 \code{\link{WeightSelectionParam}}: \code{cutoff} (minimum
 cross-validated r-squared, default \code{0}), \code{pvalCutoff} (the
@@ -39,7 +39,7 @@ gates that also produced a finite TWAS Z. Otherwise every method is
 carried through. Ports the legacy \code{twas_pipeline}
 \code{pick_best_model} / \code{update_twas_method}.}
 
-\item{mrArgs}{How Mendelian randomization is run, built with
+\item{mrParam}{How Mendelian randomization is run, built with
 \code{\link{MrParam}}: \code{method} (\code{"ivwPerVariant"}, the
 default, or \code{"csAware"}), the PIP threshold that method reads
 (\code{pipCutoff} or \code{cpipCutoff}), and \code{pvalCutoff}, the
@@ -71,23 +71,26 @@ Per-region pipeline that pairs QTL-derived weight vectors
     \item \code{twasWeights} alone (no \code{fineMappingResult}):
           TWAS Z only, no MR.
     \item \code{fineMappingResult} alone (no \code{twasWeights}):
-          TWAS Z derived from SuSiE-style coefficients carried on the
-          \code{topLoci} slot of each FineMappingRow; plus MR.
+          TWAS Z derived from the SuSiE-style coefficients in each
+          row's top loci (\code{\link{topLoci}}); plus MR.
     \item both: TWAS Z computed from \code{twasWeights};
           MR computed from \code{fineMappingResult}.
   }
 }
-\section{LD-sketch compatibility check}{
- If a QTL input (TwasWeights or
-  QtlFineMappingResult) carries a non-\code{NULL} \code{ldSketch}, it must
-  come from the same reference panel as the \code{ldSketch} on
-  \code{gwasSumStats} --- same samples, same allele orientation on the
-  shared variants. The two need NOT carry the same variants: QC-ing the two
-  sides separately trims each sketch to its own surviving variants, and a
-  partial overlap only warns. A different sample set, a swapped A1/A2 on a
-  shared variant, or no shared variant at all is a hard error. A QTL input
-  with \code{ldSketch = NULL} (the fit was learned from individual-level
-  data) skips the validation for that input.
+\section{LD reference compatibility check}{
+ If a QTL input
+  (TwasWeights or QtlFineMappingResult) carries a non-\code{NULL}
+  \code{ldReference}, it must be the same LD reference as the
+  \code{ldReference} on \code{gwasSumStats}.
+  The two must be the same kind of reference. Two genotype panels must
+  share their samples and allele orientation; two \code{LdMatrix} objects
+  must agree on the LD they share; two \code{GenotypeMixture} objects must
+  average the same panels with the same weights. The two need NOT carry
+  the same variants: QC-ing the two sides separately trims each reference
+  to its own surviving variants, and a partial overlap only warns. A
+  mismatch of any of those, or no shared variant at all, is a hard error. A
+  QTL input with \code{ldReference = NULL} (the fit was learned from
+  individual-level data) skips the validation for that input.
 }
 
 \section{Output shape}{

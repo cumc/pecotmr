@@ -15,8 +15,8 @@ context("QtlDataset internal helpers")
 ) {
     new(
         "GenotypeHandle",
-        path = "/tmp/test.gds",
-        format = "gds",
+        path = "/tmp/test",
+        format = "plink2",
         snpInfo = data.frame(
             SNP = paste0("rs", seq_len(snp_n)),
             CHR = rep("1", snp_n),
@@ -934,8 +934,8 @@ context("QtlDataset residualization methods")
 .qr_makeHandle <- function(snp_n = 6L, n_samples = 12L) {
     new(
         "GenotypeHandle",
-        path = "/tmp/test.gds",
-        format = "gds",
+        path = "/tmp/test",
+        format = "plink2",
         snpInfo = data.frame(
             SNP = paste0("rs", seq_len(snp_n)),
             CHR = rep("1", snp_n),
@@ -1190,7 +1190,7 @@ test_that("residualizedGenotypes: residualizes only against selected pheno covar
     G <- residualizedGenotypes(
         qd,
         contexts = "brain",
-        residualizationArgs = ResidualizationParam(phenotypeCovariates = "age")
+        residualizationParam = ResidualizationParam(phenotypeCovariates = "age")
     )
     expect_equal(nrow(G), 12L)
     # Resulting columns should be uncorrelated with 'age'.
@@ -1211,7 +1211,7 @@ test_that("residualizedGenotypes: respects residualizePhenotype = FALSE", {
     G1 <- residualizedGenotypes(
         qd,
         contexts = "brain",
-        residualizationArgs = ResidualizationParam(
+        residualizationParam = ResidualizationParam(
             residualizePhenotype = FALSE
         )
     )
@@ -1228,14 +1228,14 @@ test_that("residualizedGenotypes: precise-name kwarg routes correctly", {
     G_precise <- residualizedGenotypes(
         qd,
         contexts = "brain",
-        residualizationArgs = ResidualizationParam(
+        residualizationParam = ResidualizationParam(
             residualizePhenotype = FALSE
         )
     )
     G_conv <- residualizedGenotypes(
         qd,
         contexts = "brain",
-        residualizationArgs = ResidualizationParam(
+        residualizationParam = ResidualizationParam(
             residualizePhenotype = FALSE
         )
     )
@@ -1254,7 +1254,7 @@ test_that("residualizedGenotypes refuses a bare list for the bundle", {
         residualizedGenotypes(
             qd,
             contexts = "brain",
-            residualizationArgs = list(residualizePhenotype = FALSE)
+            residualizationParam = list(residualizePhenotype = FALSE)
         ),
         "ResidualizationParam"
     )
@@ -1286,7 +1286,7 @@ test_that("residualizedGenotypes: includes genotype covariates when supplied", {
     G <- residualizedGenotypes(
         qd,
         contexts = "brain",
-        residualizationArgs = ResidualizationParam(
+        residualizationParam = ResidualizationParam(
             genotypeCovariates = c("pc1", "pc2")
         )
     )
@@ -1314,7 +1314,7 @@ test_that("residualizedGenotypes: mean-imputes missing covariates by default", {
     G <- residualizedGenotypes(
         qd,
         contexts = "brain",
-        residualizationArgs = ResidualizationParam(
+        residualizationParam = ResidualizationParam(
             genotypeCovariates = c("pc1", "pc2")
         )
     )
@@ -1338,7 +1338,7 @@ test_that("residualizedGenotypes: covariateNaAction='drop' removes samples with 
     G <- residualizedGenotypes(
         qd,
         contexts = "brain",
-        residualizationArgs = ResidualizationParam(
+        residualizationParam = ResidualizationParam(
             genotypeCovariates = c("pc1", "pc2"),
             covariateNaAction = "drop"
         )
@@ -1378,7 +1378,7 @@ test_that("residualizedPhenotypes: residualizes against age covariate", {
     Y <- residualizedPhenotypes(
         qd,
         contexts = "brain",
-        residualizationArgs = ResidualizationParam(phenotypeCovariates = "age")
+        residualizationParam = ResidualizationParam(phenotypeCovariates = "age")
     )
     age <- seq_len(12)
     for (j in seq_len(ncol(Y))) {
@@ -1391,7 +1391,7 @@ test_that("residualizedPhenotypes: respects residualizePhenotype = FALSE", {
     Y <- residualizedPhenotypes(
         qd,
         contexts = "brain",
-        residualizationArgs = ResidualizationParam(
+        residualizationParam = ResidualizationParam(
             residualizePhenotype = FALSE
         )
     )
@@ -1404,14 +1404,14 @@ test_that("residualizedPhenotypes: precise-name kwarg routes correctly", {
     Y_precise <- residualizedPhenotypes(
         qd,
         contexts = "brain",
-        residualizationArgs = ResidualizationParam(
+        residualizationParam = ResidualizationParam(
             residualizePhenotype = FALSE
         )
     )
     Y_conv <- residualizedPhenotypes(
         qd,
         contexts = "brain",
-        residualizationArgs = ResidualizationParam(
+        residualizationParam = ResidualizationParam(
             residualizePhenotype = FALSE
         )
     )
@@ -2143,7 +2143,7 @@ test_that("show.QtlDataset lists context names and trait count", {
     expect_true(any(grepl("QtlDataset for study 'study1'", out)))
     expect_true(any(grepl("1 context\\(s\\): brain", out)))
     expect_true(any(grepl("2 unique traits", out)))
-    expect_true(any(grepl("Genotypes: gds @ /tmp/test.gds", out)))
+    expect_true(any(grepl("Genotypes: plink2 @ /tmp/test", out)))
 })
 
 
@@ -2168,7 +2168,7 @@ test_that("show.MultiStudyQtlDataset reports sumstats studies when present", {
         trait = "t1",
         entry = list(.sh_makeQtlSumstatsGr()),
         genome = "hg19",
-        ldSketch = .sh_makeGenotypeHandle()
+        ldReference = .sh_makeGenotypeHandle()
     )
     mt <- MultiStudyQtlDataset(qtlDatasets = list(s1 = qd), sumStats = ss)
     out <- capture.output(show(mt))
@@ -2205,9 +2205,9 @@ test_that("show.MultiStudyQtlDataset reports sumstats studies when present", {
 .mr_vids <- function(qd, region) colnames(genotypes(qd, region = region))
 
 test_that("multi-range region unions disjoint sub-ranges on one chromosome", {
-    skip_if_not_installed("snpStats")
+    skip_if_not_installed("pgenlibr")
     h <- GenotypeHandle(
-        plink1Prefix = file.path(test_data_dir, "test_variants")
+        plink2Prefix = file.path(test_data_dir, "test_variants")
     )
     qd <- QtlDataset(
         studyName = "S",
@@ -2234,7 +2234,7 @@ test_that("multi-range region unions disjoint sub-ranges on one chromosome", {
 })
 
 test_that("multi-range region spans chromosomes on a sharded handle", {
-    skip_if_not_installed("snpStats")
+    skip_if_not_installed("pgenlibr")
     hs <- GenotypeHandle(
         genoMeta = c(
             "21" = file.path(test_data_dir, "test_variants"),
@@ -2247,7 +2247,7 @@ test_that("multi-range region spans chromosomes on a sharded handle", {
         phenotypes = list(ctx = .mr_makeSE(sampleIds(hs)))
     )
     bp <- snpInfo(GenotypeHandle(
-        plink1Prefix = file.path(test_data_dir, "test_variants")
+        plink2Prefix = file.path(test_data_dir, "test_variants")
     ))$BP
     lo <- min(bp)
     hi <- max(bp)
@@ -2271,9 +2271,9 @@ test_that("multi-range region spans chromosomes on a sharded handle", {
 })
 
 test_that("multi-region: single-range extraction is unchanged (regression)", {
-    skip_if_not_installed("snpStats")
+    skip_if_not_installed("pgenlibr")
     h <- GenotypeHandle(
-        plink1Prefix = file.path(test_data_dir, "test_variants")
+        plink2Prefix = file.path(test_data_dir, "test_variants")
     )
     qd <- QtlDataset(
         studyName = "S",
@@ -2286,9 +2286,9 @@ test_that("multi-region: single-range extraction is unchanged (regression)", {
 })
 
 test_that(".qtlResolveVariantRegion rejects a non-GRanges / empty region", {
-    skip_if_not_installed("snpStats")
+    skip_if_not_installed("pgenlibr")
     h <- GenotypeHandle(
-        plink1Prefix = file.path(test_data_dir, "test_variants")
+        plink2Prefix = file.path(test_data_dir, "test_variants")
     )
     qd <- QtlDataset(
         studyName = "S",
@@ -2739,7 +2739,7 @@ test_that("residualizedGenotypes: errors when genotypes and covariates share no 
         residualizedGenotypes(
             qd,
             contexts = "brain",
-            residualizationArgs = ResidualizationParam(
+            residualizationParam = ResidualizationParam(
                 residualizePhenotype = FALSE,
                 genotypeCovariates = c("pc1", "pc2")
             )
@@ -2760,7 +2760,7 @@ test_that("residualizedPhenotypes: errors when phenotypes and covariates share n
         residualizedPhenotypes(
             qd,
             contexts = "brain",
-            residualizationArgs = ResidualizationParam(
+            residualizationParam = ResidualizationParam(
                 residualizePhenotype = FALSE,
                 genotypeCovariates = c("pc1", "pc2")
             )
@@ -2803,11 +2803,22 @@ test_that("QtlDataset filter accessors round-trip what was passed in", {
 test_that("genotypeHandle returns the handle, genotypes a dosage block", {
     # These are different accessors on purpose: genotypes() extracts
     # dosages through the filter stack, genotypeHandle() hands back the
-    # GenotypeHandle the dataset was built on.
-    data(qtlDatasetExample, envir = environment())
-    x <- qtlDatasetExample
+    # GenotypeHandle the dataset was built on -- none for a panel that reads
+    # through its own seed, as the example's PLINK1 panel does.
+    skip_if_not_installed("pgenlibr")
+    h <- GenotypeHandle(
+        plink2Prefix = file.path(test_data_dir, "test_variants")
+    )
+    x <- QtlDataset(
+        studyName = "S",
+        genotypes = h,
+        phenotypes = list(ctx = .mr_makeSE(sampleIds(h)))
+    )
     expect_s4_class(genotypeHandle(x), "GenotypeHandle")
     expect_true(is.matrix(genotypes(x)))
+    data(qtlDatasetExample, envir = environment())
+    expect_null(genotypeHandle(qtlDatasetExample))
+    expect_true(is.matrix(genotypes(qtlDatasetExample)))
 })
 
 
@@ -3011,7 +3022,9 @@ test_that("replacing the handle moves the assay's seed with it", {
     # describing a different panel from the one the accessors read.
     qd <- .qm_makeDataset()
     handle <- genotypeHandle(qd)
-    handle@path <- "pecotmr://extdata/elsewhere"
+    # A bundled resource that resolves: building the panel looks beside it
+    # for a sketch's .afreq sidecar.
+    handle@path <- "pecotmr://extdata/toy_ref"
     out <- pecotmr:::.qtlWithGenotypeHandle(qd, handle)
     seedPath <- path(pecotmr:::.ghSeedHandle(
         DelayedArray::seed(SummarizedExperiment::assay(
@@ -3019,8 +3032,8 @@ test_that("replacing the handle moves the assay's seed with it", {
             "dosage"
         ))
     ))
-    expect_equal(path(genotypeHandle(out)), "pecotmr://extdata/elsewhere")
-    expect_equal(seedPath, "pecotmr://extdata/elsewhere")
+    expect_equal(path(genotypeHandle(out)), "pecotmr://extdata/toy_ref")
+    expect_equal(seedPath, "pecotmr://extdata/toy_ref")
 })
 
 
@@ -3062,10 +3075,10 @@ test_that("longForm(genotype = TRUE) reads the dosages in", {
     qd <- qtlDatasetExample
     lf <- MultiAssayExperiment::longForm(qd, genotype = TRUE)
     expect_true(is_in("genotype", unique(as.character(lf$assay))))
-    handle <- genotypeHandle(qd)
+    geno <- pecotmr:::.qtlGenotypeSe(qd)
     expect_equal(
         sum(as.character(lf$assay) == "genotype"),
-        nrow(snpInfo(handle)) * length(sampleIds(handle))
+        nrow(geno) * ncol(geno)
     )
 })
 
@@ -3346,4 +3359,46 @@ test_that("all three are MethodParams and read like a list", {
         expect_false(is(a, "MethodOptions"))
         expect_type(as.list(a), "list")
     }
+})
+
+
+test_that("a stochastic LD sketch is refused as a study's genotypes", {
+    skip_if_not_installed("pgenlibr")
+    sketch <- readGenotypes(
+        test_path("test_data", "test_harmonize_regions.pgen")
+    )
+    expect_error(
+        pecotmr:::.qtlCheckRealGenotypes(pecotmr:::.ldRefHandle(sketch)),
+        "is a stochastic LD sketch"
+    )
+    real <- readGenotypes(test_path("test_data", "test_variants.pgen"))
+    expect_null(pecotmr:::.qtlCheckRealGenotypes(pecotmr:::.ldRefHandle(real)))
+})
+
+test_that("a QtlDataset reads genotypes held in memory as from a file", {
+    # The genotype experiment is read through its own rows and assay, not a
+    # handle, so a panel from any backend -- here one held in memory -- gives
+    # the same blocks as the file it was read from.
+    data(qtlDatasetExample, envir = environment())
+    disk <- pecotmr:::.qtlGenotypeSe(qtlDatasetExample)
+    mem <- SummarizedExperiment::SummarizedExperiment(
+        assays = list(
+            dosage = as.matrix(SummarizedExperiment::assay(disk, "dosage"))
+        ),
+        rowRanges = SummarizedExperiment::rowRanges(disk),
+        colData = SummarizedExperiment::colData(disk)
+    )
+    qd <- QtlDataset(
+        studyName = studyName(qtlDatasetExample),
+        genotypes = mem,
+        phenotypes = pecotmr:::.qtlPhenotypeList(qtlDatasetExample)
+    )
+    expect_null(genotypeHandle(qd))
+    region <- SummarizedExperiment::rowRanges(disk)[1:30]
+    expect_equal(
+        genotypes(qd, region = region),
+        genotypes(qtlDatasetExample, region = region)
+    )
+    out <- capture.output(show(qd))
+    expect_true(any(grepl("held in memory", out)))
 })

@@ -80,30 +80,33 @@ QtlEnrichmentParam <- function(
 #' @section Inputs:
 #' \itemize{
 #'   \item \code{gwasFineMappingResult}: the genome-wide outcome collection.
-#'     Each entry's \code{FineMappingRow$trimmedFit} must carry a \code{pip}
+#'     Each row's stored fit (\code{\link{susieFit}}) must carry a \code{pip}
 #'     vector. One PIP vector is built per outcome trait -- keyed by
 #'     \code{study} for a GWAS collection (one trait per study) and by
 #'     (\code{study}, \code{context}, \code{trait}) for a QTL one, since a
 #'     variant's PIP differs between molecular traits and pooling them would
 #'     collide.
-#'   \item \code{qtlFineMappingResult}: the annotation collection. Each entry's
-#'     \code{trimmedFit} must carry \code{alpha}, \code{pip}, and
+#'   \item \code{qtlFineMappingResult}: the annotation collection. Each row's
+#'     stored fit must carry \code{alpha}, \code{pip}, and
 #'     prior-variance fields (\code{V}). Its region fits are pooled per
 #'     (\code{study}, \code{context}) -- per \code{study} alone for a GWAS
 #'     collection, which has no context axis.
 #' }
 #'
-#' @section LD-sketch compatibility check: A GWAS outcome collection must have
-#'   a non-NULL \code{ldSketch} (it should be RSS-derived). Where both sides
-#'   carry one, the two must come from the same reference panel --- same
-#'   samples, same allele orientation on the variants they share --- but need
-#'   NOT carry the same variants: QC-ing the two sides separately trims each
-#'   sketch to its own surviving variants, and a partial overlap only warns. A
+#' @section LD reference compatibility check: A GWAS outcome collection
+#'   must have a non-NULL \code{ldReference} (it should be RSS-derived). Where
+#'   both sides carry one, the two must be the same LD reference.
+#'   The two must be the same kind of reference. Two genotype panels must
+#'   share their samples and allele orientation; two \code{LdMatrix} objects
+#'   must agree on the LD they share; two \code{GenotypeMixture} objects must
+#'   average the same panels with the same weights. They need NOT carry the
+#'   same variants: QC-ing the two sides separately trims each reference to
+#'   its own surviving variants, and a partial overlap only warns. A
 #'   \code{NULL} on either side (an individual-level fit) skips the check.
 #'
 #' @param gwasFineMappingResult The outcome side; see above.
 #' @param qtlFineMappingResult The annotation side; see above.
-#' @param methodArgs The estimator's algorithmic settings, built with
+#' @param qtlEnrichmentParam The estimator's algorithmic settings, built with
 #'   \code{\link{QtlEnrichmentParam}}: \code{numGwas}, \code{piQtl},
 #'   \code{lambda}, \code{impN}, \code{doubleShrinkage} and
 #'   \code{besselCorrection}. A bare list is refused, since it cannot be
@@ -147,12 +150,12 @@ QtlEnrichmentParam <- function(
 qtlEnrichmentPipeline <- function(
     gwasFineMappingResult,
     qtlFineMappingResult,
-    methodArgs = QtlEnrichmentParam(),
+    qtlEnrichmentParam = QtlEnrichmentParam(),
     numThreads = 1L,
     seed = NULL,
     verbose = TRUE
 ) {
-    .assertMethodParam(methodArgs, "QtlEnrichmentParam", "methodArgs")
+    .assertMethodParam(qtlEnrichmentParam, "QtlEnrichmentParam")
     .enrValidateInputs(gwasFineMappingResult, qtlFineMappingResult)
     prep <- .enrPrepare(gwasFineMappingResult, qtlFineMappingResult)
     gwasTuples <- prep$gwasTuples
@@ -164,7 +167,7 @@ qtlEnrichmentPipeline <- function(
         gwasPipByTuple = prep$gwasPipByTuple,
         qtlRegionsByTuple = prep$qtlRegionsByTuple,
         alignedByTuple = alignedByTuple,
-        methodArgs = methodArgs,
+        qtlEnrichmentParam = qtlEnrichmentParam,
         numThreads = numThreads,
         seed = seed,
         verbose = verbose,
@@ -186,22 +189,22 @@ qtlEnrichmentPipeline <- function(
     fmrClasses <- c("GwasFineMappingResult", "QtlFineMappingResult")
     assertMultiClass(gwasFineMappingResult, fmrClasses)
     assertMultiClass(qtlFineMappingResult, fmrClasses)
-    outcomeLd <- ldSketch(gwasFineMappingResult)
+    outcomeLd <- ldReference(gwasFineMappingResult)
     if (
         is.null(outcomeLd) &&
             methods::is(gwasFineMappingResult, "GwasFineMappingResult")
     ) {
         msg <- glue(
-            "qtlEnrichmentPipeline: the GWAS FineMappingResult must have a ",
-            "non-NULL ldSketch (it should be RSS-derived)."
+            "qtlEnrichmentPipeline: the GwasFineMappingResult must have a ",
+            "non-NULL ldReference (it should be RSS-derived)."
         )
         abort(msg)
     }
     # Lenient rather than qtl-required: a QTL outcome side may be an
     # individual-level fit carrying no panel, and the requirement above already
     # covers the RSS-derived GWAS case.
-    .requireMatchingLdSketches(
-        ldSketch(qtlFineMappingResult),
+    .requireMatchingLdRefs(
+        ldReference(qtlFineMappingResult),
         outcomeLd,
         pipelineName = "qtlEnrichmentPipeline",
         nullPolicy = "lenient"
@@ -343,7 +346,7 @@ qtlEnrichmentPipeline <- function(
     gwasPipByTuple,
     qtlRegionsByTuple,
     alignedByTuple = alignedByTuple,
-    methodArgs,
+    qtlEnrichmentParam,
     numThreads,
     seed,
     verbose,
@@ -369,7 +372,7 @@ qtlEnrichmentPipeline <- function(
         gwasPip = gwasPip,
         qtlRegionsByTuple = qtlRegionsByTuple,
         alignedByTuple = alignedByTuple,
-        methodArgs = methodArgs,
+        qtlEnrichmentParam = qtlEnrichmentParam,
         numThreads = numThreads,
         seed = seed,
         verbose = verbose,
@@ -389,7 +392,7 @@ qtlEnrichmentPipeline <- function(
     gwasPip,
     qtlRegionsByTuple,
     alignedByTuple = alignedByTuple,
-    methodArgs,
+    qtlEnrichmentParam,
     numThreads,
     seed,
     verbose,
@@ -412,7 +415,7 @@ qtlEnrichmentPipeline <- function(
         gwasPip,
         k,
         alignedByTuple = alignedByTuple,
-        methodArgs = methodArgs,
+        qtlEnrichmentParam = qtlEnrichmentParam,
         numThreads = numThreads,
         seed = seed,
         verbose = verbose,
@@ -457,7 +460,7 @@ qtlEnrichmentPipeline <- function(
     gwasPip,
     k,
     alignedByTuple,
-    methodArgs,
+    qtlEnrichmentParam,
     numThreads,
     seed,
     verbose,
@@ -473,7 +476,7 @@ qtlEnrichmentPipeline <- function(
                 cnd_signal(aligned)
             }
             # alignNames = FALSE reuses the per-tuple alignment; it is the
-            # pipeline's own invariant, which is why `methodArgs` cannot
+            # pipeline's own invariant, which is why `qtlEnrichmentParam` cannot
             # carry it -- QtlEnrichmentParam() has no such formal.
             exec(
                 qtlEnrichment,
@@ -483,7 +486,7 @@ qtlEnrichmentPipeline <- function(
                 seed = seed,
                 verbose = verbose,
                 alignNames = FALSE,
-                !!!methodArgs
+                !!!qtlEnrichmentParam
             )
         },
         error = function(cnd) {
@@ -545,14 +548,6 @@ qtlEnrichmentPipeline <- function(
     map(regions, .enrAlignRegion, unionGwasNames = unionGwasNames)
 }
 
-# Build a named outcome PIP vector for one trait. Walks every row of the
-# collection carrying that identity, extracts the per-row pip from each
-# FineMappingRow, and concatenates with variant-id names. Errors if any single
-# variant appears with conflicting PIP values across rows -- which is why the
-# identity is the full trait tuple: pooling two molecular traits of one study
-# would collide on every variant they share.
-#' @importFrom dplyr add_count
-#' @noRd
 # One row's PIP vector keyed by variant id, or NULL when the row carries no
 # fit, no PIPs, or ids that do not line up with them.
 # @noRd
@@ -570,6 +565,14 @@ qtlEnrichmentPipeline <- function(
     set_names(pip, as.character(ids))
 }
 
+# Build a named outcome PIP vector for one trait. Walks every row of the
+# collection carrying that identity, extracts the per-row pip from each
+# FineMappingRow, and concatenates with variant-id names. Errors if any single
+# variant appears with conflicting PIP values across rows -- which is why the
+# identity is the full trait tuple: pooling two molecular traits of one study
+# would collide on every variant they share.
+#' @importFrom dplyr add_count
+#' @noRd
 .enrBuildGwasPipVector <- function(gwasFmr, ident) {
     idx <- .enrMatchRows(gwasFmr, ident)
     if (length(idx) == 0L) {
@@ -662,16 +665,16 @@ qtlEnrichmentPipeline <- function(
 # Project qtlEnrichment()'s output onto the columns this pipeline publishes.
 #
 # The field names are the estimator's own, written in src/qtl_enrichment.h and
-# shared verbatim with upstream fastenloc's enloc.enrich.out, so they are
+# shared verbatim with the original fastenloc's enloc.enrich.out, so they are
 # matched literally rather than guessed at. The shrinkage estimates are the
-# ones reported, matching upstream, which likewise switches to the shrunk a1
-# before deriving the coloc priors.
+# ones reported, matching the original fastenloc, which likewise switches to
+# the shrunk a1 before deriving the coloc priors.
 #
-# `enrichment` is expm1 of the log-odds a1 rather than a1 itself, because
-# colocPipeline consumes it as `p12 * (1 + enrichment)`, which is then exactly
-# the enloc-adjusted prior `p12 * exp(a1)` -- and leaves p12 untouched for an
-# unenriched annotation (a1 = 0). expm1 is bounded below by -1, so a depleted
-# annotation shrinks p12 towards 0 rather than past it.
+# `enrichment` is expm1 of the log-odds a1 rather than a1 itself: the
+# relative change in an annotated variant's odds of being a QTL, 0 for an
+# unenriched annotation and bounded below by -1. colocPipeline reports it
+# beside each pair; its priors are the coloc p1 / p2 / p12 the estimator
+# derives (colocP1, colocP2, colocP12), not a rescaling of this column.
 # @noRd
 .enrFlattenEnrichment <- function(enr) {
     if (!is.list(enr) || !is_in("Enrichment (w/ shrinkage)", names(enr))) {
@@ -728,7 +731,7 @@ qtlEnrichmentPipeline <- function(
 # -----------------------------------------------------------------------------
 # Per-(GWAS, QTL-region-list) enrichment estimator. Called per-(gwasStudy,
 # qtlContext) pair by qtlEnrichmentPipeline above. Uses the fastenloc-style
-# C++ kernel (qtlEnrichmentRcpp) under the hood.
+# C++ kernel (qtlEnrichmentCpp) under the hood.
 # =============================================================================
 #' @title Implementation of enrichment analysis described in
 #'   https://doi.org/10.1371/journal.pgen.1006646
@@ -785,7 +788,7 @@ qtlEnrichmentPipeline <- function(
 #'   \code{sd (w/ shrinkage)}, \code{Alternative (coloc) p1} / \code{p2} /
 #'   \code{p12} and \code{Effective MI rounds} -- plus
 #'   \code{unused_xqtl_variants}, the QTL variants of each region that no GWAS
-#'   variant matched. The names are upstream fastenloc's;
+#'   variant matched. The names are the original fastenloc's;
 #'   \code{\link{qtlEnrichmentPipeline}} is what renames them to a tidy table.
 #'
 #' @examples
@@ -848,7 +851,7 @@ qtlEnrichment <- function(
     unmatchedVariants <- map(aligned, "unmatched_variants")
     susieQtlRegions <- map(aligned, .enrStripUnmatched)
     # cpp11 requires exact integer types for int parameters.
-    en <- qtlEnrichmentRcpp(
+    en <- qtlEnrichmentCpp(
         rGwasPip = gwasPip,
         rQtlSusieFit = susieQtlRegions,
         piGwas = piGwas,

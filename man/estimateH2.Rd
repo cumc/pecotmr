@@ -87,6 +87,6 @@ panel <- readGenotypes(
 )
 ss <- GwasSumStats(studyName = "trait1", entry = list(gr),
   genome = unique(unname(GenomeInfoDb::genome(ldScoreExample))),
-  ldSketch = panel)
+  ldReference = panel)
 estimateH2(ss, ldScoreExample, method = "sldsc")
 }

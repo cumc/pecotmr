@@ -29,7 +29,7 @@ pip(x, ...)
 )
 }
 \arguments{
-\item{x}{A \code{FineMappingRow} or \code{FineMappingResult}.}
+\item{x}{A \code{QtlFineMappingResult} or \code{GwasFineMappingResult}.}
 
 \item{...}{Class-specific selection arguments.}
 
@@ -56,9 +56,9 @@ identity tuple instead of a single flattened vector.}
 A named numeric vector of PIPs.
 }
 \description{
-Extract posterior inclusion probabilities from a single
-  \code{FineMappingRow} or from one entry of a \code{FineMappingResult}
-  (selected by its identity tuple).
+Extract posterior inclusion probabilities from a
+  \code{QtlFineMappingResult} or \code{GwasFineMappingResult}, narrowed to
+  the entries its identity selectors pick.
 }
 \examples{
 data(qtlFineMappingExample)

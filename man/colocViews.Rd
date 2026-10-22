@@ -55,7 +55,7 @@ colocGenes(x, ...)
 before any LD work, so a stricter threshold costs strictly less.}
 
 \item{minAbsCorr}{Minimum absolute correlation between credible-set members
-(purity). Requires the object's \code{ldSketch}; when that is absent,
+(purity). Requires the object's \code{ldReference}; when that is absent,
 purity is reported as \code{NA} and no set is dropped.}
 
 \item{requireMaxH4}{Logical (length 1), default \code{FALSE}. When

@@ -155,8 +155,12 @@ test_that("penalizedRss MCP recovers signal direction", {
     y <- as.numeric(X %*% beta_true) + rnorm(n)
     bhat <- as.vector(cor(y, X))
     R <- cor(X)
-    stat <- list(b = bhat, n = rep(n, p))
-    w <- mcpRssWeights(stat = stat, LD = R, s = c(0.5, 0.9))
+    stat <- list(b = bhat, n = rep(n, p), variantNames = .rrwIds(p))
+    w <- mcpRssWeights(
+        stat = stat,
+        ldReference = .rrwLdMatrix(R),
+        s = c(0.5, 0.9)
+    )
     expect_equal(length(w), p)
     expect_true(all(is.finite(w)))
     expect_gt(cor(w, beta_true), 0.4)
@@ -172,8 +176,12 @@ test_that("penalizedRss SCAD recovers signal direction", {
     y <- as.numeric(X %*% beta_true) + rnorm(n)
     bhat <- as.vector(cor(y, X))
     R <- cor(X)
-    stat <- list(b = bhat, n = rep(n, p))
-    w <- scadRssWeights(stat = stat, LD = R, s = c(0.5, 0.9))
+    stat <- list(b = bhat, n = rep(n, p), variantNames = .rrwIds(p))
+    w <- scadRssWeights(
+        stat = stat,
+        ldReference = .rrwLdMatrix(R),
+        s = c(0.5, 0.9)
+    )
     expect_equal(length(w), p)
     expect_true(all(is.finite(w)))
     expect_gt(cor(w, beta_true), 0.4)
@@ -189,10 +197,10 @@ test_that("penalizedRss L0 recovers signal direction", {
     y <- as.numeric(X %*% beta_true) + rnorm(n)
     bhat <- as.vector(cor(y, X))
     R <- cor(X)
-    stat <- list(b = bhat, n = rep(n, p))
+    stat <- list(b = bhat, n = rep(n, p), variantNames = .rrwIds(p))
     w <- l0learnRssWeights(
         stat = stat,
-        LD = R,
+        ldReference = .rrwLdMatrix(R),
         penalty = "L0",
         s = c(0.5, 0.9),
         lambda0 = exp(seq(log(0.001), log(0.5), length.out = 5))
@@ -210,8 +218,8 @@ test_that("scadRssWeights returns correct-length vector with attributes", {
     n <- 100
     bhat <- rnorm(p, sd = 0.1)
     R <- diag(p)
-    stat <- list(b = bhat, n = rep(n, p))
-    w <- scadRssWeights(stat = stat, LD = R, s = 0.5)
+    stat <- list(b = bhat, n = rep(n, p), variantNames = .rrwIds(p))
+    w <- scadRssWeights(stat = stat, ldReference = .rrwLdMatrix(R), s = 0.5)
     expect_equal(length(w), p)
     expect_true(is.numeric(w))
     sel <- attr(w, "penalized_rss_selection")
@@ -225,8 +233,8 @@ test_that("mcpRssWeights returns correct-length vector with attributes", {
     n <- 100
     bhat <- rnorm(p, sd = 0.1)
     R <- diag(p)
-    stat <- list(b = bhat, n = rep(n, p))
-    w <- mcpRssWeights(stat = stat, LD = R, s = 0.5)
+    stat <- list(b = bhat, n = rep(n, p), variantNames = .rrwIds(p))
+    w <- mcpRssWeights(stat = stat, ldReference = .rrwLdMatrix(R), s = 0.5)
     expect_equal(length(w), p)
     expect_true(is.numeric(w))
     sel <- attr(w, "penalized_rss_selection")
@@ -240,10 +248,10 @@ test_that("l0learnRssWeights returns correct-length vector with attributes", {
     n <- 100
     bhat <- rnorm(p, sd = 0.1)
     R <- diag(p)
-    stat <- list(b = bhat, n = rep(n, p))
+    stat <- list(b = bhat, n = rep(n, p), variantNames = .rrwIds(p))
     w <- l0learnRssWeights(
         stat = stat,
-        LD = R,
+        ldReference = .rrwLdMatrix(R),
         penalty = "L0",
         s = 0.5,
         lambda0 = c(0.01, 0.1)

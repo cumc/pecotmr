@@ -10,7 +10,7 @@ credibleSetSummary(x, ...)
 \S4method{credibleSetSummary}{FineMappingResultBase}(x, coverage = 0.95)
 }
 \arguments{
-\item{x}{A \code{FineMappingRow} or \code{FineMappingResultBase}.}
+\item{x}{A \code{QtlFineMappingResult} or \code{GwasFineMappingResult}.}
 
 \item{...}{Ignored.}
 

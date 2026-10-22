@@ -11,7 +11,7 @@ A collection of colocalization results, one element per tested
   \code{\link{colocCredibleSets}} and \code{\link{colocGenes}}.
 }
 \details{
-The inherited \code{ldSketch} is what
+The inherited \code{ldReference} is what
   \code{colocCredibleSets()} uses to compute credible-set purity.
 }
 \seealso{

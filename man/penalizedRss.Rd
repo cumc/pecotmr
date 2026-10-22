@@ -73,16 +73,12 @@ and L0L2 penalties.  Uses coordinate descent on the objective
 where \eqn{R} is a (possibly pre-shrunk) LD matrix and \eqn{z = \hat\beta /
 \sqrt{n}}.
 }
-\examples{
-set.seed(42)
-p <- 10; n <- 100
-bhat <- rnorm(p, sd = 0.1)
-R <- diag(p)
-# MCP
-penalizedRss(bhat, R, n, penalty = "MCP")
-# SCAD
-penalizedRss(bhat, R, n, penalty = "SCAD")
-# L0
-penalizedRss(bhat, R, n, penalty = "L0", lambda0 = 0.01,
-              lambda = c(0))
+\details{
+Internal: \code{\link{scadRssWeights}}, \code{\link{mcpRssWeights}} and
+\code{\link{l0learnRssWeights}} are the public interface, with
+\code{\link{lassosumRssWeights}} for the lasso. They run this over a grid
+of LD shrinkage values, forward its options through
+\code{\link{PenalizedRssOptions}}, and with \code{fitRetention} return
+the paths as the \code{"fit"} attribute of their weights.
 }
+\keyword{internal}

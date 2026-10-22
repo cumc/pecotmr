@@ -72,7 +72,7 @@ qtlFineMappingPairedExample <- QtlFineMappingResult(
     trait = "gene1",
     method = "susie",
     entry = list(entry),
-    ldSketch = NULL
+    ldReference = NULL
 )
 
 save(

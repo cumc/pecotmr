@@ -4,7 +4,7 @@
 \alias{ColocResult}
 \title{Build a ColocResult}
 \usage{
-ColocResult(pairs, variants, ldSketch = NULL)
+ColocResult(pairs, variants, ldReference = NULL)
 }
 \arguments{
 \item{pairs}{A data frame with one row per tested pair, carrying at least
@@ -18,7 +18,7 @@ columns are \code{NA} for it.}
 \item{variants}{A list, parallel to \code{pairs}' rows, of per-pair data
 frames with a \code{variant_id} column and a \code{SNP.PP.H4} column.}
 
-\item{ldSketch}{Optional genotype panel (see \code{\link{readGenotypes}})
+\item{ldReference}{Optional genotype panel (see \code{\link{readGenotypes}})
 for the LD reference, used by \code{\link{colocCredibleSets}} to
 compute purity.}
 }

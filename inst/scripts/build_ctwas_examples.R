@@ -40,7 +40,7 @@ asBundledResource <- function(stem) {
 # A GenotypeHandle for `stem`, carrying the portable reference rather than
 # the concrete path it had to be read from.
 .portableHandle <- function(stem) {
-    handle <- pecotmr:::.ldSketchHandle(readGenotypes(plink2Prefix = stem))
+    handle <- pecotmr:::.ldRefHandle(readGenotypes(plink2Prefix = stem))
     handle@path <- asBundledResource(stem)
     handle
 }
@@ -69,13 +69,13 @@ blocks <- GenomicRanges::GRanges(
 gwasSumStats <- loadGwasSumStatsFromManifest(
     manifest = data.frame(study = "gwas1", sumStatsPath = gwasTsv),
     genome = "hg38",
-    ldSketch = ldStem,
+    ldReference = ldStem,
     region = "chr22:10000000-19000000",
     ldBlocks = blocks
 )
 gwasByRegion <- summaryStatsQc(
     gwasSumStats,
-    panelFilterArgs = PanelFilterParam(mafCutoff = 0.0025)
+    panelFilterParam = PanelFilterParam(mafCutoff = 0.0025)
 )
 
 data(ctwasWeightsExample)
@@ -97,13 +97,14 @@ data(ctwasWeightsExample)
 # back into a real path at read time, on whatever machine has the package.
 ctwasWeightsExample <- methods::initialize(
     ctwasWeightsExample,
-    ldSketch = pecotmr:::.asLdSketch(.portableHandle(ldStem))
+    ldReference = pecotmr:::.asLdRef(.portableHandle(ldStem))
 )
 
 stopifnot(
-    path(pecotmr:::.ldSketchHandle(
-        ldSketch(ctwasWeightsExample)
-    )) == asBundledResource(ldStem)
+    path(pecotmr:::.ldRefHandle(
+        ldReference(ctwasWeightsExample)
+    )) ==
+        asBundledResource(ldStem)
 )
 
 # -----------------------------------------------------------------------------
@@ -116,13 +117,19 @@ ctwasInputsExample <- assembleCtwasInputs(
 
 ctwasEstExample <- estCtwasGroupPriors(
     ctwasInputsExample,
-    ctwasPriorArgs = CtwasPriorParam(
+    ctwasPriorParam = CtwasPriorParam(
         thin = 1,
         niterPrefit = 3,
         niter = 10,
         fallbackToPrefit = TRUE
     ),
-    methodArgs = CtwasOptions(min_group_size = 1, min_p_single_effect = 0)
+    methodArgs = CtwasOptions(
+        regionData = CtwasRegionDataOptions(min_group_size = 1),
+        estParam = CtwasEstParamOptions(
+            min_group_size = 1,
+            min_p_single_effect = 0
+        )
+    )
 )
 
 # The toy GWAS carries no genome-wide-significant signal, so the default
@@ -130,7 +137,9 @@ ctwasEstExample <- estCtwasGroupPriors(
 # empty result. Keep every region so the finemap payload is populated.
 screened <- screenCtwasRegions(
     ctwasEstExample,
-    methodArgs = CtwasOptions(min_nonSNP_PIP = 0)
+    methodArgs = CtwasOptions(
+        screen = CtwasScreenOptions(min_nonSNP_PIP = 0)
+    )
 )
 ctwasFinemapExample <- finemapCtwasRegions(screened)
 
@@ -172,11 +181,13 @@ ctwasEstExample <- materializeLd(ctwasEstExample)
 ctwasFinemapExample <- materializeLd(ctwasFinemapExample)
 
 stopifnot(
-    all(!vapply(
-        pecotmr:::.ctwasCachedPanels(ctwasInputsExample),
-        function(p) is.null(p$R) || !is.null(p$sketch),
-        logical(1)
-    ))
+    all(
+        !vapply(
+            pecotmr:::.ctwasCachedPanels(ctwasInputsExample),
+            function(p) is.null(p$R) || !is.null(p$sketch),
+            logical(1)
+        )
+    )
 )
 
 # -----------------------------------------------------------------------------
@@ -215,18 +226,26 @@ unlink(unique(c(
 
 invisible(estCtwasGroupPriors(
     ctwasInputsExample,
-    ctwasPriorArgs = CtwasPriorParam(
+    ctwasPriorParam = CtwasPriorParam(
         thin = 1,
         niterPrefit = 3,
         niter = 10,
         fallbackToPrefit = TRUE
     ),
-    methodArgs = CtwasOptions(min_group_size = 1, min_p_single_effect = 0)
+    methodArgs = CtwasOptions(
+        regionData = CtwasRegionDataOptions(min_group_size = 1),
+        estParam = CtwasEstParamOptions(
+            min_group_size = 1,
+            min_p_single_effect = 0
+        )
+    )
 ))
 invisible(finemapCtwasRegions(
     screenCtwasRegions(
         ctwasEstExample,
-        methodArgs = CtwasOptions(min_nonSNP_PIP = 0)
+        methodArgs = CtwasOptions(
+            screen = CtwasScreenOptions(min_nonSNP_PIP = 0)
+        )
     )
 ))
 invisible(asCtwasResult(ctwasFinemapExample))

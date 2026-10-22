@@ -21,8 +21,9 @@ slalom(
 
 \item{R}{Square LD correlation matrix. Provide either \code{R} or \code{X}.}
 
-\item{X}{Genotype matrix (samples x SNPs). If provided, LD is computed via
-\code{computeLd(X)}.}
+\item{X}{Genotype matrix (samples x SNPs). With \code{ldMethod = "sample"}
+only the lead variant's LD column is computed from it; any other
+\code{ldMethod} computes the LD matrix via \code{computeLd(X)}.}
 
 \item{standardError}{Optional numeric vector of standard errors corresponding
 to each z-score. If not provided, a default value of 1 is assumed for all
@@ -41,9 +42,9 @@ for prediction. Default is 0.6.}
 "pvalue" or "abf", with default "pvalue".}
 
 \item{ldMethod}{Character string specifying the LD computation method when
-\code{X} is provided. Passed to \code{computeLd}. One of \code{"sample"}
-(default), \code{"population"}, or \code{"gcta"}. Ignored when \code{R} is
-provided directly.}
+\code{X} is provided: \code{"sample"} (default), which uses the
+genotypes directly, or \code{"population"} or \code{"gcta"}, which go
+through \code{computeLd}. Ignored when \code{R} is provided directly.}
 }
 \value{
 A list containing the annotated LD matrix with ABF results, credible
@@ -57,7 +58,9 @@ p-values from z-scores assuming a two-sided standard normal distribution.
 }
 \details{
 Provide either an LD correlation matrix \code{R} or a genotype matrix
-\code{X} (from which LD is derived automatically via \code{computeLd}).
+\code{X}. SLALOM needs only the lead variant's LD with the others, so with
+\code{ldMethod = "sample"} it computes that one column from the genotypes
+and never forms the LD matrix.
 }
 \examples{
 # Simulate z-scores and an LD matrix from a reference panel, then screen

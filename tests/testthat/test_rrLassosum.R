@@ -62,10 +62,10 @@ test_that("lassosumRssWeights calls lassosumRss and returns betaEst", {
         R[i, i + 1] <- 0.3
         R[i + 1, i] <- 0.3
     }
-    stat <- list(b = bhat, n = rep(n, p))
+    stat <- list(b = bhat, n = rep(n, p), variantNames = .rrwIds(p))
     expected <- seq_len(p) * 0.02
     local_mocked_bindings(
-        lassosumRss = function(bhat, R, n, ...) {
+        .lassosumRssPath = function(bhat, ld, n, ...) {
             list(
                 beta = cbind(rep(0, length(bhat)), expected),
                 lambda = c(0.05, 0.01),
@@ -73,7 +73,11 @@ test_that("lassosumRssWeights calls lassosumRss and returns betaEst", {
             )
         }
     )
-    result <- lassosumRssWeights(stat = stat, LD = R, s = 0.5)
+    result <- lassosumRssWeights(
+        stat = stat,
+        ldReference = .rrwLdMatrix(R),
+        s = 0.5
+    )
     expect_equal(length(result), p)
     expect_true(is.numeric(result))
     expect_equal(c(result), expected)
@@ -90,10 +94,10 @@ test_that("lassosumRssWeights clamps correlation input before scaling", {
     # Construct bhat with max abs >= 1 to trigger the clamp branch
     bhat <- c(1.5, -0.2, 0.1, 0.05, -0.3)
     R <- diag(p)
-    stat <- list(b = bhat, n = rep(n, p))
+    stat <- list(b = bhat, n = rep(n, p), variantNames = .rrwIds(p))
     captured <- NULL
     local_mocked_bindings(
-        lassosumRss = function(bhat, R, n, ...) {
+        .lassosumRssPath = function(bhat, ld, n, ...) {
             captured <<- bhat
             list(
                 beta = matrix(0, nrow = length(bhat), ncol = 2),
@@ -104,7 +108,7 @@ test_that("lassosumRssWeights clamps correlation input before scaling", {
     )
     result <- lassosumRssWeights(
         stat = stat,
-        LD = R,
+        ldReference = .rrwLdMatrix(R),
         s = 0.5,
         selection = "minFbeta"
     )

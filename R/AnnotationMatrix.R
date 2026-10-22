@@ -195,9 +195,9 @@ AnnotationMatrix <- function(
 # Annotations of one tier. A column subset: SummarizedExperiment keeps the
 # rows, the assay and the per-annotation table aligned, where the previous
 # implementation rebuilt the object from three separately-subset pieces.
-# @noRd
 # Callers are methods dispatching on AnnotationMatrix, so the class is
 # already guaranteed here -- no assertClass.
+# @noRd
 .annotTier <- function(x, tier) {
     x[, SummarizedExperiment::colData(x)$tier == tier]
 }

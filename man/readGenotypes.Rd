@@ -30,18 +30,43 @@ readGenotypes(path, format = NULL, ...)
 }
 \arguments{
 \item{path}{Character, path to a single self-describing genotype file
-(\code{.vcf}, \code{.vcf.gz}, \code{.vcf.bgz}, \code{.bcf} or
-\code{.gds}). Omit it when naming the panel by one of the keyword
-sources described above.}
+  (\code{.vcf.gz}, \code{.vcf.bgz}, \code{.gds} or \code{.bgen}). Omit it
+  when naming the panel by one of the keyword sources described above.
 
-\item{format}{Character, one of "vcf", "plink1", "plink2", "gds". If NULL,
-inferred from file extension.}
+  A VCF must be bgzip-compressed with its tabix index (\code{.tbi}) beside
+  it, through which its records are read a block at a time; a BCF cannot
+  be read. Its dosage is its FORMAT/DS when the header declares one, else
+  the copies of the ALT allele in each GT call, a call with a missing
+  allele being missing.
+
+  A GDS file is SNPRelate's, whose genotype codes count the first of each
+  SNP's two alleles (A1), or SeqArray's, read like a VCF: its FORMAT/DS
+  when it stores one, else its genotype calls.
+
+  A BGEN file of any layout (BGEN 1.1, 1.2 or 1.3), phased or unphased
+  and of any ploidy, needs its \code{.bgi} index beside it and its sample
+  ids in the file or in a \code{.sample} file beside it. Its dosage is the
+  expected count of A1, from 0 to the sample's ploidy.
+
+  A PLINK1 fileset, a \code{.bed} with its \code{.bim} and \code{.fam}
+  beside it, is read through the PlinkMatrix package: its dosage counts
+  each variant's A1 allele, the \code{.bim}'s fifth column, a missing
+  call being missing. Its samples are named by the \code{.fam}'s
+  individual ids.
+
+  In a VCF, a SeqArray GDS or a BGEN file, A2 is each record's first (REF)
+  allele, and a record with more than one other allele is read, with a
+  warning, as one variant per other allele, each counting its own.}
+
+\item{format}{Character, one of "vcf", "plink1", "plink2", "gds", "bgen".
+If NULL, inferred from file extension.}
 
 \item{...}{The keyword source arguments described above, plus any further
 arguments forwarded to the format-specific reader.}
 
 \item{vcfArgs}{Optional named list of arguments forwarded to
-\code{VariantAnnotation::readVcf} when the source is a VCF.}
+\code{VariantAnnotation::readVcf} when a VCF's records are read (its
+genotypes are read a block at a time, as they are needed).}
 
 \item{plink1Prefix, plink2Prefix}{Character. Stem of a plink1
 (\code{.bed}/\code{.bim}/\code{.fam}) or plink2
@@ -63,7 +88,8 @@ resolved and the file it names is read with the matching backend.}
 
 \item{genoMeta}{One-file-per-chromosome specification: a path to a
 \code{#chr,path} meta file, or a named character vector (names =
-chromosomes, values = payload paths / prefixes).}
+chromosomes, values = payload paths / prefixes). Every file must be of
+one format and hold the same samples in the same order.}
 
 \item{chroms}{Optional character vector of chromosomes. Only the
 \code{genoMeta} shards whose chromosome is listed are read; chromosome
@@ -73,14 +99,14 @@ labels are compared canonically. Meaningful only with \code{genoMeta}.}
 A \code{RangedSummarizedExperiment} of variants x samples.
 }
 \description{
-Read genotype data (VCF, plink1, plink2 or GDS) as a
+Read genotype data (VCF, plink1, plink2, GDS or BGEN) as a
   \code{RangedSummarizedExperiment}: variants in \code{rowRanges},
   samples in \code{colData}, and dosages in a \code{DelayedArray} assay
   that reads from the file only when something touches it. Nothing is read
   here beyond the variant and sample metadata.
 
   The panel is the same shape a \code{QtlDataset} uses for its genotypes
-  and the same shape a collection carries as its \code{ldSketch}, so the
+  and the same shape a collection carries as its \code{ldReference}, so the
   Bioconductor and tidy surfaces apply throughout: subset it with
   \code{panel[i, j]}, ask \code{rowRanges()} for the variants,
   \code{colnames()} for the samples, and hand it to

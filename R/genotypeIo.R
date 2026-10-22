@@ -1,7 +1,8 @@
-#' @title Genotype I/O via GenotypeHandle
-#' @description Read genotype data from various formats (VCF, plink1, plink2,
-#'   GDS) and provide block-level genotype extraction without requiring format
-#'   conversion.
+#' @title Genotype I/O
+#' @description Read genotype data in its own format (VCF, plink1, plink2,
+#'   GDS, BGEN) as a lazily read genotype panel, without converting it:
+#'   PLINK2 and BGEN files through a GenotypeHandle, VCF, GDS and PLINK1
+#'   files through a GenotypeDosageSeed.
 #' @name pecotmr-genotype-io
 #' @keywords internal
 #' @importFrom SummarizedExperiment SummarizedExperiment rowRanges
@@ -34,9 +35,7 @@ setMethod(
     "readGenotypes",
     signature(path = "character"),
     function(path, format = NULL, vcfArgs = list()) {
-        .genotypeExperiment(
-            .readGenotypeHandle(path, format = format, vcfArgs = vcfArgs)
-        )
+        .readGenotypePanel(path, format = format, vcfArgs = vcfArgs)
     }
 )
 
@@ -63,10 +62,9 @@ setMethod(
         vcfArgs = list()
     ) {
         # The keyword sources are declared here rather than absorbed by `...`
-        # and forwarded: GenotypeHandle() is internal, so this signature is
-        # the only place a caller can name them, and a misspelled source
-        # should be an error at the call rather than a silently unset one.
-        .genotypeExperiment(GenotypeHandle(
+        # and forwarded, so a misspelled source is an error at the call
+        # rather than a silently unset one.
+        .genotypePanelFromSources(
             plink1Prefix = plink1Prefix,
             plink2Prefix = plink2Prefix,
             bed = bed,
@@ -81,24 +79,100 @@ setMethod(
             chroms = chroms,
             format = format,
             vcfArgs = vcfArgs
-        ))
+        )
     }
 )
 
-# The handle behind a panel. Internal: the handle is the seed layer, and the
+# The panel a keyword source names: exactly one source, checked as
+# GenotypeHandle() checks it. A PLINK2 triplet is read through a handle, a
+# PLINK1 one as a panel; a file an LD-meta row or a per-chromosome meta
+# names, through whatever reads its format.
+# @noRd
+.genotypePanelFromSources <- function(
+    plink1Prefix = NULL,
+    plink2Prefix = NULL,
+    bed = NULL,
+    bim = NULL,
+    fam = NULL,
+    pgen = NULL,
+    pvar = NULL,
+    psam = NULL,
+    ldMeta = NULL,
+    region = NULL,
+    genoMeta = NULL,
+    chroms = NULL,
+    format = NULL,
+    vcfArgs = list()
+) {
+    flags <- .ghValidateArgs(
+        bed = bed,
+        bim = bim,
+        fam = fam,
+        pgen = pgen,
+        pvar = pvar,
+        psam = psam,
+        ldMeta = ldMeta,
+        region = region
+    )
+    sources <- .ghResolveSources(
+        path = NULL,
+        plink1Prefix = plink1Prefix,
+        plink2Prefix = plink2Prefix,
+        ldMeta = ldMeta,
+        genoMeta = genoMeta,
+        chroms = chroms,
+        flags = flags
+    )
+    switch(
+        names(sources)[which(sources)],
+        plink1Prefix = .readGenotypePanel(plink1Prefix, format = "plink1"),
+        plink2Prefix = .genotypeExperiment(.makePlink2Handle(plink2Prefix)),
+        plink1Triplet = .readGenotypePanel(
+            .plink1TripletStem(bed, bim, fam),
+            format = "plink1"
+        ),
+        plink2Triplet = .genotypeExperiment(
+            .genotypeHandleFromPlink2Triplet(pgen, pvar, psam)
+        ),
+        ldMeta = .ghLdPathToPanel(.ghResolveLdPath(ldMeta, region), vcfArgs),
+        genoMeta = .chromMetaPanel(genoMeta, chroms, format)
+    )
+}
+
+# The formats read as a panel directly, through a GenotypeDosageSeed; every
+# other format is read through a GenotypeHandle.
+# @noRd
+.DOSAGE_PANEL_FORMATS <- c("vcf", "gds", "plink1")
+
+# The panel of one genotype file or PLINK prefix. A VCF, GDS or PLINK1 file
+# is read as a panel directly; a PLINK2 or BGEN file through a
+# GenotypeHandle.
+# @noRd
+.readGenotypePanel <- function(path, format = NULL, vcfArgs = list()) {
+    format <- format %||% .requireGenotypeFormat(path, "readGenotypes")
+    if (!is_in(format, .DOSAGE_PANEL_FORMATS)) {
+        return(.genotypeExperiment(.readGenotypeHandle(path, format = format)))
+    }
+    .withSourceProjection(.readDosagePanel(path, format, vcfArgs))
+}
+
+# The handle behind a panel of a format a GenotypeHandle reads: PLINK2 or
+# BGEN. Internal: the handle is the seed layer, and the
 # handle-construction machinery below calls this rather than readGenotypes()
 # so it does not wrap and immediately unwrap a panel on every hop.
 # @noRd
-.readGenotypeHandle <- function(path, format = NULL, vcfArgs = list()) {
-    if (is.null(format)) {
-        format <- .h2DetectFormat(path)
-    }
+.readGenotypeHandle <- function(path, format = NULL) {
+    format <- format %||% .requireGenotypeFormat(path, "readGenotypes")
     switch(
         format,
-        "gds" = .makeGdsHandle(path),
-        "vcf" = .makeVcfHandle(path, vcfArgs = vcfArgs),
-        "plink1" = .makePlink1Handle(path),
         "plink2" = .makePlink2Handle(path),
+        "bgen" = .makeBgenHandle(path),
+        "vcf" = ,
+        "gds" = ,
+        "plink1" = abort(c(
+            glue("A {format} file is read as a genotype panel, not a handle."),
+            i = "Read it with readGenotypes()."
+        )),
         .abortUnsupportedFormat(format)
     )
 }
@@ -111,21 +185,13 @@ setMethod(
 # lets @snpInfo be row-subset (e.g. to the range of a study's summary stats)
 # while genotype reads that index BY FILE POSITION still resolve correctly:
 # PLINK2's ReadList(variant_subset=) and the per-chromosome PLINK2 view inside
-# sharded routing read fileIdx[snpIdx]; the by-id backends (plink1/gds/vcf) look
-# up snpInfo$SNP[snpIdx] / $BP[snpIdx] and ignore fileIdx entirely. For a full
-# (unsubset) handle fileIdx == seq_len(nrow), so reads are unchanged.
+# sharded routing read fileIdx[snpIdx]. For a full (unsubset) handle fileIdx
+# == seq_len(nrow), so reads are unchanged.
 # @noRd
 .withFileIdx <- function(snpInfo) {
     mutate(snpInfo, fileIdx = seq_len(nrow(snpInfo)))
 }
 
-# Restrict a GenotypeHandle's @snpInfo to `keep` (a logical mask or integer row
-# indices into @snpInfo). Genotype reads stay correct because fileIdx carries
-# each kept variant's original file position; everything else (path/format/
-# pgenPtr/chromPaths/samples) is preserved. NULL-safe; a no-op when nothing is
-# dropped. Handles built before the fileIdx column existed are NOT subset (the
-# read path would be positional) -- return them unchanged.
-# @noRd
 # A handle trimmed to zero variants, every other property preserved.
 #
 # Separate from .subsetGenotypeHandle() because that declines to subset a
@@ -142,7 +208,7 @@ setMethod(
     # dead weight (~10k anonymous names, the bulk of a skipped-region file).
     # nSamples must go to 0 alongside sampleIds, or dm (variants x nSamples)
     # would disagree with the now-empty derived sample dimnames. Reached only
-    # via .emptySketch (the empty / PIP-skip path), never on a surviving region.
+    # via .emptyLdRef (the empty / PIP-skip path), never on a surviving region.
     methods::initialize(
         handle,
         snpInfo = slice(snpInfo(handle), integer(0)),
@@ -151,6 +217,13 @@ setMethod(
     )
 }
 
+# Restrict a GenotypeHandle's @snpInfo to `keep` (a logical mask or integer row
+# indices into @snpInfo). Genotype reads stay correct because fileIdx carries
+# each kept variant's original file position; everything else (path/format/
+# pgenPtr/chromPaths/samples) is preserved. NULL-safe; a no-op when nothing is
+# dropped. Handles built before the fileIdx column existed are NOT subset (the
+# read path would be positional) -- return them unchanged.
+# @noRd
 .subsetGenotypeHandle <- function(handle, keep) {
     if (is.null(handle)) {
         return(NULL)
@@ -166,149 +239,13 @@ setMethod(
     methods::initialize(handle, snpInfo = slice(si, keepIdx))
 }
 
-#' @importFrom checkmate assertFileExists
-#' @keywords internal
-.makeGdsHandle <- function(path) {
-    if (!requireNamespace("SNPRelate", quietly = TRUE)) {
-        abort("Package 'SNPRelate' is required for reading GDS files.")
-    }
-    if (!requireNamespace("gdsfmt", quietly = TRUE)) {
-        abort("Package 'gdsfmt' is required for reading GDS files.")
-    }
-    assertFileExists(path, access = "r", .var.name = "GDS file")
-
-    snpInfo <- .gdsSnpInfo(path)
-
-    sampleIds <- .withGds(path, .gdsReadSampleIds)
-    nSamples <- length(sampleIds)
-
-    new(
-        "GenotypeHandle",
-        path = path,
-        format = "gds",
-        snpInfo = .withFileIdx(snpInfo),
-        nSamples = as.integer(nSamples),
-        sampleIds = sampleIds,
-        pgenPtr = NULL
-    )
-}
-
-#' @importFrom checkmate assertFileExists
-#' @keywords internal
-.makeVcfHandle <- function(path, vcfArgs = list()) {
-    if (!requireNamespace("VariantAnnotation", quietly = TRUE)) {
-        abort("Package 'VariantAnnotation' is required for reading VCF files.")
-    }
-    assertFileExists(path, access = "r", .var.name = "VCF file")
-
-    hdr <- VariantAnnotation::scanVcfHeader(path)
-    sampleIds <- as.character(VariantAnnotation::samples(hdr))
-    nSamples <- length(sampleIds)
-
-    param <- VariantAnnotation::ScanVcfParam(
-        fixed = c("ALT"),
-        info = NA,
-        geno = NA
-    )
-    vcf <- exec(
-        VariantAnnotation::readVcf,
-        path,
-        param = param,
-        !!!vcfArgs
-    )
-    rd <- rowRanges(vcf)
-
-    # pecotmr convention: A1 = ALT (effect), A2 = REF
-    snpInfo <- tibble(
-        SNP = names(rd),
-        CHR = as.character(seqnames(rd)),
-        BP = as.integer(start(rd)),
-        A1 = map_chr(rd$ALT, .gtFirstAllele),
-        A2 = as.character(rd$REF)
-    )
-
-    new(
-        "GenotypeHandle",
-        path = normalizePath(path),
-        format = "vcf",
-        snpInfo = .withFileIdx(snpInfo),
-        nSamples = as.integer(nSamples),
-        sampleIds = sampleIds,
-        pgenPtr = NULL
-    )
-}
-
-#' @keywords internal
-.makePlink1Handle <- function(path) {
-    if (!requireNamespace("snpStats", quietly = TRUE)) {
-        abort("Package 'snpStats' is required for reading plink1 files.")
-    }
-    stem <- .plink1RequireFiles(path)
-    meta <- .plink1ReadMeta(stem)
-    new(
-        "GenotypeHandle",
-        path = stem,
-        format = "plink1",
-        snpInfo = .withFileIdx(meta$snpInfo),
-        nSamples = as.integer(meta$nSamples),
-        sampleIds = meta$sampleIds,
-        pgenPtr = NULL
-    )
-}
-
-# Resolve the plink1 stem and assert its .bed/.bim/.fam all exist.
-# @noRd
-#' @importFrom checkmate assertFileExists
-.plink1RequireFiles <- function(path) {
-    stem <- .plinkStem(path)
-    assertFileExists(
-        str_c(stem, c(".bed", ".bim", ".fam")),
-        access = "r",
-        .var.name = "Plink file"
-    )
-    stem
-}
-
-# Read the .bim / .fam sidecars into snpInfo + sample metadata. Returns
-# list(snpInfo, sampleIds, nSamples).
-# @noRd
-.plink1ReadMeta <- function(stem) {
-    # col_types all-character so readr never coerces a column: a bim whose
-    # allele column is uniformly "T"/"F" (all-A/T SNPs) would otherwise become
-    # logical, silently corrupting A1/A2 (BP is cast to integer below).
-    bim <- read_table(
-        str_c(stem, ".bim"),
-        col_names = c("CHR", "SNP", "CM", "BP", "A1", "A2"),
-        col_types = cols(.default = col_character())
-    )
-    fam <- read_table(
-        str_c(stem, ".fam"),
-        col_names = FALSE,
-        col_types = cols(.default = col_character())
-    )
-    # plink1 bim: col5 = A1 (minor/effect), col6 = A2 (major/ref); matches the
-    # pecotmr convention directly.
-    snpInfo <- tibble(
-        SNP = bim$SNP,
-        CHR = as.character(bim$CHR),
-        BP = as.integer(bim$BP),
-        A1 = bim$A1,
-        A2 = bim$A2
-    )
-    list(
-        snpInfo = snpInfo,
-        sampleIds = as.character(fam[[2]]),
-        nSamples = nrow(fam)
-    )
-}
-
 #' @keywords internal
 .makePlink2Handle <- function(path) {
     if (!requireNamespace("pgenlibr", quietly = TRUE)) {
         abort("Package 'pgenlibr' is required for reading plink2 files.")
     }
 
-    stem <- .plinkStem(path)
+    stem <- .genotypeStem(path)
 
     # Use pecotmr's resolvePlink2Paths for robust path detection (.pvar.zst)
     paths <- resolvePlink2Paths(stem)
@@ -376,11 +313,8 @@ extractBlockGenotypes <- function(handle, snpIdx, meanImpute = TRUE) {
     if (length(.genotypeChromPaths(handle)) > 0L) {
         return(.extractBlockSharded(handle, snpIdx, meanImpute = meanImpute))
     }
-    # An empty request is answered without reaching a reader. This is not
-    # defensive tidiness: snpStats::read.plink(select.snps = character(0))
-    # SEGFAULTS, taking the R session with it rather than raising a condition
-    # tryCatch could see. The sharded branch above already returns early for
-    # the same reason; this is the single-file path catching up.
+    # An empty request is answered without reaching a reader, which need not
+    # accept one, as the sharded branch above already answers it.
     if (length(snpIdx) == 0L) {
         return(.emptyBlockSe(sampleIds(handle)))
     }
@@ -388,9 +322,6 @@ extractBlockGenotypes <- function(handle, snpIdx, meanImpute = TRUE) {
     # .restoreRequestedOrder() for why this is not merely tidiness.
     ord <- order(.genotypeFilePos(handle, snpIdx))
     raw <- .extractBlockByFormat(handle, snpIdx[ord])
-    if (is.null(raw)) {
-        return(NULL)
-    }
     ordered <- .restoreRequestedOrder(raw, ord)
     geno <- if (meanImpute) .meanImputeGeno(ordered) else ordered
     .blockGenotypesToSe(geno, handle, snpIdx)
@@ -408,17 +339,14 @@ extractBlockGenotypes <- function(handle, snpIdx, meanImpute = TRUE) {
 
 # Put a block's variant columns back into the order the caller asked for.
 #
-# snpStats (`select.snps=`) and SNPRelate (`snp.id=`) return variants in FILE
-# order however they were asked for, while .blockGenotypesToSe() labels the
-# block from snpInfo[snpIdx], i.e. the REQUESTED order. An unsorted request
-# therefore produced a block whose names and dosages described different
-# variants -- silently, since both are the right length. pgenlibr reads
-# positionally and was unaffected.
-#
-# Reading ascending and permuting back is correct for every backend, including
-# the ones that do honour the request: given a sorted request they return
-# sorted output either way, so the inverse permutation restores the caller's
-# order in both cases.
+# .blockGenotypesToSe() labels the block from snpInfo[snpIdx], i.e. the
+# REQUESTED order, so a backend returning variants in FILE order however they
+# were asked for -- snpStats did, when it read PLINK1 -- would yield a block
+# whose names and dosages describe different variants, silently, since both
+# are the right length. Reading ascending and permuting back is correct for
+# every backend, whether or not it honours the requested order: given a
+# sorted request it returns sorted output either way, so the inverse
+# permutation restores the caller's order.
 # @noRd
 .restoreRequestedOrder <- function(geno, ord) {
     if (ncol(geno) != length(ord)) {
@@ -449,10 +377,18 @@ extractBlockGenotypes <- function(handle, snpIdx, meanImpute = TRUE) {
         as.matrix(genotypeCovariates)
     }
     cd <- .genotypeColData(gCov, colnames(dosage))
-    SummarizedExperiment::SummarizedExperiment(
-        assays = list(dosage = dosage),
-        rowRanges = .genotypeSnpRanges(genotypes, rownames(dosage)),
-        colData = cd
+    # A stochastic sketch's dosages are projections, so its real sample count
+    # and allele frequencies are recorded from its sidecar here, once; and
+    # where the genotypes come from is recorded for what needs the file
+    # (.ldRefSource()).
+    .withLdProjection(
+        SummarizedExperiment::SummarizedExperiment(
+            assays = list(dosage = dosage),
+            rowRanges = .genotypeSnpRanges(genotypes, rownames(dosage)),
+            colData = cd,
+            metadata = list(genotypeSource = .genotypeSourceRecord(genotypes))
+        ),
+        .sketchProjectionRecord(genotypes)
     )
 }
 
@@ -518,7 +454,28 @@ extractBlockGenotypes <- function(handle, snpIdx, meanImpute = TRUE) {
 # describe variants the same way, and overlaps between the two actually hit.
 # @noRd
 .genotypeSnpRanges <- function(genotypes, variantIds) {
-    si <- snpInfo(genotypes)
+    .snpInfoRanges(snpInfo(genotypes), variantIds)
+}
+
+# A panel's variants snpInfo-style, one row per rowRanges element: SNP (the
+# file's own ids), CHR (canonical), BP, A1, A2. The inverse of
+# .snpInfoRanges(), so genotypes from any backend answer alike.
+# @noRd
+.rangesSnpInfo <- function(gr) {
+    mc <- S4Vectors::mcols(gr)
+    tibble(
+        SNP = as.character(mc$SNP),
+        CHR = canonChrom(as.character(seqnames(gr))),
+        BP = as.integer(start(gr)),
+        A1 = as.character(mc$A1),
+        A2 = as.character(mc$A2)
+    )
+}
+
+# The rowRanges of variants described snpInfo-style (SNP, CHR, BP, A1, A2),
+# named `variantIds`: a handle's, or a VCF, GDS or PLINK1 panel's rows.
+# @noRd
+.snpInfoRanges <- function(si, variantIds) {
     `names<-`(
         GenomicRanges::GRanges(
             seqnames = withChrPrefix(as.character(si$CHR)),
@@ -537,10 +494,8 @@ extractBlockGenotypes <- function(handle, snpIdx, meanImpute = TRUE) {
     fmt <- genotypeFormat(handle)
     switch(
         fmt,
-        "gds" = .extractBlockGds(handle, snpIdx),
-        "vcf" = .extractBlockVcf(handle, snpIdx),
-        "plink1" = .extractBlockPlink1(handle, snpIdx),
         "plink2" = .extractBlockPlink2(handle, snpIdx),
+        "bgen" = .extractBlockBgen(handle, snpIdx),
         .abortUnsupportedFormat(fmt, "extractBlockGenotypes")
     )
 }
@@ -669,60 +624,6 @@ extractBlockGenotypes <- function(handle, snpIdx, meanImpute = TRUE) {
 }
 
 #' @keywords internal
-.extractBlockGds <- function(handle, snpIdx) {
-    .withGds(
-        .genotypeReadPath(handle),
-        .gdsBlockGeno,
-        fnArgs = list(handle = handle, snpIdx = snpIdx),
-        allow.fork = TRUE
-    )
-}
-
-#' @keywords internal
-.extractBlockVcf <- function(handle, snpIdx) {
-    si <- slice(snpInfo(handle), snpIdx)
-    gr <- GRanges(
-        seqnames = si$CHR,
-        ranges = IRanges(start = si$BP, end = si$BP)
-    )
-    param <- VariantAnnotation::ScanVcfParam(
-        which = gr,
-        fixed = NA,
-        info = NA,
-        geno = "GT"
-    )
-    vcf <- VariantAnnotation::readVcf(
-        .genotypeReadPath(handle),
-        genome = "",
-        param = param
-    )
-    gt <- VariantAnnotation::geno(vcf)$GT
-
-    # Convert GT strings to ALT dosage (A1 dosage): one column per variant,
-    # laid side by side rather than filled into a preallocated matrix.
-    matrix(
-        map_dbl(as.vector(t(gt)), .gtStringToDosage),
-        nrow = ncol(gt),
-        ncol = nrow(gt)
-    )
-}
-
-#' @keywords internal
-.extractBlockPlink1 <- function(handle, snpIdx) {
-    snpIds <- snpInfo(handle)$SNP[snpIdx]
-    pathStem <- .genotypeReadPath(handle)
-    plinkData <- snpStats::read.plink(
-        bed = str_c(pathStem, ".bed"),
-        bim = str_c(pathStem, ".bim"),
-        fam = str_c(pathStem, ".fam"),
-        select.snps = snpIds
-    )
-    # snpStats as(x, "numeric") gives count of B allele (A2/bim col 6).
-    # Flip to count A1 (bim col 5 / effect allele).
-    `storage.mode<-`(2 - as(plinkData$genotypes, "numeric"), "double")
-}
-
-#' @keywords internal
 #' @importFrom rlang try_fetch
 .extractBlockPlink2 <- function(handle, snpIdx) {
     # pgenlibr::ReadList returns ALT dosage = A1 dosage in pecotmr convention.
@@ -769,21 +670,17 @@ extractBlockGenotypes <- function(handle, snpIdx, meanImpute = TRUE) {
 # @noRd
 .dosageMatrix <- function(handle, snpIdx, meanImpute = TRUE) {
     block <- extractBlockGenotypes(handle, snpIdx, meanImpute = meanImpute)
-    # NULL, not an error, when the reader declines the block: callers read
-    # that as "no genotypes here" (computeLd answers with an identity).
-    if (is.null(block)) {
-        return(NULL)
-    }
     t(SummarizedExperiment::assay(block, "dosage"))
 }
 
-# Open a GDS read-only, guarantee it is closed on exit, and return fn(gds).
-# The shared form of the snpgdsOpen(...) + on.exit(snpgdsClose(gds)) idiom
-# used across the GDS readers.
+# Resource bracket: open the SNPRelate GDS at `path` read-only, guarantee it
+# is closed on exit, and run `fn(gds, ...)` -- the snpgdsOpen(...) +
+# on.exit(snpgdsClose(gds)) idiom of the on-disk LD routine, which needs
+# SNPRelate's own handle. `fn` is a top-level function (not an inline
+# closure); its per-call inputs are threaded through `...`. A file a panel's
+# GDSArray backend already holds open in this session is opened again rather
+# than refused.
 # @noRd
-# Resource bracket: open the GDS at `path`, guarantee it is closed on exit, and
-# run `fn(gds, ...)`. `fn` is a top-level function (not an inline closure); its
-# per-call inputs are threaded through `...`.
 .withGds <- function(
     path,
     fn,
@@ -794,6 +691,7 @@ extractBlockGenotypes <- function(handle, snpIdx, meanImpute = TRUE) {
     gds <- SNPRelate::snpgdsOpen(
         path,
         readonly = readonly,
+        allow.duplicate = TRUE,
         allow.fork = allow.fork
     )
     on.exit(SNPRelate::snpgdsClose(gds))
@@ -801,11 +699,11 @@ extractBlockGenotypes <- function(handle, snpIdx, meanImpute = TRUE) {
 }
 
 #' @keywords internal
-.computeBlockLdGds <- function(handle, snpIdx) {
+.computeBlockLdGds <- function(path, snpIds) {
     .withGds(
-        .genotypeReadPath(handle),
+        path,
         .gdsBlockLd,
-        fnArgs = list(handle = handle, snpIdx = snpIdx),
+        fnArgs = list(snpIds = snpIds),
         allow.fork = TRUE
     )
 }
@@ -861,88 +759,86 @@ extractBlockGenotypes <- function(handle, snpIdx, meanImpute = TRUE) {
     replace(geno, naMask, means[col(geno)[naMask]])
 }
 
-#' @keywords internal
-.gdsSnpInfo <- function(gdsPath) {
-    .withGds(gdsPath, .gdsReadSnpInfo)
-}
+# =============================================================================
+# Genotype format detection
+# -----------------------------------------------------------------------------
+# The one place a genotype path's format is told. A file is told by its
+# extension, in any case; a PLINK prefix by the PLINK file beside it, a .pgen
+# before a .bed (PLINK2 can hold dosages, so it wins when both are there). A
+# VCF, GDS or BGEN file is always named by its own path.
+# =============================================================================
 
-# Map a lowercase file extension to a genotype format, or NULL if unrecognized.
+# The extensions naming each genotype format, as regular expressions.
 # @noRd
-.h2FormatFromExt <- function(ext) {
-    switch(
-        ext,
-        "vcf" = "vcf",
-        "bcf" = "vcf",
-        "bed" = "plink1",
-        "bim" = "plink1",
-        "fam" = "plink1",
-        "pgen" = "plink2",
-        "pvar" = "plink2",
-        "psam" = "plink2",
-        "gds" = "gds",
-        "rds" = "rds",
-        "rdata" = "rds",
-        "annot" = "ldsc_annot",
-        "bw" = "bigwig",
-        "bigwig" = "bigwig",
-        NULL
+.GENOTYPE_EXTENSIONS <- c(
+    vcf = "vcf(\\.b?gz)?|bcf",
+    gds = "gds",
+    bgen = "bgen",
+    plink1 = "bed|bim|fam",
+    plink2 = "pgen|pvar(\\.zst)?|psam"
+)
+
+# The genotype format a file's extension names, or NULL when it names none.
+# @noRd
+.genotypeFileFormat <- function(path) {
+    named <- str_detect(
+        str_to_lower(path),
+        str_c("\\.(", .GENOTYPE_EXTENSIONS, ")$")
     )
+    if (any(named)) names(.GENOTYPE_EXTENSIONS)[which(named)[[1L]]] else NULL
 }
 
-.h2DetectFormat <- function(path) {
-    lpath <- str_to_lower(path)
-    if (
-        str_detect(lpath, "\\.vcf\\.gz$") ||
-            str_detect(lpath, "\\.vcf\\.bgz$")
-    ) {
-        return("vcf")
+# The genotype format of a file or PLINK prefix: by the file's extension, or
+# for a prefix by the PLINK file beside it; NULL when neither tells.
+# @noRd
+.genotypePathFormat <- function(path) {
+    byExtension <- .genotypeFileFormat(path)
+    if (!is.null(byExtension)) {
+        return(byExtension)
     }
-    if (str_detect(lpath, "\\.annot\\.gz$")) {
-        return("ldsc_annot")
-    }
-
-    ext <- str_to_lower(file_ext(path))
-    if (str_length(ext) > 0L) {
-        detected <- .h2FormatFromExt(ext)
-        if (!is.null(detected)) return(detected)
-    }
-    # Check for file stems, including dotted prefixes such as sample.EUR.chr21.
-    if (
-        file.exists(str_c(path, ".pgen")) || file.exists(str_c(path, ".pvar"))
-    ) {
+    if (file.exists(str_c(path, ".pgen"))) {
         return("plink2")
     }
-    if (file.exists(str_c(path, ".bed")) || file.exists(str_c(path, ".bim"))) {
+    if (file.exists(str_c(path, ".bed"))) {
         return("plink1")
     }
-    if (file.exists(str_c(path, ".gds"))) {
-        return("gds")
-    }
-    if (str_length(ext) > 0L) {
-        msg <- glue("Cannot detect format from extension: {ext}")
-        abort(msg)
-    }
-    msg <- glue("Cannot detect genotype format for path: {path}")
-    abort(msg)
+    NULL
 }
 
-#' @title Detect Plink File Stem
-#' @description Given any plink file path, return the stem.
-#' @param path Character, path to any plink file.
-#' @return Character, file stem without extension.
-#' @keywords internal
-.plinkStem <- function(path) {
-    # Only strip known plink extensions; leave other paths as-is (they may
-    # already be the stem, e.g. "prefix.genotype" -> "prefix.genotype.bed")
-    ext <- file_ext(path)
-    plinkExts <- c("bed", "bim", "fam", "pgen", "pvar", "psam")
-    if (is_in(str_to_lower(ext), plinkExts)) {
-        file_path_sans_ext(path)
-    } else {
-        path
+# .genotypePathFormat(), or an error from `label` when the path names no
+# genotype format.
+# @noRd
+.requireGenotypeFormat <- function(path, label) {
+    format <- .genotypePathFormat(path)
+    if (!is.null(format)) {
+        return(format)
     }
+    abort(c(
+        glue(
+            "{label}: '{path}' is neither a genotype file nor a PLINK prefix."
+        ),
+        i = str_c(
+            "A genotype file is named by its extension (.vcf.gz, .vcf.bgz, ",
+            ".gds, .bgen, .bed, .pgen); a PLINK prefix by the .pgen or .bed ",
+            "beside it."
+        )
+    ))
 }
 
+# The stem of a genotype path: the path without the extension naming its
+# format, which is what PLINK's readers and a file's sidecars (.afreq,
+# .stochastic_meta.tsv, .sample) are named after. A PLINK prefix is its own
+# stem.
+# @noRd
+.genotypeStem <- function(path) {
+    str_remove(
+        path,
+        regex(
+            str_c("\\.(", str_flatten(.GENOTYPE_EXTENSIONS, "|"), ")$"),
+            ignore_case = TRUE
+        )
+    )
+}
 
 # =============================================================================
 # Format-specific file readers
@@ -956,32 +852,15 @@ extractBlockGenotypes <- function(handle, snpIdx, meanImpute = TRUE) {
 # read PLINK files
 
 #' @importFrom vroom vroom
-#' @importFrom tools file_path_sans_ext
 #' @importFrom Rsamtools TabixFile seqnamesTabix scanTabix headerTabix
 #' @importFrom GenomicRanges GRanges seqnames
 #' @importFrom SummarizedExperiment assay
 readBim <- function(bed) {
-    bimf <- str_c(file_path_sans_ext(bed), ".bim")
+    bimf <- str_c(.genotypeStem(bed), ".bim")
     `colnames<-`(
         vroom(bimf, col_names = FALSE),
         c("chrom", "id", "gpos", "pos", "a1", "a0")
     )
-}
-
-#' @importFrom vroom vroom
-#' @importFrom tools file_path_sans_ext
-readFam <- function(bed) {
-    famf <- str_c(file_path_sans_ext(bed), ".fam")
-    return(vroom(famf, col_names = FALSE))
-}
-
-# open bed/bim/fam: A PLINK 1 .bed is a valid .pgen
-openBed <- function(bed) {
-    if (!requireNamespace("pgenlibr", quietly = TRUE)) {
-        abort("Package 'pgenlibr' is required for this function.")
-    }
-    rawSCt <- nrow(readFam(bed))
-    return(pgenlibr::NewPgen(bed, raw_sample_ct = rawSCt))
 }
 
 #' Read a PLINK2 allele frequency file (.afreq or .afreq.zst)
@@ -1103,19 +982,16 @@ readStochasticMeta <- function(path, format = NULL) {
 #' Search for a stochastic genotype sidecar file alongside a genotype path.
 #'
 #' Looks for \code{.afreq}, \code{.afreq.zst}, and \code{.stochastic_meta.tsv}
-#' files next to the given genotype path. For extension-based paths (VCF, GDS),
-#' the extension is stripped first. For prefix-based paths (PLINK1/2), the
-#' prefix is used directly.
+#' files next to the given genotype path. For extension-based paths (VCF, GDS,
+#' BGEN, or a PLINK file), the extension is stripped first. For prefix-based
+#' paths (PLINK1/2), the prefix is used directly.
 #'
 #' @param genotypePath Path to the genotype data (prefix or file path).
 #' @return Path to the first sidecar file found, or \code{NULL}.
 #' @noRd
 findStochasticMeta <- function(genotypePath) {
     # Strip known genotype extensions to get the stem
-    stem <- str_remove(
-        genotypePath,
-        "\\.(vcf|vcf\\.gz|bcf|gds|bed|bim|fam|pgen|pvar|psam)$"
-    )
+    stem <- .genotypeStem(genotypePath)
     candidates <- c(
         str_c(stem, ".afreq"),
         str_c(stem, ".afreq.zst"),
@@ -1124,7 +1000,6 @@ findStochasticMeta <- function(genotypePath) {
     found <- candidates[file.exists(candidates)]
     if (length(found) > 0) found[1] else NULL
 }
-
 
 #' Invert min-max [0,2] scaling to recover the original U matrix
 #'
@@ -1207,64 +1082,13 @@ readPvar <- function(pvarPath) {
     )
 }
 
-# PLINK1 .bim files come in a 6-column form and a 9-column extended form;
-# the column meanings are positional, so the width selects the header.
-# @noRd
-.plinkVariantColnames <- function(n, snpFilePath) {
-    if (n == 6) {
-        return(c("chrom", "id", "gpos", "pos", "A1", "A2"))
-    }
-    if (n == 9) {
-        return(c(
-            "chrom",
-            "id",
-            "gpos",
-            "pos",
-            "A1",
-            "A2",
-            "variance",
-            "allele_freq",
-            "n_nomiss"
-        ))
-    }
-    abort(glue(
-        "Unexpected number of columns ({n}) in variant file: ",
-        "{snpFilePath}"
-    ))
-}
-
-#' Read variant metadata from either .bim or .pvar/.pvar.zst file.
-#'
-#' Auto-detects the format by extension and header, then returns a standardized
-#' data.frame. For PLINK1 .bim files, assigns column names based on the number
-#' of columns (6 or 9). For PLINK2 .pvar files, delegates to \code{readPvar()}.
-#'
-#' @param snpFilePath Path to .bim, .pvar, or .pvar.zst file.
-#' @return data.frame with at minimum columns: chrom, id, pos, A2, A1. Extended
-#'   .bim files (9 columns) also include: variance, allele_freq, n_nomiss.
-#' @importFrom readr read_table cols col_character
-#' @noRd
-readVariantMetadata <- function(snpFilePath) {
-    # Extension first, then the header line: a .pvar written without its
-    # extension still announces itself with a #CHROM header.
-    byExtension <- str_detect(snpFilePath, "\\.(pvar|pvar\\.zst)$")
-    isPvar <- byExtension ||
-        str_detect(read_lines(snpFilePath, n_max = 1), "^#CHROM")
-
-    if (isPvar) {
-        readPvar(snpFilePath)
-    } else {
-        df <- read_table(snpFilePath, col_names = FALSE, col_types = cols())
-        `names<-`(df, .plinkVariantColnames(ncol(df), snpFilePath))
-    }
-}
-
 #' Get variant information from any LD reference source
 #'
-#' Auto-detects the source type (PLINK2, PLINK1, VCF, GDS, or pre-computed LD
-#' metadata) and returns variant metadata. For PLINK2, opens only the .pvar
-#' file. For PLINK1, reads only the .bim file. For VCF and GDS, loads the full
-#' file and extracts variant info.
+#' Auto-detects the source type (PLINK2, PLINK1, VCF, GDS or BGEN, given
+#' directly or through LD metadata whose rows point at genotype files) and
+#' returns variant metadata. For PLINK2, opens only the .pvar file. For PLINK1,
+#' reads only the .bim file. For VCF, GDS and BGEN, loads the full file and
+#' extracts variant info.
 #'
 #' @param source Genotype file path/prefix or LD metadata file path.
 #' @param region Region of interest: "chr:start-end" string or data.frame with
@@ -1285,10 +1109,8 @@ refVariantInfo <- function(source, region = NULL) {
         info <- .refInfoPlink2(dataPath)
     } else if (resolved$type == "plink1") {
         info <- .refInfoPlink1(dataPath)
-    } else if (is_in(resolved$type, c("vcf", "gds"))) {
-        return(.refInfoVcfGds(dataPath, region))
     } else {
-        return(.refInfoPrecomputedLd(resolved, region))
+        return(.refInfoVcfGds(dataPath, region))
     }
     # Region filter for plink2 / plink1 (the loader-based paths self-filter).
     .refRegionFilter(info, region)
@@ -1298,7 +1120,10 @@ refVariantInfo <- function(source, region = NULL) {
 # else the resolved data path.
 # @noRd
 .refDataPath <- function(resolved, region) {
-    usesMeta <- is_in(resolved$type, c("plink2", "plink1", "vcf", "gds")) &&
+    usesMeta <- is_in(
+        resolved$type,
+        c("plink2", "plink1", "vcf", "gds", "bgen")
+    ) &&
         !is.null(resolved$metaPath) &&
         !is.null(region)
     if (usesMeta) {
@@ -1349,42 +1174,6 @@ refVariantInfo <- function(source, region = NULL) {
         result$variant_info,
         allele_freq = colMeans(result$X, na.rm = TRUE) / 2
     )
-}
-
-# Pre-computed LD variant info: read the per-intersection bim/pvar metadata
-# (already region-filtered by regionalLdMeta).
-# @noRd
-.refInfoPrecomputedLd <- function(resolved, region) {
-    bimPaths <- regionalLdMeta(
-        resolved$metaPath,
-        region
-    )$intersections$bimFilePaths
-    bind_rows(map(bimPaths, .refReadBimMeta)) |>
-        mutate(id = normalizeVariantId(.data$id))
-}
-
-# Read one bim/pvar metadata file into a canonical variant-info data.frame,
-# carrying the optional variance / allele_freq / n_nomiss columns when present.
-# @noRd
-.refReadBimMeta <- function(path) {
-    df <- readVariantMetadata(path)
-    out <- tibble(
-        chrom = df$chrom,
-        id = df$id,
-        pos = df$pos,
-        A2 = df$A2,
-        A1 = df$A1
-    )
-    optional <- intersect(c("variance", "allele_freq", "n_nomiss"), names(df))
-    mutate(
-        out,
-        !!!set_names(map(optional, .refMetaColumn, df = df), optional)
-    )
-}
-
-# @noRd
-.refMetaColumn <- function(col, df) {
-    df[[col]]
 }
 
 # Filter plink2 / plink1 variant info to the requested region.
@@ -1480,17 +1269,16 @@ matchVariantsToKeep <- function(variantInfo, keepVariantsPath) {
     }
 }
 
-
 #' Load genotype data for a specific region
 #'
 #' Auto-detects PLINK2 (.pgen/.pvar[.zst]/.psam), PLINK1 (.bed/.bim/.fam), VCF
-#' (.vcf/.vcf.gz/.bcf), or GDS (.gds) format and loads genotype data via
-#' \code{\link{readGenotypes}} and \code{\link{extractBlockGenotypes}}. If a
-#' stochastic genotype sidecar file (.afreq or .stochastic_meta.tsv) is found
-#' alongside the genotype file, non-integer dosages are automatically rescaled
-#' using the stored U_MIN/U_MAX values.
+#' (.vcf.gz/.vcf.bgz, bgzipped with a tabix index), GDS (.gds) or BGEN (.bgen)
+#' format, reads the file as a panel with \code{\link{readGenotypes}} and
+#' loads the region's dosages. If a stochastic genotype sidecar file (.afreq
+#' or .stochastic_meta.tsv) is found alongside the genotype file, non-integer
+#' dosages are automatically rescaled using the stored U_MIN/U_MAX values.
 #'
-#' @param genotype Path to the genotype data file (without extension).
+#' @param genotype Path to the genotype data file, or a PLINK prefix.
 #' @param region The target region in the format "chr:start-end".
 #' @param keepIndel Whether to keep indel SNPs.
 #' @param keepVariantsPath Path to a file listing variants to keep.
@@ -1521,15 +1309,22 @@ loadGenotypeRegion <- function(
     stochasticMetaPath = NULL,
     stochasticMetaFormat = NULL
 ) {
-    handle <- .loadGenoHandle(genotype)
-    handleSnpInfo <- snpInfo(handle)
-    snpIdx <- .loadGenoSnpIdx(handleSnpInfo, region)
-    # Samples x variants matrix (pecotmr convention); callers handle missing.
+    panel <- .readGenotypePanel(
+        genotype,
+        format = .requireGenotypeFormat(genotype, "loadGenotypeRegion")
+    )
+    variants <- .rangesSnpInfo(SummarizedExperiment::rowRanges(panel))
+    snpIdx <- .loadGenoSnpIdx(variants, region)
+    # Samples x variants matrix (pecotmr convention), its columns named by
+    # the file's own variant ids; callers handle missing.
     extracted <- list(
-        X = .dosageMatrix(handle, snpIdx, meanImpute = FALSE),
+        X = `colnames<-`(
+            .ldRefDosage(panel, snpIdx, meanImpute = FALSE),
+            variants$SNP[snpIdx]
+        ),
         variant_info = .loadGenoAttachAfreq(
-            handle,
-            .snpInfoToVariantInfo(slice(handleSnpInfo, snpIdx))
+            panel,
+            .snpInfoToVariantInfo(slice(variants, snpIdx))
         )
     )
     filtered <- .loadGenoPostFilter(extracted, keepIndel, keepVariantsPath)
@@ -1542,37 +1337,13 @@ loadGenotypeRegion <- function(
     if (returnVariantInfo) result else result$X
 }
 
-# Detect the genotype file format and open the matching GenotypeHandle.
-# @noRd
-.loadGenoHandle <- function(genotype) {
-    if (str_detect(genotype, "\\.(vcf|vcf\\.gz|bcf)$")) {
-        return(.readGenotypeHandle(genotype, format = "vcf"))
-    }
-    if (str_detect(genotype, "\\.gds$")) {
-        return(.readGenotypeHandle(genotype, format = "gds"))
-    }
-    if (hasPlink2Files(genotype)) {
-        return(.readGenotypeHandle(genotype, format = "plink2"))
-    }
-    if (hasPlink1Files(genotype)) {
-        return(.readGenotypeHandle(genotype, format = "plink1"))
-    }
-    msg <- glue(
-        "Genotype files not found at: {genotype}\n",
-        "  Expected: .vcf/.vcf.gz/.bcf, .gds, or PLINK prefix ",
-        "(.pgen/.pvar[.zst]/.psam or .bed/.bim/.fam)",
-        .trim = FALSE
-    )
-    abort(msg)
-}
-
 # Resolve the SNP indices for a region (all variants when region is NULL).
 # @noRd
-.loadGenoSnpIdx <- function(handleSnpInfo, region) {
+.loadGenoSnpIdx <- function(variants, region) {
     if (is.null(region)) {
-        return(seq_len(nrow(handleSnpInfo)))
+        return(seq_len(nrow(variants)))
     }
-    snpIdx <- .regionToSnpIdx(handleSnpInfo, region)
+    snpIdx <- .regionToSnpIdx(variants, region)
     if (length(snpIdx) == 0) {
         msg <- glue("No SNPs found in the specified region {region}")
         abort(msg, class = "NoSnpsError")
@@ -1583,11 +1354,11 @@ loadGenotypeRegion <- function(
 # Attach allele frequency from the .afreq sidecar (plink2 only).
 #' @importFrom dplyr left_join
 #' @noRd
-.loadGenoAttachAfreq <- function(handle, variantInfo) {
-    if (genotypeFormat(handle) != "plink2") {
+.loadGenoAttachAfreq <- function(panel, variantInfo) {
+    if (!identical(.ldRefFormat(panel), "plink2")) {
         return(variantInfo)
     }
-    afreq <- readAfreq(.genotypeReadPath(handle))
+    afreq <- readAfreq(.ldRefReadPath(panel))
     if (is.null(afreq)) {
         return(variantInfo)
     }
@@ -1631,8 +1402,10 @@ loadGenotypeRegion <- function(
     )
 }
 
-# Detect stochastic genotype scaling and restore the original scale from a
-# metadata sidecar; warn (only) when non-integer dosages have no sidecar.
+# Restore a stochastic sketch's original scale from its metadata sidecar.
+# Without one the dosages are taken as they are: a dosage need not be a whole
+# number (imputed BGEN, VCF FORMAT/DS, PLINK2 dosages), so whether the values
+# are whole says nothing about whether the file is a sketch.
 # @noRd
 .loadGenoInvertStochastic <- function(
     result,
@@ -1642,7 +1415,6 @@ loadGenotypeRegion <- function(
 ) {
     metaPath <- stochasticMetaPath %||% findStochasticMeta(genotype)
     if (is.null(metaPath)) {
-        .loadGenoWarnStochastic(result$X)
         return(result)
     }
     smeta <- readStochasticMeta(metaPath, format = stochasticMetaFormat)
@@ -1681,43 +1453,12 @@ loadGenotypeRegion <- function(
     restored
 }
 
-# Warn when non-integer dosages are present but no stochastic sidecar was found.
-# @noRd
-.loadGenoWarnStochastic <- function(X) {
-    if (all(X == round(X), na.rm = TRUE)) {
-        return(invisible(NULL))
-    }
-    msg <- glue(
-        "Non-integer genotype values detected but no stochastic metadata ",
-        "sidecar found. Place a .afreq or .stochastic_meta.tsv file with ",
-        "u_min/u_max columns alongside the genotype files to restore the ",
-        "original scale."
-    )
-    warn(msg)
-}
-
 # ---- map/apply helpers (lambda-free callbacks) ---------------------------
-
-# The first ALT allele of a variant (as character).
-# @noRd
-.gtFirstAllele <- function(x) {
-    as.character(x)[1]
-}
 
 # The dosage assay matrix of one per-chromosome SummarizedExperiment.
 # @noRd
 .seDosage <- function(se) {
     SummarizedExperiment::assay(se, "dosage")
-}
-
-# ALT (A1) dosage from a VCF GT string; NA for missing ("./." or NA).
-# @noRd
-.gtStringToDosage <- function(x) {
-    if (is.na(x) || x == "./.") {
-        return(NA_real_)
-    }
-    alleles <- str_split(x, "[/|]")[[1L]]
-    sum(alleles != "0")
 }
 
 # Variant `i`'s chromosome from an open pvar handle.
@@ -1744,7 +1485,7 @@ loadGenotypeRegion <- function(
     pgenlibr::GetAlleleCode(pvar, i, k)
 }
 
-# ---- .withGds resource-body functions (run inside the open-GDS bracket) ---
+# ---- GDS resource-body functions (run inside an open-GDS bracket) ---------
 
 # The sample ids stored in an open GDS.
 # @noRd
@@ -1752,42 +1493,26 @@ loadGenotypeRegion <- function(
     as.character(gdsfmt::read.gdsn(gdsfmt::index.gdsn(gds, "sample.id")))
 }
 
-# The dosage matrix for `handle`'s `snpIdx` variants (NULL when none selected).
-# snpgdsGetGeno counts the first allele (labelled A1 in .gdsSnpInfo), so no flip
-# is needed; it also handles non-contiguous SNP selection.
+# The sample-LD matrix of the SNPs `snpIds` (NA correlations -> 0).
 # @noRd
-.gdsBlockGeno <- function(gds, handle, snpIdx) {
-    snpIds <- snpInfo(handle)$SNP[snpIdx]
-    geno <- SNPRelate::snpgdsGetGeno(
-        gds,
-        snp.id = snpIds,
-        with.id = FALSE,
-        verbose = FALSE
-    )
-    if (is.null(geno) || length(geno) == 0) {
-        return(NULL)
-    }
-    `storage.mode<-`(geno, "double")
-}
-
-# The sample-LD matrix for `handle`'s `snpIdx` variants (NA correlations -> 0).
-# @noRd
-.gdsBlockLd <- function(gds, handle, snpIdx) {
+.gdsBlockLd <- function(gds, snpIds) {
     # snpgdsLDMat() returns variants in FILE order whatever order snp.id is
-    # given in, and labels nothing. Ask in ascending order and permute back,
-    # exactly as the block readers do, so the matrix agrees with its names.
-    ord <- order(.genotypeFilePos(handle, snpIdx))
-    snpIds <- snpInfo(handle)$SNP[snpIdx[ord]]
+    # given in, and labels nothing. Ask in file order and permute back, so the
+    # matrix agrees with its names; the file's own ids are passed, since a
+    # GDS may store them as integers.
+    fileIds <- gdsfmt::read.gdsn(gdsfmt::index.gdsn(gds, "snp.id"))
+    pos <- match(as.character(snpIds), as.character(fileIds))
+    ord <- order(pos)
     ldMat <- SNPRelate::snpgdsLDMat(
         gds,
-        snp.id = snpIds,
+        snp.id = fileIds[pos[ord]],
         method = "corr",
         slide = -1,
         verbose = FALSE
     )
     raw <- replace(ldMat$LD, is.na(ldMat$LD), 0)
     inv <- order(ord)
-    ids <- snpInfo(handle)$SNP[snpIdx]
+    ids <- as.character(snpIds)
     `dimnames<-`(raw[inv, inv, drop = FALSE], list(ids, ids))
 }
 
@@ -1810,4 +1535,993 @@ loadGenotypeRegion <- function(
         A1 = a1,
         A2 = a2
     )
+}
+
+# =============================================================================
+# BGEN genotype reading
+# -----------------------------------------------------------------------------
+# A "bgen" GenotypeHandle reads a BGEN file lazily, without converting it:
+# its variants come from the .bgi index (bgenix's SQLite database), its
+# samples from the file's sample block or a .sample file beside it, and a
+# block's dosages are read record by record at the offsets the index gives.
+#
+# Every revision is read: layout 1 (BGEN 1.1: diploid, biallelic, three
+# 16-bit probabilities per sample, zlib or no compression) and layout 2 (BGEN
+# 1.2 and 1.3: phased or unphased, any ploidy, any bit depth, zlib, zstd or
+# no compression). A record with more than two alleles becomes one variant
+# per non-first allele. The dosage is the expected count of A1, the variant's
+# second (or later) allele, with the first as A2, as bgen's own tools count
+# it: from 0 to the sample's ploidy.
+# =============================================================================
+
+# The handle of a BGEN file. Only its header, its index and its sample ids
+# are read here.
+# @noRd
+#' @importFrom checkmate assertFileExists
+.makeBgenHandle <- function(path) {
+    walk(c("DBI", "RSQLite"), .bgenRequirePackage)
+    assertFileExists(path, access = "r", .var.name = "BGEN file")
+    path <- normalizePath(path)
+    header <- .bgenReadHeader(path, withSamples = TRUE)
+    sampleIds <- header$sampleIds %||% .bgenSampleFileIds(path)
+    if (length(sampleIds) != header$nSamples) {
+        abort(glue(
+            "BGEN file {path} declares {header$nSamples} samples but ",
+            "{length(sampleIds)} sample ids were found."
+        ))
+    }
+    new(
+        "GenotypeHandle",
+        path = path,
+        format = "bgen",
+        snpInfo = .withFileIdx(.bgenSnpInfo(path)),
+        nSamples = as.integer(header$nSamples),
+        sampleIds = sampleIds,
+        pgenPtr = NULL
+    )
+}
+
+# @noRd
+.bgenRequirePackage <- function(pkg) {
+    if (!requireNamespace(pkg, quietly = TRUE)) {
+        abort(glue(
+            "Package '{pkg}' is required for reading BGEN files, whose .bgi ",
+            "index is an SQLite database."
+        ))
+    }
+    invisible(NULL)
+}
+
+# A little-endian unsigned integer from raw bytes, as a double (a uint32 can
+# exceed R's integer range).
+# @noRd
+.bgenUint <- function(bytes) {
+    sum(as.numeric(bytes) * 256^(seq_along(bytes) - 1L))
+}
+
+# The header block: the sample count, the compression and layout flags and,
+# when the file stores them and they are asked for, the sample ids. An
+# unknown layout or compression is refused here, before any variant is
+# read.
+# @noRd
+.bgenReadHeader <- function(path, withSamples = FALSE) {
+    con <- file(path, "rb")
+    on.exit(close(con))
+    fixed <- readBin(con, "raw", 20L)
+    if (length(fixed) < 20L) {
+        abort(glue("{path} is too short to be a BGEN file."))
+    }
+    headerLength <- .bgenUint(fixed[5:8])
+    magic <- fixed[17:20]
+    if (!identical(magic, charToRaw("bgen")) && any(magic != as.raw(0L))) {
+        abort(glue("{path} is not a BGEN file (no 'bgen' magic number)."))
+    }
+    readBin(con, "raw", headerLength - 20)
+    flags <- as.integer(readBin(con, "raw", 4L))
+    compression <- bitwAnd(flags[[1L]], 3L)
+    layout <- bitwAnd(bitwShiftR(flags[[1L]], 2L), 15L)
+    .bgenCheckFlags(path, compression, layout)
+    nSamples <- .bgenUint(fixed[13:16])
+    hasIds <- bitwAnd(flags[[4L]], 128L) > 0L
+    list(
+        nSamples = nSamples,
+        compression = compression,
+        layout = layout,
+        sampleIds = if (withSamples && hasIds) {
+            .bgenReadSampleBlock(con, nSamples)
+        }
+    )
+}
+
+# @noRd
+.bgenCheckFlags <- function(path, compression, layout) {
+    if (!is_in(layout, 1:2)) {
+        abort(glue(
+            "{path} has BGEN layout {layout}; the spec defines layouts 1 and 2."
+        ))
+    }
+    if (compression > 2L) {
+        abort(glue("{path} has an unknown BGEN compression ({compression})."))
+    }
+    if (layout == 1L && compression == 2L) {
+        abort(glue(
+            "{path} is a layout-1 (BGEN 1.1) file compressed with zstd, which ",
+            "the spec does not allow."
+        ))
+    }
+    invisible(NULL)
+}
+
+# The sample identifier block, which follows the header: its length, the
+# sample count again, then each id as a 2-byte length and its bytes.
+# @noRd
+.bgenReadSampleBlock <- function(con, nSamples) {
+    blockLength <- .bgenUint(readBin(con, "raw", 4L))
+    block <- readBin(con, "raw", blockLength - 4)
+    if (.bgenUint(block[1:4]) != nSamples) {
+        abort("The BGEN sample block's sample count disagrees with its header.")
+    }
+    bgenSampleIdsCpp(block[-(1:4)], as.integer(nSamples))
+}
+
+# The sample ids of a BGEN file that does not store them, from the .sample
+# file beside it (`<stem>.sample`): the first column, after the header line
+# and the line of column types.
+# @noRd
+#' @importFrom readr read_table cols col_character
+.bgenSampleFileIds <- function(path) {
+    samplePath <- str_c(.genotypeStem(path), ".sample")
+    if (!file.exists(samplePath)) {
+        abort(c(
+            glue("{path} stores no sample ids, and {samplePath} is missing."),
+            i = "Put the Oxford-format .sample file beside the .bgen file."
+        ))
+    }
+    tbl <- read_table(
+        samplePath,
+        col_types = cols(.default = col_character()),
+        progress = FALSE
+    )
+    as.character(tbl[[1L]][-1L])
+}
+
+# The variant table: one row per (record, non-first allele), in file order,
+# with each record's offset and length from the .bgi index and the allele the
+# row reads. Built column-wise for the biallelic records, which are nearly
+# all of them; only a multi-allelic record is read to learn its alleles.
+# @noRd
+#' @importFrom dplyr arrange bind_rows
+#' @importFrom purrr pmap
+.bgenSnpInfo <- function(path) {
+    index <- .bgenReadIndex(str_c(path, ".bgi"))
+    multi <- index$number_of_alleles > 2L
+    rows <- .bgenBiallelicRows(index[!multi, ])
+    if (!any(multi)) {
+        return(rows)
+    }
+    warn(glue(
+        "{sum(multi)} BGEN record(s) of {path} carry more than two alleles; ",
+        "each is read as one biallelic variant per non-first allele."
+    ))
+    split <- pmap(
+        list(
+            chrom = index$chromosome[multi],
+            pos = index$position[multi],
+            alleles = .bgenRecordAlleles(
+                path,
+                index$file_start_position[multi],
+                index$size_in_bytes[multi]
+            ),
+            offset = index$file_start_position[multi],
+            size = index$size_in_bytes[multi]
+        ),
+        .bgenSplitRecordRows
+    )
+    arrange(
+        bind_rows(rows, list_rbind(split)),
+        .data$bgen_offset,
+        .data$bgen_allele
+    )
+}
+
+# The rows of the biallelic records: A2 the first allele, A1 the second. A
+# record keeps its rsid as its id when it has one, else is named
+# chr:pos:A2:A1.
+# @noRd
+.bgenBiallelicRows <- function(index) {
+    ids <- formatVariantId(
+        index$chromosome,
+        index$position,
+        index$allele1,
+        index$allele2
+    )
+    named <- !is.na(index$rsid) & nzchar(index$rsid) & index$rsid != "."
+    tibble(
+        SNP = if_else(named, index$rsid, ids),
+        CHR = canonChrom(index$chromosome),
+        BP = as.integer(index$position),
+        A1 = index$allele2,
+        A2 = index$allele1,
+        bgen_offset = as.numeric(index$file_start_position),
+        bgen_size = as.numeric(index$size_in_bytes),
+        bgen_allele = rep(2L, nrow(index))
+    )
+}
+
+# A multi-allelic record's rows: A2 its first allele, A1 each other allele
+# in turn, every row named chr:pos:A2:A1 so they stay distinct.
+# @noRd
+.bgenSplitRecordRows <- function(chrom, pos, alleles, offset, size) {
+    others <- alleles[-1L]
+    tibble(
+        SNP = formatVariantId(chrom, pos, alleles[[1L]], others),
+        CHR = canonChrom(chrom),
+        BP = as.integer(pos),
+        A1 = others,
+        A2 = alleles[[1L]],
+        bgen_offset = as.numeric(offset),
+        bgen_size = as.numeric(size),
+        bgen_allele = seq_along(others) + 1L
+    )
+}
+
+# The .bgi index's Variant table, in file order.
+# @noRd
+.bgenReadIndex <- function(bgiPath) {
+    if (!file.exists(bgiPath)) {
+        abort(c(
+            str_c(
+                "A BGEN file is read through its .bgi index: ",
+                bgiPath,
+                " is missing."
+            ),
+            i = "Build it with bgenix (`bgenix -g <file>.bgen -index`)."
+        ))
+    }
+    con <- DBI::dbConnect(
+        RSQLite::SQLite(),
+        bgiPath,
+        flags = RSQLite::SQLITE_RO
+    )
+    on.exit(DBI::dbDisconnect(con))
+    as_tibble(DBI::dbGetQuery(
+        con,
+        str_c(
+            "SELECT chromosome, position, rsid, number_of_alleles, allele1, ",
+            "allele2, file_start_position, size_in_bytes FROM Variant ",
+            "ORDER BY file_start_position"
+        )
+    ))
+}
+
+# The alleles of the records at `offsets`, read from their identifying data:
+# the .bgi index holds only the first two.
+# @noRd
+.bgenRecordAlleles <- function(path, offsets, sizes) {
+    con <- file(path, "rb")
+    on.exit(close(con))
+    map2(offsets, sizes, .bgenReadRecordAlleles, con = con)
+}
+
+# Only a layout-2 record can carry more than two alleles, so only one is
+# parsed here.
+# @noRd
+.bgenReadRecordAlleles <- function(offset, size, con) {
+    record <- .bgenReadRecord(con, offset, size)
+    .bgenParseIdentifying(record, layout = 2L)$alleles
+}
+
+# @noRd
+.bgenReadRecord <- function(con, offset, size) {
+    seek(con, where = offset)
+    readBin(con, "raw", size)
+}
+
+# A record's identifying data: its alleles, and where its genotype block
+# starts (1-based). A layout-1 record opens with its sample count and has two
+# alleles without saying so; a layout-2 one states its allele count.
+# @noRd
+.bgenParseIdentifying <- function(record, layout) {
+    at <- if (layout == 1L) 5L else 1L
+    for (field in 1:3) {
+        # variant id, rsid, chromosome: a 2-byte length and the bytes
+        at <- at + 2L + .bgenUint(record[at:(at + 1L)])
+    }
+    at <- at + 4L
+    nAlleles <- 2L
+    if (layout == 2L) {
+        nAlleles <- .bgenUint(record[at:(at + 1L)])
+        at <- at + 2L
+    }
+    alleles <- character(nAlleles)
+    for (k in seq_len(nAlleles)) {
+        len <- .bgenUint(record[at:(at + 3L)])
+        alleles[[k]] <- rawToChar(record[(at + 4L):(at + 3L + len)])
+        at <- at + 4L + len
+    }
+    list(alleles = alleles, genotypeStart = at)
+}
+
+# The samples x variants dosages of the handle's variants at `snpIdx`: each
+# record read once, its probabilities decompressed and decoded for the
+# alleles its rows ask about.
+# @noRd
+.extractBlockBgen <- function(handle, snpIdx) {
+    si <- slice(snpInfo(handle), snpIdx)
+    path <- .genotypeReadPath(handle)
+    header <- .bgenReadHeader(path)
+    con <- file(path, "rb")
+    on.exit(close(con))
+    offsets <- unique(si$bgen_offset)
+    blocks <- map(
+        offsets,
+        .bgenRecordDosage,
+        si = si,
+        con = con,
+        header = header,
+        nSamples = handle@nSamples
+    )
+    out <- exec(cbind, !!!blocks)
+    # The blocks hold the rows grouped by record; put them back in `si`'s
+    # order.
+    rowOrder <- list_c(map(offsets, .bgenRowsOf, si = si))
+    out[, order(rowOrder), drop = FALSE]
+}
+
+# @noRd
+.bgenRowsOf <- function(offset, si) {
+    which(si$bgen_offset == offset)
+}
+
+# One record's dosage columns, for the rows of `si` that read it.
+# @noRd
+.bgenRecordDosage <- function(offset, si, con, header, nSamples) {
+    rows <- .bgenRowsOf(offset, si)
+    record <- .bgenReadRecord(con, offset, si$bgen_size[[rows[[1L]]]])
+    if (header$layout == 1L) {
+        return(.bgenLayout1Dosage(record, header$compression, nSamples))
+    }
+    probabilities <- .bgenProbabilityData(record, header$compression)
+    bgenDosageCpp(
+        probabilities,
+        as.integer(nSamples),
+        as.integer(si$bgen_allele[rows])
+    )
+}
+
+# A layout-1 record's dosage column: per sample three 16-bit probabilities,
+# of the genotypes AA, AB and BB, each out of 32768, zlib-compressed or
+# stored as they are. The second allele's expected count is P(AB) + 2 P(BB);
+# a sample whose three are all zero is missing.
+# @noRd
+.bgenLayout1Dosage <- function(record, compression, nSamples) {
+    at <- .bgenParseIdentifying(record, layout = 1L)$genotypeStart
+    nBytes <- 6 * nSamples
+    data <- if (compression == 0L) {
+        record[at:(at + nBytes - 1)]
+    } else {
+        stored <- .bgenUint(record[at:(at + 3L)])
+        memDecompress(record[(at + 4L):(at + 3L + stored)], type = "gzip")
+    }
+    if (length(data) != nBytes) {
+        abort("A layout-1 BGEN record holds the wrong amount of data.")
+    }
+    p <- matrix(
+        readBin(
+            data,
+            "integer",
+            n = 3 * nSamples,
+            size = 2L,
+            signed = FALSE,
+            endian = "little"
+        ) /
+            32768,
+        nrow = 3L
+    )
+    dosage <- p[2L, ] + 2 * p[3L, ]
+    matrix(replace(dosage, colSums(p) == 0, NA_real_), ncol = 1L)
+}
+
+# A layout-2 record's genotype probability data, uncompressed.
+# @noRd
+.bgenProbabilityData <- function(record, compression) {
+    at <- .bgenParseIdentifying(record, layout = 2L)$genotypeStart
+    stored <- .bgenUint(record[at:(at + 3L)])
+    if (compression == 0L) {
+        return(record[(at + 4L):(at + 3L + stored)])
+    }
+    uncompressed <- .bgenUint(record[(at + 4L):(at + 7L)])
+    payload <- record[(at + 8L):(at + 3L + stored)]
+    .bgenUncompress(payload, compression, uncompressed)
+}
+
+# zlib through base R; zstd through archive, since R need not be built with
+# it.
+# @noRd
+#' @importFrom archive archive_read
+.bgenUncompress <- function(payload, compression, uncompressed) {
+    if (compression == 1L) {
+        return(memDecompress(payload, type = "gzip"))
+    }
+    con <- archive_read(rawConnection(payload), format = "raw", filter = "zstd")
+    open(con, "rb")
+    on.exit(close(con))
+    readBin(con, "raw", uncompressed)
+}
+
+# =============================================================================
+# VCF, GDS and PLINK1 genotype panels
+# -----------------------------------------------------------------------------
+# A VCF, GDS or PLINK1 file is read as a genotype panel directly rather than
+# through a GenotypeHandle: its variants and samples are read here, its
+# dosages through a GenotypeDosageSeed, a block at a time, when something
+# touches them. The
+# panel records where it came from (metadata(panel)$genotypeSource), which is
+# what anything needing the file reads -- a stochastic sketch's .afreq
+# sidecar, the per-chromosome files of a manifest.
+#
+# A record with several ALT alleles becomes one variant per ALT allele, with a
+# warning, its dosage the count of that allele, as for BGEN; a record with no
+# ALT allele holds no variant. The dosage is FORMAT/DS where the file declares
+# one, else the count from the GT calls. A SNPRelate GDS stores genotype codes
+# counting the first of a SNP's two alleles, which is therefore A1, as
+# SNPRelate reads it. A PLINK1 .bed's codes are read through PlinkMatrix as
+# the count of A1, the .bim's fifth column.
+# =============================================================================
+
+# @noRd
+.requireReaderPackage <- function(pkg, format) {
+    if (!requireNamespace(pkg, quietly = TRUE)) {
+        abort(glue("Package '{pkg}' is required for reading {format} files."))
+    }
+    invisible(NULL)
+}
+
+# The panel of a VCF, GDS or PLINK1 file, without the record of a stochastic
+# sketch's sidecar (.withSourceProjection() adds it, once the panel is whole).
+# @noRd
+.readDosagePanel <- function(path, format, vcfArgs = list()) {
+    switch(
+        format,
+        vcf = .vcfPanel(path, vcfArgs),
+        gds = .gdsPanel(path),
+        plink1 = .plinkBedPanel(path)
+    )
+}
+
+# A panel over a GenotypeDosageSeed: its rows' variants as rowRanges, shaped
+# as .genotypeExperiment() shapes a handle's, and where it came from.
+# @noRd
+.dosageSeedPanel <- function(seed, rows, format, path) {
+    dosage <- DelayedArray::DelayedArray(seed)
+    SummarizedExperiment::SummarizedExperiment(
+        assays = list(dosage = dosage),
+        rowRanges = .snpInfoRanges(rows, rownames(dosage)),
+        colData = S4Vectors::DataFrame(row.names = colnames(dosage)),
+        metadata = list(
+            genotypeSource = list(
+                format = format,
+                path = path,
+                chromPaths = character(0)
+            )
+        )
+    )
+}
+
+# One row per (record, ALT allele), in file order: A2 the record's REF
+# allele, A1 the ALT allele the row counts. A record keeps its own id when it
+# has one and a single ALT allele; otherwise each of its rows is named
+# chr:pos:A2:A1, so they stay distinct.
+# @noRd
+.recordVariantRows <- function(records, path, label) {
+    nAlt <- lengths(records$alt)
+    multi <- nAlt > 1L
+    if (any(multi)) {
+        warn(glue(
+            "{sum(multi)} {label} record(s) of {path} carry more than one ",
+            "ALT allele; each is read as one biallelic variant per ALT allele."
+        ))
+    }
+    record <- rep(seq_len(nrow(records)), nAlt)
+    a1 <- as.character(list_c(records$alt))
+    a2 <- records$ref[record]
+    named <- !is.na(records$id) & !multi
+    tibble(
+        SNP = if_else(
+            named[record],
+            records$id[record],
+            formatVariantId(records$chrom[record], records$pos[record], a2, a1)
+        ),
+        CHR = canonChrom(records$chrom[record]),
+        BP = as.integer(records$pos[record]),
+        A1 = a1,
+        A2 = a2,
+        record = record,
+        allele = sequence(nAlt)
+    )
+}
+
+# ---- VCF -------------------------------------------------------------------
+
+# A VCF's panel. Only its header and its records' fixed fields are read here.
+# @noRd
+.vcfPanel <- function(path, vcfArgs = list()) {
+    .requireReaderPackage("VariantAnnotation", "VCF")
+    file <- .vcfIndexedFile(path)
+    header <- VariantAnnotation::scanVcfHeader(file)
+    field <- .vcfDosageField(header, path(file))
+    records <- .vcfRecords(file, vcfArgs)
+    rows <- .recordVariantRows(records, path(file), "VCF")
+    seed <- methods::new(
+        "GenotypeDosageSeed",
+        backend = file,
+        field = if (field == "DS") "vcfDs" else "vcfGt",
+        rowRecord = rows$record,
+        rowAllele = rows$allele,
+        records = GRanges(
+            seqnames = records$chrom,
+            ranges = IRanges(records$pos, records$end),
+            posRank = .positionRank(records$chrom, records$pos)
+        ),
+        dn = list(
+            normalizeVariantId(rows$SNP),
+            as.character(VariantAnnotation::samples(header))
+        )
+    )
+    .dosageSeedPanel(seed, rows, "vcf", path(file))
+}
+
+# The VCF at `path` with its tabix index, through which its records are read
+# a block at a time. A VCF without one cannot be read lazily; a BCF cannot be
+# read at all, Rsamtools having its BCF support disabled.
+# @noRd
+#' @importFrom checkmate assertFileExists
+.vcfIndexedFile <- function(path) {
+    assertFileExists(path, access = "r", .var.name = "VCF file")
+    path <- normalizePath(path)
+    if (str_ends(str_to_lower(path), "\\.bcf")) {
+        abort(c(
+            glue("{path} is a BCF file, which pecotmr cannot read."),
+            i = str_c(
+                "Rsamtools ships with its BCF support disabled; convert it ",
+                "to a bgzipped, tabix-indexed VCF."
+            )
+        ))
+    }
+    index <- str_c(path, ".tbi")
+    if (!file.exists(index)) {
+        abort(c(
+            glue(
+                "A VCF is read a block at a time through its tabix index, ",
+                "and {index} is missing."
+            ),
+            i = str_c(
+                "Compress the VCF with bgzip and index it, e.g. with ",
+                "Rsamtools::bgzip() and Rsamtools::indexTabix(format = 'vcf')."
+            )
+        ))
+    }
+    VariantAnnotation::VcfFile(path, index = index)
+}
+
+# The FORMAT field the dosages are read from: DS when the header declares
+# it, with one value per ALT allele (Number=A) or one per record (Number=1),
+# else GT.
+# @noRd
+.vcfDosageField <- function(header, path) {
+    declared <- VariantAnnotation::geno(header)
+    fields <- rownames(declared)
+    if (is_in("DS", fields)) {
+        number <- declared$Number[match("DS", fields)]
+        if (!is_in(number, c("A", "1"))) {
+            abort(glue(
+                "{path} declares FORMAT/DS with Number={number}; a dosage ",
+                "has one value per ALT allele (Number=A) or one per record ",
+                "(Number=1)."
+            ))
+        }
+        return("DS")
+    }
+    if (is_in("GT", fields)) {
+        return("GT")
+    }
+    abort(glue(
+        "{path} declares neither FORMAT/DS nor FORMAT/GT, so it holds no ",
+        "genotypes to read."
+    ))
+}
+
+# One row per record of the VCF, in file order: its position and the end of
+# its REF allele, its own ID (NA where it has none), its REF allele and its
+# ALT alleles.
+# @noRd
+.vcfRecords <- function(file, vcfArgs) {
+    vcf <- exec(
+        VariantAnnotation::readVcf,
+        file,
+        param = VariantAnnotation::ScanVcfParam(
+            fixed = "ALT",
+            info = NA,
+            geno = NA
+        ),
+        !!!vcfArgs
+    )
+    rr <- SummarizedExperiment::rowRanges(vcf)
+    chrom <- as.character(seqnames(rr))
+    pos <- as.integer(start(rr))
+    ref <- as.character(rr$REF)
+    alt <- as.list(methods::as(rr$ALT, "CharacterList"))
+    tibble(
+        chrom = chrom,
+        pos = pos,
+        end = as.integer(end(rr)),
+        id = .vcfRecordIds(names(rr), chrom, pos, ref, alt),
+        ref = ref,
+        alt = map(alt, .vcfAltAlleles)
+    )
+}
+
+# Each record's own ID, or NA where it has none. VariantAnnotation names a
+# record whose ID is "." from the line's own text, CHROM:POS_REF/ALT, and
+# that name is no ID of the record's.
+# @noRd
+.vcfRecordIds <- function(ids, chrom, pos, ref, alt) {
+    if (is.null(ids)) {
+        return(rep(NA_character_, length(chrom)))
+    }
+    altText <- map_chr(alt, str_flatten, collapse = ",")
+    synthetic <- str_c(
+        chrom,
+        ":",
+        pos,
+        "_",
+        ref,
+        "/",
+        if_else(altText == "", ".", altText)
+    )
+    if_else(ids == synthetic | ids == ".", NA_character_, ids)
+}
+
+# A record's ALT alleles; a record whose ALT is "." has none.
+# @noRd
+.vcfAltAlleles <- function(alt) {
+    alt[!is_in(alt, c("", "."))]
+}
+
+# Each record's rank among the records starting at its position, in file
+# order: 1 for nearly all of them.
+# @noRd
+.positionRank <- function(chrom, pos) {
+    tibble(chrom = chrom, pos = pos) |>
+        mutate(rank = row_number(), .by = all_of(c("chrom", "pos"))) |>
+        pull("rank")
+}
+
+# ---- GDS -------------------------------------------------------------------
+
+# A GDS file's panel: a SNPRelate (SNP_ARRAY) or SeqArray (SEQ_ARRAY) file,
+# told apart by the format its root node records.
+# @noRd
+#' @importFrom checkmate assertFileExists
+.gdsPanel <- function(path) {
+    walk(c("gdsfmt", "GDSArray"), .requireReaderPackage, format = "GDS")
+    assertFileExists(path, access = "r", .var.name = "GDS file")
+    path <- normalizePath(path)
+    kind <- .withGdsFile(path, .gdsFileFormat)
+    switch(
+        kind,
+        SNP_ARRAY = .snpGdsPanel(path),
+        SEQ_ARRAY = .seqArrayPanel(path),
+        abort(glue(
+            "{path} is a GDS file of format '{kind}'; genotypes are read ",
+            "from SNPRelate (SNP_ARRAY) and SeqArray (SEQ_ARRAY) files."
+        ))
+    )
+}
+
+# Resource bracket: open the GDS at `path` read-only with gdsfmt, close it on
+# exit, and run `fn(gds, ...)`. A file GDSArray already holds open in this
+# session is opened again rather than refused.
+# @noRd
+.withGdsFile <- function(path, fn, fnArgs = list()) {
+    gds <- gdsfmt::openfn.gds(path, readonly = TRUE, allow.duplicate = TRUE)
+    on.exit(gdsfmt::closefn.gds(gds))
+    exec(fn, gds, !!!fnArgs)
+}
+
+# The kind of GDS file an open GDS is, as its root node records it.
+# @noRd
+.gdsFileFormat <- function(gds) {
+    as.character(gdsfmt::get.attr.gdsn(gds$root)$FileFormat %||% "unknown")
+}
+
+# A node of an open GDS, read whole.
+# @noRd
+.gdsRead <- function(gds, name) {
+    gdsfmt::read.gdsn(gdsfmt::index.gdsn(gds, name))
+}
+
+# A SNPRelate GDS's panel.
+# @noRd
+.snpGdsPanel <- function(path) {
+    meta <- .withGdsFile(path, .snpGdsMeta)
+    rows <- mutate(
+        meta$snpInfo,
+        SNP = as.character(.data$SNP),
+        CHR = canonChrom(.data$CHR),
+        record = row_number(),
+        allele = 1L
+    )
+    backend <- DelayedArray::seed(GDSArray::GDSArray(path, "genotype"))
+    stored <- c(nrow(rows), length(meta$sampleIds))
+    expected <- if (meta$snpFirst) stored else rev(stored)
+    if (!identical(as.integer(dim(backend)), as.integer(expected))) {
+        abort(glue(
+            "The genotype matrix of {path} is ",
+            "{str_flatten(dim(backend), ' x ')}, but the file lists ",
+            "{nrow(rows)} SNPs and {length(meta$sampleIds)} samples."
+        ))
+    }
+    seed <- methods::new(
+        "GenotypeDosageSeed",
+        backend = backend,
+        field = if (meta$snpFirst) "snpGdsSnpOrder" else "snpGdsSampleOrder",
+        rowRecord = rows$record,
+        rowAllele = rows$allele,
+        records = IRanges(rows$record, width = 1L),
+        dn = list(normalizeVariantId(rows$SNP), meta$sampleIds)
+    )
+    .dosageSeedPanel(seed, rows, "gds", path)
+}
+
+# An open SNPRelate GDS's SNPs, its samples, and how its genotype matrix is
+# stored: SNP by SNP unless its node says sample.order, as SNPRelate reads
+# it.
+# @noRd
+.snpGdsMeta <- function(gds) {
+    node <- gdsfmt::index.gdsn(gds, "genotype")
+    list(
+        snpInfo = .gdsReadSnpInfo(gds),
+        sampleIds = .gdsReadSampleIds(gds),
+        snpFirst = !is_in("sample.order", names(gdsfmt::get.attr.gdsn(node)))
+    )
+}
+
+# A SeqArray GDS's panel.
+# @noRd
+.seqArrayPanel <- function(path) {
+    meta <- .withGdsFile(path, .seqArrayMeta, fnArgs = list(path = path))
+    rows <- .recordVariantRows(meta$records, path, "SeqArray GDS")
+    counts <- as.integer(meta$counts)
+    seed <- methods::new(
+        "GenotypeDosageSeed",
+        backend = DelayedArray::seed(GDSArray::GDSArray(path, meta$node)),
+        field = meta$field,
+        rowRecord = rows$record,
+        rowAllele = rows$allele,
+        records = IRanges(start = cumsum(counts) - counts + 1L, width = counts),
+        dn = list(normalizeVariantId(rows$SNP), meta$sampleIds)
+    )
+    .dosageSeedPanel(seed, rows, "gds", path)
+}
+
+# An open SeqArray GDS's samples and records, and the node its dosages are
+# read from, with how many of that node's columns (or 2-bit planes) each
+# record takes.
+# @noRd
+.seqArrayMeta <- function(gds, path) {
+    alleles <- str_split(as.character(.gdsRead(gds, "allele")), ",")
+    c(
+        list(
+            sampleIds = as.character(.gdsRead(gds, "sample.id")),
+            records = tibble(
+                chrom = as.character(.gdsRead(gds, "chromosome")),
+                pos = as.integer(.gdsRead(gds, "position")),
+                id = .seqArrayIds(gds, length(alleles)),
+                ref = map_chr(alleles, 1L),
+                alt = map(alleles, .seqArrayAltAlleles)
+            )
+        ),
+        .seqArrayDosageNode(gds, path)
+    )
+}
+
+# Each record's own ID, or NA where it has none or the file stores none.
+# @noRd
+.seqArrayIds <- function(gds, nRecords) {
+    node <- gdsfmt::index.gdsn(gds, "annotation/id", silent = TRUE)
+    if (is.null(node)) {
+        return(rep(NA_character_, nRecords))
+    }
+    ids <- as.character(gdsfmt::read.gdsn(node))
+    if_else(is_in(ids, c("", ".")), NA_character_, ids)
+}
+
+# A record's ALT alleles: every allele after its first, the REF.
+# @noRd
+.seqArrayAltAlleles <- function(alleles) {
+    .vcfAltAlleles(alleles[-1L])
+}
+
+# Where a SeqArray GDS's dosages are: its FORMAT/DS when it stores one, with
+# one value per ALT allele or one per record, else its genotype calls.
+# @noRd
+.seqArrayDosageNode <- function(gds, path) {
+    ds <- gdsfmt::index.gdsn(gds, "annotation/format/DS", silent = TRUE)
+    if (!is.null(ds)) {
+        number <- as.character(gdsfmt::get.attr.gdsn(ds)$Number %||% "")
+        if (!is_in(number, c("A", "1"))) {
+            abort(glue(
+                "{path} stores FORMAT/DS with Number={number}; a dosage has ",
+                "one value per ALT allele (Number=A) or one per record ",
+                "(Number=1)."
+            ))
+        }
+        return(list(
+            node = "annotation/format/DS/data",
+            field = "seqArrayDs",
+            counts = .gdsRead(gds, "annotation/format/DS/@data")
+        ))
+    }
+    .seqArrayCheckGenotypes(gds, path)
+    list(
+        node = "genotype/data",
+        field = "seqArrayGt",
+        counts = .gdsRead(gds, "genotype/@data")
+    )
+}
+
+# The genotype calls are read from their 2-bit planes, so a file storing
+# them otherwise, or storing calls beyond its ploidy apart from them, is
+# refused rather than misread.
+# @noRd
+.seqArrayCheckGenotypes <- function(gds, path) {
+    data <- gdsfmt::objdesp.gdsn(gdsfmt::index.gdsn(gds, "genotype/data"))
+    if (!identical(data$trait, "Bit2")) {
+        abort(glue(
+            "{path} stores its genotype calls as {data$trait}; SeqArray ",
+            "stores them in 2-bit planes, which is what is read."
+        ))
+    }
+    extra <- gdsfmt::index.gdsn(gds, "genotype/extra.index", silent = TRUE)
+    nExtra <- if (is.null(extra)) 0L else gdsfmt::objdesp.gdsn(extra)$dim[[2L]]
+    if (nExtra > 0L) {
+        abort(glue(
+            "{path} stores {nExtra} genotype call(s) beyond its ploidy, ",
+            "which are not read."
+        ))
+    }
+    invisible(NULL)
+}
+
+# ---- PLINK1 ----------------------------------------------------------------
+
+# A PLINK1 fileset's panel: its .bim and .fam are read here, its genotypes a
+# block at a time through PlinkMatrix (.plinkBedSeedRead()). The stem is
+# recorded absolute, as a VCF's or GDS file's path is, so the panel still
+# reads from another working directory.
+# @noRd
+.plinkBedPanel <- function(path) {
+    .requireReaderPackage("PlinkMatrix", "PLINK1")
+    named <- .plink1RequireFiles(path)
+    stem <- file.path(normalizePath(dirname(named)), basename(named))
+    meta <- .plink1ReadMeta(stem)
+    nVariants <- nrow(meta$snpInfo)
+    seed <- methods::new(
+        "GenotypeDosageSeed",
+        backend = stem,
+        field = "plinkBed",
+        rowRecord = seq_len(nVariants),
+        rowAllele = rep(1L, nVariants),
+        records = IRanges(seq_len(nVariants), width = 1L),
+        dn = list(normalizeVariantId(meta$snpInfo$SNP), meta$sampleIds)
+    )
+    .dosageSeedPanel(seed, meta$snpInfo, "plink1", stem)
+}
+
+# Resolve the plink1 stem and assert its .bed/.bim/.fam all exist.
+# @noRd
+#' @importFrom checkmate assertFileExists
+.plink1RequireFiles <- function(path) {
+    stem <- .genotypeStem(path)
+    assertFileExists(
+        str_c(stem, c(".bed", ".bim", ".fam")),
+        access = "r",
+        .var.name = "Plink file"
+    )
+    stem
+}
+
+# Read the .bim / .fam sidecars into snpInfo + sample metadata. Returns
+# list(snpInfo, sampleIds, nSamples).
+# @noRd
+#' @importFrom readr read_table cols col_character
+.plink1ReadMeta <- function(stem) {
+    # col_types all-character so readr never coerces a column: a bim whose
+    # allele column is uniformly "T"/"F" (all-A/T SNPs) would otherwise become
+    # logical, silently corrupting A1/A2 (BP is cast to integer below).
+    bim <- read_table(
+        str_c(stem, ".bim"),
+        col_names = c("CHR", "SNP", "CM", "BP", "A1", "A2"),
+        col_types = cols(.default = col_character())
+    )
+    fam <- read_table(
+        str_c(stem, ".fam"),
+        col_names = FALSE,
+        col_types = cols(.default = col_character())
+    )
+    # plink1 bim: col5 = A1 (minor/effect), col6 = A2 (major/ref); matches the
+    # pecotmr convention directly.
+    snpInfo <- tibble(
+        SNP = bim$SNP,
+        CHR = as.character(bim$CHR),
+        BP = as.integer(bim$BP),
+        A1 = bim$A1,
+        A2 = bim$A2
+    )
+    list(
+        snpInfo = snpInfo,
+        sampleIds = as.character(fam[[2]]),
+        nSamples = nrow(fam)
+    )
+}
+
+# ---- Per-chromosome VCF / GDS / PLINK1 sets --------------------------------
+
+# The panel of a per-chromosome VCF, GDS or PLINK1 set: the shards' panels
+# stacked -- DelayedArray binds their assays, so nothing is read -- recording
+# each chromosome's file as a sharded GenotypeHandle does. Every shard must
+# hold the same samples, in the same order.
+# @noRd
+.stackDosagePanels <- function(panels, format, metaPath, paths) {
+    .stackCheckSamples(panels, paths)
+    rowRangesList <- unname(map(panels, SummarizedExperiment::rowRanges))
+    SummarizedExperiment::SummarizedExperiment(
+        assays = list(
+            dosage = exec(
+                BiocGenerics::rbind,
+                !!!unname(map(panels, .seDosage))
+            )
+        ),
+        rowRanges = suppressWarnings(exec(c, !!!rowRangesList)),
+        colData = SummarizedExperiment::colData(panels[[1L]]),
+        metadata = list(
+            genotypeSource = list(
+                format = format,
+                path = metaPath,
+                chromPaths = .panelChromPaths(panels)
+            )
+        )
+    )
+}
+
+# @noRd
+.stackCheckSamples <- function(panels, paths) {
+    first <- colnames(panels[[1L]])
+    same <- map_lgl(map(panels, colnames), identical, first)
+    if (all(same)) {
+        return(invisible(NULL))
+    }
+    abort(glue(
+        "genoMeta: all per-chromosome files must have ",
+        "identical sample IDs in the same order (mismatch at ",
+        "'{paths[[which(!same)[[1L]]]]}')."
+    ))
+}
+
+# Each chromosome's file, named by chromosome; a chromosome found in two
+# files is refused, as for a sharded GenotypeHandle.
+# @noRd
+.panelChromPaths <- function(panels) {
+    chromPaths <- list_c(map(panels, .panelShardPaths))
+    counts <- table(names(chromPaths))
+    walk2(names(counts), as.integer(counts), .checkChromNotSplit)
+    chromPaths
+}
+
+# One shard panel's chromosomes, each mapped to its file.
+# @noRd
+.panelShardPaths <- function(panel) {
+    chroms <- unique(.ldRefChrom(panel))
+    set_names(rep(.ldRefSource(panel)$path, length(chroms)), chroms)
 }
