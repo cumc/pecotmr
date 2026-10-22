@@ -98,8 +98,7 @@ X <- eqtlRegionExample$X[, 1:30]
 cond <- c("brain", "blood", "muscle")
 zmat <- matrix(rnorm(30 * 3), 30, 3,
   dimnames = list(colnames(X), cond))
-stat <- list(z = zmat, n = matrix(nrow(X), 30, 3),
-  variantNames = colnames(X))
+stat <- list(z = zmat, n = nrow(X), variantNames = colnames(X))
 mrmashRssWeights(stat, LdMatrix(cor(X)),
   dataDrivenPriorMatrices = multiTraitData$priorMatrices,
   canonicalPriorMatrices = TRUE)
