@@ -13,22 +13,25 @@ NULL
 #'     \item \code{twasWeights} alone (no \code{fineMappingResult}):
 #'           TWAS Z only, no MR.
 #'     \item \code{fineMappingResult} alone (no \code{twasWeights}):
-#'           TWAS Z derived from SuSiE-style coefficients carried on the
-#'           \code{topLoci} slot of each FineMappingRow; plus MR.
+#'           TWAS Z derived from the SuSiE-style coefficients in each
+#'           row's top loci (\code{\link{topLoci}}); plus MR.
 #'     \item both: TWAS Z computed from \code{twasWeights};
 #'           MR computed from \code{fineMappingResult}.
 #'   }
 #'
-#' @section LD-sketch compatibility check: If a QTL input (TwasWeights or
-#'   QtlFineMappingResult) carries a non-\code{NULL} \code{ldSketch}, it must
-#'   come from the same reference panel as the \code{ldSketch} on
-#'   \code{gwasSumStats} --- same samples, same allele orientation on the
-#'   shared variants. The two need NOT carry the same variants: QC-ing the two
-#'   sides separately trims each sketch to its own surviving variants, and a
-#'   partial overlap only warns. A different sample set, a swapped A1/A2 on a
-#'   shared variant, or no shared variant at all is a hard error. A QTL input
-#'   with \code{ldSketch = NULL} (the fit was learned from individual-level
-#'   data) skips the validation for that input.
+#' @section LD reference compatibility check: If a QTL input
+#'   (TwasWeights or QtlFineMappingResult) carries a non-\code{NULL}
+#'   \code{ldReference}, it must be the same LD reference as the
+#'   \code{ldReference} on \code{gwasSumStats}.
+#'   The two must be the same kind of reference. Two genotype panels must
+#'   share their samples and allele orientation; two \code{LdMatrix} objects
+#'   must agree on the LD they share; two \code{GenotypeMixture} objects must
+#'   average the same panels with the same weights. The two need NOT carry
+#'   the same variants: QC-ing the two sides separately trims each reference
+#'   to its own surviving variants, and a partial overlap only warns. A
+#'   mismatch of any of those, or no shared variant at all, is a hard error. A
+#'   QTL input with \code{ldReference = NULL} (the fit was learned from
+#'   individual-level data) skips the validation for that input.
 #'
 #' @section Output shape:
 #' A long-format \code{GRanges} with one row per
@@ -55,7 +58,7 @@ NULL
 #'   supplied, drives the MR computation and (when \code{twasWeights = NULL})
 #'   the TWAS-Z weights via the SuSiE-style coefficients on each entry's
 #'   \code{topLoci}.
-#' @param weightSelectionArgs How one TWAS method's weights are picked per
+#' @param weightSelectionParam How one TWAS method's weights are picked per
 #'   \code{(study, context, trait, gwasStudy)} tuple, built with
 #'   \code{\link{WeightSelectionParam}}: \code{cutoff} (minimum
 #'   cross-validated r-squared, default \code{0}), \code{pvalCutoff} (the
@@ -66,7 +69,7 @@ NULL
 #'   gates that also produced a finite TWAS Z. Otherwise every method is
 #'   carried through. Ports the legacy \code{twas_pipeline}
 #'   \code{pick_best_model} / \code{update_twas_method}.
-#' @param mrArgs How Mendelian randomization is run, built with
+#' @param mrParam How Mendelian randomization is run, built with
 #'   \code{\link{MrParam}}: \code{method} (\code{"ivwPerVariant"}, the
 #'   default, or \code{"csAware"}), the PIP threshold that method reads
 #'   (\code{pipCutoff} or \code{cpipCutoff}), and \code{pvalCutoff}, the
@@ -93,25 +96,24 @@ causalInferencePipeline <- function(
     gwasSumStats,
     twasWeights = NULL,
     fineMappingResult = NULL,
-    weightSelectionArgs = WeightSelectionParam(),
-    mrArgs = MrParam(),
+    weightSelectionParam = WeightSelectionParam(),
+    mrParam = MrParam(),
     combineMethods = NULL,
     alleleFlip = TRUE
 ) {
     .assertMethodParam(
-        weightSelectionArgs,
-        "WeightSelectionParam",
-        "weightSelection"
+        weightSelectionParam,
+        "WeightSelectionParam"
     )
-    .assertMethodParam(mrArgs, "MrParam", "mr")
+    .assertMethodParam(mrParam, "MrParam")
     .cipRun(
         gwasSumStats = gwasSumStats,
         twasWeights = twasWeights,
         fineMappingResult = fineMappingResult,
         combineMethods = combineMethods,
-        weightSelectionArgs = weightSelectionArgs,
+        weightSelectionParam = weightSelectionParam,
         alleleFlip = alleleFlip,
-        mrArgs = mrArgs
+        mrParam = mrParam
     )
 }
 
@@ -123,12 +125,12 @@ causalInferencePipeline <- function(
     twasWeights,
     fineMappingResult,
     combineMethods,
-    weightSelectionArgs,
+    weightSelectionParam,
     alleleFlip,
-    mrArgs
+    mrParam
 ) {
     .cipValidateInputs(gwasSumStats, twasWeights, fineMappingResult)
-    gwasLd <- .cipCheckLdSketches(
+    gwasLd <- .cipCheckLdRefs(
         gwasSumStats,
         twasWeights,
         fineMappingResult
@@ -137,7 +139,7 @@ causalInferencePipeline <- function(
     sel <- .cipCvSelection(
         qtlRows = allRows,
         twasWeights = twasWeights,
-        weightSelectionArgs = weightSelectionArgs
+        weightSelectionParam = weightSelectionParam
     )
     qtlRows <- sel$qtlRows
     outRows <- list_flatten(map(
@@ -149,7 +151,7 @@ causalInferencePipeline <- function(
         gwasSumStats = gwasSumStats,
         gwasLd = gwasLd,
         alleleFlip = alleleFlip,
-        mrArgs = mrArgs
+        mrParam = mrParam
     ))
     if (length(outRows) == 0L) {
         abort(
@@ -199,18 +201,18 @@ causalInferencePipeline <- function(
 # Require the twasWeights / fineMappingResult LD sketches to match the GWAS one;
 # returns the GWAS LD sketch.
 # @noRd
-.cipCheckLdSketches <- function(gwasSumStats, twasWeights, fineMappingResult) {
-    gwasLd <- ldSketch(gwasSumStats)
+.cipCheckLdRefs <- function(gwasSumStats, twasWeights, fineMappingResult) {
+    gwasLd <- ldReference(gwasSumStats)
     if (!is.null(twasWeights)) {
-        .cipRequireMatchingLdSketches(
-            ldSketch(twasWeights),
+        .cipRequireMatchingLdRefs(
+            ldReference(twasWeights),
             gwasLd,
             label = "twasWeights"
         )
     }
     if (!is.null(fineMappingResult)) {
-        .cipRequireMatchingLdSketches(
-            ldSketch(fineMappingResult),
+        .cipRequireMatchingLdRefs(
+            ldReference(fineMappingResult),
             gwasLd,
             label = "fineMappingResult"
         )
@@ -256,14 +258,14 @@ causalInferencePipeline <- function(
 .cipCvSelection <- function(
     qtlRows,
     twasWeights,
-    weightSelectionArgs
+    weightSelectionParam
 ) {
     # The bundle's terminal. .cipMethodMetrics / .cipEligibleRowsIn below
     # take plain scalars, so it is unrolled once, here.
-    rsqCutoff <- weightSelectionArgs$cutoff
-    rsqPvalCutoff <- weightSelectionArgs$pvalCutoff
-    rsqOption <- weightSelectionArgs$metric
-    rsqPvalOption <- weightSelectionArgs$pvalMetric
+    rsqCutoff <- weightSelectionParam$cutoff
+    rsqPvalCutoff <- weightSelectionParam$pvalCutoff
+    rsqOption <- weightSelectionParam$metric
+    rsqPvalOption <- weightSelectionParam$pvalMetric
     selectionActive <- !is.null(twasWeights) &&
         (rsqCutoff > 0 || is.finite(rsqPvalCutoff))
     if (!selectionActive) {
@@ -309,7 +311,7 @@ causalInferencePipeline <- function(
     gwasSumStats,
     gwasLd,
     alleleFlip,
-    mrArgs
+    mrParam
 ) {
     tuple <- list(
         qStudy = qtlRows$qtlStudy[[qi]],
@@ -345,11 +347,12 @@ causalInferencePipeline <- function(
         gwasSumStats = gwasSumStats,
         gwasLd = gwasLd,
         alleleFlip = alleleFlip,
-        mrArgs = mrArgs
+        mrParam = mrParam
     ))
 }
 
-# Resolve the FineMappingRow for a tuple (NULL when the fmr lacks it).
+# The tuple's single-row collection from `fineMappingResult` (NULL when it
+# lacks the tuple).
 # @noRd
 .cipResolveFmrEntry <- function(
     fineMappingResult,
@@ -383,7 +386,7 @@ causalInferencePipeline <- function(
     gwasSumStats,
     gwasLd,
     alleleFlip,
-    mrArgs
+    mrParam
 ) {
     gStudy <- as.character(gwasSumStats$study)[[gi]]
     gdf <- as.data.frame(
@@ -407,7 +410,7 @@ causalInferencePipeline <- function(
         gdf,
         twasOut,
         alleleFlip = alleleFlip,
-        mrArgs = mrArgs
+        mrParam = mrParam
     )
     .cipResultRow(tuple, gStudy, twasOut, mrOut)
 }
@@ -430,13 +433,13 @@ causalInferencePipeline <- function(
     gdf,
     twasOut,
     alleleFlip,
-    mrArgs
+    mrParam
 ) {
     # The bundle's terminal; the MR engines below take plain scalars.
-    mrMethod <- mrArgs$method
-    mrPipCutoff <- mrArgs$pipCutoff
-    mrCpipCutoff <- mrArgs$cpipCutoff
-    mrPvalCutoff <- mrArgs$pvalCutoff
+    mrMethod <- mrParam$method
+    mrPipCutoff <- mrParam$pipCutoff
+    mrCpipCutoff <- mrParam$cpipCutoff
+    mrPvalCutoff <- mrParam$pvalCutoff
     mrGateOpen <- mrPvalCutoff >= 1 ||
         (!is.na(twasOut$pval) && twasOut$pval < mrPvalCutoff)
     if (is.null(fmrEntry) || !mrGateOpen) {
@@ -525,9 +528,9 @@ causalInferencePipeline <- function(
 # =============================================================================
 
 # Check two LD sketches for reference-panel compatibility. Thin wrapper over
-# the shared `.requireMatchingLdSketches` helper (R/ld.R).
-.cipRequireMatchingLdSketches <- function(qtlLd, gwasLd, label) {
-    .requireMatchingLdSketches(
+# the shared `.requireMatchingLdRefs` helper (R/ld.R).
+.cipRequireMatchingLdRefs <- function(qtlLd, gwasLd, label) {
+    .requireMatchingLdRefs(
         qtlLd,
         gwasLd,
         pipelineName = "causalInferencePipeline",
@@ -744,7 +747,7 @@ causalInferencePipeline <- function(
 }
 
 # Fetch the per-tuple weight-source entry (a TwasWeightsRow from
-# `twasWeights`, or a FineMappingRow from `fineMappingResult`) and resolve it
+# `twasWeights`, or the tuple's row of `fineMappingResult`) and resolve it
 # to an aligned (variantIds, weights) pair via the shared `resolveWeights` --
 # the SuSiE-style posterior effect for the FMR path. Returns NULL when the tuple
 # is absent or has no usable weights.
@@ -805,7 +808,7 @@ causalInferencePipeline <- function(
     )
 }
 
-# FineMappingResult entry for a tuple (NULL when absent).
+# The fine-mapping entry for a tuple (NULL when absent).
 # @noRd
 .cipWeightsFromFmr <- function(
     fineMappingResult,
@@ -856,9 +859,7 @@ causalInferencePipeline <- function(
     wSub <- weights[m$idxA] * m$sign
     zSub <- gwasDf$z[m$idxB]
     gwasIds <- gwasDf$variant_id[m$idxB]
-    ldMat <- .ldFromSketch(gwasLd, gwasIds, label = "causalInferencePipeline")
-
-    res <- twasZ(weights = wSub, z = zSub, R = ldMat)
+    res <- .cipTwasZ(wSub, zSub, gwasLd, gwasIds)
     zMat <- res$Z
     zVal <- as.numeric(zMat[1L, "Z"])
     pVal <- as.numeric(zMat[1L, "pval"])
@@ -873,6 +874,22 @@ causalInferencePipeline <- function(
         startPos = startPos,
         endPos = endPos
     )
+}
+
+# twasZ() of weights `w` against GWAS z-scores `z` over the GWAS variants
+# `gwasIds`, needing w'Rw only: a genotype reference gives its LD factor, so
+# the p x p LD is never formed; an LdMatrix gives the matrix.
+# @noRd
+.cipTwasZ <- function(w, z, gwasLd, gwasIds) {
+    label <- "causalInferencePipeline"
+    if (.ldIsGenotypeRef(gwasLd)) {
+        return(twasZ(
+            weights = w,
+            z = z,
+            X = .ldFactorFromRef(gwasLd, gwasIds, label)
+        ))
+    }
+    twasZ(weights = w, z = z, R = .ldFromRef(gwasLd, gwasIds, label))
 }
 
 # Report how many QTL weight variants failed to match the GWAS sumstats.
@@ -957,9 +974,6 @@ causalInferencePipeline <- function(
     )
 }
 
-# Instrumental variables from a FineMappingRow's topLoci: variants with PIP >
-# pipCutoff. Returns list(ivVars, betaX, seX) or NULL when none qualify.
-# @noRd
 # The per-variant top-loci table of one entry. topLoci() returns ranges and
 # mcols() is exactly the pre-conversion table -- as.data.frame() on the
 # ranges would add the standard seqnames/start/end/width/strand columns the
@@ -971,6 +985,9 @@ causalInferencePipeline <- function(
     as.data.frame(S4Vectors::mcols(topLoci(fmrEntry)))
 }
 
+# Instrumental variables from a FineMappingRow's topLoci: variants with PIP >
+# pipCutoff. Returns list(ivVars, betaX, seX) or NULL when none qualify.
+# @noRd
 .cipMrInstruments <- function(fmrEntry, pipCutoff) {
     tl <- .cipTopLociTable(fmrEntry)
     if (is.null(tl) || nrow(tl) == 0L) {
@@ -1014,7 +1031,8 @@ causalInferencePipeline <- function(
 #
 # Logic:
 #   1. Group topLoci variants by credible set (column `cs` in topLoci, or
-#      first column matching ^cs).
+#      first column matching ^cs -- cs_95 on a stored result, whose
+#      "<method>_<idx>" labels are parsed to the set index).
 #   2. Per CS, compute cumulative PIP; drop CSs with cpip < cpipCutoff.
 #   3. Per surviving CS, compute a PIP-weighted composite Wald ratio
 #      `composite_bhat = sum((bhatY/bhatX * pip) / cpip)` with the
@@ -1083,7 +1101,10 @@ causalInferencePipeline <- function(
 # with NA cs / non-positive cs / NA pip / NA beta. Returns NULL when none valid.
 # @noRd
 .cipCsAwareRaw <- function(tl, cols) {
-    cs <- as.integer(tl[[cols$cs[[1L]]]])
+    csCol <- tl[[cols$cs[[1L]]]]
+    # A stored topLoci table labels each variant's set "<method>_<idx>"
+    # (cs_95); a caller-built table may carry the bare integer instead.
+    cs <- if (is.character(csCol)) .csLabelIndex(csCol) else as.integer(csCol)
     pip <- as.numeric(tl[[cols$pip[[1L]]]])
     bhatX <- as.numeric(tl[[cols$beta[[1L]]]])
     sbhatX <- as.numeric(tl[[cols$se[[1L]]]])
@@ -1367,9 +1388,9 @@ causalInferencePipeline <- function(
     list_c(pieces)
 }
 
-# One combined row: the group's first row re-stamped with the combined
-# p-value for method `m`. The per-method statistics do not carry over, so
-# they are blanked rather than inherited.
+# One combined row: the group's first row, carrying the combined p-value for
+# method `m` in place of its own. The per-method statistics do not carry
+# over, so they are blanked rather than inherited.
 # @noRd
 .cipCombinedRow <- function(m, mc, rows, cp) {
     mutate(
@@ -1473,17 +1494,39 @@ causalInferencePipeline <- function(
     V
 }
 
-# R / X path: covY = W^T R W (R computed from X when R is absent).
+# R / X path: covY = W^T R W. From a genotype matrix X the LD is never formed:
+# W^T R W = crossprod(F W) / (n - 1) for F, X's LD factor
+# (.ldFactorFromDosage()), which is computeLd()'s LD exactly.
 # @noRd
 .twasZCovYR <- function(weights, R, X, rn) {
-    if (is.null(R)) {
-        if (is.null(X)) {
-            abort("twasZ: provide R, X, or the (V, D, nSketch) SVD triplet.")
-        }
-        R <- computeLd(X)
+    if (!is.null(R)) {
+        rSub <- .twasZAlignR(R, rn, nrow(weights))
+        return(list(covY = crossprod(weights, rSub) %*% weights))
     }
-    rSub <- .twasZAlignR(R, rn, nrow(weights))
-    list(covY = crossprod(weights, rSub) %*% weights)
+    if (is.null(X)) {
+        abort("twasZ: provide R, X, or the (V, D, nSketch) SVD triplet.")
+    }
+    factor <- .ldFactorFromDosage(.twasZAlignX(X, rn, nrow(weights)))
+    list(covY = crossprod(factor %*% weights) / (nrow(factor) - 1))
+}
+
+# Column-align X to the weights (by name when available, else positionally).
+# @noRd
+#' @importFrom checkmate assertMatrix
+.twasZAlignX <- function(X, rn, nW) {
+    if (!is.null(colnames(X)) && !is.null(rn)) {
+        idx <- match(rn, colnames(X))
+        if (anyNA(idx)) {
+            msg <- glue(
+                "twasZ: X is missing columns for {sum(is.na(idx))} ",
+                "variant(s) named in weights."
+            )
+            abort(msg)
+        }
+        return(X[, idx, drop = FALSE])
+    }
+    assertMatrix(X, ncols = nW, .var.name = "X (positional alignment)")
+    X
 }
 
 # Symmetric-align R to the weights (by name when available, else positionally).
@@ -1528,8 +1571,10 @@ causalInferencePipeline <- function(
 #' The SVD path (\code{V}, \code{D}, \code{nSketch}) lets the caller avoid
 #' materializing the full LD matrix: \code{covY = (V^TW * sqrt(Lambda))^T (V^TW
 #' * sqrt(Lambda))} with \code{Lambda_i = D_i^2 / (nSketch - 1)}. Use the
-#' \code{R} path when an LD correlation matrix is already available; use the
-#' \code{X} path to compute \code{R} from a genotype matrix.
+#' \code{R} path when an LD correlation matrix is already available; the
+#' \code{X} path works from a genotype matrix directly, as
+#' \code{covY = (F W)^T (F W) / (n - 1)} for its standardized dosages
+#' \code{F}, never forming \code{R}.
 #'
 #' @param weights Numeric vector of weights (single tuple) or a numeric matrix
 #'   with one column per tuple (method / context). When a vector, the column
@@ -1537,8 +1582,9 @@ causalInferencePipeline <- function(
 #' @param z Numeric vector of GWAS Z-scores aligned to the rows of
 #'   \code{weights}.
 #' @param R Optional LD correlation matrix.
-#' @param X Optional genotype matrix used to compute \code{R} when \code{R} is
-#'   missing.
+#' @param X Optional genotype matrix (samples x variants) standing in for
+#'   \code{R} when \code{R} is missing; its LD is taken as
+#'   \code{\link{computeLd}}'s, without forming it.
 #' @param V,D,nSketch SVD components of the LD sketch (right-singular vectors,
 #'   singular values, panel sample size). Supplying all three selects the SVD
 #'   path.

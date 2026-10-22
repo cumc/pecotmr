@@ -17,10 +17,11 @@ A data.frame with columns: chrom, id, pos, A2, A1. May also include
   allele_freq, variance, n_nomiss depending on source.
 }
 \description{
-Auto-detects the source type (PLINK2, PLINK1, VCF, GDS, or pre-computed LD
-metadata) and returns variant metadata. For PLINK2, opens only the .pvar
-file. For PLINK1, reads only the .bim file. For VCF and GDS, loads the full
-file and extracts variant info.
+Auto-detects the source type (PLINK2, PLINK1, VCF, GDS or BGEN, given
+directly or through LD metadata whose rows point at genotype files) and
+returns variant metadata. For PLINK2, opens only the .pvar file. For PLINK1,
+reads only the .bim file. For VCF, GDS and BGEN, loads the full file and
+extracts variant info.
 }
 \examples{
 meta <- system.file("extdata", "ld_reference", "ld_meta_file.tsv",

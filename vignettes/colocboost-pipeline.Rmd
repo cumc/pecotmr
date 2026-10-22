@@ -34,7 +34,7 @@ layered on top. It accepts inputs from the QTL input classes:
 
 GWAS input (optional) is always a `GwasSumStats`, passed as the
 separate `gwasSumStats` argument. `colocboostPipeline()` does **not**
-accept a `FineMappingResult` for either side — colocboost runs its own
+accept a fine-mapping result for either side — colocboost runs its own
 variable selection.
 
 ```{r load-packages}
@@ -111,7 +111,7 @@ names(res3$separate_gwas)
 ## Sumstats-only colocalization
 
 A `QtlSumStats` input goes through the same dispatch with no
-individual-level data needed; the LD comes from the `ldSketch`
+individual-level data needed; the LD comes from the `ldReference`
 genotype panel carried on the collection.
 
 ```{r sumstats}

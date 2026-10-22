@@ -18,7 +18,7 @@ QtlFineMappingResult(
   dataType = NULL,
   dataSource = NULL,
   weightStandardized = NULL,
-  ldSketch = NULL
+  ldReference = NULL
 )
 }
 \arguments{
@@ -63,7 +63,7 @@ one per row; \code{NULL} (default) omits the column.}
 \item{dataSource}{Optional per-row label for the kind of input the fit saw,
 \code{"individual"} or \code{"sumstat"}. Recorded rather than derived: a
 combined collection can hold rows of both kinds, and its single
-\code{ldSketch} cannot say which row came from which.}
+\code{ldReference} cannot say which row came from which.}
 
 \item{weightStandardized}{Optional per-row flag: whether the posterior
 effect is on the STANDARDIZED genotype scale. The posterior effect IS the
@@ -73,9 +73,9 @@ it standardizes genotypes before fitting, and the posterior mean is
 reported on the scale of the \code{X} the fit was given. The argument
 exists for a collection assembled by hand, where only the caller knows.}
 
-\item{ldSketch}{An optional genotype panel (see \code{\link{readGenotypes}})
-(the LD reference for RSS-derived fits), or \code{NULL} for
-individual-level fits.}
+\item{ldReference}{An optional genotype panel (see
+\code{\link{readGenotypes}}) (the LD reference for RSS-derived fits), or
+\code{NULL} for individual-level fits.}
 }
 \value{
 A \code{QtlFineMappingResult} object.
@@ -83,8 +83,8 @@ A \code{QtlFineMappingResult} object.
 \description{
 Construct a \code{QtlFineMappingResult} DFrame-subclass
   collection from per-tuple vectors and a list of \code{FineMappingRow}
-  payloads (one per tuple). The optional \code{ldSketch} slot records the LD
-  reference used for RSS-derived fits; pass \code{NULL} (the default) for
+  payloads (one per tuple). The optional \code{ldReference} slot records the
+  LD reference used for RSS-derived fits; pass \code{NULL} (the default) for
   individual-level fits.
 }
 \examples{

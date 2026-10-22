@@ -12,11 +12,20 @@ Pre-computed LD scores for each SNP. Used by S-LDSC and
   slots, because they are parallel to the variants: as slots they would
   survive a subset unchanged while the ranges narrowed, leaving scores
   describing variants that are no longer there.
+
+  An \code{LdScore} storing per-block LD matrices (\code{ldMatrixList})
+  cannot be subset or reordered: each block's matrix indexes its variants
+  by position, so narrowing the variants would leave it describing other
+  variants. A scores-only object, or one reading its LD from a genotype
+  panel, subsets freely.
 }
 \section{Slots}{
 
 \describe{
-\item{\code{ldMatrixList}}{For g-LDSC: a list of per-block LD (R^2) matrices used to
-compute the FGLS residual covariance. Empty for S-LDSC.}
+\item{\code{ldMatrixList}}{For g-LDSC: a list of per-block LD correlation (R)
+matrices used to compute the FGLS residual covariance, kept when the
+scores were built from \code{LdMatrix} blocks. Empty for a scores-only
+object, and for one built from a genotype panel, which reads each
+block's LD from the panel instead (see \code{\linkS4class{LdStatistic}}).}
 }}
 

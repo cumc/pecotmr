@@ -23,11 +23,13 @@ group. Default 0.8.}
 \item{backend}{Character, one of \code{"hclust"} (default) or
 \code{"snprelate"}. Controls the pruning algorithm:
 \describe{
-  \item{\code{"hclust"}}{Uses the internal hierarchical-clustering approach
-    with \code{Rfast::cora} (if available) or base \code{cor()}.}
+  \item{\code{"hclust"}}{Single-linkage groups, found as the connected
+    components of the |cor| >= \code{corThres} graph.}
   \item{\code{"snprelate"}}{Requires \pkg{SNPRelate} and \pkg{gdsfmt}.
     Creates a temporary GDS file and runs
-    \code{SNPRelate::snpgdsLDpruning(method = "corr")}.}
+    \code{SNPRelate::snpgdsLDpruning(method = "corr")}. GDS stores
+    genotypes as the integer codes 0, 1 and 2, so fractional dosages are
+    refused rather than rounded.}
 }}
 
 \item{verbose}{Logical. If TRUE, print progress messages. Default FALSE.}
@@ -49,9 +51,12 @@ A list with:
 }
 \description{
 Performs LD pruning using one of two backends. The default \code{"hclust"}
-backend computes the full correlation matrix, builds a single-linkage
-hierarchical clustering on the distance (1 - |cor|), and keeps one
-representative column per cluster. The \code{"snprelate"} backend delegates
+backend groups the columns as single-linkage hierarchical clustering on the
+distance (1 - |cor|), cut at 1 - \code{corThres}, would, and keeps the
+first column of each group. Those groups are the connected components
+of the graph joining columns with |cor| >= \code{corThres}, found from the
+correlations a stripe of rows at a time, so the full correlation matrix is
+never formed. The \code{"snprelate"} backend delegates
 to \code{SNPRelate::snpgdsLDpruning}, which performs a sliding-window greedy
 prune directly on a temporary GDS file.
 }

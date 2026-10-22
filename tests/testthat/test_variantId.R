@@ -661,6 +661,12 @@ test_that("canonChrom normalizes prefixes, case, and synonyms to strings", {
     )
     # never coerces to integer -- non-autosomes survive
     expect_type(pecotmr:::canonChrom("chrX"), "character")
+    # A zero-padded number (UK Biobank's BGEN files write 01) is the same
+    # chromosome; a lone 0 and non-numeric labels keep their zeros.
+    expect_equal(
+        pecotmr:::canonChrom(c("01", "chr01", "001", "10", "0", "023")),
+        c("1", "1", "1", "10", "0", "X")
+    )
 })
 
 test_that("parseVariantId keeps non-autosomal chromosomes as strings", {

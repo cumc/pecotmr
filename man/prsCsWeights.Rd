@@ -4,22 +4,43 @@
 \alias{prsCsWeights}
 \title{Extract weights from prsCs function}
 \usage{
-prsCsWeights(stat, LD, methodArgs = PrsCsOptions())
+prsCsWeights(
+  stat,
+  ldReference,
+  fitRetention = c("none", "slim", "full"),
+  methodArgs = PrsCsOptions()
+)
 }
 \arguments{
-\item{stat}{A list of summary statistics with elements \code{b} (effect
-sizes) and \code{n} (per-variant sample sizes).}
+\item{stat}{A list of summary statistics: \code{n} (per-variant sample
+sizes) and the marginal effects as \code{cor} (standardized), \code{z},
+\code{b} with \code{seb}, or \code{b} alone, taken as already
+standardized. The engine receives the standardized effects z / sqrt(n),
+with n the median of \code{n}.}
 
-\item{LD}{Numeric LD (correlation) matrix aligned to the variants in
-\code{stat}.}
+\item{ldReference}{The LD reference the statistics' variants are matched
+to by \code{stat$variantNames}: a genotype panel (see
+\code{\link{readGenotypes}}), a \code{\link{GenotypeMixture}} or an
+\code{\link{LdMatrix}}. A genotype reference's LD is used through its
+standardized genotypes, never formed as a matrix.}
 
-\item{methodArgs}{Options forwarded to \code{prsCs}, built
-with \code{\link{PrsCsOptions}}. A bare list is refused: it cannot be
-checked against the engine, so a misspelled option would be
+\item{fitRetention}{How much of the fit is kept as the \code{"fit"}
+attribute of the returned weights: \code{"none"} (default) attaches
+nothing, \code{"slim"} and \code{"full"} attach the sampler's posterior
+estimates: \code{betaEst}, the local shrinkage parameters
+\code{psiEst}, the residual variance \code{sigmaEst} and the global
+shrinkage \code{phiEst}. This engine keeps no trimmable intermediates,
+so the two retaining levels behave alike here.}
+
+\item{methodArgs}{Options forwarded to the sampler, \code{\link{prsCs}},
+built with \code{\link{PrsCsOptions}}. A bare list is refused: it cannot
+be checked against the engine, so a misspelled option would be
 silently ignored.}
 }
 \value{
-A numeric vector of the posterior SNP coefficients.
+A numeric vector of the posterior SNP coefficients. Unless
+  \code{fitRetention = "none"}, the sampler's estimates are attached as
+  attribute \code{"fit"}.
 }
 \description{
 Extract weights from prsCs function
@@ -33,8 +54,14 @@ ss <- lapply(
 stat <- list(
   b = vapply(ss, `[`, numeric(1), 1L),
   seb = vapply(ss, `[`, numeric(1), 2L),
-  n = rep(nrow(X), ncol(X))
+  n = rep(nrow(X), ncol(X)),
+  variantNames = colnames(X)
 )
-LD <- cor(X)
-prsCsWeights(stat, LD, methodArgs = PrsCsOptions(maf = rep(0.3, ncol(X))))
+w <- prsCsWeights(
+  stat,
+  LdMatrix(cor(X)),
+  fitRetention = "slim",
+  methodArgs = PrsCsOptions(maf = rep(0.3, ncol(X)))
+)
+attr(w, "fit")$phiEst
 }

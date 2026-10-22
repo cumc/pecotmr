@@ -11,7 +11,8 @@ CrossValidationParam(
   numThreads = 1,
   samplePartition = NULL,
   maxVariants = NULL,
-  weightMethods = NULL
+  weightMethods = NULL,
+  fitFullData = TRUE
 )
 }
 \arguments{
@@ -39,6 +40,13 @@ Unset cross-validates every method that produced non-zero weights.
 \strong{\code{twasWeightsPipeline} only} ---
 \code{fineMappingPipeline} ignores it, because its \code{methods=} are
 fine-mapping methods and its CV refits all of them.}
+
+\item{fitFullData}{Logical. \code{TRUE} (default) fits the final model on
+the full data as well as cross-validating it; \code{FALSE} keeps only
+the cross-validation results, and requires \code{folds >= 2}. A row
+from such a run carries its \code{cvResult} and nothing else, so it
+cannot be exported and cannot supply full-data weights or fits
+downstream.}
 }
 \value{
 A \code{CrossValidationParam} object, a \code{\link{MethodParam}}.
@@ -47,12 +55,13 @@ A \code{CrossValidationParam} object, a \code{\link{MethodParam}}.
 How cross-validation runs, shared by
   \code{\link{fineMappingPipeline}} and \code{\link{twasWeightsPipeline}}.
 
-  \code{folds}, \code{numThreads} and \code{samplePartition} mean the same
-  thing in both. \code{maxVariants} and \code{weightMethods} are honoured
-  by \code{\link{twasWeightsPipeline}} only and are \strong{ignored} by
-  \code{\link{fineMappingPipeline}}, so one bundle can be handed to
-  either pipeline unchanged.
+  \code{folds}, \code{numThreads}, \code{samplePartition} and
+  \code{fitFullData} mean the same thing in both. \code{maxVariants} and
+  \code{weightMethods} are honoured by \code{\link{twasWeightsPipeline}}
+  only and are \strong{ignored} by \code{\link{fineMappingPipeline}}, so
+  one bundle can be handed to either pipeline unchanged.
 }
 \examples{
 CrossValidationParam(folds = 10, numThreads = 4)
+CrossValidationParam(folds = 5, fitFullData = FALSE)
 }

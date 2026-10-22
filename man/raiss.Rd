@@ -5,10 +5,10 @@
 \title{Impute Summary Statistics Using LD (RAISS)}
 \usage{
 raiss(
-  refPanel,
+  refPanel = NULL,
   knownZscores,
   ldMatrix = NULL,
-  genotypeMatrix = NULL,
+  genotypes = NULL,
   lamb = 0.01,
   rcond = 0.01,
   svdTol = 1e-08,
@@ -19,26 +19,33 @@ raiss(
 }
 \arguments{
 \item{refPanel}{A data frame containing 'chrom', 'pos', 'variant_id', 'A1',
-and 'A2'.}
+and 'A2'. Optional when the LD comes as an \code{LdMatrix} or a genotype
+panel, whose own variants are used; \code{knownZscores} must then label
+chromosomes canonically, as character (e.g. \code{"22"}). Required
+with a plain \code{ldMatrix}, whose rows and columns follow it.}
 
 \item{knownZscores}{A data frame containing 'chrom', 'pos', 'variant_id',
 'A1', 'A2', and 'z' values.}
 
-\item{ldMatrix}{Either a square matrix or a list of matrices for LD blocks.
-Provide either \code{ldMatrix} or \code{genotypeMatrix}, not both.}
+\item{ldMatrix}{A square LD matrix over \code{refPanel}'s variants, in its
+order, or an \code{LdMatrix} covering them. Provide either
+\code{ldMatrix} or \code{genotypes}, not both.}
 
-\item{genotypeMatrix}{A centered and scaled genotype matrix (n x p) as an
-alternative to \code{ldMatrix}. Column order must match the variant order
-in \code{refPanel}. When provided, the imputation uses an SVD-based
-approach that avoids forming the p x p LD matrix.}
+\item{genotypes}{A genotype panel (see \code{\link{readGenotypes}}) or a
+\code{\link{GenotypeMixture}} covering the variants, as an alternative
+to \code{ldMatrix}. Its dosages are matched to \code{refPanel} by
+variant and allele, mean-imputed and standardized here.}
 
 \item{lamb}{Regularization term added to the diagonal of the ldMatrix.}
 
-\item{rcond}{Threshold for filtering eigenvalues in the pseudo-inverse
-computation (only used with ldMatrix path).}
+\item{rcond}{Eigenvalue cutoff for the pseudo-inverse of the known
+variants' LD: directions whose ridged eigenvalue is below \code{rcond}
+times the largest are dropped. Applied on both routes, so a genotype
+panel and the LD matrix computed from it give the same imputation.}
 
-\item{svdTol}{Relative tolerance for filtering small singular values (only
-used with genotypeMatrix path).}
+\item{svdTol}{Relative tolerance below which singular values of the
+standardized genotypes are treated as numerically zero (genotype route
+only).}
 
 \item{r2Threshold}{R square threshold below which SNPs are filtered from the
 output.}
@@ -49,7 +56,7 @@ output.}
 }
 \value{
 A list containing filtered and unfiltered results, and filtered LD
-  matrix (ldMat is NULL when using genotypeMatrix path).
+  matrix (ldMat is NULL on the genotype route).
 }
 \description{
 An R port of the RAISS summary-statistic imputation library, described in
@@ -63,10 +70,12 @@ Zaitlen N, et al. (2014), "Fast and accurate imputation of summary
 statistics enhances evidence of functional enrichment", Bioinformatics
 30(20):2906-2914. \doi{10.1093/bioinformatics/btu416}
 
-This function can process either a single LD matrix or a list of LD matrices
-for different blocks. For a list of matrices, it processes each block
-separately and combines the results. Alternatively, it can accept a genotype
-matrix X directly, avoiding the need to form the p x p LD matrix (memory and
+One call imputes one region, from either of the two kinds of LD reference.
+The LD can be given as a square correlation matrix or an
+\code{\link{LdMatrix}}, and the imputation then inverts it. Or a genotype
+panel from \code{\link{readGenotypes}} can be given instead, and the
+imputation then works from the singular value decomposition of its
+standardized dosages, never forming the p x p LD matrix (memory and
 compute savings when n << p).
 }
 \examples{

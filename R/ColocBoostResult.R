@@ -23,7 +23,7 @@
 #
 # What the two DO share is the LD panel they were computed against and the
 # projection surface, so both extend ColocResultBase -- which carries the
-# ldSketch slot and its accessor -- and both answer colocPairs() and
+# ldReference slot and its accessor -- and both answer colocPairs() and
 # colocVariants().
 #
 #   element      the member variants of one CoS
@@ -32,7 +32,7 @@
 #                CharacterList -- native variable arity), purity, cosNpc,
 #                minNpcOutcome, topVariable, topVariableVcp, focalOutcome,
 #                isColocalized
-#   slots        ldSketch, outcomeInfo, regionVcp, computingTime
+#   slots        ldReference, outcomeInfo, regionVcp, computingTime
 #
 # Uncolocalized (outcome-specific) sets are elements too, flagged
 # isColocalized = FALSE, rather than living in a second container: they have
@@ -204,7 +204,7 @@ setMethod("show", "ColocBoostResult", function(object) {
 #'   naming the GWAS study for the per-study \code{separate_gwas} runs.
 #' @param outcomeInfo Data frame mapping outcome \code{name} to \code{study},
 #'   \code{context}, \code{trait} and \code{dataForm}.
-#' @param ldSketch Optional genotype panel (see
+#' @param ldReference Optional genotype panel (see
 #'   \code{\link{readGenotypes}}).
 #' @param computingTime Optional list of per-analysis timings.
 #' @param includeUncolocalized Keep the outcome-specific (uncolocalized) sets
@@ -232,7 +232,7 @@ ColocBoostResult <- function(
     analysis,
     gwasStudy = NA_character_,
     outcomeInfo = NULL,
-    ldSketch = NULL,
+    ldReference = NULL,
     computingTime = list(),
     includeUncolocalized = TRUE
 ) {
@@ -257,7 +257,7 @@ ColocBoostResult <- function(
         rows,
         outcomeInfo = as.data.frame(outcomeInfo),
         regionVcp = .cbrRegionVcp(results),
-        ldSketch = .asLdSketch(ldSketch),
+        ldReference = .asLdRef(ldReference),
         computingTime = computingTime
     )
 }
@@ -430,8 +430,6 @@ ColocBoostResult <- function(
     if (is.null(v) || length(v) == 0L) NA_real_ else as.numeric(v)[[1L]]
 }
 
-# @noRd
-
 # `FALSE` means "no focal outcome was set"; anything else is the trait name.
 # @noRd
 .cbrFocalOutcome <- function(v) {
@@ -471,7 +469,7 @@ ColocBoostResult <- function(
     rows,
     outcomeInfo,
     regionVcp,
-    ldSketch,
+    ldReference,
     computingTime
 ) {
     elements <- map(rows, .cbrElementFor)
@@ -482,7 +480,7 @@ ColocBoostResult <- function(
     obj <- new(
         "ColocBoostResult",
         grl,
-        ldSketch = .asLdSketch(ldSketch),
+        ldReference = .asLdRef(ldReference),
         outcomeInfo = outcomeInfo,
         regionVcp = regionVcp,
         computingTime = computingTime

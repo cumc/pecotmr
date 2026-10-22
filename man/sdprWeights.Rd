@@ -4,22 +4,44 @@
 \alias{sdprWeights}
 \title{Extract weights from sdpr function}
 \usage{
-sdprWeights(stat, LD, methodArgs = SdprOptions())
+sdprWeights(
+  stat,
+  ldReference,
+  fitRetention = c("none", "slim", "full"),
+  methodArgs = SdprOptions()
+)
 }
 \arguments{
-\item{stat}{A list of summary statistics with elements \code{b} (effect
-sizes) and \code{n} (per-variant sample sizes).}
+\item{stat}{A list of summary statistics: \code{n} (per-variant sample
+sizes) and the marginal effects as \code{cor} (standardized), \code{z},
+\code{b} with \code{seb}, or \code{b} alone, taken as already
+standardized. The engine receives the standardized effects z / sqrt(n),
+with n the median of \code{n}.}
 
-\item{LD}{Numeric LD (correlation) matrix aligned to the variants in
-\code{stat}.}
+\item{ldReference}{The LD reference the statistics' variants are matched
+to by \code{stat$variantNames}: a genotype panel (see
+\code{\link{readGenotypes}}), a \code{\link{GenotypeMixture}} or an
+\code{\link{LdMatrix}}. A genotype reference's LD is used through its
+standardized genotypes and not formed as a matrix, except under
+\code{optLlk = 2} when the per-variant sample sizes and arrays are
+too varied for its low-rank form to pay.}
 
-\item{methodArgs}{Options forwarded to \code{sdpr}, built
-with \code{\link{SdprOptions}}. A bare list is refused: it cannot be
-checked against the engine, so a misspelled option would be
+\item{fitRetention}{How much of the fit is kept as the \code{"fit"}
+attribute of the returned weights: \code{"none"} (default) attaches
+nothing, \code{"slim"} and \code{"full"} attach the sampler's
+estimates, \code{betaEst} and the heritability \code{h2}. This engine
+keeps no trimmable intermediates, so the two retaining levels behave
+alike here.}
+
+\item{methodArgs}{Options forwarded to the sampler, \code{\link{sdpr}},
+built with \code{\link{SdprOptions}}. A bare list is refused: it cannot
+be checked against the engine, so a misspelled option would be
 silently ignored.}
 }
 \value{
-A numeric vector of the posterior SNP coefficients.
+A numeric vector of the posterior SNP coefficients. Unless
+  \code{fitRetention = "none"}, the sampler's estimates, the heritability
+  among them, are attached as attribute \code{"fit"}.
 }
 \description{
 Extract weights from sdpr function
@@ -33,8 +55,9 @@ ss <- lapply(
 stat <- list(
   b = vapply(ss, `[`, numeric(1), 1L),
   seb = vapply(ss, `[`, numeric(1), 2L),
-  n = rep(nrow(X), ncol(X))
+  n = rep(nrow(X), ncol(X)),
+  variantNames = colnames(X)
 )
-LD <- cor(X)
-sdprWeights(stat, LD)
+w <- sdprWeights(stat, LdMatrix(cor(X)), fitRetention = "slim")
+attr(w, "fit")$h2
 }

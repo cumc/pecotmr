@@ -32,8 +32,8 @@ exportToBed(x, outputPath, ...)
 )
 }
 \arguments{
-\item{x}{A \code{FineMappingResult} or \code{TwasWeights} object, or a
-\code{list} of either, to combine first.}
+\item{x}{A \code{QtlFineMappingResult}, \code{GwasFineMappingResult} or
+\code{TwasWeights} object, or a \code{list} of them, to combine first.}
 
 \item{outputPath}{Output path. A \code{.gz} / \code{.bgz} extension selects
 bgzip + tabix (via Rsamtools, so no htslib binary is needed); any other
@@ -41,14 +41,14 @@ extension writes a plain table.}
 
 \item{...}{Additional arguments passed to methods.}
 
-\item{schema}{\code{FineMappingResult} only: which published schema to
+\item{schema}{Fine-mapping results only: which published schema to
 write, \code{"topLoci"} (default) or \code{"fsusie"}.}
 
 \item{signalCutoff}{PIP cutoff passed to \code{\link{topLoci}}
-(\code{FineMappingResult}, \code{"topLoci"} schema only). Default 0.025.}
+(fine-mapping results, \code{"topLoci"} schema only). Default 0.025.}
 
 \item{minPurity}{Optional credible-set purity cutoff passed to
-\code{\link{topLoci}} (\code{FineMappingResult}, \code{"topLoci"} schema
+\code{\link{topLoci}} (fine-mapping results, \code{"topLoci"} schema
 only). Default \code{NULL} for no purity filter.}
 
 \item{coverage}{Which credible-set coverage levels to publish, as
@@ -99,7 +99,7 @@ observation.
 }
 \details{
 A \code{TwasWeights} writes one table, a row per (variant, weight column).
-A \code{FineMappingResult} offers two, selected with \code{schema}:
+A fine-mapping result offers two, selected with \code{schema}:
 \describe{
   \item{\code{"topLoci"}}{(default) the posterior view joined to the
     marginal one, a row per (variant, context).}

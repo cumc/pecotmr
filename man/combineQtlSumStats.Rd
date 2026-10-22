@@ -4,14 +4,14 @@
 \alias{combineQtlSumStats}
 \title{Combine QtlSumStats collections}
 \usage{
-combineQtlSumStats(..., ldSketch = NULL)
+combineQtlSumStats(..., ldReference = NULL)
 }
 \arguments{
 \item{...}{Two or more \code{QtlSumStats} objects, or a single \code{list}
 of them.}
 
-\item{ldSketch}{Optional genotype panel (see \code{\link{readGenotypes}}) to
-attach to the combined collection, overriding the unioned one. Default
+\item{ldReference}{Optional genotype panel (see \code{\link{readGenotypes}})
+to attach to the combined collection, overriding the unioned one. Default
 \code{NULL}.}
 }
 \value{
@@ -27,9 +27,9 @@ lacking an optional column is NA-padded.
 The three collection-level slots are merged rather than taken from the first
 input, on the same rules as \code{\link{combineGwasSumStats}}: \code{genome}
 and the \code{\link{summaryStatsQc}} options must agree, the per-element
-\code{qcInfo$entryAudit} concatenates in element order, and the LD sketches
-union over the shared genotype handle (all-\code{NULL} stays \code{NULL},
-which is the usual case for individual-level QTL data).
+\code{qcInfo$entryAudit} concatenates in element order, and the LD
+references combine the same way (all-\code{NULL} stays \code{NULL}, which
+is the usual case for individual-level QTL data).
 }
 \examples{
 data(qtlSumStatsExample)

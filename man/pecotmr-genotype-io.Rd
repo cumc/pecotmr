@@ -2,10 +2,11 @@
 % Please edit documentation in R/genotypeIo.R
 \name{pecotmr-genotype-io}
 \alias{pecotmr-genotype-io}
-\title{Genotype I/O via GenotypeHandle}
+\title{Genotype I/O}
 \description{
-Read genotype data from various formats (VCF, plink1, plink2,
-  GDS) and provide block-level genotype extraction without requiring format
-  conversion.
+Read genotype data in its own format (VCF, plink1, plink2,
+  GDS, BGEN) as a lazily read genotype panel, without converting it:
+  PLINK2 and BGEN files through a GenotypeHandle, VCF, GDS and PLINK1
+  files through a GenotypeDosageSeed.
 }
 \keyword{internal}

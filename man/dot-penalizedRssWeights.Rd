@@ -6,7 +6,7 @@
 \usage{
 .penalizedRssWeights(
   stat,
-  LD,
+  ldReference,
   penalty,
   s = c(0.2, 0.5, 0.9, 1),
   gamma = NULL,
@@ -14,18 +14,22 @@
   lambda0 = 0,
   lambda2 = 0,
   selection = c("ldQuadratic", "minFbeta"),
+  fitRetention = c("none", "slim", "full"),
   methodArgs = PenalizedRssOptions()
 )
 }
 \arguments{
-\item{stat, LD, s, selection, penalty, gamma, alpha, lambda0, lambda2}{See the
-public wrappers for details.}
+\item{stat, ldReference, s, selection, penalty, gamma, alpha, lambda0, lambda2}{See
+the public wrappers for details.}
+
+\item{fitRetention}{How much of the search is kept as the \code{"fit"}
+attribute; see \code{\link{scadRssWeights}}.}
 
 \item{methodArgs}{Options forwarded to \code{penalizedRss}, built with
 \code{\link{PenalizedRssOptions}}.}
 }
 \value{
-Numeric weight vector of length \code{nrow(LD)}.
+Numeric weight vector, one weight per variant of \code{stat}.
 }
 \description{
 Shared implementation for \code{scadRssWeights()} and \code{mcpRssWeights()}.

@@ -102,8 +102,9 @@ setMethod(
 
 #' @title Detect Annotation File Format
 #' @description Detect annotation file format from extension. This is separate
-#'   from \code{.h2DetectFormat} because BED annotation files (genomic intervals
-#'   for rtracklayer) must be distinguished from plink BED files.
+#'   from the genotype format detection (\code{.genotypePathFormat}) because
+#'   BED annotation files (genomic intervals for rtracklayer) must be
+#'   distinguished from plink BED files.
 #' @param path Character, file path.
 #' @return Character, one of "bigwig", "ldsc_annot", or "bed".
 #' @keywords internal

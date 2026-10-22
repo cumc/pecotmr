@@ -347,17 +347,15 @@ NULL
     samplePartitions
 }
 
-# @noRd
 # multicoreWorkers() rather than bpworkers(MulticoreParam()): the two answer
 # the same number, but constructing a MulticoreParam costs ~0.6s (almost all
 # of it garbage collection) and this runs on every fit.
+# @noRd
 .cvNumCores <- function(numThreads) {
     avail <- multicoreWorkers()
     min(if (numThreads == -1) avail else numThreads, avail)
 }
 
-# Run each fold (parallel via BiocParallel when >= 2 cores).
-# @noRd
 # MulticoreParam for CV / weight-fitting parallelism. A NULL seed keeps the
 # historical default RNGseed = 1L (reproducible); a caller-supplied seed
 # overrides it so the parallel L'Ecuyer streams are reproducible under it. This
@@ -383,6 +381,8 @@ NULL
     }
 }
 
+# Run each fold (parallel via BiocParallel when >= 2 cores).
+# @noRd
 .cvRunFolds <- function(foldIds, cvState, numCores) {
     if (numCores >= 2) {
         return(bplapply(
@@ -528,19 +528,43 @@ setClass(
         numThreads = "numeric",
         samplePartition = "list_OR_NULL",
         maxVariants = "numeric_OR_NULL",
-        weightMethods = "list_OR_NULL"
+        weightMethods = "list_OR_NULL",
+        fitFullData = "logical"
     )
 )
+
+setValidity("CrossValidationParam", function(object) {
+    problems <- .cvFitFullDataProblem(object@fitFullData, object@folds)
+    if (length(problems) == 0L) TRUE else problems
+})
+
+# `fitFullData = FALSE` asks for cross-validation results alone, which is only
+# a request for something when cross-validation runs: without folds there
+# would be no fit of any kind. Checked here, at construction, rather than
+# separately by each pipeline that reads it.
+# @noRd
+.cvFitFullDataProblem <- function(fitFullData, folds) {
+    if (length(fitFullData) != 1L || is.na(fitFullData)) {
+        return("`fitFullData` must be a single TRUE or FALSE.")
+    }
+    if (!fitFullData && !.cvEnabled(list(folds = folds))) {
+        return(str_c(
+            "fitFullData = FALSE requires cross-validation (folds >= 2): ",
+            "without folds there would be no fit at all."
+        ))
+    }
+    NULL
+}
 
 #' @title Cross-Validation Settings
 #' @description How cross-validation runs, shared by
 #'   \code{\link{fineMappingPipeline}} and \code{\link{twasWeightsPipeline}}.
 #'
-#'   \code{folds}, \code{numThreads} and \code{samplePartition} mean the same
-#'   thing in both. \code{maxVariants} and \code{weightMethods} are honoured
-#'   by \code{\link{twasWeightsPipeline}} only and are \strong{ignored} by
-#'   \code{\link{fineMappingPipeline}}, so one bundle can be handed to
-#'   either pipeline unchanged.
+#'   \code{folds}, \code{numThreads}, \code{samplePartition} and
+#'   \code{fitFullData} mean the same thing in both. \code{maxVariants} and
+#'   \code{weightMethods} are honoured by \code{\link{twasWeightsPipeline}}
+#'   only and are \strong{ignored} by \code{\link{fineMappingPipeline}}, so
+#'   one bundle can be handed to either pipeline unchanged.
 #' @param folds Integer. Number of folds; \code{0} (the default) or
 #'   \code{1} skips cross-validation. The same value in both pipelines ---
 #'   \code{twasWeightsPipeline} used to default to \code{5}, which made an
@@ -561,16 +585,24 @@ setClass(
 #'   \strong{\code{twasWeightsPipeline} only} ---
 #'   \code{fineMappingPipeline} ignores it, because its \code{methods=} are
 #'   fine-mapping methods and its CV refits all of them.
+#' @param fitFullData Logical. \code{TRUE} (default) fits the final model on
+#'   the full data as well as cross-validating it; \code{FALSE} keeps only
+#'   the cross-validation results, and requires \code{folds >= 2}. A row
+#'   from such a run carries its \code{cvResult} and nothing else, so it
+#'   cannot be exported and cannot supply full-data weights or fits
+#'   downstream.
 #' @return A \code{CrossValidationParam} object, a \code{\link{MethodParam}}.
 #' @examples
 #' CrossValidationParam(folds = 10, numThreads = 4)
+#' CrossValidationParam(folds = 5, fitFullData = FALSE)
 #' @export
 CrossValidationParam <- function(
     folds = 0,
     numThreads = 1,
     samplePartition = NULL,
     maxVariants = NULL,
-    weightMethods = NULL
+    weightMethods = NULL,
+    fitFullData = TRUE
 ) {
     new(
         "CrossValidationParam",
@@ -578,22 +610,24 @@ CrossValidationParam <- function(
         numThreads = numThreads,
         samplePartition = samplePartition,
         maxVariants = maxVariants,
-        weightMethods = weightMethods
+        weightMethods = weightMethods,
+        fitFullData = fitFullData
     )
 }
 
 # The fields a pipeline reads, as a plain list so call sites index it without
 # caring that the caller passed a constructor result.
 # @noRd
-.cvResolve <- function(crossValidationArgs) {
+.cvResolve <- function(crossValidationParam) {
     list(
-        folds = crossValidationArgs$folds %||% 0,
-        numThreads = crossValidationArgs$numThreads %||% 1,
-        samplePartition = crossValidationArgs$samplePartition,
+        folds = crossValidationParam$folds %||% 0,
+        numThreads = crossValidationParam$numThreads %||% 1,
+        samplePartition = crossValidationParam$samplePartition,
         # -1 is twasWeightsCv()'s "no cap" sentinel. fineMappingPipeline
         # resolves these two as well but never reads them.
-        maxVariants = crossValidationArgs$maxVariants %||% -1,
-        weightMethods = crossValidationArgs$weightMethods
+        maxVariants = crossValidationParam$maxVariants %||% -1,
+        weightMethods = crossValidationParam$weightMethods,
+        fitFullData = crossValidationParam$fitFullData %||% TRUE
     )
 }
 
@@ -601,8 +635,8 @@ CrossValidationParam <- function(
 # and anything that needs out-of-fold predictions has to ask this rather than
 # testing `folds` itself.
 # @noRd
-.cvEnabled <- function(crossValidationArgs) {
-    folds <- crossValidationArgs$folds %||% 0
+.cvEnabled <- function(crossValidationParam) {
+    folds <- crossValidationParam$folds %||% 0
     !is.null(folds) && length(folds) == 1L && !is.na(folds) && folds >= 2L
 }
 
@@ -611,9 +645,9 @@ CrossValidationParam <- function(
 # unimplemented but meaningless -- saying so beats running to completion and
 # returning results that were never cross-validated.
 # @noRd
-.cvRefuseOnSumstats <- function(crossValidationArgs, pipeline, cls) {
-    set <- names(crossValidationArgs)[
-        map_lgl(as.list(crossValidationArgs), .cvFieldIsSet)
+.cvRefuseOnSumstats <- function(crossValidationParam, pipeline, cls) {
+    set <- names(crossValidationParam)[
+        map_lgl(as.list(crossValidationParam), .cvFieldIsSet)
     ]
     if (length(set) == 0L) {
         return(invisible(NULL))
@@ -627,9 +661,10 @@ CrossValidationParam <- function(
 
 # A field counts as "set" when it differs from the constructor's own default,
 # so passing CrossValidationParam() unchanged is not mistaken for a request.
+# fitFullData = TRUE is that field's default.
 # @noRd
 .cvFieldIsSet <- function(x) {
-    if (is.null(x)) {
+    if (is.null(x) || isTRUE(x)) {
         return(FALSE)
     }
     # numThreads = 1 and folds = 0 are the no-op defaults.
@@ -648,10 +683,14 @@ CrossValidationParam <- function(
 # two pipelines disagreed on what an unspecified `cvFolds` meant; converging
 # on "off unless asked" makes one bundle mean one thing. The knock-on is that
 # the SR-TWAS ensemble, which needs out-of-fold predictions, no longer runs by
-# default -- so `ensemble` defaults to FALSE too, and asking for an ensemble
+# default -- so `EnsembleParam(enabled =)` defaults to FALSE too, and asking
+# for an ensemble
 # without folds is an error rather than a silently missing row.
 #
-# Two of the five fields are honoured by twasWeightsPipeline() only, and are
+# `fitFullData` means the same thing in both pipelines: keep only the
+# cross-validation results, skipping the full-data fit.
+#
+# Two of the six fields are honoured by twasWeightsPipeline() only, and are
 # IGNORED rather than rejected by fineMappingPipeline() -- one bundle the
 # caller can hand to either pipeline without rewriting it:
 #

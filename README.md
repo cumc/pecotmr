@@ -50,8 +50,9 @@ Now you should be able to build `pecotmr` from source.
 ## Developer's notes
 
 + When any changes are made to `roxygen2` markup or the C++ code in
-the src directory, run `devtools::document()` to update the
-[RcppExports.cpp](src/RcppExports.cpp), the package namespaces (see
+the src directory, run `devtools::document()` to update the cpp11
+registration code ([src/cpp11.cpp](src/cpp11.cpp) and
+[R/cpp11.R](R/cpp11.R)), the package namespaces (see
 [NAMESPACE](NAMESPACE)), and the package documentation files (in the
 "man" subdirectory),
 

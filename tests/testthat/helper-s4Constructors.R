@@ -7,8 +7,8 @@ context("s4Constructors")
 .sc_makeGenotypeHandle <- function(snp_n = 5L) {
     new(
         "GenotypeHandle",
-        path = "/tmp/test.gds",
-        format = "gds",
+        path = "/tmp/test",
+        format = "plink2",
         snpInfo = data.frame(
             SNP = paste0("rs", seq_len(snp_n)),
             CHR = rep("1", snp_n),

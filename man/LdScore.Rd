@@ -20,7 +20,8 @@ LdScore(
 \code{BP}, \code{A1}, \code{A2} (and optionally \code{MAF}).}
 
 \item{ldScores}{A numeric matrix, one row per variant. The first column is
-the base LD score (sum of r^2); further columns are
+the base LD score (sum of r^2, which \code{\link{buildLdScore}} takes as
+ldsc's unbiased r^2, as ldsc's own score files do); further columns are
 annotation-stratified scores.}
 
 \item{ldScoreWeights}{Numeric regression weights, one per variant.}

@@ -4,7 +4,7 @@
 # DFrame-subclass collection keyed by the identity tuple (study, context,
 # trait, method). Each row holds a FineMappingRow payload. Class-level
 # slots:
-#   * ldSketch   GenotypeHandle (NULL for individual-level fits, the
+#   * ldReference   GenotypeHandle (NULL for individual-level fits, the
 #                LD-sketch handle for RSS-derived fits).
 # Optional columns jointStudies / jointContexts / jointTraits carry
 # semicolon-joined member identities for cross-axis joint fits emitted by
@@ -39,7 +39,7 @@ setClass(
 # ---- QtlFineMappingResult validity helpers ---------------------------------
 
 # Collect all contract violations (empty vector = valid). The per-entry checks
-# run only once the required columns are present; the ldSketch check always
+# run only once the required columns are present; the ldReference check always
 # runs.
 # @noRd
 #' @importFrom checkmate makeAssertCollection assertNames checkNames
@@ -92,10 +92,6 @@ setClass(
     str_c("missing entry payload columns: ", res)
 }
 
-# @noRd
-
-# @noRd
-
 # Each present joint* column must be character.
 # @noRd
 .qfmrCheckJointCols <- function(object, jointCols) {
@@ -138,7 +134,7 @@ setClass(
     .tupleColumn(object, cn)
 }
 
-# ldSketch must be a GenotypeHandle or NULL.
+# ldReference must be a GenotypeHandle or NULL.
 
 # The identity-tuple vectors and the payload list are parallel: one entry per
 # (study, context, trait, method). A length mismatch would otherwise surface as
@@ -163,8 +159,8 @@ setClass(
 #' @title Create a QtlFineMappingResult Collection
 #' @description Construct a \code{QtlFineMappingResult} DFrame-subclass
 #'   collection from per-tuple vectors and a list of \code{FineMappingRow}
-#'   payloads (one per tuple). The optional \code{ldSketch} slot records the LD
-#'   reference used for RSS-derived fits; pass \code{NULL} (the default) for
+#'   payloads (one per tuple). The optional \code{ldReference} slot records the
+#'   LD reference used for RSS-derived fits; pass \code{NULL} (the default) for
 #'   individual-level fits.
 #' @param studyName Character vector of study identifiers (per tuple). Use the
 #'   sentinel \code{"joint"} for rows produced by a cross-study joint fit.
@@ -188,7 +184,7 @@ setClass(
 #' @param dataSource Optional per-row label for the kind of input the fit saw,
 #'   \code{"individual"} or \code{"sumstat"}. Recorded rather than derived: a
 #'   combined collection can hold rows of both kinds, and its single
-#'   \code{ldSketch} cannot say which row came from which.
+#'   \code{ldReference} cannot say which row came from which.
 #' @param weightStandardized Optional per-row flag: whether the posterior
 #'   effect is on the STANDARDIZED genotype scale. The posterior effect IS the
 #'   prediction weight, so it carries the same scale question as a TWAS
@@ -196,9 +192,9 @@ setClass(
 #'   it standardizes genotypes before fitting, and the posterior mean is
 #'   reported on the scale of the \code{X} the fit was given. The argument
 #'   exists for a collection assembled by hand, where only the caller knows.
-#' @param ldSketch An optional genotype panel (see \code{\link{readGenotypes}})
-#'   (the LD reference for RSS-derived fits), or \code{NULL} for
-#'   individual-level fits.
+#' @param ldReference An optional genotype panel (see
+#'   \code{\link{readGenotypes}}) (the LD reference for RSS-derived fits), or
+#'   \code{NULL} for individual-level fits.
 #' @param traitPos Optional per-row trait genomic anchor (a \code{GRanges} or
 #'   \code{NULL}), carried forward as provenance; not part of the identity key.
 #'   \code{NULL} (default) omits the column.
@@ -232,7 +228,7 @@ QtlFineMappingResult <- function(
     dataType = NULL,
     dataSource = NULL,
     weightStandardized = NULL,
-    ldSketch = NULL
+    ldReference = NULL
 ) {
     .qfmrAssertArgs(
         studyName,
@@ -264,13 +260,7 @@ QtlFineMappingResult <- function(
         weightStandardized,
         n
     )
-    obj <- new(
-        "QtlFineMappingResult",
-        .rtlGrlWithMetadata(payloads, cols),
-        ldSketch = .asLdSketch(ldSketch)
-    )
-    validObject(obj)
-    obj
+    .rtlNewValidated("QtlFineMappingResult", payloads, cols, ldReference)
 }
 
 # Every argument's type contract, checked before anything is built.
@@ -509,10 +499,10 @@ setMethod("show", "QtlFineMappingResult", function(object) {
             .trim = FALSE
         ))
     }
-    ldSrc <- if (is.null(object@ldSketch)) {
+    ldSrc <- if (is.null(object@ldReference)) {
         "NULL (individual-level fit)"
     } else {
-        .ldSketchLabel(object@ldSketch)
+        .ldRefLabel(object@ldReference)
     }
-    cat(glue("  LD sketch: {ldSrc}\n", .trim = FALSE))
+    cat(glue("  LD reference: {ldSrc}\n", .trim = FALSE))
 })

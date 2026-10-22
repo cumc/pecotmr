@@ -46,7 +46,7 @@ Alongside them the object keeps a `colData` naming every sample and a
 need not share a sample set — plus its own slots:
 
 *  `study` — study identifier (length-1 character).
-*  `genotypes` — the genotype panel (a lazy PLINK1/PLINK2/VCF/GDS source,
+*  `genotypes` — the genotype panel (a lazy PLINK1/PLINK2/VCF/GDS/BGEN source,
     read with `readGenotypes()`) that the dosage assay reads through.
 *  QC thresholds — `mafCutoff`, `macCutoff`, `xvarCutoff`, `imissCutoff`,
     `keepIndel`, `keepVariants`, `scaleResiduals`. Stored as **lazy** filters,
@@ -276,7 +276,8 @@ names(qtlDatasets(msdManual))
 ```
 
 To attach a summary-only study, pass a `QtlSumStats` object to the `sumStats`
-argument. manifest form, supply `sumStatsManifest`, `genome`, and `ldSketch`).
+argument. For the manifest form, supply `sumStatsManifest`, `genome`, and
+`ldReference`.
 
 ## Excluding related samples
 

@@ -8,8 +8,10 @@ Estimate heritability and functional enrichment by weighted
   least squares on LD scores (Finucane et al. 2015) -- the original method
   the other three estimators descend from. Per-variant \eqn{\chi^2_j} is
   regressed on annotation-stratified LD scores
-  \eqn{\ell_{jC} = \sum_{k \in C} r^2_{jk}} with a confounding
-  intercept, fitting
+  \eqn{\ell_{jC} = \sum_{k \in C} r^2_{jk}}, each \eqn{r^2} being ldsc's
+  unbiased estimate \code{r^2 - (1 - r^2) / (n - 2)} at the reference
+  panel size \code{n} (see \code{\link{buildLdScore}}), with a
+  confounding intercept, fitting
   \eqn{E[\chi^2_j] = N \sum_C \tau_C \ell_{jC} + Na + 1}.
 
   Weights are LDSC's two multiplied factors, both floored at 1: the
@@ -24,8 +26,9 @@ Estimate heritability and functional enrichment by weighted
     \item{unstratified}{the two-step estimator: the intercept is fit on
       the variants with \eqn{\chi^2 < 30}, then held fixed while the
       slope is fit over all of them.}
-    \item{stratified}{no two-step -- upstream refuses one on a
-      partitioned design. Variants with \eqn{\chi^2 >} \code{max(0.001
+    \item{stratified}{no two-step -- the original \code{ldsc} refuses
+      one on a partitioned design. Variants with \eqn{\chi^2 >}
+      \code{max(0.001
       N, 80)} are dropped, the design is weighted once, and a single
       weighted least-squares fit follows.}
   }
@@ -35,15 +38,17 @@ Estimate heritability and functional enrichment by weighted
   than an error to clamp away, and clamping would move the heritability
   too.
 
-  Estimates agree with upstream \code{ldsc} to roughly 1e-6 relative;
-  the residual is a small ridge in the weighted solve, which upstream has
-  no equivalent of and which exists so an exactly singular design returns
-  a value rather than \code{NA}.
+  Estimates agree with the original \code{ldsc} implementation to
+  roughly 1e-6 relative; the residual is a small ridge in the weighted
+  solve, which the original has no equivalent of and which exists so an
+  exactly singular design returns a value rather than \code{NA}.
 
   Unlike \code{\link{pecotmr-h2-gldsc}} this needs only the per-variant
   scores when unstratified, so it runs on a scores-only
   \code{\link{LdScore}}; the stratified fit forms per-annotation scores
-  from the per-block LD matrices and therefore requires them.
+  from each block's LD, so it needs an \code{LdScore} that carries it:
+  one built from a genotype panel, or from \code{LdMatrix} blocks with
+  their matrices kept.
 
   \strong{Scale.} LD score regression is a genome-scale method -- real
   analyses regress over roughly a million variants. On a reference of a

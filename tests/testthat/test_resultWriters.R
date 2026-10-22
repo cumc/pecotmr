@@ -8,8 +8,8 @@
 makeTestGenotypeHandle <- function() {
     new(
         "GenotypeHandle",
-        path = "/tmp/test.gds",
-        format = "gds",
+        path = "/tmp/test",
+        format = "plink2",
         snpInfo = data.frame(),
         nSamples = 0L,
         sampleIds = character(),
@@ -33,7 +33,7 @@ makeTestGwasSumStats <- function(n = 5) {
         studyName = "test_trait",
         entry = list(gr),
         genome = "hg38",
-        ldSketch = makeTestGenotypeHandle()
+        ldReference = makeTestGenotypeHandle()
     )
 }
 
@@ -113,10 +113,10 @@ test_that("exportToVcf writes GwasSumStats to bgzipped VCF", {
 })
 
 # =============================================================================
-# FineMappingResult to VCF
+# Fine-mapping result to VCF
 # =============================================================================
 
-test_that("exportToVcf writes FineMappingResult to uncompressed VCF", {
+test_that("exportToVcf writes a fine-mapping result to uncompressed VCF", {
     skip_if_not_installed("VariantAnnotation")
     skip_if_not_installed("Biostrings")
 
@@ -153,10 +153,10 @@ test_that("exportToVcf(FineMapping): emits PIP + CS FORMAT fields", {
 })
 
 # =============================================================================
-# FineMappingResult to BCF
+# Fine-mapping result to BCF
 # =============================================================================
 
-test_that("exportToVcf writes FineMappingResult to BCF", {
+test_that("exportToVcf writes a fine-mapping result to BCF", {
     skip_if_not_installed("VariantAnnotation")
     skip_if_not_installed("Biostrings")
     skip_if_not_installed("Rsamtools")
@@ -212,10 +212,10 @@ test_that("exportToVcf writes FineMappingResult to BCF", {
 })
 
 # =============================================================================
-# Empty FineMappingResult errors
+# Empty fine-mapping result errors
 # =============================================================================
 
-test_that("exportToVcf errors on empty FineMappingResult", {
+test_that("exportToVcf errors on an empty fine-mapping result", {
     skip_if_not_installed("VariantAnnotation")
     skip_if_not_installed("Biostrings")
 
@@ -455,7 +455,7 @@ test_that("exportToVcf(FineMapping): a fit missing a variant leaves a gap", {
         studyName = c("studyA", "studyB"),
         entry = list(mkGr(), mkGr()),
         genome = "hg38",
-        ldSketch = makeTestGenotypeHandle()
+        ldReference = makeTestGenotypeHandle()
     )
 }
 
@@ -498,7 +498,7 @@ test_that("exportToVcf(SumStats): emits AF when MAF is present", {
             gr
         })),
         genome = "hg38",
-        ldSketch = makeTestGenotypeHandle()
+        ldReference = makeTestGenotypeHandle()
     )
     out <- tempfile(fileext = ".vcf")
     on.exit(unlink(out), add = TRUE)
@@ -526,7 +526,8 @@ test_that("exportToVcf(SumStats): .vcf.gz is renamed from .bgz", {
 })
 
 # =============================================================================
-# FineMappingResult: explicit selectors, no-match error, composite/empty tags
+# Fine-mapping result: explicit selectors, no-match error, composite/empty
+# tags
 # =============================================================================
 
 test_that("exportToVcf(FineMapping): selectors pick a single row", {
@@ -547,7 +548,7 @@ test_that("exportToVcf(FineMapping): selectors pick a single row", {
     expect_true(file.exists(out))
 })
 
-test_that("exportToVcf(FineMappingResult): no matching rows errors", {
+test_that("exportToVcf(fine-mapping result): no matching rows errors", {
     skip_if_not_installed("VariantAnnotation")
     skip_if_not_installed("Biostrings")
     fmr <- .makeMultiTupleQtlFmr()
@@ -927,7 +928,7 @@ test_that("exportToBed combines several results into one table", {
     )
 })
 
-test_that("exportToBed rejects a non-FineMappingResult", {
+test_that("exportToBed rejects something that is not a result collection", {
     out <- withr::local_tempfile(fileext = ".bed")
     expect_error(exportToBed(data.frame(a = 1), out), "FineMappingResult")
     expect_error(exportToBed(list(), out), "at least one")
@@ -1208,7 +1209,7 @@ test_that("exporting refuses a TwasWeights with no full-data fit", {
     )
 })
 
-test_that("exporting refuses a FineMappingResult row with no fitted variants", {
+test_that("exporting refuses a fine-mapping row with no fitted variants", {
     # Fine-mapping has no CV-only mode -- CV is attached on top of the fit --
     # but the export checks rather than assumes it.
     fmr <- QtlFineMappingResult(
@@ -1243,7 +1244,7 @@ test_that("exportToBed rejects a list that holds neither result type", {
     expect_error(exportToBed(list(), out), "at least one")
     expect_error(
         exportToBed(list(1, 2), out),
-        "TwasWeights or FineMappingResult"
+        "TwasWeights, QtlFineMappingResult or GwasFineMappingResult"
     )
 })
 
@@ -1450,11 +1451,11 @@ test_that("columns = 'all' appends the rest of the source view", {
     # additive: the published columns keep their place, the rest follow
     expect_identical(fullCols[seq_along(baseCols)], baseCols)
     # "all" is a request for whatever is there, so it stays subject to the
-    # drop-empty rule. Every remaining view column is empty in this fixture
-    # (`gene`, `event`, `grange_*`), so it appends nothing and never removes
-    # anything. An explicitly NAMED column is kept even when empty -- that is
-    # what the next test checks.
-    expect_identical(fullCols, baseCols)
+    # drop-empty rule: of the remaining view columns only `theta` holds values
+    # in this fixture, so it alone is appended, while the empty `gene`,
+    # `event` and `grange_*` stay out. An explicitly NAMED column is kept even
+    # when empty -- that is what the next test checks.
+    expect_identical(setdiff(fullCols, baseCols), "theta")
     # the range columns an as.data.frame() adds duplicate chr/pos, so they
     # must not come back under a second name
     expect_false(any(c("seqnames", "width", "strand") %in% fullCols))
@@ -1833,7 +1834,7 @@ test_that("a weights export takes AF from the collection's LD panel", {
     # standardized-to-raw conversion would need, so its absence is worth
     # seeing rather than faking.
     data(twasWeightsExample, envir = environment())
-    expect_null(ldSketch(twasWeightsExample))
+    expect_null(ldReference(twasWeightsExample))
     out <- withr::local_tempfile(fileext = ".bed")
     suppressMessages(exportToBed(twasWeightsExample, out))
     expect_false(is_in("AF", names(read.delim(out, check.names = FALSE))))
@@ -1885,7 +1886,7 @@ test_that("both formats skip fine-mapping-derived weight rows alike", {
     # The BED path skipped them and the VCF path published them, so the two
     # disagreed about what a weights file contains. The rule is the same in
     # both: those weights are the fine-mapping posterior re-expressed, and the
-    # FineMappingResult says strictly more.
+    # fine-mapping result says strictly more.
     skip_if_not_installed("VariantAnnotation")
     data(twasWeightsExample, envir = environment())
     derived <- is_in(
@@ -1924,26 +1925,40 @@ test_that("a VCF of only fine-mapping-derived weights is refused", {
 
 test_that("a weights export reads AF off the collection's LD panel", {
     # A TwasWeights element records only alleles and a weight, so the panel is
-    # the only place a frequency can come from. This panel carries no `af`, so
-    # the column stays absent rather than being faked.
+    # the only place a frequency can come from. The bundled sketch panel
+    # records its variants' frequencies (from its .afreq), and they are what
+    # is published; a panel recording none leaves the column absent rather
+    # than faked.
     data(ctwasWeightsExample, twasWeightsExample, envir = environment())
-    panel <- ldSketch(ctwasWeightsExample)
+    panel <- ldReference(ctwasWeightsExample)
     expect_false(is.null(panel))
     lasso <- twasWeightsExample[
         as.character(twasWeightsExample$method) == "lasso"
     ]
     expect_equal(nrow(lasso), 1L)
-    withPanel <- TwasWeights(
-        studyName = as.character(lasso$study),
-        context = as.character(lasso$context),
-        trait = as.character(lasso$trait),
-        method = as.character(lasso$method),
-        entry = list(.twrRowParts(lasso, 1L)),
-        ldSketch = panel
+    exported <- function(ref) {
+        withPanel <- TwasWeights(
+            studyName = as.character(lasso$study),
+            context = as.character(lasso$context),
+            trait = as.character(lasso$trait),
+            method = as.character(lasso$method),
+            entry = list(.twrRowParts(lasso, 1L)),
+            ldReference = ref
+        )
+        out <- withr::local_tempfile(fileext = ".bed")
+        exportToBed(withPanel, out)
+        read.delim(out, check.names = FALSE)
+    }
+    tbl <- exported(panel)
+    rr <- SummarizedExperiment::rowRanges(panel)
+    expect_equal(tbl$AF, rr$AF[match(tbl$ID, .grVariantIds(rr))])
+    expect_false(anyNA(tbl$AF))
+    keep <- c("SNP", "A1", "A2")
+    noAf <- SummarizedExperiment::`rowData<-`(
+        panel,
+        value = SummarizedExperiment::rowData(panel)[, keep]
     )
-    out <- withr::local_tempfile(fileext = ".bed")
-    exportToBed(withPanel, out)
-    expect_false(is_in("AF", names(read.delim(out, check.names = FALSE))))
+    expect_false(is_in("AF", names(exported(noAf))))
 })
 
 test_that("a sumstats collection with no Z publishes no EZ", {
@@ -1985,9 +2000,9 @@ test_that("a sumstats collection with no Z publishes no EZ", {
 # @noRd
 .pbw_jointWeights <- function(nVariant = 6L) {
     data(ctwasWeightsExample, envir = environment())
-    panel <- ldSketch(ctwasWeightsExample)
+    panel <- ldReference(ctwasWeightsExample)
     vids <- .grVariantIds(SummarizedExperiment::rowRanges(panel))
-    SummarizedExperiment::rowRanges(panel)$af <- seq(
+    SummarizedExperiment::rowRanges(panel)$AF <- seq(
         0.05,
         0.45,
         length.out = length(vids)
@@ -2006,7 +2021,7 @@ test_that("a sumstats collection with no Z publishes no EZ", {
             variantIds = vids[seq_len(nVariant)],
             weights = w[seq_len(nVariant), , drop = FALSE]
         )),
-        ldSketch = panel
+        ldReference = panel
     )
 }
 
@@ -2027,9 +2042,9 @@ test_that("AF is published from the LD panel when it records one", {
     out <- withr::local_tempfile(fileext = ".bed")
     exportToBed(tw, out)
     bed <- read.delim(out, check.names = FALSE)
-    panel <- ldSketch(tw)
+    panel <- ldReference(tw)
     rr <- SummarizedExperiment::rowRanges(panel)
-    expected <- mcols(rr)$af[match(bed$ID, .grVariantIds(rr))]
+    expected <- mcols(rr)$AF[match(bed$ID, .grVariantIds(rr))]
     expect_equal(bed$AF, expected)
 })
 
@@ -2157,4 +2172,123 @@ test_that("a weight matrix with no columns publishes a header-only file", {
             "ID"
         )
     )
+})
+
+# ---- THETA: the infinitesimal half of WGT -----------------------------------
+
+.thetaFit <- function(nV = 12, theta = NULL) {
+    set.seed(1)
+    alpha <- matrix(runif(2 * nV), nrow = 2)
+    alpha <- alpha / rowSums(alpha)
+    mu <- matrix(rnorm(2 * nV), nrow = 2)
+    fit <- list(
+        alpha = alpha,
+        mu = mu,
+        mu2 = mu^2 + 0.1,
+        pip = runif(nV),
+        X_column_scale_factors = rep(1, nV)
+    )
+    if (!is.null(theta)) {
+        fit$theta <- theta
+    }
+    fit
+}
+
+.thetaFmr <- function(theta = NULL, nV = 12) {
+    vids <- sprintf("chr1:%d:A:T", seq_len(nV) * 1000)
+    fit <- .thetaFit(nV, theta)
+    tl <- buildTopLoci(
+        fit = fit,
+        csTables = NULL,
+        variantNames = vids,
+        method = "susie_inf"
+    )
+    QtlFineMappingResult(
+        studyName = "s",
+        context = "c",
+        trait = "g",
+        method = "susie_inf",
+        entry = list(fineMappingRow(
+            variantIds = vids,
+            susieFit = fit,
+            topLoci = tl
+        ))
+    )
+}
+
+test_that("theta is the posterior effect's infinitesimal part, not an extra", {
+    nV <- 12
+    th <- rnorm(nV, sd = 0.05)
+    fit <- .thetaFit(nV, th)
+    vids <- sprintf("chr1:%d:A:T", seq_len(nV) * 1000)
+    tl <- buildTopLoci(
+        fit = fit,
+        csTables = NULL,
+        variantNames = vids,
+        method = "susie_inf"
+    )
+    sparse <- colSums(fit$alpha * fit$mu)
+    # coef.susie() sums the sparse and infinitesimal terms, so the published
+    # effect ALREADY contains theta -- publishing theta only exposes the split.
+    expect_equal(tl$posterior_mean, sparse + th, tolerance = 1e-10)
+    expect_equal(tl$posterior_theta, th, tolerance = 1e-10)
+    expect_equal(
+        tl$posterior_mean - tl$posterior_theta,
+        sparse,
+        tolerance = 1e-10
+    )
+})
+
+test_that("a fit with no infinitesimal term reports theta = 0, not NA", {
+    tl <- buildTopLoci(
+        fit = .thetaFit(12),
+        csTables = NULL,
+        variantNames = sprintf("chr1:%d:A:T", seq_len(12) * 1000),
+        method = "susie"
+    )
+    expect_true(all(tl$posterior_theta == 0))
+    expect_false(anyNA(tl$posterior_theta))
+})
+
+test_that("THETA round-trips through both published formats", {
+    th <- rnorm(12, sd = 0.05)
+    fmr <- .thetaFmr(th)
+    want <- as.data.frame(topLoci(fmr, signalCutoff = 0))$theta
+    expect_equal(sort(want), sort(th), tolerance = 1e-10)
+
+    bed <- withr::local_tempfile(fileext = ".bed")
+    exportToBed(fmr, bed)
+    expect_true(is_in("THETA", strsplit(readLines(bed, n = 1), "\t")[[1]]))
+    gotBed <- as.data.frame(topLoci(
+        readFineMappingResult(bed, weightStandardized = TRUE),
+        signalCutoff = 0
+    ))$theta
+    expect_equal(sort(gotBed), sort(want), tolerance = 1e-5)
+
+    vcf <- withr::local_tempfile(fileext = ".vcf.bgz")
+    exportToVcf(fmr, vcf)
+    hdr <- grep("^##FORMAT", readLines(gzfile(vcf)), value = TRUE)
+    expect_true(any(grepl("ID=THETA,", hdr)))
+    gotVcf <- as.data.frame(topLoci(
+        readFineMappingResult(vcf, weightStandardized = TRUE),
+        signalCutoff = 0
+    ))$theta
+    expect_equal(sort(gotVcf), sort(want), tolerance = 1e-5)
+})
+
+test_that("THETA is omitted for collections that never recorded one", {
+    # Objects written before theta was published carry no posterior_theta, so
+    # the view yields NA and the drop-empty rule keeps it out of the file --
+    # rather than inventing a column of zeros that claims the split is known.
+    # The example now records theta, so an older object is made from it.
+    data(qtlFineMappingExample)
+    old <- endoapply(qtlFineMappingExample, function(gr) {
+        S4Vectors::mcols(gr)$posterior_theta <- NULL
+        gr
+    })
+    d <- as.data.frame(topLoci(old, signalCutoff = 0))
+    expect_true(all(is.na(d$theta)))
+    bed <- withr::local_tempfile(fileext = ".bed")
+    exportToBed(old[1], bed)
+    expect_false(is_in("THETA", strsplit(readLines(bed, n = 1), "\t")[[1]]))
 })

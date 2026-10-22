@@ -80,8 +80,8 @@ NULL
 #' chr22) keyed by \code{study_1} / \code{susie}, carrying the SuSiE-RSS fit
 #' and a per-variant table with the standard post-processing columns
 #' (\code{pip}, \code{logBF}, \code{cs_95} / \code{cs_70} / \code{cs_50} and
-#' their purities, marginal statistics). Four credible sets. \code{ldSketch} is
-#' the bundled \code{toy_canonical} genotype panel, present
+#' their purities, marginal statistics). Four credible sets. \code{ldReference}
+#' is the bundled \code{toy_canonical} genotype panel, present
 #' because \code{\link{qtlEnrichmentPipeline}} requires the GWAS collection to
 #' carry one as its RSS-derived marker; the LD actually used for the fit is an
 #' in-memory correlation matrix computed from \code{\link{eqtlRegionExample}}.
@@ -264,7 +264,7 @@ NULL
 #' @description A pre-QC'd \code{\link{QtlSumStats}} collection covering the
 #' same (study, context, trait) tuple as \code{\link{qtlDatasetExample}};
 #' the per-variant Z / BETA / SE / N values were computed from the synthetic
-#' phenotype by per-variant linear regression. The \code{ldSketch} slot
+#' phenotype by per-variant linear regression. The \code{ldReference} slot
 #' references the same toy PLINK1 panel.
 #'
 #' @format A \code{QtlSumStats} S4 collection with one row (study1, brain,
@@ -319,7 +319,7 @@ NULL
 #' synthetic trait (\code{"trait1"}, N = 50,000). The signal pattern shares
 #' one causal variant with \code{\link{qtlSumStatsExample}} (for
 #' colocalization demos) and adds a second GWAS-only causal variant.
-#' The \code{ldSketch} slot references the same toy PLINK1 panel used
+#' The \code{ldReference} slot references the same toy PLINK1 panel used
 #' for the QTL example.
 #'
 #' @format A \code{GwasSumStats} S4 collection with one row (trait1)
@@ -605,7 +605,10 @@ NULL
 #'
 #' @format A list with the cTWAS input components \code{z_snp}, \code{z_gene},
 #'   \code{weights}, \code{region_info}, \code{snp_map}, \code{LD_map}, and the
-#'   LD / SNP-info loader closures.
+#'   LD / SNP-info loader closures. Each \code{weights} entry carries the
+#'   weights \code{wgt} and their variance \code{wgt_var} (w'Rw), from which
+#'   the pipeline computes \code{z_gene}, in place of ctwas's per-gene LD
+#'   matrix \code{R_wgt}.
 #'
 #' @keywords data
 #'
@@ -673,16 +676,18 @@ NULL
 #' @description An \code{LdEigen} reference for the eigendecomposition-based
 #' heritability estimators (\code{\link{estimateH2}} with
 #' \code{method = "lder"} or \code{"hdl"}, and
-#' \code{\link{computeLdScores}}). Built by \code{\link{buildLdEigen}} from
-#' the first 14 chr22 LD blocks of the de-identified \code{protocol_example}
-#' reference panel, so the LD is real rather than simulated. Describes the
-#' same variants as \code{\link{ldScoreExample}}, so the four estimators can
-#' be compared on one reference.
+#' \code{\link{computeLdScores}}). Built by \code{\link{buildLdEigen}}
+#' over the first 14 chr22 LD blocks of the de-identified
+#' \code{protocol_example} reference. Describes the same variants as
+#' \code{\link{ldScoreExample}}, so the four estimators can be compared on
+#' one reference.
 #'
-#' The panel behind it has \code{nSamples = 1000}. That is small enough that
-#' \code{method = "hdl"}, which models reference-panel noise explicitly,
-#' shrinks its estimate hard -- correct behaviour for a panel this size
-#' rather than a fault.
+#' The LD is that of a panel of 20,000 people simulated from the
+#' \code{protocol_example} panel's own LD, which is a sketch of 60 people:
+#' the estimators correct for the noise in a reference's LD, and at 60 that
+#' correction swamps the signal. A large simulated panel keeps the LD
+#' structure real while giving the reference a realistic size
+#' (\code{nSamples = 20000}); see \code{inst/scripts/build_h2_examples.R}.
 #'
 #' @format An \code{LdEigen} object (extends \code{LdStatistic}) with an
 #'   \code{eigenList} of per-block \code{values} / \code{vectors} /
@@ -706,10 +711,10 @@ NULL
 #' @description An \code{LdScore} reference (per-variant LD scores, weights,
 #' and per-block LD matrices) for the LD-score-based heritability estimators
 #' (\code{\link{estimateH2}} with \code{method = "sldsc"} or
-#' \code{"gldsc"}). Built by \code{\link{buildLdScore}} from the first 14
-#' chr22 LD blocks of the de-identified \code{protocol_example} reference
-#' panel, so the LD is real rather than simulated. Describes the same variants
-#' as \code{\link{ldEigenExample}}.
+#' \code{"gldsc"}). Built by \code{\link{buildLdScore}} over the first 14
+#' chr22 LD blocks of the de-identified \code{protocol_example} reference,
+#' from the same simulated 20,000-person panel as
+#' \code{\link{ldEigenExample}}, and describes the same variants.
 #'
 #' The per-block LD matrices are retained because \code{"gldsc"} and
 #' stratified \code{"sldsc"} both need them; unstratified \code{"sldsc"}

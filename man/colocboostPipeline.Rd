@@ -22,9 +22,9 @@ colocboostPipeline(qtlData, gwasSumStats = NULL, ...)
   separateGwas = FALSE,
   samples = NULL,
   panelFilterParam = PanelFilterParam(),
-  signalScreenArgs = SignalScreenParam(),
+  signalScreenParam = SignalScreenParam(),
   alleleFlip = TRUE,
-  residualizationArgs = ResidualizationParam(),
+  residualizationParam = ResidualizationParam(),
   methodArgs = ColocboostOptions()
 )
 
@@ -55,9 +55,9 @@ colocboostPipeline(qtlData, gwasSumStats = NULL, ...)
   separateGwas = FALSE,
   samples = NULL,
   panelFilterParam = PanelFilterParam(),
-  signalScreenArgs = SignalScreenParam(),
+  signalScreenParam = SignalScreenParam(),
   alleleFlip = TRUE,
-  residualizationArgs = ResidualizationParam(),
+  residualizationParam = ResidualizationParam(),
   methodArgs = ColocboostOptions()
 )
 }
@@ -110,7 +110,7 @@ below its cutoffs is dropped before the LD matrix is built. The defaults
 filter nothing. See the Details section for how these relate to the
 individual-level cutoffs recorded on a \code{QtlDataset}.}
 
-\item{signalScreenArgs}{Individual-level pre-filter (ports the legacy
+\item{signalScreenParam}{Individual-level pre-filter (ports the legacy
 \code{pip_cutoff_to_skip_ind}), built with
 \code{\link{SignalScreenParam}}. For each context every outcome is fit
 with a single-effect SuSiE (\code{L = 1}) and dropped unless the chosen
@@ -136,7 +136,7 @@ swaps recognized (flipping z / residualized dosage / LD to a shared
 coding); when FALSE, match on exact alleles only (names-only), so a ref/alt
 swap is treated as a distinct variant.}
 
-\item{residualizationArgs}{Covariate residualization settings for
+\item{residualizationParam}{Covariate residualization settings for
 individual-level input, built with \code{\link{ResidualizationParam}}.
 Reaches both \code{\link{residualizedGenotypes}} and
 \code{\link{residualizedPhenotypes}}, so it governs what is regressed
@@ -179,7 +179,7 @@ Protocol-level multi-trait colocalization analysis using
           extracted from the dataset (filtering knobs on the
           constructor apply lazily inside the accessors).
     \item \code{QtlSumStats} -- summary-statistic-only QTL data with a
-          shared LD reference (\code{ldSketch}). Must already have
+          shared LD reference (\code{ldReference}). Must already have
           been passed through \code{\link{summaryStatsQc}} (the
           pipeline rejects inputs whose \code{qcInfo()} is empty).
           Every analysis variant is available on this input, including
@@ -192,7 +192,7 @@ Protocol-level multi-trait colocalization analysis using
   GWAS is optional and always passed separately as a
   \code{GwasSumStats} object (must also be QC'd).
 
-\code{colocboostPipeline} does \strong{not} accept a \code{FineMappingResult}
+\code{colocboostPipeline} does \strong{not} accept a fine-mapping result
 for either side; colocboost has its own variable-selection algorithm.
 }
 \section{QC contract}{
@@ -204,17 +204,17 @@ for either side; colocboost has its own variable-selection algorithm.
           \code{genotypes()} / \code{residualizedGenotypes()}.
           The pipeline does \emph{not} run a separate
           individual-level QC pass.
-    \item \code{panelFilter} acts at ANALYSIS time on the sumstat
+    \item \code{panelFilterParam} acts at ANALYSIS time on the sumstat
           sides, measured against the \strong{LD reference panel}: a
           variant whose panel genotypes fall below its cutoffs is dropped
           before the LD matrix is built. It applies to a
           \code{QtlSumStats} QTL side and to a \code{GwasSumStats} GWAS
           side (so it still bites when the QTL side is
           individual-level). Its defaults filter nothing. Unlike
-          \code{summaryStatsQc(imputeArgs = ...)}, which only bounds what
+          \code{summaryStatsQc(raissParam = ...)}, which only bounds what
           RAISS will impute, these discard \emph{observed} variants.
     \item All summary-statistic QC (variant filters, harmonization
-          against the \code{ldSketch}, LD-mismatch detection, RAISS
+          against the \code{ldReference}, LD-mismatch detection, RAISS
           imputation, etc.) lives in
           \code{\link{summaryStatsQc}}. The pipeline rejects any
           \code{QtlSumStats} or \code{GwasSumStats} where

@@ -1,7 +1,7 @@
 context("causalInferencePipeline")
 
 # ===========================================================================
-# Strategy: mock extractBlockGenotypes so .ldFromSketch returns a real
+# Strategy: mock extractBlockGenotypes so .ldFromRef returns a real
 # LD matrix on a small panel. Everything else (twasZ, MR, p-value combine)
 # runs for real on the tiny fixture.
 # ===========================================================================
@@ -9,8 +9,8 @@ context("causalInferencePipeline")
 .cip_makeHandle <- function(snp_n = 6L, n_samples = 30L, sample_prefix = "s") {
     new(
         "GenotypeHandle",
-        path = "/tmp/sketch.gds",
-        format = "gds",
+        path = "/tmp/sketch",
+        format = "plink2",
         snpInfo = data.frame(
             SNP = sprintf("chr1:%d:A:G", 100L * seq_len(snp_n)),
             CHR = rep("1", snp_n),
@@ -82,7 +82,7 @@ context("causalInferencePipeline")
         studyName = "G1",
         entry = list(gr),
         genome = "hg19",
-        ldSketch = .cip_makeHandle(),
+        ldReference = .cip_makeHandle(),
         qcInfo = if (qc) list(step1 = "ok") else list()
     )
 }
@@ -101,7 +101,7 @@ context("causalInferencePipeline")
         trait = "t1",
         method = method,
         entry = list(entry),
-        ldSketch = .cip_makeHandle()
+        ldReference = .cip_makeHandle()
     )
 }
 
@@ -130,7 +130,7 @@ context("causalInferencePipeline")
         trait = "t1",
         method = "susie",
         entry = list(e),
-        ldSketch = .cip_makeHandle()
+        ldReference = .cip_makeHandle()
     )
 }
 
@@ -197,11 +197,11 @@ test_that("causalInferencePipeline: rejects GwasFineMappingResult for the QTL sl
 })
 
 # ===========================================================================
-# .cipRequireMatchingLdSketches branches
+# .cipRequireMatchingLdRefs branches
 # ===========================================================================
 
-test_that(".cipRequireMatchingLdSketches: NULL twas-side ldSketch is allowed", {
-    # Build a TwasWeights without an ldSketch.
+test_that(".cipRequireMatchingLdRefs: NULL twas-side ldReference is allowed", {
+    # Build a TwasWeights without an ldReference.
     twNoLd <- TwasWeights(
         studyName = "Q1",
         context = "c1",
@@ -211,7 +211,7 @@ test_that(".cipRequireMatchingLdSketches: NULL twas-side ldSketch is allowed", {
             variantIds = sprintf("chr1:%d:A:G", 100L * (1:5)),
             weights = rep(0.1, 5)
         )),
-        ldSketch = NULL
+        ldReference = NULL
     )
     local_mocked_bindings(
         extractBlockGenotypes = .cip_mockExtractor(),
@@ -224,7 +224,7 @@ test_that(".cipRequireMatchingLdSketches: NULL twas-side ldSketch is allowed", {
     expect_s4_class(out, "GRanges")
 })
 
-test_that(".cipRequireMatchingLdSketches: sample set mismatch errors", {
+test_that(".cipRequireMatchingLdRefs: sample set mismatch errors", {
     otherPanel <- .cip_makeHandle(sample_prefix = "other")
     twOther <- TwasWeights(
         studyName = "Q1",
@@ -235,7 +235,7 @@ test_that(".cipRequireMatchingLdSketches: sample set mismatch errors", {
             variantIds = sprintf("chr1:%d:A:G", 100L * (1:5)),
             weights = rep(0.1, 5)
         )),
-        ldSketch = otherPanel
+        ldReference = otherPanel
     )
     expect_error(
         causalInferencePipeline(
@@ -246,12 +246,12 @@ test_that(".cipRequireMatchingLdSketches: sample set mismatch errors", {
     )
 })
 
-test_that(".cipRequireMatchingLdSketches: differently trimmed panels pass", {
+test_that(".cipRequireMatchingLdRefs: differently trimmed panels pass", {
     # Independent QC of the QTL and GWAS sides leaves one LD reference as two
     # overlapping-but-unequal panels, which the check reports rather than
     # refuses.
     expect_warning(
-        expect_null(pecotmr:::.cipRequireMatchingLdSketches(
+        expect_null(pecotmr:::.cipRequireMatchingLdRefs(
             .cip_makeHandle(snp_n = 6L),
             .cip_makeHandle(snp_n = 7L),
             label = "twasWeights"
@@ -287,7 +287,7 @@ test_that("causalInferencePipeline: returns GRanges with TWAS Z per tuple", {
 })
 
 # ===========================================================================
-# Happy path: TwasWeights + matching FineMappingResult enables MR
+# Happy path: TwasWeights + matching QtlFineMappingResult enables MR
 # ===========================================================================
 
 test_that("causalInferencePipeline: with both inputs, MR fields are populated", {
@@ -301,7 +301,7 @@ test_that("causalInferencePipeline: with both inputs, MR fields are populated", 
         gwasSumStats = .cip_makeGwasSumstats(),
         twasWeights = tw,
         fineMappingResult = fmr,
-        mrArgs = MrParam(pipCutoff = 0.5)
+        mrParam = MrParam(pipCutoff = 0.5)
     )
     mc <- S4Vectors::mcols(out)
     # MR uses PIP > 0.5 variants from the FMR (v1, v3, v4).
@@ -311,7 +311,7 @@ test_that("causalInferencePipeline: with both inputs, MR fields are populated", 
 })
 
 # ===========================================================================
-# FineMappingResult-only path: weights come from topLoci$betahat
+# Fine-mapping-only path: weights come from topLoci$betahat
 # ===========================================================================
 
 test_that("causalInferencePipeline: FMR-only path extracts weights from topLoci$betahat", {
@@ -348,7 +348,7 @@ test_that("causalInferencePipeline: combineMethods appends combined rows", {
                 weights = rep(0.05, 5)
             )
         ),
-        ldSketch = .cip_makeHandle()
+        ldReference = .cip_makeHandle()
     )
     local_mocked_bindings(
         extractBlockGenotypes = .cip_mockExtractor(),
@@ -505,7 +505,7 @@ test_that("causalInferencePipeline: rsqCutoff selects the max-rsq method per gro
                 cvResult = list(metrics = c(rsq = 0.5, pval = 0.001))
             )
         ),
-        ldSketch = .cip_makeHandle()
+        ldReference = .cip_makeHandle()
     )
     local_mocked_bindings(
         extractBlockGenotypes = .cip_mockExtractor(),
@@ -514,7 +514,7 @@ test_that("causalInferencePipeline: rsqCutoff selects the max-rsq method per gro
     out <- causalInferencePipeline(
         gwasSumStats = .cip_makeGwasSumstats(),
         twasWeights = tw,
-        weightSelectionArgs = WeightSelectionParam(cutoff = 0.1)
+        weightSelectionParam = WeightSelectionParam(cutoff = 0.1)
     )
     expect_equal(as.character(S4Vectors::mcols(out)$method), "lasso")
 })
@@ -538,7 +538,7 @@ test_that("causalInferencePipeline: NA/Inf TWAS-Z triggers method re-selection",
                 cvResult = list(metrics = c(rsq = 0.5, pval = 0.001))
             )
         ),
-        ldSketch = .cip_makeHandle()
+        ldReference = .cip_makeHandle()
     )
     local_mocked_bindings(
         extractBlockGenotypes = .cip_mockExtractor(),
@@ -547,7 +547,7 @@ test_that("causalInferencePipeline: NA/Inf TWAS-Z triggers method re-selection",
     out <- causalInferencePipeline(
         gwasSumStats = .cip_makeGwasSumstats(),
         twasWeights = tw,
-        weightSelectionArgs = WeightSelectionParam(cutoff = 0.1)
+        weightSelectionParam = WeightSelectionParam(cutoff = 0.1)
     )
     expect_equal(as.character(S4Vectors::mcols(out)$method), "lasso")
     expect_true(is.finite(S4Vectors::mcols(out)$twasZ))
@@ -571,7 +571,7 @@ test_that("causalInferencePipeline: rsqPvalCutoff gates out high-CV-pval methods
                 cvResult = list(metrics = c(rsq = 0.5, pval = 0.001))
             )
         ),
-        ldSketch = .cip_makeHandle()
+        ldReference = .cip_makeHandle()
     )
     local_mocked_bindings(
         extractBlockGenotypes = .cip_mockExtractor(),
@@ -580,7 +580,7 @@ test_that("causalInferencePipeline: rsqPvalCutoff gates out high-CV-pval methods
     out <- causalInferencePipeline(
         gwasSumStats = .cip_makeGwasSumstats(),
         twasWeights = tw,
-        weightSelectionArgs = WeightSelectionParam(
+        weightSelectionParam = WeightSelectionParam(
             cutoff = 0.1,
             pvalCutoff = 0.05
         )
@@ -712,19 +712,49 @@ test_that("twasZ: R path positional alignment errors on dim mismatch", {
 # twasZ: X path (computes R via computeLd)
 # ===========================================================================
 
-test_that("twasZ: X path computes R via computeLd and matches that R explicitly", {
+test_that("twasZ: X path matches R from computeLd without forming it", {
     d <- .tz_makeLd()
     set.seed(2)
     w <- rnorm(d$p)
     names(w) <- d$vid
     z <- rnorm(d$p)
-    # The X path delegates to computeLd(X, method = "sample"), which uses
-    # cor(X). Compare against the same correlation matrix passed explicitly.
+    # The X path computes W'RW from X's standardized dosages, R being
+    # computeLd(X)'s cor(X). Compare against that matrix passed explicitly.
     R_from_X <- cor(d$X)
     rownames(R_from_X) <- colnames(R_from_X) <- d$vid
     res_X <- pecotmr:::twasZ(w, z, X = d$X)
     res_Rfx <- pecotmr:::twasZ(w, z, R = R_from_X)
     expect_equal(res_X$Z, res_Rfx$Z, tolerance = 1e-10)
+})
+
+test_that("twasZ: X path uses computeLd's LD for missing, constant columns", {
+    d <- .tz_makeLd()
+    X <- d$X
+    X[, 3] <- 1L
+    X[c(4, 9), 5] <- NA
+    set.seed(4)
+    w <- setNames(rnorm(d$p), d$vid)
+    z <- rnorm(d$p)
+    expect_equal(
+        pecotmr:::twasZ(w, z, X = X)$Z,
+        pecotmr:::twasZ(w, z, R = computeLd(X))$Z
+    )
+})
+
+test_that("twasZ: X path aligns columns to the weights by name", {
+    d <- .tz_makeLd()
+    set.seed(5)
+    w <- setNames(rnorm(d$p), d$vid)
+    z <- rnorm(d$p)
+    shuffled <- d$X[, rev(seq_len(d$p))]
+    expect_equal(
+        pecotmr:::twasZ(w, z, X = shuffled)$Z,
+        pecotmr:::twasZ(w, z, X = d$X)$Z
+    )
+    expect_error(
+        pecotmr:::twasZ(w, z, X = d$X[, -1]),
+        "X is missing columns for 1 variant"
+    )
 })
 
 # ===========================================================================
@@ -1029,7 +1059,6 @@ test_that("twasZ: matrix weights produce one Z row per column", {
 
 
 test_that("twasZ: combineMethods returns combined p-value summary", {
-    skip_if_not_installed("ACAT")
     set.seed(11)
     p <- 4
     k <- 2
@@ -1042,7 +1071,7 @@ test_that("twasZ: combineMethods returns combined p-value summary", {
     z <- rnorm(p)
     R <- diag(p)
     rownames(R) <- colnames(R) <- paste0("SNP", seq_len(p))
-    result <- twasZ(weights, z, R = R, combineMethods = "ACAT")
+    result <- twasZ(weights, z, R = R, combineMethods = "acat")
     expect_false(is.null(result$combined))
 })
 
@@ -1162,8 +1191,6 @@ test_that("twasZ: error when weights and z have different lengths", {
         "weights.*Must have exactly 3 rows"
     )
 })
-
-# Phase 2: LD-sketch loading and standardize_genotype_hwe()
 
 # ===========================================================================
 # Direct unit tests for the MR / metric helpers (mock topLoci to feed
@@ -1369,6 +1396,22 @@ test_that(".cipComputeMrCsAware matches across a chr-prefix difference", {
     expect_true(is.finite(res$waldRatio))
 })
 
+test_that(".cipComputeTwasZ gives a Z from a panel's factor or an LdMatrix", {
+    data(gwasSumStatsS4Example)
+    panel <- ldReference(gwasSumStatsS4Example)
+    ids <- names(SummarizedExperiment::rowRanges(panel))[c(3, 8, 15, 21, 30)]
+    ld <- LdMatrix(
+        unname(computeLd(panel)),
+        variants = SummarizedExperiment::rowRanges(panel)
+    )
+    g <- .cip_gwasDf(ids, z = c(2, -1.5, 0.8, 1.1, -0.3))
+    w <- c(0.2, -0.1, 0.3, 0.05, -0.2)
+    viaPanel <- pecotmr:::.cipComputeTwasZ(w, ids, g, panel)
+    viaMatrix <- pecotmr:::.cipComputeTwasZ(w, ids, g, ld)
+    expect_true(is.finite(viaPanel$Z))
+    expect_equal(viaPanel, viaMatrix)
+})
+
 test_that(".cipComputeTwasZ reconciles a chr-prefix mismatch (previously dropped)", {
     idsGwas <- c("1:100:A:G", "1:200:A:G", "1:300:A:G") # GWAS / panel coding
     idsWt <- c("chr1:100:A:G", "chr1:200:A:G", "chr1:300:A:G") # QTL weight ids
@@ -1465,9 +1508,11 @@ test_that(".cipComputeMrCsAware: CS-aware composite Wald + heterogeneity", {
 })
 
 test_that(".cipComputeMrCsAware: credible-set column found via the ^cs fallback", {
+    # The shape a stored result has: no bare `cs`, and cs_95 holding
+    # "<method>_<idx>" labels rather than integers.
     tl <- data.frame(
         variant_id = sprintf("chr1:%d:A:G", 100L * (1:2)),
-        cs_0.95 = c(1L, 1L),
+        cs_95 = c("susie_1", "susie_1"),
         pip = c(0.5, 0.4),
         beta = c(0.3, 0.2),
         se = rep(0.05, 2),
@@ -1482,7 +1527,31 @@ test_that(".cipComputeMrCsAware: credible-set column found via the ^cs fallback"
         .cip_gwasDf(sprintf("chr1:%d:A:G", 100L * (1:2)), c(2, -1.5)),
         cpipCutoff = 0.5
     )
-    expect_true(is.finite(res$waldRatio)) # cs_0.95 via grep("^cs")
+    expect_true(is.finite(res$waldRatio))
+    expect_equal(res$nCs, 1L)
+})
+
+test_that(".cipComputeMrCsAware runs on a stored fine-mapping result", {
+    # The labels used to be read with as.integer(), which turned every one
+    # into NA: csAware returned an all-NA result on any real result, and the
+    # tests above missed it because they all build the table by hand.
+    data(qtlFineMappingExample)
+    tl <- pecotmr:::.cipTopLociTable(qtlFineMappingExample)
+    gwas <- data.frame(
+        variant_id = tl$variant_id,
+        z = seq(2, 4, length.out = nrow(tl)),
+        N = 50000,
+        maf = pmin(pmax(tl$af, 0.05), 0.5)
+    )
+    res <- pecotmr:::.cipComputeMrCsAware(
+        qtlFineMappingExample,
+        gwas,
+        cpipCutoff = 0.5
+    )
+    # 15 variants: 14 in the one credible set, 1 labelled susie_0.
+    expect_equal(res$nCs, 1L)
+    expect_equal(res$nIV, 14L)
+    expect_true(is.finite(res$waldRatio))
 })
 
 test_that("the MR paths abort naming the exposure columns they lack", {
@@ -1605,45 +1674,57 @@ test_that(".cipExtractWeights: NULL on missing tuples and bad topLoci", {
         .fmrRowTopLoci = function(parts, ...) data.frame(),
         .package = "pecotmr"
     )
-    expect_null(pecotmr:::.cipExtractWeights(
-        NULL,
-        fmr,
-        "Q1",
-        "c1",
-        "t1",
-        "susie",
-        useFmr = TRUE
-    ))
+    expect_warning(
+        out <- pecotmr:::.cipExtractWeights(
+            NULL,
+            fmr,
+            "Q1",
+            "c1",
+            "t1",
+            "susie",
+            useFmr = TRUE
+        ),
+        "no weights resolved"
+    )
+    expect_null(out)
     local_mocked_bindings(
         .fmrRowTopLoci = function(parts, ...) {
             data.frame(variant_id = "chr1:100:A:G")
         },
         .package = "pecotmr"
     )
-    expect_null(pecotmr:::.cipExtractWeights(
-        NULL,
-        fmr,
-        "Q1",
-        "c1",
-        "t1",
-        "susie",
-        useFmr = TRUE
-    ))
+    expect_warning(
+        out <- pecotmr:::.cipExtractWeights(
+            NULL,
+            fmr,
+            "Q1",
+            "c1",
+            "t1",
+            "susie",
+            useFmr = TRUE
+        ),
+        "no weights resolved"
+    )
+    expect_null(out)
     local_mocked_bindings(
         .fmrRowTopLoci = function(parts, ...) {
             data.frame(variant_id = NA_character_, beta = NA_real_)
         },
         .package = "pecotmr"
     )
-    expect_null(pecotmr:::.cipExtractWeights(
-        NULL,
-        fmr,
-        "Q1",
-        "c1",
-        "t1",
-        "susie",
-        useFmr = TRUE
-    ))
+    expect_warning(
+        out <- pecotmr:::.cipExtractWeights(
+            NULL,
+            fmr,
+            "Q1",
+            "c1",
+            "t1",
+            "susie",
+            useFmr = TRUE
+        ),
+        "no weights resolved"
+    )
+    expect_null(out)
 })
 
 test_that(".cipCombineAcrossMethods: a single-method group yields no combined rows", {
@@ -1875,7 +1956,7 @@ test_that(".cipCvSelection errors when no method clears the CV cutoffs", {
         pecotmr:::.cipCvSelection(
             qtlRows = data.frame(a = 1),
             twasWeights = "notNull",
-            weightSelectionArgs = WeightSelectionParam(
+            weightSelectionParam = WeightSelectionParam(
                 cutoff = 0.5,
                 pvalCutoff = 0.05
             )
@@ -1887,7 +1968,7 @@ test_that(".cipCvSelection errors when no method clears the CV cutoffs", {
 test_that(".cipRun errors when no tuple produced a result", {
     local_mocked_bindings(
         .cipValidateInputs = function(...) invisible(NULL),
-        .cipCheckLdSketches = function(...) NULL,
+        .cipCheckLdRefs = function(...) NULL,
         .cipResolveWorkList = function(...) data.frame(x = 1),
         .cipCvSelection = function(...) {
             list(
@@ -1905,9 +1986,9 @@ test_that(".cipRun errors when no tuple produced a result", {
             twasWeights = NULL,
             fineMappingResult = NULL,
             combineMethods = NULL,
-            weightSelectionArgs = WeightSelectionParam(),
+            weightSelectionParam = WeightSelectionParam(),
             alleleFlip = FALSE,
-            mrArgs = MrParam(method = "csAware", cpipCutoff = 0)
+            mrParam = MrParam(method = "csAware", cpipCutoff = 0)
         ),
         "no \\(qtl, gwas\\) tuples produced a result"
     )
@@ -1950,7 +2031,7 @@ test_that(".cipScoreGwasPair skips a pair with no TWAS z", {
             gwasSumStats = list(study = "G1"),
             gwasLd = NULL,
             alleleFlip = FALSE,
-            mrArgs = MrParam(
+            mrParam = MrParam(
                 method = "csAware",
                 cpipCutoff = 0,
                 pvalCutoff = 1
@@ -1969,7 +2050,7 @@ test_that(".cipRunMr routes to the CS-aware estimator when asked", {
         gdf = NULL,
         twasOut = list(pval = 0.001),
         alleleFlip = FALSE,
-        mrArgs = MrParam(method = "csAware", cpipCutoff = 0.5, pvalCutoff = 1)
+        mrParam = MrParam(method = "csAware", cpipCutoff = 0.5, pvalCutoff = 1)
     )
     expect_true(isTRUE(out$SENTINEL))
 })

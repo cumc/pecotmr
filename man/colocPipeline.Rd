@@ -8,8 +8,8 @@ colocPipeline(
   qtlFineMappingResult,
   gwasInput,
   priors = ColocPriorParam(),
-  lbfFilterArgs = ColocLbfFilterParam(),
-  gwasFineMappingArgs = GwasFineMappingParam(),
+  colocLbfFilterParam = ColocLbfFilterParam(),
+  gwasFineMappingParam = GwasFineMappingParam(),
   returnGwasFineMapping = FALSE,
   enrichment = NULL,
   adjustPips = TRUE,
@@ -32,7 +32,7 @@ fine-map inline (\code{\link{QtlSumStats}} or
 signal) and \code{p12} (shared). Mutually exclusive with
 \code{enrichment}, which derives the same three.}
 
-\item{lbfFilterArgs}{Credible-set filtering applied before scoring,
+\item{colocLbfFilterParam}{Credible-set filtering applied before scoring,
 built with
 \code{\link{ColocLbfFilterParam}}. \code{filterLbfCs} keeps only effects
 that produced a credible set; supplying \code{secondary} instead runs a
@@ -44,7 +44,7 @@ are dropped before the LBF matrix reaches
 cutoff (effects with \code{V <= priorTol} are dropped) and does not
 apply once \code{filterLbfCs} or \code{secondary} selects another.}
 
-\item{gwasFineMappingArgs}{How \code{gwasInput} is fine-mapped when it is
+\item{gwasFineMappingParam}{How \code{gwasInput} is fine-mapped when it is
 summary statistics rather than a fine-mapping result, built with
 \code{\link{GwasFineMappingParam}}: \code{methods},
 \code{credibleSetParam}, \code{susieRssParam},
@@ -155,7 +155,7 @@ directly. That choice carries three behaviours that
   \item \strong{fSuSiE support}: the LBF matrix lives at a different
     slot for fSuSiE fits (\code{fsusie_result$lBF}) and gets stacked
     into a single matrix.
-  \item \strong{Effect filtering}: \code{lbfFilter}'s
+  \item \strong{Effect filtering}: \code{colocLbfFilterParam}'s
     \code{filterLbfCs} keeps only effects that produced a credible
     set, its \code{secondary} keeps effects at a secondary coverage;
     otherwise the default filter drops effects whose prior variance is
@@ -178,17 +178,19 @@ This pipeline preserves all three.
   }
 }
 
-\section{LD-sketch compatibility check}{
+\section{LD reference compatibility check}{
  If
-  \code{ldSketch(qtlFineMappingResult)} is non-\code{NULL}, it must come
-  from the same reference panel as the LD sketch on \code{gwasInput}: the
-  same samples, and the same allele orientation on the variants the two
-  carry in common. The two need NOT carry the same variants --- running
-  \code{\link{summaryStatsQc}} on the two sides separately normally leaves
-  each sketch trimmed to its own surviving variants, and LD is looked up per
-  variant, so a partial overlap only warns (once per session). No shared
-  variant at all, a different sample set, or a swapped A1/A2 on a shared
-  variant is a hard error. When the first side's \code{ldSketch} is
+  \code{ldReference(qtlFineMappingResult)} is non-\code{NULL}, it must be
+  the same LD reference as the one on \code{gwasInput}.
+  The two must be the same kind of reference. Two genotype panels must
+  share their samples and allele orientation; two \code{LdMatrix} objects
+  must agree on the LD they share; two \code{GenotypeMixture} objects must
+  average the same panels with the same weights. The two need NOT
+  carry the same variants --- running \code{\link{summaryStatsQc}} on the
+  two sides separately normally leaves each reference trimmed to its own
+  surviving variants, and LD is looked up per variant, so a partial overlap
+  only warns (once per session). No shared variant at all, or a mismatch of
+  any of those, is a hard error. When the first side's \code{ldReference} is
   \code{NULL} (individual-level fit), the validation is skipped on that side
   and the second side's panel is what the result carries forward.
 }

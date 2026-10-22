@@ -8,6 +8,9 @@
 # integration with the sLDSC postprocessing pipeline.
 # =============================================================================
 
+#' @include MethodParam.R
+NULL
+
 #' @title Heritability Estimate
 #' @description Container for univariate heritability estimation results. Holds
 #'   global, local, and annotation-stratified estimates.
@@ -56,10 +59,10 @@ setClass(
         estimateSe = "numeric",
         intercept = "numeric",
         interceptSe = "numeric",
-        localBlocks = "ANY", # data.frame or NULL
-        enrichment = "ANY", # data.frame or NULL
-        annotationJackknifeCoefs = "ANY", # matrix or NULL
-        scoreStats = "ANY", # list or NULL
+        localBlocks = "data.frame_OR_NULL",
+        enrichment = "data.frame_OR_NULL",
+        annotationJackknifeCoefs = "matrix_OR_NULL",
+        scoreStats = "list_OR_NULL",
         method = "character",
         nSnps = "integer",
         traitName = "character"

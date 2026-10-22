@@ -389,3 +389,44 @@ test_that("sumstats inputs ignore residualization but refuse crossValidation", {
         expect_false("residualization" %in% names(formals(f)), label = fn)
     }
 })
+
+test_that("CrossValidationParam(fitFullData) is validated at construction", {
+    expect_true(CrossValidationParam()$fitFullData)
+    expect_false(
+        CrossValidationParam(folds = 2, fitFullData = FALSE)$fitFullData
+    )
+    # FALSE keeps only the cross-validation results, so there must be
+    # cross-validation to keep: 0 and 1 folds both mean "none".
+    expect_error(
+        CrossValidationParam(fitFullData = FALSE),
+        "fitFullData = FALSE requires cross-validation"
+    )
+    expect_error(
+        CrossValidationParam(folds = 1, fitFullData = FALSE),
+        "fitFullData = FALSE requires cross-validation"
+    )
+    expect_error(
+        CrossValidationParam(fitFullData = NA),
+        "single TRUE or FALSE"
+    )
+    expect_error(
+        CrossValidationParam(fitFullData = c(TRUE, FALSE)),
+        "single TRUE or FALSE"
+    )
+    expect_true(pecotmr:::.cvResolve(CrossValidationParam())$fitFullData)
+    # The default is not a request, so the default bundle still passes the
+    # summary-statistics refusal; an explicit FALSE is one, and is refused.
+    expect_silent(pecotmr:::.cvRefuseOnSumstats(
+        CrossValidationParam(),
+        "twasWeightsPipeline",
+        "QtlSumStats"
+    ))
+    expect_error(
+        pecotmr:::.cvRefuseOnSumstats(
+            CrossValidationParam(folds = 2, fitFullData = FALSE),
+            "twasWeightsPipeline",
+            "QtlSumStats"
+        ),
+        "fitFullData"
+    )
+})

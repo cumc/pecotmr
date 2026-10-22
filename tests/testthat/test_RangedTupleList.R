@@ -7,7 +7,7 @@
 setClass(
     "RtlTestKid",
     contains = "RangedTupleList",
-    representation(genome = "character", ldSketch = "ANY", qcInfo = "list")
+    representation(genome = "character", ldReference = "ANY", qcInfo = "list")
 )
 
 .rtl_mk <- function(chr, pos, strand = "*") {
@@ -27,7 +27,7 @@ setClass(
             c = .rtl_mk("chr2", c(50, 60))
         ),
         genome = "hg38",
-        ldSketch = "SKETCH",
+        ldReference = "SKETCH",
         qcInfo = list(step1 = "ok")
     )
     S4Vectors::mcols(x) <- S4Vectors::DataFrame(
@@ -56,7 +56,7 @@ test_that("ncol is zero when the collection has no mcols", {
         "RtlTestKid",
         GenomicRanges::GRangesList(a = .rtl_mk("chr1", 1:2)),
         genome = "hg38",
-        ldSketch = NULL,
+        ldReference = NULL,
         qcInfo = list()
     )
     expect_equal(ncol(bare), 0L)
@@ -87,7 +87,7 @@ test_that("$<- works on a collection that had no mcols at all", {
         "RtlTestKid",
         GenomicRanges::GRangesList(a = .rtl_mk("chr1", 1:2)),
         genome = "hg38",
-        ldSketch = NULL,
+        ldReference = NULL,
         qcInfo = list()
     )
     bare$study <- "s1"
@@ -105,7 +105,7 @@ test_that("[ selects elements and preserves class, slots and mcols", {
     expect_s4_class(y, "RtlTestKid")
     expect_equal(length(y), 2L)
     expect_equal(y@genome, "hg38")
-    expect_equal(y@ldSketch, "SKETCH")
+    expect_equal(y@ldReference, "SKETCH")
     expect_equal(y$study, c("s1", "s3"))
     expect_equal(names(y), c("a", "c"))
 })
@@ -132,7 +132,7 @@ test_that("validity rejects an element spanning two seqnames", {
             "RtlTestKid",
             GenomicRanges::GRangesList(a = .rtl_mk(c("chr1", "chr2"), c(1, 2))),
             genome = "hg38",
-            ldSketch = NULL,
+            ldReference = NULL,
             qcInfo = list()
         ),
         "span more than one"
@@ -149,7 +149,7 @@ test_that("validity rejects an element spanning two strands", {
                 a = .rtl_mk("chr1", c(1, 2), strand = c("+", "-"))
             ),
             genome = "hg38",
-            ldSketch = NULL,
+            ldReference = NULL,
             qcInfo = list()
         ),
         "span more than one"
@@ -163,7 +163,7 @@ test_that("validity accepts a stranded element as long as it is consistent", {
             a = .rtl_mk("chr1", c(1, 2), strand = "+")
         ),
         genome = "hg38",
-        ldSketch = NULL,
+        ldReference = NULL,
         qcInfo = list()
     )
     expect_equal(length(x), 1L)
@@ -175,7 +175,7 @@ test_that("an empty collection is valid", {
         "RtlTestKid",
         GenomicRanges::GRangesList(),
         genome = "hg38",
-        ldSketch = NULL,
+        ldReference = NULL,
         qcInfo = list()
     )
     expect_equal(length(empty), 0L)
@@ -193,7 +193,7 @@ test_that(".rtlRebuild carries every subclass slot across a rebuild", {
     x <- .rtl_makeKid()
     expect_setequal(
         pecotmr:::.rtlOwnSlots(x),
-        c("genome", "ldSketch", "qcInfo")
+        c("genome", "ldReference", "qcInfo")
     )
     out <- pecotmr:::.rtlRebuild(
         x,
@@ -202,7 +202,7 @@ test_that(".rtlRebuild carries every subclass slot across a rebuild", {
     )
     expect_s4_class(out, "RtlTestKid")
     expect_equal(out@genome, "hg38")
-    expect_equal(out@ldSketch, "SKETCH")
+    expect_equal(out@ldReference, "SKETCH")
     expect_equal(out@qcInfo, list(step1 = "ok"))
     expect_equal(out$study, c("s1", "s3"))
     expect_equal(unname(lengths(out)), c(1L, 1L))
@@ -212,7 +212,7 @@ test_that("endoapply rebuilds without losing slots", {
     x <- .rtl_makeKid()
     out <- endoapply(x, head, 1L)
     expect_equal(unname(lengths(out)), c(1L, 1L, 1L))
-    expect_equal(out@ldSketch, "SKETCH")
+    expect_equal(out@ldReference, "SKETCH")
     expect_equal(out$study, c("s1", "s2", "s3"))
 })
 
@@ -419,7 +419,7 @@ test_that("[[<- replaces an element and keeps class, slots and mcols", {
     expect_equal(S4Vectors::mcols(x), before)
     # The collection-level slots are exactly what the setAs route would drop.
     expect_equal(x@genome, "hg38")
-    expect_equal(x@ldSketch, "SKETCH")
+    expect_equal(x@ldReference, "SKETCH")
     expect_equal(x@qcInfo, list(step1 = "ok"))
 })
 
@@ -640,7 +640,7 @@ test_that("nestTupleRanges round-trips an unmodified flatten", {
     expect_equal(mcols(back), mcols(mc))
     # Collection-level slots survive, which is the point of nesting through a
     # template rather than rebuilding from the ranges alone.
-    expect_identical(ldSketch(back), ldSketch(mc))
+    expect_identical(ldReference(back), ldReference(mc))
     expect_identical(
         unname(GenomeInfoDb::genome(back)),
         unname(GenomeInfoDb::genome(mc))
@@ -718,7 +718,7 @@ test_that("filter keeps the collection and narrows its elements", {
     expect_s4_class(out, "QtlSumStats")
     expect_equal(nrow(out), nrow(mc))
     expect_lt(sum(lengths(out)), sum(lengths(mc)))
-    expect_identical(ldSketch(out), ldSketch(mc))
+    expect_identical(ldReference(out), ldReference(mc))
 })
 
 test_that("filter can mix identity and per-range columns", {
@@ -840,7 +840,7 @@ test_that("seqinfo is left alone when the source carries none", {
         "RtlTestKid",
         GenomicRanges::GRangesList(),
         genome = "hg38",
-        ldSketch = NULL,
+        ldReference = NULL,
         qcInfo = list()
     )
     grl <- GenomicRanges::GRangesList(

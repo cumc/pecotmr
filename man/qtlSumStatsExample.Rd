@@ -12,7 +12,7 @@ A \code{QtlSumStats} S4 collection with one row (study1, brain,
 A pre-QC'd \code{\link{QtlSumStats}} collection covering the
 same (study, context, trait) tuple as \code{\link{qtlDatasetExample}};
 the per-variant Z / BETA / SE / N values were computed from the synthetic
-phenotype by per-variant linear regression. The \code{ldSketch} slot
+phenotype by per-variant linear regression. The \code{ldReference} slot
 references the same toy PLINK1 panel.
 }
 \examples{

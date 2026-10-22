@@ -14,8 +14,8 @@
     )
 }
 
-.toyLdSketch <- function() {
-    GenotypeHandle(plink1Prefix = .toyRefPrefix())
+.toyLdRef <- function() {
+    readGenotypes(plink1Prefix = .toyRefPrefix())
 }
 
 # A small GWAS sumstats data.frame over real toy_ref chr22 variants.
@@ -34,6 +34,9 @@
         A2 = c("A", "T", "T", "T", "G"),
         z = c(1.2, -0.4, 2.1, 0.05, -1.8),
         n_sample = rep(10000L, 5),
+        # The A1 frequency, directional, which a column named `af` declares;
+        # without one every load warns that top_loci$af will be NA.
+        af = c(0.12, 0.33, 0.48, 0.71, 0.05),
         stringsAsFactors = FALSE
     )
     base[seq_len(n), , drop = FALSE]
@@ -119,10 +122,10 @@ test_that(".reconcileScalar resolves arg/column and flags conflicts", {
 # Genotype-format detection
 # ---------------------------------------------------------------------------
 
-test_that(".detectGenotypeFormat builds a PLINK1 handle from a prefix", {
-    h <- pecotmr:::.detectGenotypeFormat(.toyRefPrefix())
-    expect_s4_class(h, "GenotypeHandle")
-    expect_equal(genotypeFormat(h), "plink1")
+test_that(".readGenotypePath reads a PLINK1 prefix as a panel", {
+    panel <- pecotmr:::.readGenotypePath(.toyRefPrefix())
+    expect_s4_class(panel, "RangedSummarizedExperiment")
+    expect_equal(pecotmr:::.ldRefFormat(panel), "plink1")
 })
 
 test_that("BCF sumstats are rejected", {
@@ -138,7 +141,7 @@ test_that("BCF sumstats are rejected", {
 
 test_that(".checkLdContainment passes for overlapping variants", {
     gr <- pecotmr:::.dfToEntryGranges(.toyGwasDf(5))
-    expect_silent(pecotmr:::.checkLdContainment(.toyLdSketch(), gr, 0.5, "lbl"))
+    expect_silent(pecotmr:::.checkLdContainment(.toyLdRef(), gr, 0.5, "lbl"))
 })
 
 test_that(".checkLdContainment errors on a chromosome absent from the sketch", {
@@ -146,8 +149,8 @@ test_that(".checkLdContainment errors on a chromosome absent from the sketch", {
     df$chrom <- "1"
     gr <- pecotmr:::.dfToEntryGranges(df)
     expect_error(
-        pecotmr:::.checkLdContainment(.toyLdSketch(), gr, 0.5, "lbl"),
-        "absent from the LD sketch"
+        pecotmr:::.checkLdContainment(.toyLdRef(), gr, 0.5, "lbl"),
+        "absent from the LD reference"
     )
 })
 
@@ -156,7 +159,7 @@ test_that(".checkLdContainment errors on zero overlap", {
     df$pos <- c(999999001, 999999002)
     gr <- pecotmr:::.dfToEntryGranges(df)
     expect_error(
-        pecotmr:::.checkLdContainment(.toyLdSketch(), gr, 0.5, "lbl"),
+        pecotmr:::.checkLdContainment(.toyLdRef(), gr, 0.5, "lbl"),
         "none of the"
     )
 })
@@ -166,8 +169,8 @@ test_that(".checkLdContainment warns on low overlap", {
     df$pos[3:4] <- c(999999001, 999999002) # 2/4 present -> 50%
     gr <- pecotmr:::.dfToEntryGranges(df)
     expect_warning(
-        pecotmr:::.checkLdContainment(.toyLdSketch(), gr, 0.9, "lbl"),
-        "are present in the LD sketch"
+        pecotmr:::.checkLdContainment(.toyLdRef(), gr, 0.9, "lbl"),
+        "are present in the LD reference"
     )
 })
 
@@ -186,7 +189,7 @@ test_that("loadGwasSumStatsFromManifest builds from a data.frame manifest", {
     obj <- loadGwasSumStatsFromManifest(
         manifest,
         genome = "hg38",
-        ldSketch = .toyLdSketch()
+        ldReference = .toyLdRef()
     )
     expect_s4_class(obj, "GwasSumStats")
     expect_true(methods::validObject(obj))
@@ -217,7 +220,7 @@ test_that("loadGwasSumStatsFromManifest reads a file and reconciles genome", {
     obj <- loadGwasSumStatsFromManifest(
         mfPath,
         genome = "hg38",
-        ldSketch = .toyLdSketch()
+        ldReference = .toyLdRef()
     )
     expect_equal(unname(GenomeInfoDb::genome(obj)), "hg38")
     # conflicting arg errors.
@@ -225,7 +228,7 @@ test_that("loadGwasSumStatsFromManifest reads a file and reconciles genome", {
         loadGwasSumStatsFromManifest(
             mfPath,
             genome = "hg19",
-            ldSketch = .toyLdSketch()
+            ldReference = .toyLdRef()
         ),
         "disagrees"
     )
@@ -243,7 +246,7 @@ test_that("loadGwasSumStatsFromManifest rejects duplicate studies", {
         loadGwasSumStatsFromManifest(
             manifest,
             genome = "hg38",
-            ldSketch = .toyLdSketch()
+            ldReference = .toyLdRef()
         ),
         "must be unique"
     )
@@ -287,7 +290,16 @@ test_that("loadGwasSumStatsFromManifest resolves a YAML column mapping", {
     tmp <- withr::local_tempdir()
     # Sumstats with non-standard source column names.
     df <- .toyGwasDf(5)
-    names(df) <- c("CHR", "POS", "RSID", "EA", "OA", "ZSCORE", "SAMPLE_N")
+    names(df) <- c(
+        "CHR",
+        "POS",
+        "RSID",
+        "EA",
+        "OA",
+        "ZSCORE",
+        "SAMPLE_N",
+        "EA_FREQ"
+    )
     ssPath <- .writeSumstatsTsv(df, file.path(tmp, "study1.tsv"))
     mapPath <- file.path(tmp, "mapping.yaml")
     yaml::write_yaml(
@@ -298,7 +310,8 @@ test_that("loadGwasSumStatsFromManifest resolves a YAML column mapping", {
             A1 = "EA",
             A2 = "OA",
             z = "ZSCORE",
-            n_sample = "SAMPLE_N"
+            n_sample = "SAMPLE_N",
+            af = "EA_FREQ"
         ),
         mapPath
     )
@@ -311,7 +324,7 @@ test_that("loadGwasSumStatsFromManifest resolves a YAML column mapping", {
     obj <- loadGwasSumStatsFromManifest(
         manifest,
         genome = "hg38",
-        ldSketch = .toyLdSketch()
+        ldReference = .toyLdRef()
     )
     expect_s4_class(obj, "GwasSumStats")
     expect_equal(length(obj[[1L]]), 5L)
@@ -340,7 +353,7 @@ test_that("loadGwasSumStatsFromManifest reads per-variant N_CASE/N_CONTROL", {
     obj <- loadGwasSumStatsFromManifest(
         manifest,
         genome = "hg38",
-        ldSketch = .toyLdSketch()
+        ldReference = .toyLdRef()
     )
     expect_s4_class(obj, "GwasSumStats")
     mc <- S4Vectors::mcols(obj[[1L]])
@@ -403,7 +416,7 @@ test_that("loadGwasSumStatsFromManifest builds from beta/se with no z column", {
     obj <- loadGwasSumStatsFromManifest(
         manifest,
         genome = "hg38",
-        ldSketch = .toyLdSketch()
+        ldReference = .toyLdRef()
     )
     expect_s4_class(obj, "GwasSumStats")
     mc <- S4Vectors::mcols(obj[[1L]])
@@ -433,7 +446,7 @@ test_that("loadGwasSumStatsFromManifest builds from a study nSample scalar", {
     obj <- loadGwasSumStatsFromManifest(
         manifest,
         genome = "hg38",
-        ldSketch = .toyLdSketch()
+        ldReference = .toyLdRef()
     )
     expect_s4_class(obj, "GwasSumStats")
     expect_false("N" %in% colnames(S4Vectors::mcols(obj[[1L]])))
@@ -455,7 +468,7 @@ test_that("loadGwasSumStatsFromManifest builds from case/control scalars", {
     obj <- loadGwasSumStatsFromManifest(
         manifest,
         genome = "hg38",
-        ldSketch = .toyLdSketch()
+        ldReference = .toyLdRef()
     )
     expect_s4_class(obj, "GwasSumStats")
     expect_false("N" %in% colnames(S4Vectors::mcols(obj[[1L]])))
@@ -477,7 +490,7 @@ test_that("loadGwasSumStatsFromManifest errors when a study has no N source", {
         loadGwasSumStatsFromManifest(
             manifest,
             genome = "hg38",
-            ldSketch = .toyLdSketch()
+            ldReference = .toyLdRef()
         ),
         "needs an N field"
     )
@@ -511,7 +524,7 @@ test_that("loadQtlSumStatsFromManifest builds a per-tuple collection", {
     obj <- loadQtlSumStatsFromManifest(
         manifest,
         genome = "hg38",
-        ldSketch = .toyLdSketch()
+        ldReference = .toyLdRef()
     )
     expect_s4_class(obj, "QtlSumStats")
     expect_true(methods::validObject(obj))
@@ -537,7 +550,7 @@ test_that("loadQtlSumStatsFromManifest derives the Wald z from beta/se", {
     obj <- loadQtlSumStatsFromManifest(
         manifest,
         genome = "hg38",
-        ldSketch = .toyLdSketch()
+        ldReference = .toyLdRef()
     )
     expect_s4_class(obj, "QtlSumStats")
     mc <- S4Vectors::mcols(obj[[1L]])
@@ -585,7 +598,7 @@ test_that("loadQtlSumStatsFromManifest reads a cis-QTL nominal table", {
     obj <- loadQtlSumStatsFromManifest(
         .qtlCisManifest(ss),
         genome = "hg38",
-        ldSketch = .toyLdSketch(),
+        ldReference = .toyLdRef(),
         traitColumn = "molecular_trait_id",
         variantIdAlleles = "A1A2"
     )
@@ -604,7 +617,7 @@ test_that("variantIdAlleles = 'A2A1' reads the id in canonical order", {
     obj <- loadQtlSumStatsFromManifest(
         .qtlCisManifest(ss),
         genome = "hg38",
-        ldSketch = .toyLdSketch(),
+        ldReference = .toyLdRef(),
         traitColumn = "molecular_trait_id",
         variantIdAlleles = "A2A1"
     )
@@ -623,7 +636,7 @@ test_that("an explicit allele column beats variantIdAlleles", {
     obj <- loadQtlSumStatsFromManifest(
         .qtlCisManifest(ss),
         genome = "hg38",
-        ldSketch = .toyLdSketch(),
+        ldReference = .toyLdRef(),
         traitColumn = "molecular_trait_id",
         variantIdAlleles = "A1A2"
     )
@@ -639,7 +652,7 @@ test_that("the trait filter and the id-allele request report what went wrong", {
         loadQtlSumStatsFromManifest(
             .qtlCisManifest(ss),
             genome = "hg38",
-            ldSketch = .toyLdSketch(),
+            ldReference = .toyLdRef(),
             traitColumn = "no_such_col"
         ),
         "not a column of the sumstats file"
@@ -648,7 +661,7 @@ test_that("the trait filter and the id-allele request report what went wrong", {
         loadQtlSumStatsFromManifest(
             .qtlCisManifest(ss, trait = "geneZ"),
             genome = "hg38",
-            ldSketch = .toyLdSketch(),
+            ldReference = .toyLdRef(),
             traitColumn = "molecular_trait_id"
         ),
         "no rows with molecular_trait_id == 'geneZ'"
@@ -662,7 +675,7 @@ test_that("the trait filter and the id-allele request report what went wrong", {
         loadQtlSumStatsFromManifest(
             .qtlCisManifest(rsPath),
             genome = "hg38",
-            ldSketch = .toyLdSketch(),
+            ldReference = .toyLdRef(),
             variantIdAlleles = "A2A1"
         ),
         "carry no allele pair"
@@ -685,7 +698,7 @@ test_that("loadQtlSumStatsFromManifest builds from a tuple nSample scalar", {
     obj <- loadQtlSumStatsFromManifest(
         manifest,
         genome = "hg38",
-        ldSketch = .toyLdSketch()
+        ldReference = .toyLdRef()
     )
     expect_s4_class(obj, "QtlSumStats")
     expect_false("N" %in% colnames(S4Vectors::mcols(obj[[1L]])))
@@ -708,7 +721,7 @@ test_that("loadQtlSumStatsFromManifest errors when a tuple has no N source", {
         loadQtlSumStatsFromManifest(
             manifest,
             genome = "hg38",
-            ldSketch = .toyLdSketch()
+            ldReference = .toyLdRef()
         ),
         "needs an N field"
     )
@@ -763,7 +776,7 @@ test_that("loadQtlDatasetFromManifest accepts study/genotypes as arguments", {
     qd <- loadQtlDatasetFromManifest(
         manifest,
         studyName = "studyY",
-        genotypes = .toyLdSketch()
+        genotypes = .toyLdRef()
     )
     expect_equal(studyName(qd), "studyY")
 })
@@ -811,7 +824,7 @@ test_that("loadMultiStudyQtlDatasetFromManifest attaches a summary study", {
         qdMan,
         sumStatsManifest = ssMan,
         genome = "hg38",
-        ldSketch = .toyLdSketch()
+        ldReference = .toyLdRef()
     )
     expect_true(methods::validObject(msd))
     expect_s4_class(msd@sumStats, "QtlSumStats")
@@ -858,7 +871,7 @@ test_that("loadGwasSumStatsFromManifest resolves manifest-relative paths", {
     obj <- loadGwasSumStatsFromManifest(
         mfPath,
         genome = "hg38",
-        ldSketch = .toyLdSketch()
+        ldReference = .toyLdRef()
     )
     expect_equal(length(obj[[1L]]), 5L)
 })
@@ -871,47 +884,53 @@ test_that(".reconcileScalar returns NULL for an optional unset scalar", {
 # Coverage: genotype-format detection and LD-sketch resolution
 # ===========================================================================
 
-test_that(".detectGenotypeFormat dispatches by extension", {
-    expect_error(pecotmr:::.detectGenotypeFormat("x.vcf.gz")) # vcf branch
-    expect_error(pecotmr:::.detectGenotypeFormat("x.pgen")) # plink2 branch
+test_that(".readGenotypePath dispatches by extension", {
+    expect_error(pecotmr:::.readGenotypePath("x.vcf.gz")) # vcf branch
+    expect_error(pecotmr:::.readGenotypePath("x.pgen")) # plink2 branch
     expect_error(
-        pecotmr:::.detectGenotypeFormat("x.unknown"),
-        "Could not determine genotype format"
+        pecotmr:::.readGenotypePath("x.unknown"),
+        "manifest: .* is neither a genotype file nor a PLINK prefix"
     )
-    h <- pecotmr:::.detectGenotypeFormat(paste0(.toyRefPrefix(), ".bed"))
-    expect_equal(genotypeFormat(h), "plink1")
+    panel <- pecotmr:::.readGenotypePath(paste0(.toyRefPrefix(), ".bed"))
+    expect_equal(pecotmr:::.ldRefFormat(panel), "plink1")
 })
 
-test_that(".resolveLdSketch accepts a genoMeta vector or path, rejects junk", {
-    sharded <- pecotmr:::.resolveLdSketch(c("22" = .toyRefPrefix()))
-    expect_s4_class(sharded, "GenotypeHandle")
-    expect_true("22" %in% names(chromPaths(sharded)))
+test_that(".readGenotypePath reads a VCF as a panel", {
+    skip_if_not_installed("VariantAnnotation")
+    vcf <- .writeTestVcf(.vcfGtOnly(.vcfOverlapRecords()), c("s1", "s2", "s3"))
+    panel <- suppressWarnings(pecotmr:::.readGenotypePath(vcf))
+    expect_equal(pecotmr:::.ldRefFormat(panel), "vcf")
+})
+
+test_that(".resolveLdRef accepts a genoMeta vector or path, rejects junk", {
+    sharded <- pecotmr:::.resolveLdRef(c("22" = .toyRefPrefix()))
+    expect_s4_class(sharded, "RangedSummarizedExperiment")
+    expect_true("22" %in% names(pecotmr:::.ldRefChromPaths(sharded)))
     expect_s4_class(
-        pecotmr:::.resolveLdSketch(.toyRefPrefix()),
-        "GenotypeHandle"
+        pecotmr:::.resolveLdRef(.toyRefPrefix()),
+        "RangedSummarizedExperiment"
     )
-    expect_error(pecotmr:::.resolveLdSketch("nonexistent_meta.tsv"))
-    expect_error(pecotmr:::.resolveLdSketch(42L), "must be a genotype panel")
+    expect_error(pecotmr:::.resolveLdRef("nonexistent_meta.tsv"))
+    expect_error(pecotmr:::.resolveLdRef(42L), "must be a genotype panel")
 })
 
-test_that(".resolveLdSketch takes the panel readGenotypes returns", {
+test_that(".resolveLdRef takes the panel readGenotypes returns", {
     # readGenotypes() is the only public way to open genotypes now, so the
-    # loaders have to accept its return value wherever they accepted a handle.
+    # loaders have to accept its return value wherever they accepted a
+    # handle -- as it stands, since a panel need not read through a handle,
+    # and one the caller narrowed stays narrowed.
     panel <- readGenotypes(plink1Prefix = .toyRefPrefix())
-    resolved <- pecotmr:::.resolveLdSketch(panel)
-    expect_s4_class(resolved, "GenotypeHandle")
-    expect_identical(resolved, pecotmr:::.resolveLdSketch(.toyRefPrefix()))
+    expect_identical(pecotmr:::.resolveLdRef(panel), panel)
+    narrowed <- panel[1:5, 1:10]
+    expect_identical(pecotmr:::.resolveLdRef(narrowed), narrowed)
 })
 
-test_that(".materializeLdSketch and .resolveGenoHandle take a panel too", {
+test_that(".materializeLdRef and .resolveGenotypes take a panel too", {
     panel <- readGenotypes(plink1Prefix = .toyRefPrefix())
-    expect_s4_class(
-        pecotmr:::.materializeLdSketch(panel, "22"),
-        "GenotypeHandle"
-    )
-    expect_s4_class(
-        pecotmr:::.resolveGenoHandle(NULL, "s1", NULL, panel),
-        "GenotypeHandle"
+    expect_identical(pecotmr:::.materializeLdRef(panel, "22"), panel)
+    expect_identical(
+        pecotmr:::.resolveGenotypes(NULL, "s1", NULL, panel),
+        panel
     )
 })
 
@@ -925,21 +944,22 @@ test_that(".entriesChroms collects canonical chromosomes across entries", {
     expect_equal(pecotmr:::.entriesChroms(list(NULL)), character(0))
 })
 
-test_that(".materializeLdSketch passes a handle through, restricts shards", {
-    h <- .toyLdSketch()
-    expect_identical(pecotmr:::.materializeLdSketch(h, "22"), h) # already in memory
-    expect_null(pecotmr:::.materializeLdSketch(NULL, "22"))
+test_that(".materializeLdRef passes a handle through, restricts shards", {
+    h <- .toyLdRef()
+    # already in memory
+    expect_identical(pecotmr:::.materializeLdRef(h, "22"), h)
+    expect_null(pecotmr:::.materializeLdRef(NULL, "22"))
     # A chrom-sharded spec with a bogus chr21 payload: restricting to chr22 must
     # skip (never open) the chr21 shard; requesting chr21 too fails on it.
     spec <- c("22" = .toyRefPrefix(), "21" = "/no/such/chr21/prefix")
-    restricted <- pecotmr:::.materializeLdSketch(spec, "22")
-    expect_s4_class(restricted, "GenotypeHandle")
-    expect_equal(names(chromPaths(restricted)), "22")
-    expect_error(pecotmr:::.materializeLdSketch(spec, c("22", "21")))
+    restricted <- pecotmr:::.materializeLdRef(spec, "22")
+    expect_s4_class(restricted, "RangedSummarizedExperiment")
+    expect_equal(names(pecotmr:::.ldRefChromPaths(restricted)), "22")
+    expect_error(pecotmr:::.materializeLdRef(spec, c("22", "21")))
 })
 
 test_that("loadGwasSumStatsFromManifest reads only the needed shards", {
-    skip_if_not_installed("snpStats")
+    skip_if_not_installed("PlinkMatrix")
     tmp <- withr::local_tempdir()
     ssPath <- .writeSumstatsTsv(.toyGwasDf(5), file.path(tmp, "study1.tsv"))
     manifest <- data.frame(
@@ -947,24 +967,25 @@ test_that("loadGwasSumStatsFromManifest reads only the needed shards", {
         sumStatsPath = ssPath,
         stringsAsFactors = FALSE
     )
-    # Sharded ldSketch: chr22 real (toy_ref), chr21 a bogus path. The sumstats are
-    # all chr22, so the loader must skip the chr21 shard -- opening it would fail.
+    # Sharded ldReference: chr22 real (toy_ref), chr21 a bogus path. The
+    # sumstats are all chr22, so the loader must skip the chr21 shard --
+    # opening it would fail.
     obj <- loadGwasSumStatsFromManifest(
         manifest,
         genome = "hg38",
-        ldSketch = c("22" = .toyRefPrefix(), "21" = "/no/such/chr21/prefix")
+        ldReference = c("22" = .toyRefPrefix(), "21" = "/no/such/chr21/prefix")
     )
     expect_s4_class(obj, "GwasSumStats")
     expect_true(methods::validObject(obj))
 })
 
-test_that("ldSketch resolves from an ldSketchPath column; conflicts error", {
+test_that("ldReference resolves from ldReferencePath; conflicts error", {
     tmp <- withr::local_tempdir()
     ssPath <- .writeSumstatsTsv(.toyGwasDf(5), file.path(tmp, "s.tsv"))
     manifest <- data.frame(
         study = "s1",
         sumStatsPath = ssPath,
-        ldSketchPath = .toyRefPrefix(),
+        ldReferencePath = .toyRefPrefix(),
         stringsAsFactors = FALSE
     )
     obj <- loadGwasSumStatsFromManifest(manifest, genome = "hg38")
@@ -974,7 +995,7 @@ test_that("ldSketch resolves from an ldSketchPath column; conflicts error", {
         loadGwasSumStatsFromManifest(
             manifest,
             genome = "hg38",
-            ldSketch = "/some/other/prefix"
+            ldReference = "/some/other/prefix"
         ),
         "disagrees"
     )
@@ -986,19 +1007,20 @@ test_that("ldSketch resolves from an ldSketchPath column; conflicts error", {
     )
     expect_error(
         loadGwasSumStatsFromManifest(bare, genome = "hg38"),
-        "must be provided as an argument or an .ldSketchPath"
+        "must be provided as an argument or an .ldReferencePath"
     )
 })
 
 test_that("LD containment uses a sharded sketch's chromPaths", {
-    sharded <- GenotypeHandle(genoMeta = c("22" = .toyRefPrefix()))
+    skip_if_not_installed("PlinkMatrix")
+    sharded <- readGenotypes(genoMeta = c("22" = .toyRefPrefix()))
     gr <- pecotmr:::.dfToEntryGranges(.toyGwasDf(5))
     expect_silent(pecotmr:::.checkLdContainment(sharded, gr, 0.5, "lbl"))
 })
 
 test_that(".checkLdContainment short-circuits on an empty entry", {
     expect_null(pecotmr:::.checkLdContainment(
-        .toyLdSketch(),
+        .toyLdRef(),
         GenomicRanges::GRanges(),
         0.5,
         "lbl"
@@ -1009,7 +1031,7 @@ test_that(".checkLdContainment warns when the sketch has no variant metadata", {
     h <- methods::new(
         "GenotypeHandle",
         path = "meta",
-        format = "plink1",
+        format = "plink2",
         snpInfo = data.frame(),
         nSamples = 0L,
         sampleIds = character(),
@@ -1088,7 +1110,7 @@ test_that("loadGwasSumStatsFromManifest attaches nCase/nControl/varY", {
     obj <- loadGwasSumStatsFromManifest(
         manifest,
         genome = "hg38",
-        ldSketch = .toyLdSketch()
+        ldReference = .toyLdRef()
     )
     expect_equal(as.numeric(obj$nCase), 1200)
     expect_equal(as.numeric(obj$nControl), 3400)
@@ -1109,7 +1131,7 @@ test_that("loadQtlSumStatsFromManifest attaches varY and honours region", {
     obj <- suppressWarnings(loadQtlSumStatsFromManifest(
         manifest,
         genome = "hg38",
-        ldSketch = .toyLdSketch(),
+        ldReference = .toyLdRef(),
         region = data.frame(chrom = "22", start = 1, end = 5e7)
     ))
     expect_equal(as.numeric(obj$varY), 1.7)
@@ -1315,7 +1337,7 @@ test_that("loadGwasSumStatsFromManifest reads a GWAS-VCF (A1=ALT, Z=ES/SE)", {
     obj <- suppressWarnings(loadGwasSumStatsFromManifest(
         manifest,
         genome = "hg38",
-        ldSketch = .toyLdSketch()
+        ldReference = .toyLdRef()
     ))
     mc <- S4Vectors::mcols(obj[[1L]])
     expect_equal(as.character(mc$A1), c("G", "C", "G", "C", "A")) # ALT
@@ -1344,14 +1366,14 @@ test_that("GWAS-VCF sample selection is enforced for multi-sample files", {
         suppressWarnings(loadGwasSumStatsFromManifest(
             manifest,
             genome = "hg38",
-            ldSketch = .toyLdSketch()
+            ldReference = .toyLdRef()
         )),
         "pass .sampleSelect"
     )
     obj <- suppressWarnings(loadGwasSumStatsFromManifest(
         manifest,
         genome = "hg38",
-        ldSketch = .toyLdSketch(),
+        ldReference = .toyLdRef(),
         sampleSelect = "study2"
     ))
     expect_equal(length(obj[[1L]]), 5L)
@@ -1359,7 +1381,7 @@ test_that("GWAS-VCF sample selection is enforced for multi-sample files", {
         suppressWarnings(loadGwasSumStatsFromManifest(
             manifest,
             genome = "hg38",
-            ldSketch = .toyLdSketch(),
+            ldReference = .toyLdRef(),
             sampleSelect = "nope"
         )),
         "not a sample"
@@ -1379,7 +1401,7 @@ test_that("GWAS-VCF without SS errors", {
         suppressWarnings(loadGwasSumStatsFromManifest(
             manifest,
             genome = "hg38",
-            ldSketch = .toyLdSketch()
+            ldReference = .toyLdRef()
         )),
         "SS"
     )
@@ -1425,7 +1447,7 @@ test_that("GWAS-VCF without ES/SE errors", {
         suppressWarnings(loadGwasSumStatsFromManifest(
             manifest,
             genome = "hg38",
-            ldSketch = .toyLdSketch()
+            ldReference = .toyLdRef()
         )),
         "ES and SE"
     )
@@ -1462,32 +1484,32 @@ test_that("optional sumstats columns (BETA/SE/P/MAF) are attached", {
             stringsAsFactors = FALSE
         ),
         genome = "hg38",
-        ldSketch = .toyLdSketch()
+        ldReference = .toyLdRef()
     )
     mc <- S4Vectors::mcols(obj[[1L]])
     expect_true(all(c("BETA", "SE", "P", "MAF") %in% colnames(mc)))
 })
 
-test_that(".detectGenotypeFormat probes a PLINK2 prefix", {
+test_that(".readGenotypePath probes a PLINK2 prefix", {
     tmp <- withr::local_tempdir()
     file.create(file.path(tmp, "g.pgen"))
-    expect_error(pecotmr:::.detectGenotypeFormat(file.path(tmp, "g")))
+    expect_error(pecotmr:::.readGenotypePath(file.path(tmp, "g")))
 })
 
-test_that(".resolveLdSketch passes through NULL and a handle", {
-    expect_null(pecotmr:::.resolveLdSketch(NULL))
-    h <- .toyLdSketch()
-    expect_identical(pecotmr:::.resolveLdSketch(h), h)
+test_that(".resolveLdRef passes through NULL and a handle", {
+    expect_null(pecotmr:::.resolveLdRef(NULL))
+    h <- .toyLdRef()
+    expect_identical(pecotmr:::.resolveLdRef(h), h)
 })
 
-test_that("non-constant ldSketchPath column errors", {
+test_that("non-constant ldReferencePath column errors", {
     tmp <- withr::local_tempdir()
     ss1 <- .writeSumstatsTsv(.toyGwasDf(3), file.path(tmp, "a.tsv"))
     ss2 <- .writeSumstatsTsv(.toyGwasDf(3), file.path(tmp, "b.tsv"))
     manifest <- data.frame(
         study = c("a", "b"),
         sumStatsPath = c(ss1, ss2),
-        ldSketchPath = c(.toyRefPrefix(), "other"),
+        ldReferencePath = c(.toyRefPrefix(), "other"),
         stringsAsFactors = FALSE
     )
     expect_error(
@@ -1559,7 +1581,16 @@ test_that("genotypeCovariates accepts a path string", {
 test_that("QtlSumStats manifest resolves a per-row columnMapping", {
     tmp <- withr::local_tempdir()
     df <- .toyGwasDf(5)
-    names(df) <- c("CHR", "POS", "RSID", "EA", "OA", "ZSCORE", "SAMPLE_N")
+    names(df) <- c(
+        "CHR",
+        "POS",
+        "RSID",
+        "EA",
+        "OA",
+        "ZSCORE",
+        "SAMPLE_N",
+        "EA_FREQ"
+    )
     ssPath <- .writeSumstatsTsv(df, file.path(tmp, "g.tsv"))
     mapPath <- file.path(tmp, "m.yaml")
     yaml::write_yaml(
@@ -1570,7 +1601,8 @@ test_that("QtlSumStats manifest resolves a per-row columnMapping", {
             A1 = "EA",
             A2 = "OA",
             z = "ZSCORE",
-            n_sample = "SAMPLE_N"
+            n_sample = "SAMPLE_N",
+            af = "EA_FREQ"
         ),
         mapPath
     )
@@ -1585,7 +1617,7 @@ test_that("QtlSumStats manifest resolves a per-row columnMapping", {
     obj <- loadQtlSumStatsFromManifest(
         manifest,
         genome = "hg38",
-        ldSketch = .toyLdSketch()
+        ldReference = .toyLdRef()
     )
     expect_equal(length(obj[[1L]]), 5L)
 })
@@ -1659,7 +1691,7 @@ test_that("loadGwasSumStatsFromManifest splits by LD block when asked", {
     plain <- suppressWarnings(loadGwasSumStatsFromManifest(
         manifest = mf,
         genome = "hg38",
-        ldSketch = ldStem,
+        ldReference = ldStem,
         region = region
     ))
     expect_equal(length(plain), 1L)
@@ -1673,7 +1705,7 @@ test_that("loadGwasSumStatsFromManifest splits by LD block when asked", {
     split <- suppressWarnings(loadGwasSumStatsFromManifest(
         manifest = mf,
         genome = "hg38",
-        ldSketch = ldStem,
+        ldReference = ldStem,
         region = region,
         ldBlocks = blocks
     ))

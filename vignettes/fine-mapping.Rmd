@@ -35,8 +35,9 @@ Method arguments are the same across input classes; `fineMappingPipeline()`
 routes `methods = "susie"` to `susieR::susie` for individual-level data
 and to `susieR::susie_rss` for summary-statistics inputs automatically.
 
-The output is always a `FineMappingResult` (a `GRangesList`-subclass
-collection, one element per fine-mapped tuple).
+The output is a `QtlFineMappingResult` (a `GwasFineMappingResult` for
+`GwasSumStats` input): a `GRangesList`-subclass collection, one element per
+fine-mapped tuple.
 
 ```{r load-packages}
 library(pecotmr)
@@ -140,7 +141,7 @@ fmrSs <- fineMappingPipeline(qtlSumStatsExample, methods = "susie")
 fmrSs
 ```
 
-The `QtlSumStats` collection carries an `ldSketch` genotype panel; the
+The `QtlSumStats` collection carries an `ldReference` genotype panel; the
 pipeline pulls the per-region LD from there automatically.
 
 ## GWAS summary-statistics fine-mapping
@@ -190,22 +191,30 @@ fineMappingPipeline(
 
 ## Joint multi-context / multi-trait fits
 
-`jointSpecification` triggers the dispatch for cross-axis joint
-methods (`mvsusie` for cross-context, `mvsusie` or `fsusie` for multi-trait):
+The joint methods (`mvsusie`, `fsusie`) fit across traits when the input
+has two or more, else across contexts. To choose the axes yourself, pass a
+`jointSpecification`: a character vector of axes, or
+`list(axes = , scope = )` to limit the fit to listed studies, contexts or
+traits:
 
 ```{r fm-joint, eval=FALSE}
+# `qd`: a QtlDataset whose traits are measured in brain, liver and more.
 fineMappingPipeline(
-    multiStudyQtlDatasetExample,
+    qd,
     methods = "mvsusie",
-    jointSpecification = list(axis = "context", contexts = c("brain", "liver"))
+    jointSpecification = list(list(
+        axes = "context",
+        scope = list(context = c("brain", "liver"))
+    ))
 )
 ```
 
-See `?jointSpecification` for the specification grammar.
+The `jointSpecification` argument in `?fineMappingPipeline` gives the full
+grammar, including the `study` axis for summary statistics.
 
 ## Reading the result
 
-`FineMappingResult` is a `GRangesList` subclass, one element per
+`QtlFineMappingResult` is a `GRangesList` subclass, one element per
 `(study, context, trait, method)` tuple. The element is the fitted variant
 set as a `GRanges`, so the result is addressable by genomic range as well as
 by tuple; the tuple itself and the per-tuple payloads live in `mcols()`,
@@ -289,7 +298,7 @@ Two are worth calling out:
     so that fine-mapping weights are contributed to the TWAS ensemble weights
     model alongside regularized regression methods.
 -  Run the full [`causalInferencePipeline`](twas-zscore.html) (TWAS + MR) with
-    a `FineMappingResult` and `GwasSumStats`.
+    a `QtlFineMappingResult` and `GwasSumStats`.
 
 # Session info
 

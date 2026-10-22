@@ -15,6 +15,14 @@ Abstract container for pre-computed LD statistics. Subclasses
   live in \code{mcols} too, so subsetting narrows the ranges and the
   statistics together. The genome build comes from \code{seqinfo()} rather
   than a slot of its own.
+
+  A statistic built from a genotype panel (or a
+  \code{\link{GenotypeMixture}}) keeps that reference rather than its
+  blocks' LD: each block's LD is read from the panel when an estimator
+  reaches the block, so only one block's is ever in memory, and
+  \code{mcols()} records each variant's row in the panel as
+  \code{panelRow}. One built from \code{\link{LdMatrix}} blocks stores
+  what it needs of their LD instead.
 }
 \section{Slots}{
 
@@ -25,5 +33,9 @@ Abstract container for pre-computed LD statistics. Subclasses
 
 \item{\code{inSample}}{Logical, whether the LD reference is from the same cohort as
 the GWAS (affects bias correction).}
+
+\item{\code{ldReference}}{The genotype panel or \code{GenotypeMixture} the
+statistic reads its blocks' LD from, or \code{NULL} when it was built
+from \code{LdMatrix} blocks.}
 }}
 

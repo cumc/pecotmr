@@ -75,7 +75,6 @@ test_that("dprWeights with VB fitting recovers signal direction", {
 })
 
 test_that("lassosumRssWeights recovers signal direction on simulated data", {
-    skip_if_not_installed("Rcpp")
     set.seed(2024)
     n <- 500
     p <- 20
@@ -86,8 +85,16 @@ test_that("lassosumRssWeights recovers signal direction on simulated data", {
     bhat <- as.vector(cor(y, X))
     R <- cor(X)
     # Heterogeneous n forces the median(stat$n) path; mean would be wrong.
-    stat <- list(b = bhat, n = c(rep(n, p - 1), 10 * n))
-    w <- lassosumRssWeights(stat = stat, LD = R, s = c(0.2, 0.5, 0.9))
+    stat <- list(
+        b = bhat,
+        n = c(rep(n, p - 1), 10 * n),
+        variantNames = .rrwIds(p)
+    )
+    w <- lassosumRssWeights(
+        stat = stat,
+        ldReference = .rrwLdMatrix(R),
+        s = c(0.2, 0.5, 0.9)
+    )
     expect_equal(length(w), p)
     expect_true(all(is.finite(w)))
     expect_gt(cor(w, beta_true), 0.5)

@@ -10,7 +10,7 @@ assembleCtwasInputs(
   twasZ = NULL,
   fineMappingResult = NULL,
   method = NULL,
-  variantPruningArgs = VariantPruningParam()
+  variantPruningParam = VariantPruningParam()
 )
 }
 \arguments{
@@ -53,7 +53,7 @@ present; otherwise run \strong{every} method as an independent cTWAS run
 (one \code{CtwasResult} row-set per method). Passing the name explicitly
 (e.g. \code{"mrash"}) restricts the run to that single method.}
 
-\item{variantPruningArgs}{Which variants survive into each gene's weight
+\item{variantPruningParam}{Which variants survive into each gene's weight
 matrix, built with \code{\link{VariantPruningParam}}:
 \code{weightCutoff}, \code{csMinCor}, \code{pipRescue} and
 \code{maxVariants}. Handed whole to
@@ -92,7 +92,8 @@ blocks <- GenomicRanges::GRanges("chr22",
   IRanges::IRanges(c(10000000, 15000001), c(15000000, 19000000)),
   blockId = c("chr22_1", "chr22_2"))
 gss <- loadGwasSumStatsFromManifest(manifest = mani, genome = "hg38",
-  ldSketch = ldStem, region = "chr22:10000000-19000000", ldBlocks = blocks)
+  ldReference = ldStem, region = "chr22:10000000-19000000",
+  ldBlocks = blocks)
 gwasByRegion <- summaryStatsQc(gss,
   panelFilterParam = PanelFilterParam(mafCutoff = 0.0025))
 assembleCtwasInputs(gwasSumStats = gwasByRegion,

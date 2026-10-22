@@ -13,16 +13,18 @@ An \code{LdEigen} object (extends \code{LdStatistic}) with an
 An \code{LdEigen} reference for the eigendecomposition-based
 heritability estimators (\code{\link{estimateH2}} with
 \code{method = "lder"} or \code{"hdl"}, and
-\code{\link{computeLdScores}}). Built by \code{\link{buildLdEigen}} from
-the first 14 chr22 LD blocks of the de-identified \code{protocol_example}
-reference panel, so the LD is real rather than simulated. Describes the
-same variants as \code{\link{ldScoreExample}}, so the four estimators can
-be compared on one reference.
+\code{\link{computeLdScores}}). Built by \code{\link{buildLdEigen}}
+over the first 14 chr22 LD blocks of the de-identified
+\code{protocol_example} reference. Describes the same variants as
+\code{\link{ldScoreExample}}, so the four estimators can be compared on
+one reference.
 
-The panel behind it has \code{nSamples = 1000}. That is small enough that
-\code{method = "hdl"}, which models reference-panel noise explicitly,
-shrinks its estimate hard -- correct behaviour for a panel this size
-rather than a fault.
+The LD is that of a panel of 20,000 people simulated from the
+\code{protocol_example} panel's own LD, which is a sketch of 60 people:
+the estimators correct for the noise in a reference's LD, and at 60 that
+correction swamps the signal. A large simulated panel keeps the LD
+structure real while giving the reference a realistic size
+(\code{nSamples = 20000}); see \code{inst/scripts/build_h2_examples.R}.
 }
 \examples{
 data(ldEigenExample)

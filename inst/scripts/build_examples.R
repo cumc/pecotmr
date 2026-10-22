@@ -2,7 +2,7 @@
 # Build canonical S4 example objects for vignettes.
 #
 # Sources `inst/extdata/toy_ref.{bed,bim,fam}` (165 samples x 17,421 chr22
-# variants) for a real GenotypeHandle backing, then constructs synthetic
+# variants) for a real PLINK1 genotype panel, then constructs synthetic
 # phenotypes / sumstats so the vignettes can demonstrate every S4 input
 # class with a single `data(<name>)` call.
 #
@@ -22,17 +22,19 @@ library(purrr)
 set.seed(20260620L)
 
 # -----------------------------------------------------------------------------
-# 1. Build a GenotypeHandle from the bundled toy PLINK1 reference and pick a
-#    small contiguous window for fast vignette builds.
+# 1. Read the bundled toy PLINK1 reference as a panel and pick a small
+#    contiguous window for fast vignette builds.
 # -----------------------------------------------------------------------------
 toyBed <- system.file("extdata", "toy_ref.bed", package = "pecotmr")
 toyStem <- sub("\\.bed$", "", toyBed)
-toyRef <- GenotypeHandle(plink1Prefix = toyStem)
+toyRef <- readGenotypes(plink1Prefix = toyStem)
 
 # Pick the first 200 variants in a contiguous chr22 window for a small
 # but realistic LD block.
 snpIdx <- seq_len(200L)
-windowSnpInfo <- toyRef@snpInfo[snpIdx, ]
+windowSnpInfo <- pecotmr:::.rangesSnpInfo(
+    SummarizedExperiment::rowRanges(toyRef)
+)[snpIdx, ]
 region <- sprintf("chr22:%d-%d", min(windowSnpInfo$BP), max(windowSnpInfo$BP))
 
 # Build a small canonical-ID PLINK1 fileset in inst/extdata so the
@@ -74,18 +76,19 @@ snpStats::write.plink(
     snp.major = TRUE,
     na.code = 0L
 )
-gh <- GenotypeHandle(plink1Prefix = smallStem)
-windowSnpInfo <- gh@snpInfo
+gh <- readGenotypes(plink1Prefix = smallStem)
+windowSnpInfo <- pecotmr:::.rangesSnpInfo(SummarizedExperiment::rowRanges(gh))
 
 # Materialise the dosage matrix once for synthetic-phenotype generation.
-block <- extractBlockGenotypes(gh, snpIdx, meanImpute = TRUE)
-X <- t(SummarizedExperiment::assay(block, "dosage")) # samples x variants
+X <- pecotmr:::.meanImputeGeno(
+    t(as.matrix(SummarizedExperiment::assay(gh, "dosage")[snpIdx, ]))
+) # samples x variants
 
 # -----------------------------------------------------------------------------
 # 2. Synthesise a phenotype with two causal variants.
 # -----------------------------------------------------------------------------
 nSample <- nrow(X)
-sampleIds <- gh@sampleIds
+sampleIds <- colnames(gh)
 causalIdx <- c(50L, 130L)
 beta <- numeric(ncol(X))
 beta[causalIdx] <- c(0.7, -0.5)
@@ -154,7 +157,7 @@ qtlSumStatsExample <- QtlSumStats(
     trait = "ENSG_example",
     entry = list(qtlGr),
     genome = "hg19",
-    ldSketch = gh,
+    ldReference = gh,
     qcInfo = list(prebuilt = "synthetic example data; QC bypassed")
 )
 
@@ -188,7 +191,7 @@ gwasSumStatsS4Example <- GwasSumStats(
     study = "trait1",
     entry = list(gwasGr),
     genome = "hg19",
-    ldSketch = gh,
+    ldReference = gh,
     qcInfo = list(prebuilt = "synthetic example data; QC bypassed")
 )
 
@@ -285,40 +288,51 @@ qtlSumStatsMulticontextExample <- QtlSumStats(
     trait = rep("ENSG_example", length(multiCtxNames)),
     entry = multiCtxEntries,
     genome = "hg19",
-    ldSketch = gh,
+    ldReference = gh,
     qcInfo = list(prebuilt = "synthetic multi-context example; QC bypassed")
 )
 
 # -----------------------------------------------------------------------------
-# 7. Rewrite the GenotypeHandle paths to a portable bundled-resource reference
+# 7. Point the PLINK1 panels at a portable bundled-resource reference
 #    ("pecotmr://extdata/<stem>") so the .rda objects carry no source-tree
-#    absolute path. The genotype readers resolve this via system.file() at
-#    extraction time, so no user-facing fixup step is required.
+#    absolute path. The panel's seed resolves it via system.file() when it
+#    reads, so no user-facing fixup step is required.
 # -----------------------------------------------------------------------------
 asResource <- function(p) paste0("pecotmr://extdata/", basename(p))
 
-# A QtlDataset holds its handle twice: as a slot and inside the lazy dosage
-# assay's seed. Repointing only the slot would leave the assay reading the
-# build machine's absolute path, so both move together.
-repointHandle <- function(x) {
-    handle <- genotypeHandle(x)
-    handle@path <- asResource(handle@path)
-    pecotmr:::.qtlWithGenotypeHandle(x, handle)
+# A PLINK1 panel records its stem twice: as its seed's backend, which reads
+# the file, and as its genotype source, which says where it came from. Both
+# move together.
+asPortablePanel <- function(panel) {
+    seed <- pecotmr:::.panelSeed(panel)
+    ref <- asResource(pecotmr:::.gdSeedBackend(seed))
+    SummarizedExperiment::assay(panel, "dosage", withDimnames = FALSE) <-
+        DelayedArray::DelayedArray(methods::initialize(seed, backend = ref))
+    md <- S4Vectors::metadata(panel)
+    md$genotypeSource$path <- ref
+    S4Vectors::metadata(panel) <- md
+    panel
+}
+repointDataset <- function(x) {
+    pecotmr:::.qtlWithGenotypeHandle(
+        x,
+        asPortablePanel(pecotmr:::.qtlGenotypeSe(x))
+    )
 }
 
-qtlDatasetExample <- repointHandle(qtlDatasetExample)
-qtlSumStatsExample@ldSketch@path <- asResource(
-    qtlSumStatsExample@ldSketch@path
+qtlDatasetExample <- repointDataset(qtlDatasetExample)
+qtlSumStatsExample@ldReference <- asPortablePanel(
+    qtlSumStatsExample@ldReference
 )
-qtlSumStatsMulticontextExample@ldSketch@path <- asResource(
-    qtlSumStatsMulticontextExample@ldSketch@path
+qtlSumStatsMulticontextExample@ldReference <- asPortablePanel(
+    qtlSumStatsMulticontextExample@ldReference
 )
-gwasSumStatsS4Example@ldSketch@path <- asResource(
-    gwasSumStatsS4Example@ldSketch@path
+gwasSumStatsS4Example@ldReference <- asPortablePanel(
+    gwasSumStatsS4Example@ldReference
 )
 multiStudyQtlDatasetExample@qtlDatasets <- map(
     multiStudyQtlDatasetExample@qtlDatasets,
-    repointHandle
+    repointDataset
 )
 
 # -----------------------------------------------------------------------------

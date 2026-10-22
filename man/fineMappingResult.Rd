@@ -32,18 +32,19 @@ fineMappingResult(
 )
 }
 \arguments{
-\item{x}{A \code{FineMappingResult} object.}
+\item{x}{A \code{QtlFineMappingResult} or \code{GwasFineMappingResult}.}
 
 \item{studyName, context, trait, method}{Single character identifiers. All
 required when the collection has more than one row; optional when the
 collection has a single row.}
 }
 \value{
-A \code{FineMappingRow} object.
+A single-row collection of the same class as \code{x}.
 }
 \description{
-Return the \code{FineMappingRow} for one \code{(study,
-  context, trait, method)} row of a \code{FineMappingResult} collection.
+Return one row of a \code{QtlFineMappingResult} or
+  \code{GwasFineMappingResult}, selected by its identity, as a single-row
+  collection of the same class.
 }
 \examples{
 data(qtlFineMappingExample)

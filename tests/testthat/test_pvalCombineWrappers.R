@@ -422,6 +422,53 @@ test_that("pvalPoolr invchisq method returns valid p-value", {
 })
 
 
+test_that("generalized poolr tests reduce to the plain ones when independent", {
+    # With R = I the generalized adjustment must give the unadjusted test.
+    # poolr reads R as the covariance of each test's transformed statistic,
+    # so the raw correlations understated Var(-2 log p) as 1 rather than 4:
+    # Fisher on these four p-values gave 1.9e-6 instead of 0.0076.
+    skip_if_not_installed("poolr")
+    p <- c(0.01, 0.2, 0.5, 0.03)
+    R <- diag(4)
+    expect_equal(pecotmr:::pvalPoolr(p, "fisher", R), poolr::fisher(p)$p)
+    expect_equal(pecotmr:::pvalPoolr(p, "stouffer", R), poolr::stouffer(p)$p)
+    expect_equal(pecotmr:::pvalPoolr(p, "invchisq", R), poolr::invchisq(p)$p)
+})
+
+test_that(".poolrDependence converts R for the adjustment poolr runs", {
+    skip_if_not_installed("poolr")
+    R <- 0.6^abs(outer(1:4, 1:4, "-"))
+    gen <- list(adjust = "generalized")
+    expect_equal(
+        pecotmr:::.poolrDependence(R, "fisher", gen),
+        poolr::mvnconv(R, target = "m2lp")
+    )
+    expect_equal(
+        pecotmr:::.poolrDependence(R, "stouffer", gen),
+        poolr::mvnconv(R, target = "z")
+    )
+    expect_equal(
+        pecotmr:::.poolrDependence(R, "invchisq", gen),
+        poolr::mvnconv(R, target = "chisq1")
+    )
+    # The effective-number adjustments read the p-values' correlations, on
+    # the sidedness the caller declared.
+    expect_equal(
+        pecotmr:::.poolrDependence(
+            R,
+            "fisher",
+            list(adjust = "nyholt", side = 1)
+        ),
+        poolr::mvnconv(R, side = 1, target = "p", cov2cor = TRUE)
+    )
+    # "empirical" simulates from the statistics' own correlations.
+    expect_identical(
+        pecotmr:::.poolrDependence(R, "fisher", list(adjust = "empirical")),
+        R
+    )
+    expect_identical(pecotmr:::.poolrDependence(R, "fisher", list()), R)
+})
+
 test_that("pvalPoolr errors on unknown method", {
     skip_if_not_installed("poolr")
     expect_error(
@@ -679,7 +726,9 @@ test_that("combinePValues refuses options for a method it will not run", {
             pvals = c(0.01, 0.2, 0.5),
             methods = "fisher",
             R = diag(3),
-            methodArgs = PvalMethodsParam(stouffer = PoolrOptions(side = 1))
+            pvalMethodsParam = PvalMethodsParam(
+                stouffer = PoolrOptions(side = 1)
+            )
         ),
         "configures stouffer, which `methods` does not request"
     )
@@ -687,7 +736,7 @@ test_that("combinePValues refuses options for a method it will not run", {
         combinePValues(
             pvals = c(0.01, 0.2),
             methods = "acat",
-            methodArgs = list(fisher = list())
+            pvalMethodsParam = list(fisher = list())
         ),
         "PvalMethodsParam"
     )
@@ -702,7 +751,7 @@ test_that("combinePValues forwards each method's options to its engine", {
             pvals = c(0.01, 0.2, 0.5),
             methods = "stouffer",
             R = diag(3),
-            methodArgs = PvalMethodsParam(
+            pvalMethodsParam = PvalMethodsParam(
                 stouffer = PoolrOptions(adjust = "empirical", size = 1000)
             )
         ),
@@ -732,7 +781,7 @@ test_that("an unconfigured method still gets its constructor's defaults", {
         },
         .package = "poolr"
     )
-    # The adjustment pecotmr hard-coded before `methodArgs` existed.
+    # The adjustment pecotmr hard-coded before per-method options existed.
     expect_equal(seen$adjust, "generalized")
 })
 
@@ -750,7 +799,7 @@ test_that("combinePValues forwards GBJ and aSPU options", {
                 zScores = z,
                 methods = c("gbj", "aspu"),
                 R = diag(3),
-                methodArgs = PvalMethodsParam(
+                pvalMethodsParam = PvalMethodsParam(
                     gbj = GbjOptions(pairwise_cors = rep(0, 3)),
                     aspu = AspuOptions(n.perm = 200)
                 )

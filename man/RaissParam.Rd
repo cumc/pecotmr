@@ -8,6 +8,7 @@
 \usage{
 RaissParam(
   lamb = 0.01,
+  rcond = 0.01,
   svdTol = 1e-12,
   r2Threshold = 0.6,
   minimumLd = 5,
@@ -21,9 +22,15 @@ RaissParam(
 \item{lamb}{Regularization term added to the LD diagonal. Default
 \code{0.01}.}
 
-\item{svdTol}{Singular-value cutoff for the pseudo-inverse. Default
-\code{1e-12}. Note this is tighter than \code{\link{raiss}}'s own
-\code{1e-8} default.}
+\item{rcond}{Eigenvalue cutoff for the pseudo-inverse of the known
+variants' LD: directions whose ridged eigenvalue is below \code{rcond}
+times the largest are dropped. Default \code{0.01}, as
+\code{\link{raiss}}'s own.}
+
+\item{svdTol}{Relative tolerance below which singular values of the
+standardized genotypes are treated as numerically zero, used when the LD
+reference is a genotype panel. Default \code{1e-12}. Note this is
+tighter than \code{\link{raiss}}'s own \code{1e-8} default.}
 
 \item{r2Threshold}{Imputation \eqn{R^2} below which a variant is dropped
 from the output. Default \code{0.6}.}
@@ -47,15 +54,15 @@ A \code{RaissParam} object, a \code{\link{MethodParam}}.
 }
 \description{
 The settings \code{\link{summaryStatsQc}} uses when
-  \code{impute = TRUE}. Four are forwarded to \code{\link{raiss}}; the
+  \code{impute = TRUE}. Five are forwarded to \code{\link{raiss}}; the
   other four are pecotmr's own, bounding which panel variants RAISS is
   asked to impute and how wide a window it reads.
 
-  \code{\link{raiss}} also takes an \code{rcond}, but only on its
-  LD-matrix path. QC always hands it a genotype matrix, which routes
-  through the SVD solver and uses \code{svdTol} instead, so \code{rcond}
-  is not offered here --- naming it is an error rather than a setting that
-  silently does nothing.
+  \code{rcond} applies whatever the collection's LD reference is: QC hands
+  RAISS a genotype panel's dosages, which route through the SVD solver, or
+  an \code{\link{LdMatrix}}'s correlations, which are inverted directly,
+  and both drop the same weak directions. \code{svdTol} only matters on
+  the genotype route.
 }
 \examples{
 RaissParam(mafCutoff = 0.01, flank = 5e5)

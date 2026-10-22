@@ -19,7 +19,7 @@ credibleSets(x, ...)
 )
 }
 \arguments{
-\item{x}{A \code{FineMappingRow} or \code{FineMappingResult}.}
+\item{x}{A \code{QtlFineMappingResult} or \code{GwasFineMappingResult}.}
 
 \item{...}{Class-specific selection arguments plus \code{coverage}.}
 

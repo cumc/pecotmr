@@ -20,8 +20,10 @@ stripChrPrefix <- function(x) str_remove(x, "^chr")
 
 #' Canonicalize chromosome identifiers to a normalized string.
 #'
-#' Strips a leading "chr"/"ch" prefix (case-insensitive), uppercases, and maps
-#' common synonyms to a single form (23 -> X, 24 -> Y, M -> MT). Returns a
+#' Strips a leading "chr"/"ch" prefix (case-insensitive), uppercases, drops
+#' the leading zeros of a numeric label (01 -> 1, as UK Biobank's BGEN files
+#' write chromosomes) and maps common synonyms to a single form (23 -> X,
+#' 24 -> Y, M -> MT). Returns a
 #' character vector and never coerces to integer, so non-autosomal chromosomes
 #' (X, Y, MT) survive instead of collapsing to NA. This is the single chromosome
 #' normalizer used for variant matching and identity throughout the package; it
@@ -34,7 +36,8 @@ canonChrom <- function(x) {
     bare <- as.character(x) |>
         str_remove(regex("^chr", ignore_case = TRUE)) |>
         str_remove(regex("^ch", ignore_case = TRUE)) |>
-        str_to_upper()
+        str_to_upper() |>
+        str_remove("^0+(?=[0-9]+$)")
     canonChromLabel(bare)
 }
 
@@ -111,7 +114,7 @@ isSnpAlleles <- function(a1, a2) {
 #' belongs -- \code{chr21:13988152:INS:T} whose real alleles are
 #' \code{A}/\code{AT} -- so the id string stops encoding its alleles even
 #' though the panel's own A1/A2 columns are correct. The id-string matchers
-#' (\code{.ldFromSketchMatch}, \code{.subsetSketchToIds}) key on the id and
+#' (\code{.ldFromRefMatch}, \code{.subsetLdRefToIds}) key on the id and
 #' cannot interpret such a record. The allele COLUMNS are authoritative, so the
 #' id is rebuilt from them; the variant is never dropped for how its id happens
 #' to spell an allele.
@@ -471,16 +474,15 @@ normalizeVariantId <- function(ids, chrPrefix = TRUE, convention = NULL) {
 #'   is `FALSE`.
 #' @param removeUnmatched Whether to remove unmatched variants. Default is
 #'   `TRUE`.
-#' @return An \code{AlleleQcResult} S4 object. Use \code{$harmonizedData} to
-#'   recover the post-QC variant data.frame and \code{$qcSummary} to inspect the
-#'   per-variant merge/flip/strand diagnostics.
+#' @return A list with \code{harmonizedData}, the post-QC variant
+#'   data.frame, and \code{qcSummary}, the per-variant merge/flip/strand
+#'   diagnostics.
 #' @importFrom dplyr mutate inner_join filter pull select everything row_number
 #' @importFrom dplyr if_else any_of all_of rename across
 #' @importFrom purrr partial
 #' @importFrom vctrs vec_duplicate_detect
 #' @importFrom tidyr separate
 #' @keywords internal
-#' @noRd
 #' @details Pure panel-vs-sumstats allele harmonization: match by (chrom, pos),
 #'   detect A1/A2 swap, sign-flip \code{colToFlip} columns and complement
 #'   \code{colToComplement} columns on swap. Variant-allele filters (indels,
@@ -488,6 +490,7 @@ normalizeVariantId <- function(ids, chrPrefix = TRUE, convention = NULL) {
 #'   corresponding \code{removeIndels} / \code{removeStrandAmbiguous} /
 #'   \code{removeDups} flags are set; MAF / INFO / N column-numeric filters run
 #'   in \code{.applyContentFilters()} before this function.
+#' @noRd
 harmonizeAlleles <- function(
     targetData,
     refVariants,

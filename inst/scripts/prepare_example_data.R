@@ -176,7 +176,7 @@ qtlPost <- postprocessFinemappingFits(
     fits = list(susie = qtlFit),
     dataX = X,
     dataY = yRes,
-    minAbsCorr = qtlMinAbsCorr
+    credibleSetParam = CredibleSetParam(minAbsCorr = qtlMinAbsCorr)
 )
 qtlRow <- qtlPost$finemappingResults$susie$finemappingEntry
 
@@ -186,7 +186,7 @@ qtlFineMappingExample <- QtlFineMappingResult(
     trait = "gene_1",
     method = "susie",
     entry = list(qtlRow),
-    ldSketch = NULL
+    ldReference = NULL
 )
 
 # ---------------------------------------------------------------------------
@@ -238,7 +238,7 @@ gwasPost <- postprocessFinemappingFits(
 gwasRow <- gwasPost$finemappingResults$susieRss$finemappingEntry
 
 # qtlEnrichmentPipeline() requires the GWAS collection to carry a non-NULL
-# ldSketch: that is its "this fit is RSS-derived" marker. It checks the
+# ldReference: that is its "this fit is RSS-derived" marker. It checks the
 # handle's presence, and that it agrees with the QTL side when that one is also
 # non-NULL (here it is NULL, so the check is skipped) -- the panel itself is
 # never read. No genotype file for this CLU region is shipped, and the LD
@@ -247,19 +247,23 @@ gwasRow <- gwasPost$finemappingResults$susieRss$finemappingEntry
 # shipped fixture. Note it spans chr22:14.5-15.8Mb and so shares no variant
 # with this chr22:32.1-33.1Mb fit; it satisfies the marker, nothing more.
 ldStem <- file.path("inst", "extdata", "toy_canonical")
-gwasLdSketch <- GenotypeHandle(plink1Prefix = ldStem)
-# Portable bundled-resource path, so the .rda carries no source-tree path.
-gwasLdSketch@path <- paste0(
-    "pecotmr://extdata/",
-    basename(gwasLdSketch@path)
-)
+gwasLdReference <- readGenotypes(plink1Prefix = ldStem)
+# Portable bundled-resource path, so the .rda carries no source-tree path:
+# the panel's seed reads through it and its genotype source records it.
+ldRef <- "pecotmr://extdata/toy_canonical"
+ldSeed <- pecotmr:::.panelSeed(gwasLdReference)
+SummarizedExperiment::assay(gwasLdReference, "dosage", withDimnames = FALSE) <-
+    DelayedArray::DelayedArray(methods::initialize(ldSeed, backend = ldRef))
+ldMeta <- S4Vectors::metadata(gwasLdReference)
+ldMeta$genotypeSource$path <- ldRef
+S4Vectors::metadata(gwasLdReference) <- ldMeta
 
 gwasFineMappingExample <- GwasFineMappingResult(
     study = "study_1",
     method = "susie",
     entry = list(gwasRow),
     blockId = "region_1",
-    ldSketch = gwasLdSketch
+    ldReference = gwasLdReference
 )
 
 # ---------------------------------------------------------------------------
@@ -313,7 +317,10 @@ for (nm in c("qtlFineMappingExample", "gwasFineMappingExample")) {
         nrow(summ)
     ))
     if (nrow(cs) == 0L) {
-        stop(nm, ": credibleSets() is empty, which is the defect this build fixes")
+        stop(
+            nm,
+            ": credibleSets() is empty, which is the defect this build fixes"
+        )
     }
 }
 
@@ -330,7 +337,7 @@ if (nShared != sum(lengths(qtlFineMappingExample))) {
 }
 
 # qtlEnrichmentPipeline() is what these two fixtures are documented for, and
-# its non-NULL ldSketch requirement bites only at call time: a GWAS fixture
+# its non-NULL ldReference requirement bites only at call time: a GWAS fixture
 # built without one still constructs, still validates, and still saves. Run it
 # here so that gap fails the build instead of the vignette.
 invisible(capture.output(

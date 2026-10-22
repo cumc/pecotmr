@@ -70,7 +70,7 @@ window used in the
 res <- colocPipeline(
     qtlFineMappingResult = qtlFmr,
     gwasInput = gwasSumStatsS4Example,
-    gwasFineMappingArgs = GwasFineMappingParam(methods = "susie")
+    gwasFineMappingParam = GwasFineMappingParam(methods = "susie")
 )
 res
 ```
@@ -87,8 +87,9 @@ res2 <- colocPipeline(
 attr(res2, "gwasFineMapping")
 ```
 
-If the QTL `FineMappingResult` has an LD sketch because it was run on summary
-statistics it must match the LD sketch for the `GWASSumStats`.
+If the `QtlFineMappingResult` has an LD reference because it was run on
+summary statistics, it must be the same LD reference as the `GwasSumStats`
+carries.
 
 ## QTL FMR + pre-computed GWAS FMR
 
@@ -122,7 +123,7 @@ included. Two opt-in filters can adjust this:
 colocPipeline(
     qtlFineMappingResult = qtlFmr,
     gwasInput = gwasSumStatsS4Example,
-    lbfFilterArgs = ColocLbfFilterParam(
+    colocLbfFilterParam = ColocLbfFilterParam(
         secondary = 0.5, # 50% CS concentration filter
         concentration = 0.5
     )
@@ -198,14 +199,14 @@ colocPipeline(
 colocPipeline(
     qtlFineMappingResult = qtlFmr,
     gwasInput = gwasSumStatsS4Example,
-    lbfFilterArgs = ColocLbfFilterParam(
+    colocLbfFilterParam = ColocLbfFilterParam(
         filterLbfCs = FALSE,
         secondary = NULL, # e.g. 0.5
         concentration = 0.5,
         priorTol = 1e-9
     ),
     priors = ColocPriorParam(p1 = 1e-4, p2 = 1e-4, p12 = 5e-6),
-    gwasFineMappingArgs = GwasFineMappingParam( # inline GWAS FM when needed
+    gwasFineMappingParam = GwasFineMappingParam( # inline GWAS FM when needed
         methods = "susie",
         credibleSetParam = CredibleSetParam(coverage = 0.95)
     ),

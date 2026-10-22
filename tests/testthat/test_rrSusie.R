@@ -1,24 +1,5 @@
 context("regularized_regression - susie")
 
-# ---- initPriorSd ----
-test_that("initPriorSd returns correct number of values with expected properties", {
-    set.seed(123)
-    n <- 50
-    p <- 10
-    X <- matrix(rnorm(n * p), nrow = n)
-    y <- X[, 1] * 2 + rnorm(n)
-
-    result <- initPriorSd(X, y)
-    expect_length(result, 30)
-    expect_equal(result[1], 0)
-    expect_true(all(diff(result) > 0))
-
-    result_15 <- initPriorSd(X, y, n = 15)
-    expect_length(result_15, 15)
-    expect_equal(result_15[1], 0)
-    expect_true(all(diff(result_15) > 0))
-})
-
 # ---- susieWeights ----
 test_that("susieWeights returns zeros when no alpha/mu/X_column_scale_factors", {
     mock_fit <- list(pip = c(0.1, 0.2, 0.3))

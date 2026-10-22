@@ -28,6 +28,14 @@ Pre-computed per-block eigendecompositions of the LD
   narrow when the ranges do, subsetting an \code{LdEigen} is refused
   rather than allowed to produce an object whose decompositions no longer
   describe its variants.
+
+  An \code{LdEigen} built from a genotype panel stores no
+  decompositions: each block's is computed from the panel's factor (its
+  standardized genotypes) when an estimator reaches the block. That gives
+  the block's nonzero eigenvalues and their eigenvectors; when the panel
+  has fewer samples than the block has variants, the block's remaining
+  eigenvalues are exactly zero, and the estimators account for those
+  directions without listing them.
 }
 \section{Functions}{
 \itemize{
@@ -40,7 +48,8 @@ variants the object no longer has. Recompute over the subset instead.
 \section{Slots}{
 
 \describe{
-\item{\code{eigenList}}{A list of length \code{nBlocks}, each element a list with
+\item{\code{eigenList}}{A list of length \code{nBlocks} (empty for an
+\code{LdEigen} built from a genotype panel), each element a list with
 components:
 \describe{
   \item{values}{Numeric vector of eigenvalues}

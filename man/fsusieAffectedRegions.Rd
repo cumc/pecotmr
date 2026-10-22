@@ -10,7 +10,7 @@ fsusieAffectedRegions(x, ...)
 \S4method{fsusieAffectedRegions}{FineMappingResultBase}(x)
 }
 \arguments{
-\item{x}{A \code{FineMappingRow} or \code{FineMappingResultBase}.}
+\item{x}{A \code{QtlFineMappingResult} or \code{GwasFineMappingResult}.}
 
 \item{...}{Ignored.}
 }

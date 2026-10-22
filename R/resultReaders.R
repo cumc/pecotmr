@@ -64,6 +64,7 @@ NULL
     SE = "marginal_se",
     WGT = "posterior_mean",
     WGTSE = "posterior_sd",
+    THETA = "posterior_theta",
     PIP = "pip",
     LBF = "logBF",
     LFSR = "lfsr"
@@ -1216,13 +1217,7 @@ readTwasWeights <- function(
     label <- "readTwasWeights"
     src <- .prdRead(path, region, format, sampleSelect, label)
     df <- src$table
-    if (!is_in("WGT", names(df))) {
-        abort(glue(
-            "{label}: no `WGT` column. The weight is the whole content of a ",
-            "TwasWeights. For a fine-mapping table use ",
-            "readFineMappingResult()."
-        ))
-    }
+    .prdRequireWgt(df, label)
     .prdRequireStandardized(df, weightStandardized, label)
     supplied <- compact(list(
         study = studyName,
@@ -1239,6 +1234,24 @@ readTwasWeights <- function(
         supplied = supplied,
         label = label
     )
+    .prdTwFromRows(rows, label)
+}
+
+# @noRd
+.prdRequireWgt <- function(df, label) {
+    if (!is_in("WGT", names(df))) {
+        abort(glue(
+            "{label}: no `WGT` column. The weight is the whole content of a ",
+            "TwasWeights. For a fine-mapping table use ",
+            "readFineMappingResult()."
+        ))
+    }
+}
+
+# Assemble the TwasWeights collection from the per-group `.prdTwRow()`
+# records; an empty file reads back as an empty collection.
+# @noRd
+.prdTwFromRows <- function(rows, label) {
     if (length(rows) == 0L) {
         return(TwasWeights(
             studyName = character(0),

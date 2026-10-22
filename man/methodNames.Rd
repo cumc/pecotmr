@@ -20,8 +20,8 @@ methodNames(x)
 \S4method{methodNames}{TwasWeights}(x)
 }
 \arguments{
-\item{x}{A \code{FineMappingResult}, \code{TwasWeights},
-\code{CtwasResult} or \code{H2Estimate} object.}
+\item{x}{A \code{QtlFineMappingResult}, \code{GwasFineMappingResult},
+\code{TwasWeights}, \code{CtwasResult} or \code{H2Estimate} object.}
 }
 \value{
 Character vector.

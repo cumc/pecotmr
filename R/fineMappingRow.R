@@ -2,10 +2,10 @@
 # FineMappingRow S4 class
 # -----------------------------------------------------------------------------
 # One row's fine-mapping payload: the variants (with topLoci as their metadata
-# columns) plus the stored fit. This is what a FineMappingResult collection is
+# columns) plus the stored fit. This is what a fine-mapping result collection is
 # built FROM and what its per-row views are computed OVER.
 #
-# It replaces the retired FineMappingRow, but is a different object in the
+# It replaces the retired FineMappingEntry, but is a different object in the
 # two ways that made that class expensive:
 #
 #   * It is NOT a dispatch target. The per-row views (.fmrRowTopLoci, .fmrRowCs,
@@ -123,6 +123,20 @@ fineMappingRow <- function(variantIds, susieFit, topLoci, cvResult = NULL) {
     obj
 }
 
+# The row a cross-validation-only fit leaves (CrossValidationParam(fitFullData =
+# FALSE)): no variants, no fit, no top loci -- only the cross-validation result
+# attached afterwards. The writers refuse such rows (.fmbIncompleteRows()), and
+# a resume cache only reuses them for another cross-validation-only run.
+# @noRd
+.fmCvOnlyRow <- function(cvResult = NULL) {
+    fineMappingRow(
+        variantIds = character(0),
+        susieFit = NULL,
+        topLoci = tibble(),
+        cvResult = cvResult
+    )
+}
+
 # Attach topLoci's payload columns to the variant GRanges, keeping the
 # identity columns `.variantIdsToGRanges()` already put in mcols. Replacing
 # mcols wholesale would drop those, and the variant ids could no longer be
@@ -161,40 +175,6 @@ fineMappingRow <- function(variantIds, susieFit, topLoci, cvResult = NULL) {
     abort(msg)
 }
 
-
-# ---- FineMappingRow validity helpers -------------------------------------
-
-# Full validity check: collect all contract violations (empty vector = valid).
-# @noRd
-
-# cvResult must be NULL or a list.
-# @noRd
-
-# topLoci contract checks (only meaningful when topLoci has rows).
-# @noRd
-
-# Minimal column contract: variant_id + pip. Canonical projector columns
-# (marginal_*, posterior_*, ...) are pipeline-populated; skeletal entries may
-# omit them (accessor projections then return NA-filled cols).
-# @noRd
-
-# topLoci row count must match variantIds length.
-# @noRd
-
-# topLoci$variant_id must equal variantIds in order.
-#
-# Still earns its place after the migration. The collection stores topLoci AS
-# the element's inner mcols, where alignment is definitional -- but the entry
-# VIEW keeps `variantIds` and `topLoci` in separate slots, and
-# .fmeEntryToGRanges() builds the range from the former while taking mcols
-# positionally from the latter. Without this check a misaligned entry would
-# convert into silently mis-assigned mcols. It becomes deletable only if the
-# entry stops carrying the two separately.
-# @noRd
-
-# Drift check: a susieFit$pip vector must match the topLoci pip column. Catches
-# adjustPips() (or any mutator) updating one and forgetting the other.
-# @noRd
 
 # ---- fSuSiE credible-band / affected-region helpers --------------------
 
@@ -359,14 +339,6 @@ fineMappingRow <- function(variantIds, susieFit, topLoci, cvResult = NULL) {
     bind_rows(parts)
 }
 
-# Map each fit-effect index (1..L, as affected_reg's `CS`) to pecotmr's
-# canonical CS label + purity. The raw fSuSiE fit stores no purity (fsusieR
-# computes it from the genotype matrix, which the fit does not retain), so the
-# canonical value is `cs_95_purity` in the entry's topLoci. Matching is by the
-# CS's variant
-# MEMBERSHIP (not by index), which is robust to pecotmr's CS
-# filtering/renumbering.
-# @noRd
 # One fit effect's variant ids, resolving positional membership through the
 # fit's own variant order.
 # @noRd
@@ -397,6 +369,13 @@ fineMappingRow <- function(variantIds, susieFit, topLoci, cvResult = NULL) {
     as.numeric(topLoci$cs_95_purity[topLoci$cs_95 == lab][1])
 }
 
+# Map each fit-effect index (1..L, as affected_reg's `CS`) to pecotmr's
+# canonical CS label + purity. The raw fSuSiE fit stores no purity (fsusieR
+# computes it from the genotype matrix, which the fit does not retain), so the
+# canonical value is `cs_95_purity` in the entry's topLoci. Matching is by the
+# CS's variant MEMBERSHIP (not by index), which is robust to pecotmr's CS
+# filtering/renumbering.
+# @noRd
 .fsusieCsMapFromTopLoci <- function(fit, topLoci) {
     L <- length(fit$cs)
     defaultLabel <- set_names(str_c("fsusie_", seq_len(L)), seq_len(L))
@@ -645,7 +624,7 @@ fineMappingRow <- function(variantIds, susieFit, topLoci, cvResult = NULL) {
     m <- filter(tl, !is.na(.data[[csCol]]) & .data[[csCol]] == lab)
     list(
         ids = as.character(m$variant_id),
-        eff = suppressWarnings(as.integer(str_remove(lab, "^.*_"))),
+        eff = .csLabelIndex(lab),
         lab = lab
     )
 }
@@ -1453,6 +1432,12 @@ fineMappingRow <- function(variantIds, susieFit, topLoci, cvResult = NULL) {
         # the two views silently joinable into a mix of the two quantities.
         posterior_effect = .tlCol(tl, "posterior_mean", "numeric"),
         posterior_se = .tlCol(tl, "posterior_sd", "numeric"),
+        # The infinitesimal part of `posterior_effect`, on the same scale.
+        # susieInf / susieAsh split their posterior into a sparse and an
+        # infinitesimal term and coef.susie() sums them, so the published
+        # effect is correct for those methods either way -- `theta` is what
+        # makes the split visible. Zero where the method has no such term.
+        theta = .tlCol(tl, "posterior_theta", "numeric"),
         pip = .tlCol(tl, "pip", "numeric"),
         logBF = .tlCol(tl, "logBF", "numeric")
     )
@@ -1478,6 +1463,7 @@ fineMappingRow <- function(variantIds, susieFit, topLoci, cvResult = NULL) {
         af = numeric(0),
         posterior_effect = numeric(0),
         posterior_se = numeric(0),
+        theta = numeric(0),
         pip = numeric(0),
         logBF = numeric(0)
     )
@@ -1575,22 +1561,6 @@ fineMappingRow <- function(variantIds, susieFit, topLoci, cvResult = NULL) {
 # Identity columns that the range and its alleles already carry.
 # @noRd
 .fmeIdentityCols <- c("variant_id", "chrom", "pos", "A1", "A2")
-
-# Every `entry` must be a FineMappingRow. Checked before the payload is
-# unpacked, so a wrong type names itself rather than failing as a missing
-# method on whatever was passed instead.
-# @noRd
-
-# One entry -> its element.
-# @noRd
-
-# The entry view for a collection row (or rows). A tuple split across
-# chromosomes owns several elements; they are stitched back into the single
-# entry callers expect, the same contract sumStats() keeps.
-# @noRd
-
-# One element (plus its outer-mcols payload) -> the entry view.
-# @noRd
 
 # Rebuild the canonical topLoci table from an element: the identity columns are
 # re-rendered from the range and alleles, the rest come straight from mcols.

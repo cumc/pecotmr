@@ -37,9 +37,11 @@ dosage-counted allele), `A2` (other allele), `Z`, `N`; optionally `MAF`,
 stored in slots, not columns:
 
 * `genome` — the build label (e.g. `"GRCh38"`).
-*  `ldSketch` — a genotype panel (a `RangedSummarizedExperiment`, as returned
-    by `readGenotypes()`) giving the LD reference used for QC and downstream
-    analyses.
+*  `ldReference` — the LD reference used for QC and downstream analyses: a
+    genotype panel (a `RangedSummarizedExperiment`, as returned by
+    `readGenotypes()`), a `GenotypeMixture`, or an `LdMatrix` holding a
+    correlation matrix you built (see the
+    [LD reference vignette](ld-infrastructure.html)).
 
 Optional per-row columns: `varY` (phenotype variance) and, for case/control
 GWAS, `nCase` / `nControl`.
@@ -74,7 +76,7 @@ genoPrefix <- sub(
     "",
     system.file("extdata", "toy_ref.bed", package = "pecotmr")
 )
-ldSketch <- readGenotypes(plink1Prefix = genoPrefix)
+ldReference <- readGenotypes(plink1Prefix = genoPrefix)
 
 # Five real toy_ref chr22 sites (positions and alleles taken from the panel).
 sumstatsDf <- data.frame(
@@ -102,9 +104,9 @@ readr::write_tsv(sumstatsDf, gwasTsv)
 
 ## GwasSumStats from a manifest
 
-The GWAS manifest has **one row per study**. `genome` and `ldSketch` are
+The GWAS manifest has **one row per study**. `genome` and `ldReference` are
 collection-level, so they are supplied as arguments (or as constant
-`genome` / `ldSketchPath` columns).
+`genome` / `ldReferencePath` columns).
 
 | Column | Required | Meaning |
 |---|---|---|
@@ -113,7 +115,7 @@ collection-level, so they are supplied as arguments (or as constant
 | `columnMapping` (alias `column_mapping`) | no | YAML column map (see below) |
 | `nCase` / `nControl` | no | case / control counts |
 | `varY` | no | phenotype variance |
-| `genome`, `ldSketchPath` | single-valued | may instead be arguments |
+| `genome`, `ldReferencePath` | single-valued | may instead be arguments |
 
 ```{r gwas-from-manifest}
 gwasManifest <- data.frame(
@@ -125,13 +127,13 @@ gwasManifest <- data.frame(
 gws <- loadGwasSumStatsFromManifest(
     gwasManifest,
     genome = "GRCh38",
-    ldSketch = ldSketch
+    ldReference = ldReference
 )
 gws
 S4Vectors::mcols(gws[[1]])
 ```
 
-The `ldSketch` argument also accepts a path/prefix or a chromosome-sharded
+The `ldReference` argument also accepts a path/prefix or a chromosome-sharded
 `genoMeta` specification (see `?readGenotypes`), so a genome-wide reference can
 be supplied as a `#chr,path` meta file rather than a single panel.
 
@@ -139,7 +141,7 @@ be supplied as a `#chr,path` meta file rather than a single panel.
 
 The loader is a wrapper over the `GwasSumStats()` constructor. Built by hand,
 the pattern is: make one `GRanges` per study with the required `mcols`, then
-call the constructor with the shared `genome` and `ldSketch`.
+call the constructor with the shared `genome` and `ldReference`.
 
 ```{r gwas-manual}
 entry <- GenomicRanges::GRanges(
@@ -158,7 +160,7 @@ gwsManual <- GwasSumStats(
     studyName = "MyGWAS",
     entry = list(entry),
     genome = "GRCh38",
-    ldSketch = ldSketch
+    ldReference = ldReference
 )
 gwsManual
 ```
@@ -178,7 +180,7 @@ points at a sumstats file for that trait.
 | `trait` (alias `gene_id`) | yes | molecular trait id |
 | `sumStatsPath` (alias `path`) | yes | sumstats file for this trait |
 | `columnMapping`, `varY` | no | as for GWAS |
-| `genome`, `ldSketchPath` | single-valued | may instead be arguments |
+| `genome`, `ldReferencePath` | single-valued | may instead be arguments |
 
 ```{r qtl-from-manifest}
 qtlManifest <- data.frame(
@@ -192,7 +194,7 @@ qtlManifest <- data.frame(
 qts <- loadQtlSumStatsFromManifest(
     qtlManifest,
     genome = "GRCh38",
-    ldSketch = ldSketch
+    ldReference = ldReference
 )
 qts
 ```
@@ -206,7 +208,7 @@ qtsManual <- QtlSumStats(
     trait = "ENSG00000001",
     entry = list(entry),
     genome = "GRCh38",
-    ldSketch = ldSketch
+    ldReference = ldReference
 )
 qtsManual
 ```
@@ -242,7 +244,7 @@ rownames(b) <- rownames(shat) <- rownames(z)
 contexts(qtlSumStatsFromBetaMatrix(b, shat, studyName = "demo"))
 ```
 
-Both default `ldSketch = NULL`, giving an LD-free collection. That is fine
+Both default `ldReference = NULL`, giving an LD-free collection. That is fine
 for [mash](mash-pipeline.html), which never needs LD, but any RSS method
 does — supply a panel if the result is headed for fine-mapping or
 TWAS-weight learning.
@@ -288,7 +290,7 @@ gwsMapped <- loadGwasSumStatsFromManifest(
         columnMapping = mapPath
     ),
     genome = "GRCh38",
-    ldSketch = ldSketch
+    ldReference = ldReference
 )
 length(gwsMapped[[1]])
 ```
@@ -316,7 +318,7 @@ Rsamtools::indexTabix(gz, seq = 1L, start = 2L, end = 2L, comment = "#")
 gwsRegion <- loadGwasSumStatsFromManifest(
     data.frame(study = "MyGWAS", sumStatsPath = gz),
     genome = "GRCh38",
-    ldSketch = ldSketch,
+    ldReference = ldReference,
     region = "22:14560000-14565000"
 )
 length(gwsRegion[[1]]) # only the two variants in the region
@@ -378,7 +380,7 @@ writeLines(vcfLines, vcfPath)
 gwsVcf <- loadGwasSumStatsFromManifest(
     data.frame(study = "MyGWAS", sumStatsPath = vcfPath),
     genome = "GRCh38",
-    ldSketch = ldSketch
+    ldReference = ldReference
 )
 S4Vectors::mcols(gwsVcf[[1]])[, c("SNP", "A1", "A2", "Z", "N")]
 ```

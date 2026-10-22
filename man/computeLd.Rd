@@ -60,11 +60,14 @@ Correlation between variants, from either a dosage matrix
   \code{cor()} without it) and is both the fastest and the default;
   \code{"snprelate"} and \code{"snpstats"} exist to cross-check it and do
   strictly more work, since each converts the same matrix into its own
-  representation first.
+  representation first. Both store genotypes as the integer codes 0, 1 and
+  2, so they refuse fractional dosages (imputed, or a stochastic sketch's)
+  rather than round them; \code{"internal"} correlates dosages as they
+  are.
 }
 \examples{
 data(qtlSumStatsExample)
-panel <- ldSketch(qtlSumStatsExample)
+panel <- ldReference(qtlSumStatsExample)
 R <- computeLd(panel, snpIdx = 1:5)
 dim(R)
 # A dosage matrix already in memory is correlated directly.

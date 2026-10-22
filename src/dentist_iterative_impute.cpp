@@ -95,6 +95,31 @@ double minusLogPvalueChisq2(double stat) {
 	return -log10(p);
 }
 
+// Store one iteration's imputation for the variants in idx2: the imputed z,
+// its R^2 (capped at 1, with the exceeding values collected for R to report
+// once), and the outlier statistic (z - imputed) / sqrt(R_jj - rsq_j).
+// `ldDiag` holds R_jj for each of idx2.
+void storeIteration(const std::vector<size_t>& idx2, const vec& zScore,
+                    const vec& zScore_imp, const vec& rsq_vec, const vec& ldDiag,
+                    vec& imputedZ, vec& rsqList, vec& zScore_e,
+                    std::vector<double>& rsqExceed) {
+	for (size_t i = 0; i < idx2.size(); ++i) {
+		imputedZ[idx2[i]] = zScore_imp(i);
+		rsqList[idx2[i]] = rsq_vec(i);
+		if (rsq_vec(i) >= 1) {
+			rsqList[idx2[i]] = std::min(rsq_vec(i), 1.0);
+			// Collect the exceeding value; returned to R (rsq_exceed) which
+			// summarizes them into a single warning, instead of emitting a
+			// per-occurrence warning from here.
+			rsqExceed.push_back(rsq_vec(i));
+		}
+		size_t j = idx2[i];
+		double denom_sq = ldDiag(i) - rsqList[j];
+		if (denom_sq < 1e-8) denom_sq = 1e-8;
+		zScore_e[j] = (zScore[j] - imputedZ[j]) / std::sqrt(denom_sq);
+	}
+}
+
 // Perform one iteration of the DENTIST algorithm using Armadillo's eig_sym
 // (LAPACK dsyevd) for eigendecomposition. Both Eigen and Armadillo return
 // eigenvalues in ascending order, so the logic is identical.
@@ -173,23 +198,82 @@ void oneIteration(const mat& LD_mat, const std::vector<size_t>& idx, const std::
 	mat beta = LD_it * (ui.each_row() % wi.t());
 	vec zScore_imp = beta * (ui.t() * zScore_sub);
 	vec rsq_vec = diagvec(beta * (ui.t() * LD_it.t()));
+	vec ldDiag(idx2.size());
+	for (size_t i = 0; i < idx2.size(); ++i) ldDiag(i) = LD_mat(idx2[i], idx2[i]);
+	storeIteration(idx2, zScore, zScore_imp, rsq_vec, ldDiag, imputedZ, rsqList,
+	               zScore_e, rsqExceed);
+}
 
-	// Store results
-	for (size_t i = 0; i < idx2.size(); ++i) {
-		imputedZ[idx2[i]] = zScore_imp(i);
-		rsqList[idx2[i]] = rsq_vec(i);
-		if (rsq_vec(i) >= 1) {
-			rsqList[idx2[i]] = std::min(rsq_vec(i), 1.0);
-			// Collect the exceeding value; returned to R (rsq_exceed) which
-			// summarizes them into a single warning, instead of emitting a
-			// per-occurrence warning from here.
-			rsqExceed.push_back(rsq_vec(i));
-		}
-		size_t j = idx2[i];
-		double denom_sq = LD_mat(j, j) - rsqList[j];
-		if (denom_sq < 1e-8) denom_sq = 1e-8;
-		zScore_e[j] = (zScore[j] - imputedZ[j]) / std::sqrt(denom_sq);
+// One iteration from a factor F of the LD (m x p, zero-mean columns,
+// crossprod(F) / (m - 1) = R) instead of R itself. With the thin SVD
+// F[, idx] = U D V', R[idx, idx] = V diag(d^2 / (m - 1)) V', so the dense
+// route's top-K eigenpairs are the SVD's leading K components, and
+//   R[idx2, idx] V_K diag(1 / lambda_K) = F[, idx2]' U_K diag(1 / d_K)
+//   rsq = diag(beta V_K' R[idx, idx2]) = rowSums((F[, idx2]' U_K)^2) / (m - 1)
+// -- the dense route's imputation exactly, without forming any of R. The
+// eigenvalues beyond the SVD's are zero, below the dense route's 1e-4 rank
+// cut, so both count the same rank.
+void oneIterationFactor(const mat& F, const std::vector<size_t>& idx, const std::vector<size_t>& idx2,
+                        const vec& zScore, vec& imputedZ, vec& rsqList, vec& zScore_e,
+                        size_t nSample, float probSVD, int numThreads, bool verbose,
+                        std::vector<double>& rsqExceed) {
+	if (verbose) {
+		Rprintf("factor: %lux%lu idx: %lu idx2: %lu\n",
+		        (unsigned long)F.n_rows, (unsigned long)F.n_cols,
+		        (unsigned long)idx.size(), (unsigned long)idx2.size());
 	}
+
+	int nProcessors = omp_get_max_threads();
+	if (numThreads < nProcessors) nProcessors = numThreads;
+	omp_set_num_threads(nProcessors);
+
+	size_t K = std::min(static_cast<size_t>(idx.size()), nSample) * probSVD;
+
+	if (idx2.size() > F.n_cols || idx.size() > F.n_cols)
+		cpp11::stop("Inconsistent dimensions between the LD factor and idx2/idx in oneIterationFactor()");
+	for (size_t i = 0; i < idx.size(); ++i)
+		if (idx[i] >= zScore.size())
+			cpp11::stop("Invalid index in idx: %d", (int)idx[i]);
+	for (size_t i = 0; i < idx2.size(); ++i)
+		if (idx2[i] >= zScore.size())
+			cpp11::stop("Invalid index in idx2: %d", (int)idx2[i]);
+
+	uvec aidx(idx.size()), aidx2(idx2.size());
+	for (size_t i = 0; i < idx.size(); i++) aidx(i) = idx[i];
+	for (size_t i = 0; i < idx2.size(); i++) aidx2(i) = idx2[i];
+
+	double nm1 = static_cast<double>(F.n_rows) - 1.0;
+	mat U, V;
+	vec d;
+	svd_econ(U, d, V, F.cols(aidx));
+	vec eigval = square(d) / nm1;  // descending
+
+	int nRank = 0;
+	for (uword j = 0; j < eigval.n_elem; j++)
+		if (eigval(j) >= 0.0001) nRank++;
+	if (K > static_cast<size_t>(nRank)) K = nRank;
+
+	if (verbose)
+		Rprintf("Rank: %d, K: %lu\n", nRank, (unsigned long)K);
+
+	if (K <= 1) {
+		cpp11::warning("Rank of eigen matrix <= 1, skipping imputation for this partition");
+		for (size_t i = 0; i < idx2.size(); ++i) {
+			imputedZ[idx2[i]] = 0.0;
+			rsqList[idx2[i]] = 0.0;
+			zScore_e[idx2[i]] = 0.0;
+		}
+		return;
+	}
+
+	mat F2 = F.cols(aidx2);
+	mat G = F2.t() * U.cols(0, K - 1);                // F[, idx2]' U_K
+	mat beta = G.each_row() / d.subvec(0, K - 1).t();  // ... diag(1 / d_K)
+	vec zScore_imp = beta * (V.cols(0, K - 1).t() * zScore(aidx));
+	vec rsq_vec = sum(square(G), 1) / nm1;
+	vec ldDiag = sum(square(F2), 0).t() / nm1;
+	storeIteration(idx2, zScore, zScore_imp, rsq_vec, ldDiag, imputedZ, rsqList,
+	               zScore_e, rsqExceed);
 }
 
 /**
@@ -200,8 +284,12 @@ void oneIteration(const mat& LD_mat, const std::vector<size_t>& idx, const std::
  * information from a reference panel. It helps detect genotyping/imputation errors, allelic errors, and heterogeneity
  * between GWAS and LD reference samples, improving the reliability of subsequent analyses.
  *
- * @param ldMatR The linkage disequilibrium (LD) matrix from a reference panel.
- * @param nSample The sample size used in the GWAS whose summary statistics are being analyzed.
+ * The registered entry points take the reference LD either as a matrix (dentistIterativeImpute, ldMatR) or as
+ * a factor F with R = F'F / (nrow(F) - 1) (dentistIterativeImputeFactor, factorR); both run dentistRun.
+ *
+ * @param one The per-iteration imputation: oneIteration on R, or oneIterationFactor on F.
+ * @param nSample The LD reference panel's real sample size (NOT the GWAS size): it caps the SVD truncation
+ * rank, K = min(|idx|, nSample) * propSVD.
  * @param zScoreR A vector of Z-scores from GWAS summary statistics.
  * @param pValueThreshold Threshold for the p-value below which variants are considered for quality control.
  * @param propSVD Proportion of singular value decomposition (SVD) components retained in the analysis.
@@ -220,16 +308,15 @@ void oneIteration(const mat& LD_mat, const std::vector<size_t>& idx, const std::
  * - iter_to_correct: An integer vector indicating the iteration in which each marker passed the quality control.
  */
 
-[[cpp11::register]]
-cpp11::writable::list dentistIterativeImpute(const doubles_matrix<>& ldMatR, int nSample, const doubles& zScoreR,
-                              double pValueThreshold, double propSVD, bool gcControl, int nIter,
-                              double gPvalueThreshold, int numThreads, bool correctChenEtAlBug,
-                              bool verbose, cpp11::sexp seed = R_NilValue) {
-	mat LD_mat = as_Mat(ldMatR);
-	vec zScore = as_Col(zScoreR);
-
+// The DENTIST iterations around a per-iteration imputation `one`, which is
+// the dense route (oneIteration on R) or the factor route (oneIterationFactor
+// on a factor of R); everything else is shared.
+template <class OneIteration>
+cpp11::writable::list dentistRun(const OneIteration& one, const vec& zScore, int nSample,
+                                 double pValueThreshold, double propSVD, bool gcControl, int nIter,
+                                 double gPvalueThreshold, int numThreads, bool correctChenEtAlBug,
+                                 bool verbose, cpp11::sexp seed) {
 	if (verbose) {
-		Rprintf("LD_mat dimensions: %lu x %lu\n", (unsigned long)LD_mat.n_rows, (unsigned long)LD_mat.n_cols);
 		Rprintf("nSample: %d\n", nSample);
 		Rprintf("zScore size: %lu\n", (unsigned long)zScore.size());
 		Rprintf("pValueThreshold: %g\n", pValueThreshold);
@@ -299,7 +386,7 @@ cpp11::writable::list dentistIterativeImpute(const doubles_matrix<>& ldMatR, int
 			Rprintf("Performing oneIteration()\n");
 		}
 
-		oneIteration(LD_mat, idx, idx2, zScore, imputedZ, rsq, zScore_e, nSample, propSVD, numThreads, verbose, rsqExceed);
+		one(idx, idx2, zScore, imputedZ, rsq, zScore_e, nSample, propSVD, numThreads, verbose, rsqExceed);
 
 		diff.resize(idx2.size());
 		grouping_tmp.resize(idx2.size());
@@ -377,7 +464,7 @@ cpp11::writable::list dentistIterativeImpute(const doubles_matrix<>& ldMatR, int
 			Rprintf("Performing oneIteration() with updated sets of indices\n");
 		}
 
-		oneIteration(LD_mat, idx2_QCed, idx, zScore, imputedZ, rsq, zScore_e, nSample, propSVD, numThreads, verbose, rsqExceed);
+		one(idx2_QCed, idx, zScore, imputedZ, rsq, zScore_e, nSample, propSVD, numThreads, verbose, rsqExceed);
 
 		if (verbose) {
 			Rprintf("Recalculating differences and groupings after the iteration\n");
@@ -512,4 +599,45 @@ cpp11::writable::list dentistIterativeImpute(const doubles_matrix<>& ldMatR, int
 	});
 
 	return result;
+}
+
+[[cpp11::register]]
+cpp11::writable::list dentistIterativeImpute(const doubles_matrix<>& ldMatR, int nSample, const doubles& zScoreR,
+                              double pValueThreshold, double propSVD, bool gcControl, int nIter,
+                              double gPvalueThreshold, int numThreads, bool correctChenEtAlBug,
+                              bool verbose, cpp11::sexp seed = R_NilValue) {
+	mat LD_mat = as_Mat(ldMatR);
+	vec zScore = as_Col(zScoreR);
+	if (verbose)
+		Rprintf("LD_mat dimensions: %lu x %lu\n", (unsigned long)LD_mat.n_rows, (unsigned long)LD_mat.n_cols);
+	auto one = [&LD_mat](const std::vector<size_t>& a, const std::vector<size_t>& b,
+	                     const vec& z, vec& imp, vec& rsq, vec& ze, size_t n, float prop,
+	                     int threads, bool verb, std::vector<double>& exceed) {
+		oneIteration(LD_mat, a, b, z, imp, rsq, ze, n, prop, threads, verb, exceed);
+	};
+	return dentistRun(one, zScore, nSample, pValueThreshold, propSVD, gcControl, nIter,
+	                  gPvalueThreshold, numThreads, correctChenEtAlBug, verbose, seed);
+}
+
+// DENTIST from a factor of the LD (see oneIterationFactor): the same
+// iterations as dentistIterativeImpute(), never forming the LD matrix.
+[[cpp11::register]]
+cpp11::writable::list dentistIterativeImputeFactor(const doubles_matrix<>& factorR, int nSample, const doubles& zScoreR,
+                              double pValueThreshold, double propSVD, bool gcControl, int nIter,
+                              double gPvalueThreshold, int numThreads, bool correctChenEtAlBug,
+                              bool verbose, cpp11::sexp seed = R_NilValue) {
+	mat F = as_Mat(factorR);
+	vec zScore = as_Col(zScoreR);
+	if (F.n_cols != zScore.n_elem)
+		cpp11::stop("The LD factor has %d columns but there are %d z-scores.",
+		            (int)F.n_cols, (int)zScore.n_elem);
+	if (verbose)
+		Rprintf("LD factor dimensions: %lu x %lu\n", (unsigned long)F.n_rows, (unsigned long)F.n_cols);
+	auto one = [&F](const std::vector<size_t>& a, const std::vector<size_t>& b,
+	                const vec& z, vec& imp, vec& rsq, vec& ze, size_t n, float prop,
+	                int threads, bool verb, std::vector<double>& exceed) {
+		oneIterationFactor(F, a, b, z, imp, rsq, ze, n, prop, threads, verb, exceed);
+	};
+	return dentistRun(one, zScore, nSample, pValueThreshold, propSVD, gcControl, nIter,
+	                  gPvalueThreshold, numThreads, correctChenEtAlBug, verbose, seed);
 }

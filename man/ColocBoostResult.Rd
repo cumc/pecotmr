@@ -9,7 +9,7 @@ ColocBoostResult(
   analysis,
   gwasStudy = NA_character_,
   outcomeInfo = NULL,
-  ldSketch = NULL,
+  ldReference = NULL,
   computingTime = list(),
   includeUncolocalized = TRUE
 )
@@ -29,7 +29,7 @@ naming the GWAS study for the per-study \code{separate_gwas} runs.}
 \item{outcomeInfo}{Data frame mapping outcome \code{name} to \code{study},
 \code{context}, \code{trait} and \code{dataForm}.}
 
-\item{ldSketch}{Optional genotype panel (see
+\item{ldReference}{Optional genotype panel (see
 \code{\link{readGenotypes}}).}
 
 \item{computingTime}{Optional list of per-analysis timings.}

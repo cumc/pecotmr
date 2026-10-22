@@ -26,7 +26,8 @@ resolveWeights(x, ...)
 )
 }
 \arguments{
-\item{x}{A \code{TwasWeights} or a \code{FineMappingResult}.}
+\item{x}{A \code{TwasWeights}, \code{QtlFineMappingResult} or
+\code{GwasFineMappingResult}.}
 
 \item{...}{Reserved for future use.}
 
@@ -35,8 +36,8 @@ row of a collection, as elsewhere; each \code{NULL} (default) leaves that
 part of the tuple unconstrained. Ignored when \code{x} is already a row.}
 
 \item{region}{Character (length 1, \code{"chr:start-end"}) or \code{NULL}.
-A further selector for a \code{FineMappingResult}, whose rows also carry
-a region; \code{NULL} (default) leaves it unconstrained.}
+A further selector for a fine-mapping result, whose rows also carry a
+region; \code{NULL} (default) leaves it unconstrained.}
 }
 \value{
 A \code{list} with \code{variantIds} (character) and \code{weights}
@@ -47,8 +48,8 @@ Return an aligned \code{(variantIds, weights)} pair from a
   single weight-source entry, so cTWAS and
   \code{\link{causalInferencePipeline}} extract weights identically whether
   the source is a \code{TwasWeights} collection (its learned weight vector)
-  or a \code{FineMappingResult} one (its topLoci posterior effect). The
-  selectors pin the single row the weights come from.
+  or a fine-mapping one (its topLoci posterior effect). The selectors pin
+  the single row the weights come from.
 }
 \examples{
 data(twasWeightsExample)

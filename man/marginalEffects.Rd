@@ -18,7 +18,7 @@ marginalEffects(x, maxPval = NULL, ...)
 )
 }
 \arguments{
-\item{x}{A \code{FineMappingRow} or \code{FineMappingResult}.}
+\item{x}{A \code{QtlFineMappingResult} or \code{GwasFineMappingResult}.}
 
 \item{maxPval}{Optional numeric (length 1). When non-\code{NULL}, filter rows
 where \code{p > maxPval}. Default \code{NULL} (no filter).}

@@ -72,22 +72,26 @@ Suggests:
     coda,
     CorShrink,
     ctwas,
+    DBI,
     ebnm,
     flashier,
     fsusieR,
     GBJ,
+    GDSArray,
     gdsfmt,
     glmnet,
     harmonicmeanp,
     igraph,
     knitr,
     L0Learn,
+    logging,
     mashr,
     mr.mashr,
     mvsusieR,
     ncvreg,
     nnls,
     pgenlibr,
+    PlinkMatrix,
     plinkQC,
     plyranges,
     poolr,
@@ -97,7 +101,9 @@ Suggests:
     Rfast,
     rmarkdown,
     robustbase,
+    RSQLite,
     rtracklayer,
+    SeqArray,
     SNPRelate,
     snpStats,
     testthat,
@@ -119,6 +125,8 @@ VignetteBuilder: knitr
 Config/roxygen2/version: 8.1.0
 Collate:
     'AllGenerics.R'
+    'GenotypeMixture.R'
+    'LdMatrix.R'
     'RangedTupleList.R'
     'GenotypeHandle.R'
     'AllClasses.R'
@@ -128,24 +136,24 @@ Collate:
     'tupleSelectors.R'
     'CtwasResult.R'
     'CtwasResultEntry.R'
+    'GenotypeDosageSeed.R'
     'GwasFineMappingResult.R'
+    'MethodOptions.R'
+    'MethodParam.R'
     'H2Estimate.R'
     'JointGroup.R'
     'LdBlocks.R'
-    'LdData.R'
     'LdStatistic.R'
     'LdEigen.R'
     'LdScore.R'
     'MashPrior.R'
-    'MethodOptions.R'
-    'MethodParam.R'
+    'qtlSumStats.R'
     'QtlDataset.R'
     'MultiStudyQtlDataset.R'
     'QtlFineMappingResult.R'
     'SldscData.R'
     'causalInferencePipeline.R'
     'gwasSumStats.R'
-    'qtlSumStats.R'
     'fineMappingPipeline.R'
     'ld.R'
     'colocPipeline.R'

@@ -6,42 +6,54 @@
 \usage{
 mrashRssWeights(
   stat,
-  LD,
-  varY,
-  sigma2E,
-  s0,
-  w0,
-  z = numeric(0),
+  ldReference,
+  varY = NULL,
+  sigma2E = NULL,
+  s0 = NULL,
+  w0 = NULL,
+  fitRetention = c("none", "slim", "full"),
   methodArgs = MrashRssOptions()
 )
 }
 \arguments{
-\item{stat}{A list of summary statistics with elements \code{b} (effect
-sizes), \code{seb} (standard errors) and \code{n} (per-variant sample
-sizes).}
+\item{stat}{A list of summary statistics: \code{n} (per-variant sample
+sizes), \code{variantNames}, and the marginal effects as \code{z}, or as
+\code{b} with \code{seb}.}
 
-\item{LD}{Numeric LD (correlation) matrix aligned to the variants in
-\code{stat}.}
+\item{ldReference}{The LD reference the statistics' variants are matched
+to by \code{stat$variantNames}: a genotype panel (see
+\code{\link{readGenotypes}}), a \code{\link{GenotypeMixture}} or an
+\code{\link{LdMatrix}}. \code{mr.ash.rss} takes an LD matrix, which is
+formed from the reference over these variants.}
 
-\item{varY}{Numeric. Variance of the phenotype.}
+\item{varY}{Variance of the phenotype, or \code{NULL} (default) to fit on
+the standardized scale. Used only with \code{b} and \code{seb}.}
 
-\item{sigma2E}{Numeric. Residual error variance estimate.}
+\item{sigma2E}{Initial residual variance, or \code{NULL} (default) for
+\code{mr.ash.rss}'s own.}
 
-\item{s0}{Numeric vector of prior mixture standard deviations (the sigma0
-grid).}
+\item{s0}{Prior variances of the mixture components, relative to the
+residual variance, or \code{NULL} (default) for the grid
+\code{susieR::mr.ash} uses by default, built for these statistics.}
 
-\item{w0}{Numeric vector of prior mixture weights (summing to 1).}
+\item{w0}{Prior mixture weights (summing to 1), or \code{NULL} (default)
+for equal weights.}
 
-\item{z}{Optional numeric vector of z-scores; defaults to \code{numeric(0)}
-(derived from \code{stat}).}
+\item{fitRetention}{How much of the fit is kept as the \code{"fit"}
+attribute of the returned weights: \code{"none"} (default) attaches
+nothing, \code{"slim"} and \code{"full"} attach the fitted
+\code{mr.ash.rss} model. This engine keeps no trimmable intermediates,
+so the two retaining levels behave alike here.}
 
 \item{methodArgs}{Options forwarded to \code{susieR::mr.ash.rss}, built
-with \code{\link{MrashOptions}}. A bare list is refused: it cannot be
+with \code{\link{MrashRssOptions}}. A bare list is refused: it cannot be
 checked against the engine, so a misspelled option would be
 silently ignored.}
 }
 \value{
-A numeric vector of the posterior mean of the coefficients.
+A numeric vector of the posterior mean of the coefficients. Unless
+  \code{fitRetention = "none"}, the fitted model is attached as attribute
+  \code{"fit"}.
 }
 \description{
 Extract weights from mr.ash.rss (susieR)
@@ -54,7 +66,7 @@ ss <- lapply(seq_len(ncol(X)), function(j) {
   coef(summary(lm(y ~ X[, j])))[2, 1:2]
 })
 stat <- list(b = vapply(ss, `[`, numeric(1), 1L),
-  seb = vapply(ss, `[`, numeric(1), 2L), n = rep(nrow(X), ncol(X)))
-mrashRssWeights(stat, cor(X), varY = var(y), sigma2E = var(y),
-  s0 = c(0, 0.1, 0.5), w0 = c(0.8, 0.1, 0.1))
+  seb = vapply(ss, `[`, numeric(1), 2L), n = rep(nrow(X), ncol(X)),
+  variantNames = colnames(X))
+mrashRssWeights(stat, LdMatrix(cor(X)))
 }

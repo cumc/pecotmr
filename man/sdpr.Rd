@@ -70,13 +70,18 @@ arrays in a separate cohort). Default is 1.}
 }
 \value{
 A list with \code{betaEst} (the estimated effect sizes) and
-  \code{h2} (the estimated heritability). \code{sdprWeights()} returns
-  only \code{betaEst}; call this directly when you also want \code{h2}.
+  \code{h2} (the estimated heritability).
 }
 \description{
 This function is a wrapper for the SDPR C++ implementation, which performs
 Markov Chain Monte Carlo (MCMC) for estimating effect sizes and heritability
 based on summary statistics and reference LD matrices.
+}
+\details{
+Internal: \code{\link{sdprWeights}} is the public interface. It forwards
+the arguments below other than \code{bhat}, \code{R} and \code{n} through
+\code{\link{SdprOptions}}, and with \code{fitRetention} returns this
+function's list as the \code{"fit"} attribute of its weights.
 }
 \note{
 This function wraps a rewritten and adapted version of the SDPR C++
@@ -85,45 +90,4 @@ This function wraps a rewritten and adapted version of the SDPR C++
   using summary statistics", PLoS Genetics 17(7): e1009697.
   \doi{10.1371/journal.pgen.1009697}
 }
-\examples{
-# Generate example data
-set.seed(985115)
-n <- 350
-p <- 16
-sigmasq_error <- 0.5
-zeroes <- rbinom(p, 1, 0.6)
-beta.true <- rnorm(p, 1, sd = 4)
-beta.true[zeroes] <- 0
-
-X <- cbind(matrix(rnorm(n * p), nrow = n))
-X <- scale(X, center = TRUE, scale = FALSE)
-y <- X \%*\% matrix(beta.true, ncol = 1) + rnorm(n, 0, sqrt(sigmasq_error))
-y <- scale(y, center = TRUE, scale = FALSE)
-
-# Calculate sufficient statistics
-XtX <- t(X) \%*\% X
-Xty <- t(X) \%*\% y
-yty <- t(y) \%*\% y
-
-# Set the prior
-K <- 9
-sigma0 <- c(0.001, .1, .5, 1, 5, 10, 20, 30, .005)
-omega0 <- rep(1 / K, K)
-
-# Calculate summary statistics
-b.hat <- sapply(1:p, function(j) {
-  summary(lm(y ~ X[, j]))$coefficients[-1, 1]
-})
-s.hat <- sapply(1:p, function(j) {
-  summary(lm(y ~ X[, j]))$coefficients[-1, 2]
-})
-R.hat <- cor(X)
-var_y <- var(y)
-sigmasq_init <- 1.5
-
-# Run SDPR
-out <- sdpr(b.hat, R.hat, n)
-# In sample prediction correlations
-cor(X \%*\% out$betaEst, y) #
-
-}
+\keyword{internal}

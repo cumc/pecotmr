@@ -50,8 +50,7 @@ dprAdaptiveGibbsWeights(
 attribute of the returned weights: \code{"none"} (default) attaches
 nothing, \code{"slim"} and \code{"full"} attach the fitted model. This
 engine keeps no trimmable intermediates, so the two retaining levels
-behave alike here.
-Default \code{FALSE}.}
+behave alike here.}
 
 \item{methodArgs}{Options forwarded to \code{RcppDPR::fit_model}, built
 with \code{\link{DprOptions}}. A bare list is refused: it cannot be

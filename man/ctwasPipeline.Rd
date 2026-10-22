@@ -12,9 +12,9 @@ ctwasPipeline(
   method = NULL,
   maxNumSingleEffects = 5L,
   numThreads = 1L,
-  ctwasPriorArgs = CtwasPriorParam(),
-  variantPruningArgs = VariantPruningParam(),
-  boundaryMergeArgs = BoundaryMergeParam(),
+  ctwasPriorParam = CtwasPriorParam(),
+  variantPruningParam = VariantPruningParam(),
+  boundaryMergeParam = BoundaryMergeParam(),
   keepSnps = FALSE,
   methodArgs = CtwasOptions()
 )
@@ -65,19 +65,20 @@ fine-mapping. Default \code{5}. Pass-through to
 
 \item{numThreads}{Number of cores. Default \code{1}.}
 
-\item{ctwasPriorArgs}{The EM stage that estimates cTWAS's group priors, built
-with \code{\link{CtwasPriorParam}}: \code{thin}, \code{niterPrefit},
-\code{niter}, \code{varStructure} and \code{fallbackToPrefit}. Handed
-whole to \code{\link{estCtwasGroupPriors}}.}
+\item{ctwasPriorParam}{The EM stage that estimates cTWAS's group priors,
+built with \code{\link{CtwasPriorParam}}: \code{thin},
+\code{niterPrefit}, \code{niter}, \code{varStructure} and
+\code{fallbackToPrefit}. Handed whole to
+\code{\link{estCtwasGroupPriors}}.}
 
-\item{variantPruningArgs}{Which variants survive into each gene's weight
+\item{variantPruningParam}{Which variants survive into each gene's weight
 matrix, built with \code{\link{VariantPruningParam}}:
 \code{weightCutoff}, \code{csMinCor}, \code{pipRescue} and
 \code{maxVariants}. Handed whole to
 \code{\link{assembleCtwasInputs}}. The \code{csMinCor} /
 \code{pipRescue} rescues need a \code{fineMappingResult}.}
 
-\item{boundaryMergeArgs}{Whether a high-PIP gene straddling an LD-block
+\item{boundaryMergeParam}{Whether a high-PIP gene straddling an LD-block
 boundary has its regions merged and re-fine-mapped, built with
 \code{\link{BoundaryMergeParam}}: \code{enabled} (default
 \code{FALSE}), \code{pipThreshold}, \code{filterCs} and
@@ -112,7 +113,7 @@ A \code{\link{CtwasResult}} collection: one row per \code{(gwasStudy,
 \description{
 Pipeline that hands a per-block set of
   \code{\link{GwasSumStats}} of GWAS Z-scores together with the matching
-  per-block per-gene TWAS weights and LD sketches to
+  per-block per-gene TWAS weights and LD references to
   \code{ctwas::ctwas_sumstats}, producing per-gene posterior inclusion
   probabilities for causal genes. Optionally accepts a precomputed TWAS-Z
   \code{GRanges} from \code{\link{causalInferencePipeline}} as the
@@ -124,20 +125,32 @@ Pipeline that hands a per-block set of
   \code{blockId} column -- build it with
   \code{loadGwasSumStatsFromManifest(..., ldBlocks = <blocks>)}. Per-block
   \code{region_info}, \code{LD_map}, and \code{snp_map} entries are built
-  automatically from the LD sketch and concatenated before the call to
+  automatically from the LD reference and concatenated before the call to
   \code{ctwas::ctwas_sumstats}. A single-block input is rejected: cTWAS's EM
   cannot converge on a single region, so callers must supply at least two
   blocks.
 }
 
-\section{LD-sketch compatibility check}{
+\section{cTWAS's log}{
+ cTWAS narrates each of its steps through the
+  \code{logging} package, which writes to the console with \code{cat()},
+  out of reach of \code{suppressMessages()}. The pipeline keeps that
+  narration off the console, cTWAS's warnings excepted. To keep the full
+  log, give a step a log file through its options, e.g.
+  \code{CtwasEstParamOptions(logfile = "est_param.log")}.
+}
+
+\section{LD reference compatibility check}{
  Per block:
-  \code{ldSketch(twasWeights)} (when non-NULL) must come from the same
-  reference panel as \code{ldSketch(gwasSumStats)} --- same samples, same
-  allele orientation on the shared variants. The two need NOT carry the same
-  variants; a partial overlap, which is what QC-ing the two sides separately
-  produces, only warns. A different sample set, a swapped A1/A2 on a shared
-  variant, or no shared variant at all is a hard error.
+  \code{ldReference(twasWeights)} (when non-NULL) must be the same LD
+  reference as \code{ldReference(gwasSumStats)}.
+  The two must be the same kind of reference. Two genotype panels must
+  share their samples and allele orientation; two \code{LdMatrix} objects
+  must agree on the LD they share; two \code{GenotypeMixture} objects must
+  average the same panels with the same weights. The two need NOT carry the
+  same variants; a partial overlap, which is what QC-ing the two sides
+  separately produces, only warns. A mismatch of any of those, or no shared
+  variant at all, is a hard error.
 }
 
 \examples{
@@ -152,12 +165,13 @@ blocks <- GenomicRanges::GRanges("chr22",
   IRanges::IRanges(c(10000000, 15000001), c(15000000, 19000000)),
   blockId = c("chr22_1", "chr22_2"))
 gss <- loadGwasSumStatsFromManifest(manifest = mani, genome = "hg38",
-  ldSketch = ldStem, region = "chr22:10000000-19000000", ldBlocks = blocks)
+  ldReference = ldStem, region = "chr22:10000000-19000000",
+  ldBlocks = blocks)
 gwasByRegion <- summaryStatsQc(gss,
   panelFilterParam = PanelFilterParam(mafCutoff = 0.0025))
 ctwasPipeline(gwasSumStats = gwasByRegion,
   twasWeights = list(ctwasWeightsExample),
-  ctwasPrior = CtwasPriorParam(thin = 1, niterPrefit = 3, niter = 10,
+  ctwasPriorParam = CtwasPriorParam(thin = 1, niterPrefit = 3, niter = 10,
     fallbackToPrefit = TRUE),
   methodArgs = CtwasOptions(
     regionData = CtwasRegionDataOptions(min_group_size = 1),

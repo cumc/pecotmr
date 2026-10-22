@@ -134,8 +134,8 @@ How \code{\link{colocPipeline}} fine-maps \code{gwasInput}
   \code{\link{fineMappingPipeline}}; the settings that pipeline exposes
   but that cannot apply here are deliberately absent:
   \code{fineMappingResult} (the pipeline is being asked to produce one),
-  \code{crossValidation} (refused on summary statistics) and
-  \code{residualization} (nothing to regress out).
+  \code{crossValidationParam} (refused on summary statistics) and
+  \code{residualizationParam} (nothing to regress out).
 
   The whole bundle is inert when \code{gwasInput} is already a
   fine-mapping result, since no fit is run.

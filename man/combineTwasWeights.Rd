@@ -4,14 +4,14 @@
 \alias{combineTwasWeights}
 \title{Combine TwasWeights collections}
 \usage{
-combineTwasWeights(..., ldSketch = NULL)
+combineTwasWeights(..., ldReference = NULL)
 }
 \arguments{
 \item{...}{Two or more \code{TwasWeights} objects, or a single \code{list} of
 them.}
 
-\item{ldSketch}{Optional genotype panel (see \code{\link{readGenotypes}}) to
-attach to the
+\item{ldReference}{Optional genotype panel (see \code{\link{readGenotypes}})
+to attach to the
 combined collection. Default \code{NULL}. Applied when combining two or
 more inputs; a single input is returned unchanged.}
 }

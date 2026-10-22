@@ -30,11 +30,49 @@ test_that("JointGroup subclasses construct from a conditions table", {
         "SumStatsJointGroup",
         conditions = .jg_cond(),
         Z = Z,
-        ldSketch = NULL,
+        ldReference = NULL,
         N = c(100, 120)
     )
     expect_s4_class(sg, "JointGroup")
     expect_s4_class(sg, "SumStatsJointGroup")
+})
+
+test_that(".jgKeepConditions subsets each condition's column with it", {
+    X <- matrix(0, 4, 1, dimnames = list(paste0("s", 1:4), "chr1:100:A:G"))
+    Y <- matrix(
+        as.numeric(1:12),
+        4,
+        3,
+        dimnames = list(paste0("s", 1:4), c("c1", "c2", "c3"))
+    )
+    g <- new(
+        "IndividualJointGroup",
+        conditions = .jg_cond(context = c("c1", "c2", "c3")),
+        X = X,
+        Y = Y,
+        traitPos = c(10, 20, 30)
+    )
+    kept <- .jgKeepConditions(g, c(TRUE, FALSE, TRUE))
+    expect_equal(.jgConditions(kept)$context, c("c1", "c3"))
+    expect_equal(.jgY(kept), Y[, c(1L, 3L)])
+    expect_equal(.jgTraitPos(kept), c(10, 30))
+    expect_identical(.jgKeepConditions(g, rep(TRUE, 3L)), g)
+    expect_null(.jgKeepConditions(g, rep(FALSE, 3L)))
+    sg <- new(
+        "SumStatsJointGroup",
+        conditions = .jg_cond(),
+        Z = matrix(
+            as.numeric(1:6),
+            3,
+            2,
+            dimnames = list(paste0("v", 1:3), NULL)
+        ),
+        ldReference = NULL,
+        N = c(100, 120)
+    )
+    keptSs <- .jgKeepConditions(sg, c(FALSE, TRUE))
+    expect_equal(.jgZ(keptSs), .jgZ(sg)[, 2L, drop = FALSE])
+    expect_equal(.jgN(keptSs), 120)
 })
 
 test_that("JointGroup validity rejects malformed groups", {
@@ -105,7 +143,7 @@ test_that("JointGroup validity rejects malformed groups", {
             "SumStatsJointGroup",
             conditions = .jg_cond(),
             Z = matrix(0, 3, 2),
-            ldSketch = NULL,
+            ldReference = NULL,
             N = 1
         ),
         "variant ids as rownames"

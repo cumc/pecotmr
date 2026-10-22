@@ -53,7 +53,7 @@ fmr <- fineMappingPipeline(
     qtlDatasetExample,
     methods = "susie",
     cisWindow = 1e6,
-    crossValidationArgs = CrossValidationParam(folds = 3)
+    crossValidationParam = CrossValidationParam(folds = 3)
 )
 tw <- twasWeightsPipeline(
     qtlDatasetExample,
@@ -89,7 +89,7 @@ res2 <- causalInferencePipeline(
     gwasSumStats = gwasSumStatsS4Example,
     twasWeights = tw,
     fineMappingResult = fmr,
-    mrArgs = MrParam(method = "ivwPerVariant", pipCutoff = 0.5)
+    mrParam = MrParam(method = "ivwPerVariant", pipCutoff = 0.5)
 )
 S4Vectors::mcols(res2)[, c(
     "twasZ",
@@ -113,7 +113,7 @@ causalInferencePipeline(
     gwasSumStats = gwasSumStatsS4Example,
     twasWeights = tw,
     fineMappingResult = fmr,
-    mrArgs = MrParam(method = "csAware", cpipCutoff = 0.5)
+    mrParam = MrParam(method = "csAware", cpipCutoff = 0.5)
 )
 ```
 
@@ -150,13 +150,13 @@ waldTestPval(beta = 2.5, se = 0.8, n = 10000)
 `n` sets the degrees of freedom, so a small study gives a more conservative
 p-value than the normal approximation would.
 
-## LD-sketch consistency
+## LD reference consistency
 
-Both `twasWeights` and `fineMappingResult` carry an `ldSketch` slot.
-When provided, they must reference the same LD panel as
-`gwasSumStats`. The pipeline errors on mismatch.
+Both `twasWeights` and `fineMappingResult` carry an `ldReference` slot.
+When provided, they must be the same LD reference as `gwasSumStats`
+carries. The pipeline errors on mismatch.
 
-A QTL input with `ldSketch = NULL` (e.g. weights learned from
+A QTL input with `ldReference = NULL` (e.g. weights learned from
 individual-level data without any RSS step) skips the panel check for
 that input — useful for analyses that mix individual-level QTL fits
 with sumstats GWAS.
@@ -168,7 +168,7 @@ causalInferencePipeline(
     gwasSumStats = gwasSumStatsS4Example,
     twasWeights = tw,
     fineMappingResult = fmr,
-    mrArgs = MrParam(
+    mrParam = MrParam(
         method = "ivwPerVariant",
         pipCutoff = 0.5 # cpipCutoff instead, for method = "csAware"
     ),

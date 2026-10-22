@@ -67,6 +67,7 @@ export(FsusieOptions)
 export(GbjOmniOptions)
 export(GbjOptions)
 export(GenotypeFilterParam)
+export(GenotypeMixture)
 export(GlmnetOptions)
 export(GwasFineMappingParam)
 export(GwasFineMappingResult)
@@ -74,8 +75,8 @@ export(GwasSumStats)
 export(KrigingOptions)
 export(L0learnOptions)
 export(LassosumOptions)
-export(LdData)
 export(LdEigen)
+export(LdMatrix)
 export(LdPruningOptions)
 export(LdScore)
 export(MashComponentParam)
@@ -155,7 +156,6 @@ export(bayesLWeights)
 export(bayesNWeights)
 export(bayesRWeights)
 export(blockId)
-export(blockMetadata)
 export(buildLdEigen)
 export(buildLdScore)
 export(buildMrmashPriorMatrices)
@@ -245,7 +245,6 @@ export(genotypeCovariates)
 export(genotypes)
 export(glmnetWeights)
 export(h2EstimateToSldscTrait)
-export(hasGenotypes)
 export(heritabilityEstimate)
 export(heritabilityEstimateSe)
 export(heritabilityIntercept)
@@ -263,7 +262,6 @@ export(krigingOutlierQc)
 export(l0learnRssWeights)
 export(l0learnWeights)
 export(lassoWeights)
-export(lassosumRss)
 export(lassosumRssWeights)
 export(lbf)
 export(lbfToAlpha)
@@ -274,11 +272,10 @@ export(ldMatrixList)
 export(ldMismatchQc)
 export(ldPanelNSamples)
 export(ldPruneByCorrelation)
-export(ldSketch)
+export(ldReference)
 export(learnTwasWeights)
 export(loadGenotypeRegion)
 export(loadGwasSumStatsFromManifest)
-export(loadLdMatrix)
 export(loadMultiStudyQtlDatasetFromManifest)
 export(loadQtlDatasetFromManifest)
 export(loadQtlSumStatsFromManifest)
@@ -329,12 +326,10 @@ export(overlapTopLoci)
 export(panelFilterParam)
 export(parseRegion)
 export(parseVariantId)
-export(penalizedRss)
 export(perCsColumns)
 export(phenotypeCovariates)
 export(pip)
 export(postprocessFinemappingFits)
-export(prsCs)
 export(prsCsWeights)
 export(pval)
 export(qcDiagnostics)
@@ -354,7 +349,6 @@ export(readSldscAnnot)
 export(readSldscFrq)
 export(readSldscTrait)
 export(readTwasWeights)
-export(refPanel)
 export(refVariantInfo)
 export(regionToDf)
 export(regionVcp)
@@ -369,7 +363,6 @@ export(scaleResiduals)
 export(scoreFromCs)
 export(scoreStats)
 export(screenCtwasRegions)
-export(sdpr)
 export(sdprWeights)
 export(se)
 export(secondaryCoverage)
@@ -381,7 +374,6 @@ export(sldscPostprocessingPipeline)
 export(sldscResults)
 export(sldscSubsetMeta)
 export(sliceMashData)
-export(snpIdx)
 export(standardizeSldscTrait)
 export(stratifiedHeritabilityEnrichment)
 export(studyName)
@@ -412,7 +404,6 @@ export(twasZ)
 export(updateMashModelCov)
 export(varY)
 export(variantIds)
-export(variantInfo)
 export(waldTestPval)
 export(weightStandardized)
 export(weightsDataType)
@@ -436,12 +427,13 @@ exportClasses(FineMappingMethodsParam)
 exportClasses(FineMappingResultBase)
 exportClasses(FineMappingRow)
 exportClasses(GenotypeFilterParam)
+exportClasses(GenotypeMixture)
 exportClasses(GwasFineMappingParam)
 exportClasses(GwasFineMappingResult)
 exportClasses(GwasSumStats)
 exportClasses(H2Estimate)
-exportClasses(LdData)
 exportClasses(LdEigen)
+exportClasses(LdMatrix)
 exportClasses(LdScore)
 exportClasses(LdStatistic)
 exportClasses(MashComponentParam)
@@ -493,7 +485,6 @@ exportMethods(as.list)
 exportMethods(baselineAnnotations)
 exportMethods(bindROWS)
 exportMethods(blockId)
-exportMethods(blockMetadata)
 exportMethods(coef)
 exportMethods(colnames)
 exportMethods(colocBoostOutcomes)
@@ -526,7 +517,6 @@ exportMethods(fullFit)
 exportMethods(genomicRegion)
 exportMethods(genotypeCovariates)
 exportMethods(genotypes)
-exportMethods(hasGenotypes)
 exportMethods(heritabilityEstimate)
 exportMethods(heritabilityEstimateSe)
 exportMethods(heritabilityIntercept)
@@ -541,7 +531,7 @@ exportMethods(ldBlocks)
 exportMethods(ldMatrix)
 exportMethods(ldMatrixList)
 exportMethods(ldPanelNSamples)
-exportMethods(ldSketch)
+exportMethods(ldReference)
 exportMethods(length)
 exportMethods(localH2Blocks)
 exportMethods(longForm)
@@ -568,7 +558,6 @@ exportMethods(qtlAssociationPostprocess)
 exportMethods(qtlDatasets)
 exportMethods(readAnnotations)
 exportMethods(readGenotypes)
-exportMethods(refPanel)
 exportMethods(regionVcp)
 exportMethods(residualizedGenotypes)
 exportMethods(residualizedPhenotypes)
@@ -580,7 +569,6 @@ exportMethods(se)
 exportMethods(show)
 exportMethods(significantQtls)
 exportMethods(sldscResults)
-exportMethods(snpIdx)
 exportMethods(stratifiedHeritabilityEnrichment)
 exportMethods(studyName)
 exportMethods(subsetChr)
@@ -596,7 +584,6 @@ exportMethods(twasWeights)
 exportMethods(twasWeightsPipeline)
 exportMethods(varY)
 exportMethods(variantIds)
-exportMethods(variantInfo)
 exportMethods(weightStandardized)
 exportMethods(weights)
 exportMethods(weightsDataType)
@@ -606,6 +593,7 @@ importClassesFrom(GenomicRanges,GRanges)
 importClassesFrom(MultiAssayExperiment,MultiAssayExperiment)
 importClassesFrom(S4Vectors,DataFrame)
 importClassesFrom(S4Vectors,SimpleList)
+importClassesFrom(S4Vectors,Vector)
 importClassesFrom(S4Vectors,character_OR_NULL)
 importClassesFrom(SummarizedExperiment,RangedSummarizedExperiment)
 importFrom(BiocGenerics,
@@ -613,12 +601,12 @@ importFrom(BiocGenerics,
   ncol,
   nrow,
   path,
-  weights
+  weights,
+  width
 )
 importFrom(BiocParallel,
   MulticoreParam,
   bplapply,
-  bpparam,
   multicoreWorkers
 )
 importFrom(Biostrings,
@@ -635,10 +623,18 @@ importFrom(IRanges,
   CharacterList,
   DataFrameList,
   IRanges,
-  findOverlaps
+  findOverlaps,
+  overlapsAny
 )
 importFrom(MASS,ginv)
-importFrom(MultiAssayExperiment,longForm)
+importFrom(MultiAssayExperiment,
+  ExperimentList,
+  MultiAssayExperiment,
+  experiments,
+  longForm,
+  subsetByAssay,
+  subsetByRow
+)
 importFrom(Rsamtools,
   TabixFile,
   asBcf,
@@ -656,8 +652,10 @@ importFrom(S4Vectors,
   SimpleList,
   bindROWS,
   endoapply,
+  extractROWS,
   mcols,
   metadata,
+  normalizeSingleBracketSubscript,
   queryHits,
   subjectHits
 )
@@ -696,7 +694,6 @@ importFrom(checkmate,
   checkList,
   checkMatrix,
   checkNames,
-  checkNull,
   checkNumeric,
   checkString,
   checkSubset,
@@ -761,6 +758,7 @@ importFrom(purrr,
   list_rbind,
   map,
   map2,
+  map2_dbl,
   map2_lgl,
   map_chr,
   map_dbl,
@@ -768,6 +766,7 @@ importFrom(purrr,
   map_int,
   map_lgl,
   partial,
+  pmap,
   possibly,
   reduce,
   set_names,
@@ -788,19 +787,20 @@ importFrom(rlang,
   abort,
   arg_match,
   arg_match0,
+  caller_arg,
   cnd_signal,
+  eval_bare,
+  fn_env,
+  fn_fmls,
   inform,
   is_named,
   try_fetch,
   warn
 )
 importFrom(stats,
-  as.dist,
   coef,
   complete.cases,
   cor,
-  cutree,
-  hclust,
   lm,
   lm.fit,
   median,
@@ -861,15 +861,10 @@ importFrom(tidyr,
   separate
 )
 importFrom(tidyselect,all_of)
-importFrom(tools,
-  file_ext,
-  file_path_sans_ext
-)
+importFrom(tools,file_ext)
 importFrom(utils,
   combn,
-  head,
-  read.table,
-  tail
+  head
 )
 importFrom(vctrs,vec_duplicate_detect)
 importFrom(vroom,vroom)

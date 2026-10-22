@@ -20,7 +20,7 @@ topLoci(x, signalCutoff = 0.025, ...)
 )
 }
 \arguments{
-\item{x}{A \code{FineMappingRow} or \code{FineMappingResult}.}
+\item{x}{A \code{QtlFineMappingResult} or \code{GwasFineMappingResult}.}
 
 \item{signalCutoff}{Numeric (length 1). Drop rows where \code{pip <=
 signalCutoff}. Default \code{0.025}. Use \code{signalCutoff = 0} to keep

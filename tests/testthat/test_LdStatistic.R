@@ -131,47 +131,63 @@ test_that("ldBlocks returns the blocks the statistic was built against", {
 
 
 # =============================================================================
-# .ldRefPrepare -- the input handling shared by buildLdEigen/buildLdScore
+# .h2RefPrepare -- the input handling shared by buildLdEigen/buildLdScore
 # =============================================================================
 
-test_that("the builders accept a bare LdData as well as a list of them", {
-    one <- makeTestLdData(n = 4L, startBp = 1000L)
-    two <- makeTestLdData(n = 3L, startBp = 5000L)
+test_that("the builders accept one LdMatrix as well as a list of them", {
+    one <- makeTestLdMatrix(n = 4L, startBp = 1000L)
+    two <- makeTestLdMatrix(n = 3L, startBp = 5000L)
 
     expect_equal(length(buildLdEigen(one)), 4L)
     expect_equal(length(buildLdEigen(list(one))), 4L)
 
-    # A list of LdData concatenates: one LD block per element here, and the
-    # variant order follows the list order.
+    # A list concatenates, one LD block per element, and the variant order
+    # follows the list order.
     joined <- buildLdEigen(list(one, two))
     expect_equal(length(joined), 7L)
     expect_equal(length(eigenList(joined)), 2L)
     expect_equal(eigenList(joined)[[2]]$snpIdx, 5:7)
 })
 
-test_that("the builders reject input that is not LdData", {
-    expect_error(buildLdEigen("not-ld"), "must be an LdData")
-    expect_error(buildLdEigen(list()), "must be an LdData")
+test_that("the builders reject anything but LdMatrix blocks or a panel", {
+    msg <- "must be a genotype panel, an LdMatrix, or a non-empty list"
+    expect_error(buildLdEigen("not-ld"), msg)
+    expect_error(buildLdEigen(list()), msg)
+    expect_error(buildLdScore(list(makeTestLdMatrix(), "not-ld")), msg)
     expect_error(
-        buildLdScore(list(makeTestLdData(), "not-ld")),
-        "element\\(s\\) 2 are not LdData"
+        buildLdScore(makeTestLdMatrix(), ldBlocks = makeTestLdBlocks()),
+        "`ldBlocks` cuts a genotype panel"
     )
 })
 
-test_that("nRef is taken from the LdData, and disagreement is an error", {
-    a <- makeTestLdData(n = 4L, nSamples = 500L)
-    b <- makeTestLdData(n = 3L, startBp = 5000L, nSamples = 900L)
+test_that("nRef is taken from the LdMatrix blocks; disagreement is an error", {
+    a <- makeTestLdMatrix(n = 4L, nSamples = 500L)
+    b <- makeTestLdMatrix(n = 3L, startBp = 5000L, nSamples = 900L)
 
     expect_equal(ldPanelNSamples(buildLdEigen(list(a, a))), 500L)
     expect_error(buildLdEigen(list(a, b)), "differing reference panel sizes")
     # An explicit nRef settles it.
-    expect_equal(ldPanelNSamples(buildLdEigen(list(a, b), nSamples = 700L)), 700L)
+    expect_equal(
+        ldPanelNSamples(buildLdEigen(list(a, b), nSamples = 700L)),
+        700L
+    )
 })
 
-test_that("the genome build comes from the LdData when the caller names none", {
-    ld <- makeTestLdData()
-    # loadLdMatrix() leaves the build unset, which must stay NA rather than
-    # becoming a made-up default.
+test_that("nSamples is required when no LdMatrix records one", {
+    unknown <- makeTestLdMatrix(n = 3L, nSamples = NA_integer_)
+    expect_error(buildLdScore(unknown), "`nSamples` is required")
+    expect_equal(
+        ldPanelNSamples(buildLdScore(unknown, nSamples = 250L)),
+        250L
+    )
+    # Alongside a block that does record one, that size is used.
+    known <- makeTestLdMatrix(n = 3L, startBp = 5000L, nSamples = 900L)
+    expect_equal(ldPanelNSamples(buildLdEigen(list(unknown, known))), 900L)
+})
+
+test_that("the genome build comes from the reference when none is named", {
+    ld <- makeTestLdMatrix()
+    # An unlabelled reference stays NA rather than becoming a made-up default.
     expect_true(is.na(unname(GenomeInfoDb::genome(buildLdEigen(ld)))))
 
     tagged <- ld
@@ -185,7 +201,7 @@ test_that("the genome build comes from the LdData when the caller names none", {
 })
 
 test_that("LD block ranges span the variants each block covers", {
-    ref <- buildLdEigen(makeTestLdDataMultiBlock(sizes = c(4L, 3L)))
+    ref <- buildLdEigen(makeTestLdMatrixBlocks(sizes = c(4L, 3L)))
     blocks <- ldBlocks(ref)
     variants <- GenomicRanges::start(ref)
 
@@ -198,209 +214,135 @@ test_that("LD block ranges span the variants each block covers", {
 })
 
 test_that("an LD block spanning chromosomes is rejected", {
-    ld <- makeTestLdData(n = 4L)
-    gr <- as(ld, "GRanges")
-    GenomeInfoDb::seqlevels(gr) <- c("chr1", "chr2")
-    GenomicRanges::seqnames(gr) <- factor(
-        c("chr1", "chr1", "chr2", "chr2"),
-        levels = c("chr1", "chr2")
-    )
-    crossChrom <- LdData(
-        correlation = ldMatrix(ld),
-        variants = gr,
-        blockMetadata = blockMetadata(ld),
-        nSamples = ldPanelNSamples(ld)
-    )
+    tbl <- .testLdVariants(4L, "chr1", 1000L)
+    tbl$chrom <- c("chr1", "chr1", "chr2", "chr2")
+    crossChrom <- LdMatrix(.testArBlock(4L, 0.5), variants = tbl, nSamples = 50)
     expect_error(buildLdEigen(crossChrom), "spans 2 chromosomes")
 })
 
-# ===========================================================================
-# .ldRefPrepare()'s accessor fallbacks and guards
-#
-# The shared helpers behind buildLdEigen() / buildLdScore() read a variant's
-# identity, alleles and frequency out of whatever columns the LdData happens
-# to carry. Every fixture above supplies `variant_id` + `allele_freq` and a
-# blockMetadata whose startIdx/endIdx line up, so only one path through each
-# accessor was ever taken. These exercise the others.
-# ===========================================================================
-
-# An LdData whose variant metadata is whatever the caller passes, so each
-# accessor branch can be reached in turn. `blockMetadata` defaults to a
-# single block spanning every variant.
-.ldsVariants <- function(n, md = NULL, variantNames = NULL) {
-    gr <- GenomicRanges::GRanges(
-        "chr1",
-        IRanges::IRanges(
-            start = seq(100L, by = 100L, length.out = n),
-            width = 1L
-        )
-    )
-    if (is.null(md)) {
-        md <- S4Vectors::DataFrame(
-            variant_id = str_c("v", seq_len(n)),
-            A1 = rep("T", n),
-            A2 = rep("C", n)
-        )
-    }
-    S4Vectors::mcols(gr) <- md
-    if (!is.null(variantNames)) {
-        names(gr) <- variantNames
-    }
-    gr
-}
-
-.ldsBlockMeta <- function(sizes) {
-    ends <- cumsum(sizes)
-    starts <- ends - sizes + 1L
-    tibble(
-        blockId = seq_along(sizes),
-        chrom = "1",
-        blockStart = as.integer(100L * starts),
-        blockEnd = as.integer(100L * ends),
-        size = as.integer(sizes),
-        startIdx = as.integer(starts),
-        endIdx = as.integer(ends)
-    )
-}
-
-.ldsData <- function(
-    n = 3L,
-    md = NULL,
-    variantNames = NULL,
-    nSamples = 100L,
-    correlation = NULL,
-    blockMetadata = NULL
-) {
-    LdData(
-        correlation = correlation %||% diag(n),
-        variants = .ldsVariants(n, md, variantNames),
-        blockMetadata = blockMetadata %||% .ldsBlockMeta(n),
-        nSamples = nSamples
-    )
-}
-
-.ldsAlleles <- function(n) {
-    S4Vectors::DataFrame(A1 = rep("T", n), A2 = rep("C", n))
-}
-
-test_that("variant ids fall back to a SNP column when there is no variant_id", {
-    md <- S4Vectors::DataFrame(
-        SNP = c("s1", "s2", "s3"),
-        A1 = rep("T", 3),
-        A2 = rep("C", 3)
-    )
-    expect_equal(names(buildLdScore(.ldsData(3L, md))), c("s1", "s2", "s3"))
-})
-
-test_that("variant ids fall back to the GRanges names", {
-    expect_equal(
-        names(buildLdScore(
-            .ldsData(3L, .ldsAlleles(3L), variantNames = c("n1", "n2", "n3"))
-        )),
-        c("n1", "n2", "n3")
-    )
-})
-
-test_that("variant ids are synthesized from chrom:pos as a last resort", {
-    expect_equal(
-        names(buildLdScore(.ldsData(3L, .ldsAlleles(3L)))),
-        c("chr1:100", "chr1:200", "chr1:300")
-    )
-})
-
-test_that("an MAF column is carried across as-is", {
-    md <- S4Vectors::DataFrame(
-        variant_id = c("a", "b", "c"),
-        A1 = rep("T", 3),
-        A2 = rep("C", 3),
-        MAF = c(0.1, 0.2, 0.3)
-    )
-    got <- S4Vectors::mcols(buildLdScore(.ldsData(3L, md)), use.names = FALSE)
-    expect_true(is_in("MAF", colnames(got)))
-    # Taken verbatim, NOT folded the way allele_freq is.
-    expect_equal(as.numeric(got$MAF), c(0.1, 0.2, 0.3))
-})
-
-test_that("no frequency column leaves the MAF column off entirely", {
+test_that("an AF column becomes a folded MAF column; none leaves it off", {
+    tbl <- .testLdVariants(3L, "chr1", 1000L)
+    tbl$AF <- c(0.1, 0.9, 0.3)
     got <- S4Vectors::mcols(
-        buildLdScore(.ldsData(3L, .ldsAlleles(3L))),
+        buildLdScore(LdMatrix(diag(3), variants = tbl, nSamples = 50)),
         use.names = FALSE
     )
-    expect_false(is_in("MAF", colnames(got)))
-})
+    expect_equal(as.numeric(got$MAF), c(0.1, 0.1, 0.3))
 
-test_that("blocks are taken in order when blockMetadata has no startIdx", {
-    # The positional fallback: each block covers as many variants as its
-    # matrix has rows. blockMetadata is present but carries no index columns,
-    # so it cannot be treated as authoritative.
-    noIdx <- tibble(
-        blockId = 1:2,
-        chrom = "1",
-        blockStart = c(100L, 300L),
-        blockEnd = c(200L, 400L),
-        size = c(2L, 2L)
+    tbl$AF <- NULL
+    bare <- S4Vectors::mcols(
+        buildLdScore(LdMatrix(diag(3), variants = tbl, nSamples = 50)),
+        use.names = FALSE
     )
-    ref <- buildLdScore(.ldsData(
-        4L,
-        correlation = list(diag(2), diag(2)),
-        blockMetadata = noIdx
-    ))
-    expect_equal(length(ref), 4L)
-    expect_equal(length(ldBlocks(ref)), 2L)
+    expect_false(is_in("MAF", colnames(bare)))
+    expect_identical(as.character(bare$SNP), tbl$SNP)
 })
 
-test_that("a variant table with no A1 column is rejected", {
-    md <- S4Vectors::DataFrame(
-        variant_id = c("a", "b", "c"),
-        A2 = rep("C", 3)
+test_that("a genotype panel is cut into LD blocks at ldBlocks", {
+    panel <- readGenotypes(test_path("test_data", "test_variants.bed"))
+    pos <- GenomicRanges::start(SummarizedExperiment::rowRanges(panel))
+    cut <- pos[[200L]]
+    # The block table may name chromosomes either way; a panel's are
+    # chr-prefixed. Variants outside every block are left out.
+    blocks <- data.frame(
+        chrom = "21",
+        start = c(pos[[1L]], cut),
+        end = c(cut - 1L, pos[[300L]])
+    )
+    ref <- buildLdScore(panel, ldBlocks = blocks)
+    expect_equal(length(ref), 300L)
+    expect_equal(ldPanelNSamples(ref), ncol(panel))
+    # It keeps the panel and each variant's row in it, not the blocks' LD...
+    expect_identical(ldReference(ref), panel)
+    expect_identical(S4Vectors::mcols(ref)$panelRow, 1:300)
+    expect_length(methods::slot(ref, "ldMatrixList"), 0L)
+    # ...and computes a block's LD from the panel when asked for it.
+    expect_equal(length(ldMatrixList(ref)), 2L)
+    expect_equal(
+        unname(ldMatrixList(ref)[[2]]$R),
+        unname(computeLd(panel, snpIdx = 200:300))
+    )
+    expect_error(buildLdScore(panel), "`ldBlocks` is required")
+    overlapping <- data.frame(
+        chrom = "chr21",
+        start = c(pos[[1L]], pos[[100L]]),
+        end = c(pos[[150L]], pos[[300L]])
     )
     expect_error(
-        buildLdScore(.ldsData(3L, md)),
-        "carry no `A1` column"
+        buildLdEigen(panel, ldBlocks = overlapping),
+        "`ldBlocks` overlap"
     )
 })
 
-test_that("block matrices that do not cover every variant are rejected", {
+test_that("a stochastic sketch's blocks carry its effective size", {
+    skip_if_not_installed("pgenlibr")
+    sketch <- readGenotypes(
+        test_path("test_data", "test_harmonize_regions.pgen")
+    )
+    gr <- SummarizedExperiment::rowRanges(sketch)
+    blocks <- data.frame(
+        chrom = "chr21",
+        start = min(GenomicRanges::start(gr)),
+        end = max(GenomicRanges::start(gr))
+    )
+    ref <- buildLdEigen(sketch, ldBlocks = blocks)
+    # 50 real samples projected onto 100 pseudo-samples: 1 / (1/50 + 1/100).
+    expect_equal(ldPanelNSamples(ref), 33L)
+    # The sketch's real allele frequencies are carried as MAF.
+    af <- SummarizedExperiment::rowRanges(sketch)$AF
+    expect_equal(as.numeric(S4Vectors::mcols(ref)$MAF), pmin(af, 1 - af))
+})
+
+test_that("a statistic read from a panel must name each variant's panel row", {
+    fx <- .h2PanelFixture()
+    ref <- buildLdScore(fx$panel, ldBlocks = fx$blocks)
+    expect_true(validObject(ref))
+    offPanel <- ref
+    S4Vectors::mcols(offPanel)$panelRow <- ref$panelRow + 1000L
+    expect_error(validObject(offPanel), "needs an integer `panelRow`")
+    unread <- ref
+    S4Vectors::mcols(unread)$panelRow <- NULL
+    expect_error(validObject(unread), "needs an integer `panelRow`")
+    # An LdMatrix reference's LD is stored per block, never read on demand.
+    asMatrix <- ref
+    asMatrix@ldReference <- fx$ld[[1L]]
     expect_error(
-        buildLdScore(.ldsData(
-            3L,
-            correlation = list(diag(2), diag(2)),
-            blockMetadata = .ldsBlockMeta(c(2L, 2L))
-        )),
-        "cover 4 variant\\(s\\) but the LdData carries 3"
+        validObject(asMatrix),
+        "must be a genotype panel or a GenotypeMixture"
     )
 })
 
-test_that("a block matrix sized differently from its span is rejected", {
-    # sum(sizes) matches the variant count, so the earlier total check passes;
-    # the mis-span only shows up once each block is sliced out.
-    misSpan <- tibble(
-        blockId = 1:2,
-        chrom = "1",
-        blockStart = c(100L, 400L),
-        blockEnd = c(300L, 400L),
-        size = c(3L, 1L),
-        startIdx = c(1L, 4L),
-        endIdx = c(3L, 4L)
+test_that("a block's LD and decomposition are read as stored", {
+    fx <- .h2PanelFixture()
+    idx <- 61:200
+    want <- unname(computeLd(fx$panel, snpIdx = idx))
+    stored <- list(idx = seq_along(idx), R = want)
+    lazy <- list(idx = seq_along(idx), rows = idx)
+    expect_equal(pecotmr:::.ldStatBlockLd(stored, NULL), list(R = want))
+    F <- pecotmr:::.ldStatBlockLd(lazy, fx$panel)$F
+    expect_equal(unname(crossprod(F)) / (nrow(F) - 1), want)
+    # 140 variants and 100 samples: the SVD lists 100 directions and counts
+    # the other 40, whose eigenvalue is exactly zero, unless they would be
+    # truncated away anyway.
+    dec <- pecotmr:::.ldStatBlockEigen(lazy, fx$panel, 1)
+    expect_equal(length(dec$values), 100L)
+    expect_equal(dec$nNull, 40L)
+    expect_equal(dec$snpIdx, seq_along(idx))
+    full <- eigen(want, symmetric = TRUE)$values
+    expect_equal(dec$values[1:90], full[1:90])
+    expect_equal(
+        unname(dec$vectors %*% (dec$values * t(dec$vectors))),
+        want
     )
-    expect_error(
-        buildLdScore(.ldsData(
-            4L,
-            correlation = list(diag(2), diag(2)),
-            blockMetadata = misSpan
-        )),
-        "LD block correlation.*Must have exactly 3 rows"
+    cut <- pecotmr:::.ldStatBlockEigen(lazy, fx$panel, 0.9)
+    expect_equal(cut$nNull, 0L)
+    expect_equal(
+        length(cut$values),
+        length(pecotmr:::.ldEigenKeep(full, 0.9))
     )
-})
-
-test_that("nRef is required when no LdData records one", {
-    expect_error(
-        buildLdScore(.ldsData(3L, nSamples = NA_integer_)),
-        "`nRef` is required"
+    storedEigen <- list(idx = 1:3, eigen = list(values = 1, vectors = 1))
+    expect_equal(
+        pecotmr:::.ldStatBlockEigen(storedEigen, NULL, 1)$nNull,
+        0L
     )
-})
-
-test_that("an explicit nRef overrides a missing one", {
-    ref <- buildLdScore(.ldsData(3L, nSamples = NA_integer_), nSamples = 250L)
-    expect_equal(ldPanelNSamples(ref), 250L)
 })

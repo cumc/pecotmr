@@ -8,7 +8,7 @@ loadMultiStudyQtlDatasetFromManifest(
   qtlDatasetsManifest,
   sumStatsManifest = NULL,
   genome = NULL,
-  ldSketch = NULL,
+  ldReference = NULL,
   region = NULL,
   minLdOverlapWarn = 0.5,
   columnMapping = NULL,
@@ -27,7 +27,7 @@ loadMultiStudyQtlDatasetFromManifest(
 \item{sumStatsManifest}{Optional QtlSumStats manifest (see
 \code{\link{loadQtlSumStatsFromManifest}}).}
 
-\item{genome, ldSketch, region, minLdOverlapWarn}{Passed to the QtlSumStats
+\item{genome, ldReference, region, minLdOverlapWarn}{Passed to the QtlSumStats
 loader for \code{sumStatsManifest}.}
 
 \item{columnMapping, sampleSelect, formatMapping}{Passed to the QtlSumStats

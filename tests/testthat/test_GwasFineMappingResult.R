@@ -159,19 +159,19 @@ test_that("show.GwasFineMappingResult prints (study, method) summary", {
     out <- capture.output(show(res))
     expect_true(any(grepl("GwasFineMappingResult: 2 entries", out)))
     expect_true(any(grepl("1 studies.*2 methods", out)))
-    expect_true(any(grepl("LD sketch: NULL", out)))
+    expect_true(any(grepl("LD reference: NULL", out)))
 })
 
 
-test_that("show.GwasFineMappingResult reports the ldSketch source when present", {
+test_that("show.GwasFineMappingResult reports the ldReference source", {
     res <- GwasFineMappingResult(
         studyName = "g1",
         method = "susie",
         entry = list(.sh_makeFmEntry()),
-        ldSketch = .sh_makeGenotypeHandle()
+        ldReference = .sh_makeGenotypeHandle()
     )
     out <- capture.output(show(res))
-    expect_true(any(grepl("LD sketch: gds @ /tmp/test.gds", out)))
+    expect_true(any(grepl("LD reference: plink2 @ /tmp/test", out)))
 })
 
 
@@ -287,7 +287,12 @@ test_that("GwasFineMappingResult: credibleSets aggregates CS across blocks", {
     )
     expect_true(all(is.na(cs$context)))
     # region= pins one block -> bare table
-    bare <- credibleSets(res, studyName = "g1", method = "susie", region = "chr1:1-100")
+    bare <- credibleSets(
+        res,
+        studyName = "g1",
+        method = "susie",
+        region = "chr1:1-100"
+    )
     expect_false("blockId" %in% names(bare))
 })
 
@@ -304,7 +309,10 @@ test_that("GwasFineMappingResult: .tupleSelectRowGwasFmr requires both selectors
         pip(res, studyName = c("g1", "g2"), method = "susie"),
         "Must have length 1"
     )
-    expect_error(pip(res, studyName = "ghost", method = "susie"), "No entry for")
+    expect_error(
+        pip(res, studyName = "ghost", method = "susie"),
+        "No entry for"
+    )
 })
 
 

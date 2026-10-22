@@ -6,24 +6,24 @@
 \usage{
 summaryStatsQc(
   sumstats,
-  sumstatsFilterArgs = SumstatsFilterParam(),
+  sumstatsFilterParam = SumstatsFilterParam(),
   panelFilterParam = PanelFilterParam(),
   keepVariants = NULL,
   skipRegion = NULL,
-  signalScreenArgs = SignalScreenParam(),
+  signalScreenParam = SignalScreenParam(),
   ldMismatchQcMethod = c("none", "slalom", "dentist"),
   alleleFlipKriging = FALSE,
   effectiveN = TRUE,
   impute = FALSE,
-  imputeArgs = RaissParam(),
+  raissParam = RaissParam(),
   matchMinProp = 0,
-  sumstatsCleaningArgs = SumstatsCleaningParam()
+  sumstatsCleaningParam = SumstatsCleaningParam()
 )
 }
 \arguments{
 \item{sumstats}{A \code{QtlSumStats} or \code{GwasSumStats} collection.}
 
-\item{sumstatsFilterArgs}{Row filters applied to the summary statistics
+\item{sumstatsFilterParam}{Row filters applied to the summary statistics
 themselves, built with \code{\link{SumstatsFilterParam}}:
 \code{removeIndels} drops indels during panel harmonization,
 \code{removeStrandAmbiguous} drops A/T and C/G variants,
@@ -35,8 +35,10 @@ disables it).}
 \item{panelFilterParam}{LD-reference-panel filters, built with
   \code{\link{PanelFilterParam}}. \code{macCutoff} is converted to a MAF
   equivalent using \code{macCutoff / (2 * nSamples)} and the stricter of
-  it and \code{mafCutoff} applies; \code{imissCutoff} is a per-variant
-  missingness ceiling. See the panel-filters section below.
+  it and \code{mafCutoff} applies; \code{nSamples} counts the panel's real
+  samples, which for a stochastic LD sketch are those its \code{.afreq}
+  records rather than its pseudo-samples. \code{imissCutoff} is a
+  per-variant missingness ceiling. See the panel-filters section below.
 
   \code{mafCutoff} is the one setting that reaches past the panel: it is
   measured wherever it can be, against the summary statistics' own
@@ -50,7 +52,7 @@ retain prior to harmonization.}
 \item{skipRegion}{Optional character vector of \code{"chr:start-end"}
 strings, or a \code{GRanges}, of regions to drop.}
 
-\item{signalScreenArgs}{Whether to skip an entry before fitting it,
+\item{signalScreenParam}{Whether to skip an entry before fitting it,
 built with
 \code{\link{SignalScreenParam}} --- the same bundle
 \code{\link{fineMappingPipeline}} and \code{\link{colocboostPipeline}}
@@ -87,15 +89,15 @@ records the setting and each entry's \code{nSource} is one of
 \code{"effective"}, \code{"column"}, \code{"total"}, or \code{NA}.}
 
 \item{impute}{Logical (length 1). Run RAISS imputation against the
-\code{ldSketch}. Default \code{FALSE}. (Note: RAISS against the sketch is
-not yet fully wired for the new path; the option is accepted but currently
-emits a warning and is skipped.)}
+\code{ldReference}'s genotype panel as the last QC step, adding z-scores
+for panel variants the input lacks (see \code{raissParam}). The audit
+records how many variants were imputed. Default \code{FALSE}.}
 
-\item{imputeArgs}{RAISS settings, built with \code{\link{RaissParam}}.
+\item{raissParam}{RAISS settings, built with \code{\link{RaissParam}}.
   A bare list is refused, since it cannot be checked.
 
   RAISS imputation scopes its reference panel to the analysis-region window
-  (so a per-chromosome / genome-wide \code{ldSketch} does not materialize
+  (so a per-chromosome / genome-wide \code{ldReference} does not materialize
   its full dosage); \code{flank} widens that window by the given number of
   base pairs on each side to retain LD context for edge variants.
 
@@ -112,7 +114,7 @@ emits a warning and is skipped.)}
   the panel handed to RAISS holds nothing below those. Use them to impute
   only common variants from a panel deliberately kept wider than that ---
   e.g. \code{mafCutoff = 0.001} with
-  \code{imputeArgs = RaissParam(mafCutoff = 0.01)}. A variant present in
+  \code{raissParam = RaissParam(mafCutoff = 0.01)}. A variant present in
   the sumstats is never dropped here: RAISS derives its LD basis from those
   same panel rows.
 
@@ -122,12 +124,12 @@ emits a warning and is skipped.)}
 \item{matchMinProp}{Minimum proportion of LD panel variants that must be
 matched by the sumstats; default 0.}
 
-\item{sumstatsCleaningArgs}{What makes a row a well-formed record, built with
-\code{\link{SumstatsCleaningParam}}: \code{coerceNumeric},
+\item{sumstatsCleaningParam}{What makes a row a well-formed record, built
+with \code{\link{SumstatsCleaningParam}}: \code{coerceNumeric},
 \code{normalizeChr} / \code{dropNonstandardChr}, \code{dropMissData},
 \code{dropPOutOfRange}, \code{clampSmallP} / \code{smallPFloor},
 \code{dropZeroEffect} and \code{dropNonpositiveSe}. Applied before any
-filter or screen. Distinct from \code{sumstatsFilter}, which applies
+filter or screen. Distinct from \code{sumstatsFilterParam}, which applies
 quality thresholds to rows that are already well formed.}
 }
 \value{
@@ -141,10 +143,11 @@ with out-of-range / zero P, BETA == 0, SE <= 0, NA in vital columns; clamp
 tiny P; normalize CHR; coerce signed columns to numeric), variant-content
 filters (MAF / INFO / N) via \code{.applyContentFilters}, optional
 \code{skipRegion} drop, optional PIP screen, panel-vs-sumstats allele
-harmonization against the \code{ldSketch} via \code{harmonizeAlleles} (which
-handles indels, strand-ambiguous variants, sign / strand flips, and duplicate
-drops in a single sweep), optional SLALOM/DENTIST LD-mismatch QC, and
-optional RAISS imputation. No Bioconductor genome / dbSNP packages required.
+harmonization against the \code{ldReference} via \code{harmonizeAlleles}
+(which handles indels, strand-ambiguous variants, sign / strand flips, and
+duplicate drops in a single sweep), optional SLALOM/DENTIST LD-mismatch QC,
+and optional RAISS imputation. No Bioconductor genome / dbSNP packages
+required.
 }
 \details{
 The returned collection has its \code{qcInfo} slot populated with a per-entry

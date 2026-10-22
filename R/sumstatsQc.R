@@ -26,7 +26,7 @@ NULL
 
 # Allele harmonization (harmonizeAlleles) now lives in R/variantId.R, alongside
 # the other variant-matching primitives (parseVariantId, matchVariants). It is
-# package-internal and called from here (.matchAgainstSketch), ctwasPipeline,
+# package-internal and called from here (.matchAgainstLdRef), ctwasPipeline,
 # and the pipeline join sites.
 
 # Standardize a variant set (GRanges or data.frame) to a chrom/pos/alt/ref
@@ -140,12 +140,7 @@ resolveLdInput <- function(
     needNSample = FALSE,
     ldMethod = "sample"
 ) {
-    if (is.null(R) && is.null(X)) {
-        abort("Either R (LD matrix) or X (genotype matrix) must be provided.")
-    }
-    if (!is.null(R) && !is.null(X)) {
-        abort("Provide either R or X, not both.")
-    }
+    .ldRequireOneSource(R, X)
     if (!is.null(X)) {
         if (!is.matrix(X)) {
             X <- as.matrix(X)
@@ -159,6 +154,18 @@ resolveLdInput <- function(
         abort("nSample is required when providing an LD matrix R.")
     }
     list(R = R, nSample = nSample)
+}
+
+# Require exactly one of R (LD matrix) or X (genotype matrix).
+# @noRd
+.ldRequireOneSource <- function(R, X) {
+    if (is.null(R) && is.null(X)) {
+        abort("Either R (LD matrix) or X (genotype matrix) must be provided.")
+    }
+    if (!is.null(R) && !is.null(X)) {
+        abort("Provide either R or X, not both.")
+    }
+    invisible(NULL)
 }
 
 # --- dentist helpers --------------------------------------------------------
@@ -196,16 +203,19 @@ resolveLdInput <- function(
 }
 
 # Run DENTIST on a single window, unpacking the shared tuning parameters.
-.dentistCallSingle <- function(zScore, ldMat, nSample, methodArgs) {
+# `ld` is .dentistLdInput()'s list(R) or list(F); a factor goes in as X, which
+# dentistSingleWindow() reads without forming the LD.
+.dentistCallSingle <- function(zScore, ld, nSample, dentistParam) {
     # dentistSingleWindow is what DentistParam() is built for -- ldMismatchQc
     # splices the same bundle into it -- so the tunables travel as one value
     # rather than being named again at every hop down from dentist().
     exec(
         dentistSingleWindow,
         zScore,
-        R = ldMat,
+        R = ld$R,
+        X = ld$F,
         nSample = nSample,
-        !!!methodArgs
+        !!!dentistParam
     )
 }
 
@@ -215,10 +225,10 @@ resolveLdInput <- function(
 .dentistWindowAt <- function(
     k,
     sumStat,
-    ldMat,
+    ld,
     nSample,
     windowDividedRes,
-    methodArgs
+    dentistParam
 ) {
     # windowEndIdx is 1-based exclusive; convert to an inclusive range.
     idxRange <- windowDividedRes$windowStartIdx[
@@ -226,20 +236,52 @@ resolveLdInput <- function(
     ]:(windowDividedRes$windowEndIdx[k] - 1L)
     .dentistCallSingle(
         sumStat$z[idxRange],
-        ldMat[idxRange, idxRange],
+        .dentistLdSlice(ld, idxRange),
         nSample,
-        methodArgs
+        dentistParam
     )
+}
+
+# One window's LD: the matrix's diagonal block, or the factor's columns.
+# @noRd
+.dentistLdSlice <- function(ld, idx) {
+    if (is.null(ld$F)) {
+        return(list(R = ld$R[idx, idx, drop = FALSE]))
+    }
+    list(F = ld$F[, idx, drop = FALSE])
+}
+
+# The LD a DENTIST run reads, with the sample size it needs. Genotypes under
+# the sample estimator give their factor (.ldFactorFromDosage()), which
+# DENTIST's factor kernel reads without forming the p x p LD; an LD matrix,
+# or genotypes under another estimator, give the matrix (resolveLdInput()).
+# Without `nSample`, genotypes count their own rows, as resolveLdInput()
+# does.
+# @noRd
+.dentistLdInput <- function(R, X, nSample, ldMethod) {
+    .ldRequireOneSource(R, X)
+    if (is.null(R) && identical(ldMethod, "sample")) {
+        X <- as.matrix(X)
+        return(list(F = .ldFactorFromDosage(X), nSample = nSample %||% nrow(X)))
+    }
+    ld <- resolveLdInput(
+        R = R,
+        X = X,
+        nSample = nSample,
+        needNSample = TRUE,
+        ldMethod = ldMethod
+    )
+    list(R = ld$R, nSample = ld$nSample)
 }
 
 .dentistWindows <- function(
     sumStat,
-    ldMat,
+    ld,
     nSample,
     windowMode,
     windowSize,
     minDim,
-    methodArgs
+    dentistParam
 ) {
     if (windowMode == "distance") {
         windowDividedRes <- segmentByDist(
@@ -254,10 +296,10 @@ resolveLdInput <- function(
         seq_len(nrow(windowDividedRes)),
         .dentistWindowAt,
         sumStat = sumStat,
-        ldMat = ldMat,
+        ld = ld,
         nSample = nSample,
         windowDividedRes = windowDividedRes,
-        methodArgs = methodArgs
+        dentistParam = dentistParam
     )
     mergeWindows(dentistResultByWindow, windowDividedRes)
 }
@@ -274,8 +316,10 @@ resolveLdInput <- function(
 #' @param sumStat A data frame containing summary statistics, including 'pos' or
 #'   'position' and 'z' or 'zscore' columns.
 #' @param R Square LD correlation matrix. Provide either \code{R} or \code{X}.
-#' @param X Genotype matrix (samples x SNPs). If provided, LD is computed via
-#'   \code{computeLd(X)} and \code{nSample} defaults to \code{nrow(X)}.
+#' @param X Genotype matrix (samples x SNPs). With \code{ldMethod = "sample"}
+#'   DENTIST works on the standardized genotypes and never forms the LD
+#'   matrix; any other \code{ldMethod} computes LD via \code{computeLd(X)}.
+#'   \code{nSample} defaults to \code{nrow(X)}.
 #' @param nSample The number of samples in the LD reference panel (NOT the GWAS
 #'   sample size). This controls the SVD truncation rank K = min(idx_size,
 #'   nSample) * propSVD. Required when \code{R} is provided; inferred from
@@ -287,7 +331,7 @@ resolveLdInput <- function(
 #'   \code{"distance"} (default) creates windows by physical distance using
 #'   \code{segmentByDist} (C++ \code{--wind-dist}), and \code{"count"} creates
 #'   windows by variant count using \code{segmentByCount} (C++ \code{--wind}).
-#' @param methodArgs The DENTIST algorithm settings, built with
+#' @param dentistParam The DENTIST algorithm settings, built with
 #'   \code{\link{DentistParam}}: \code{pValueThreshold}, \code{propSVD},
 #'   \code{gcControl}, \code{nIter}, \code{gPvalueThreshold},
 #'   \code{duprThreshold}, \code{numThreads}, \code{correctChenEtAlBug}
@@ -299,9 +343,9 @@ resolveLdInput <- function(
 #'   2000). In count mode: the number of variants per window (i.e., the window
 #'   size).
 #' @param ldMethod Character string specifying the LD computation method when
-#'   \code{X} is provided. Passed to \code{computeLd}. One of \code{"sample"}
-#'   (default), \code{"population"}, or \code{"gcta"}. Ignored when \code{R} is
-#'   provided directly.
+#'   \code{X} is provided: \code{"sample"} (default), which uses the
+#'   genotypes directly, or \code{"population"} or \code{"gcta"}, which go
+#'   through \code{computeLd}. Ignored when \code{R} is provided directly.
 #'
 #' @return A data frame containing the imputed result and detected outliers.
 #'
@@ -367,42 +411,38 @@ dentist <- function(
     windowMode = c("distance", "count"),
     minDim = 2000,
     ldMethod = "sample",
-    methodArgs = DentistParam()
+    dentistParam = DentistParam()
 ) {
     # The tunables arrive as the record rather than as nine formals of their
     # own: DentistParam() is already what ldMismatchQc(method =) takes and
     # what every helper below is spliced with, and duplicating its defaults
     # here left two places to change one number.
-    .assertMethodParam(methodArgs, "DentistParam", "methodArgs")
-    resolved <- resolveLdInput(
-        R = R,
-        X = X,
-        nSample = nSample,
-        needNSample = TRUE,
-        ldMethod = ldMethod
-    )
-    ldMat <- resolved$R
-    nSample <- resolved$nSample
+    .assertMethodParam(dentistParam, "DentistParam")
+    # Genotypes become one factor of the LD here, and each window reads its
+    # columns; the region-wide LD is never formed.
+    ld <- .dentistLdInput(R, X, nSample, ldMethod)
+    nSample <- ld$nSample
     sumStat <- .dentistResolveColumns(sumStat)
     windowMode <- arg_match(windowMode)
     if (nrow(sumStat) < minDim) {
-        return(.dentistCallSingle(sumStat$z, ldMat, nSample, methodArgs))
+        return(.dentistCallSingle(sumStat$z, ld, nSample, dentistParam))
     }
     .dentistWindows(
         sumStat,
-        ldMat,
+        ld,
         nSample,
         windowMode,
         windowSize,
         minDim,
-        methodArgs
+        dentistParam
     )
 }
 
 # --- dentistSingleWindow helpers -------------------------------------------
 
-# Warn on small windows; validate the LD matrix shape against zScore.
-.dentistValidateInput <- function(zScore, ldMat) {
+# Warn on small windows; validate the LD's shape against zScore: a square
+# matrix over the variants, or a factor with one column per variant.
+.dentistValidateInput <- function(zScore, ld) {
     if (length(zScore) < 2000) {
         nZ <- length(zScore)
         msg <- glue(
@@ -414,6 +454,16 @@ dentist <- function(
         )
         warn(msg)
     }
+    if (!is.null(ld$F)) {
+        if (ncol(ld$F) != length(zScore)) {
+            abort(glue(
+                "The genotypes must have one column per z-score ",
+                "({ncol(ld$F)} columns, {length(zScore)} z-scores)."
+            ))
+        }
+        return(invisible(NULL))
+    }
+    ldMat <- ld$R
     if (
         !is.matrix(ldMat) ||
             nrow(ldMat) != ncol(ldMat) ||
@@ -428,12 +478,16 @@ dentist <- function(
 }
 
 # Optionally deduplicate near-perfectly-correlated variants before imputation.
-.dentistDedup <- function(zScore, ldMat, duprThreshold) {
+.dentistDedup <- function(zScore, ld, duprThreshold) {
     if (duprThreshold >= 1.0) {
-        return(list(zScore = zScore, ldMat = ldMat, dedupRes = NULL))
+        return(list(zScore = zScore, ld = ld, dedupRes = NULL))
     }
     rThreshold <- round(sqrt(duprThreshold) * 1000) / 1000
-    dedupRes <- .findDuplicateVariants(zScore, ldMat, rThreshold)
+    dedupRes <- if (is.null(ld$F)) {
+        .findDuplicateVariants(zScore, ld$R, rThreshold)
+    } else {
+        .findDuplicateVariantsFactor(zScore, ld$F, rThreshold)
+    }
     numDup <- sum(dedupRes$dupBearer != -1)
     if (numDup > 0) {
         nZ <- length(zScore)
@@ -445,7 +499,11 @@ dentist <- function(
     }
     list(
         zScore = dedupRes$filteredZ,
-        ldMat = dedupRes$filteredLD,
+        ld = if (is.null(ld$F)) {
+            list(R = dedupRes$filteredLD)
+        } else {
+            list(F = dedupRes$filteredFactor)
+        },
         dedupRes = dedupRes
     )
 }
@@ -453,11 +511,17 @@ dentist <- function(
 # Run the C++ iterative imputation and snake_case the output. The C++ returns
 # any rsq values it capped at 1.0 in `rsqExceed`; summarize them into a single
 # warning here (no warning handler / shared env needed).
-.dentistRunImpute <- function(ldMat, nSample, zScore, p) {
+.dentistRunImpute <- function(ld, nSample, zScore, p) {
     verboseIter <- getOption("pecotmr.dentist.verbose", FALSE)
-    raw <- dentistIterativeImpute(
+    # The factor kernel imputes from the LD's factor without forming it.
+    kernel <- if (is.null(ld$F)) {
+        dentistIterativeImpute
+    } else {
+        dentistIterativeImputeFactor
+    }
+    raw <- kernel(
         # cpp11 requires exact integer types for int parameters
-        ldMat,
+        ld$R %||% ld$F,
         as.integer(nSample),
         zScore,
         p$pValueThreshold,
@@ -515,8 +579,10 @@ dentist <- function(
 #'
 #' @param zScore Numeric vector of z-scores.
 #' @param R Square LD correlation matrix. Provide either \code{R} or \code{X}.
-#' @param X Genotype matrix (samples x SNPs). If provided, LD is computed via
-#'   \code{computeLd(X)} and \code{nSample} defaults to \code{nrow(X)}.
+#' @param X Genotype matrix (samples x SNPs). With \code{ldMethod = "sample"}
+#'   DENTIST works on the standardized genotypes and never forms the LD
+#'   matrix; any other \code{ldMethod} computes LD via \code{computeLd(X)}.
+#'   \code{nSample} defaults to \code{nrow(X)}.
 #' @param nSample Number of samples in the LD reference panel (NOT the GWAS
 #'   sample size). Controls the SVD truncation rank. Required when \code{R} is
 #'   provided; inferred from \code{X} when \code{X} is provided.
@@ -531,9 +597,9 @@ dentist <- function(
 #' @param correctChenEtAlBug Correct the original DENTIST operator! bug. Default
 #'   is TRUE.
 #' @param ldMethod Character string specifying the LD computation method when
-#'   \code{X} is provided. Passed to \code{computeLd}. One of \code{"sample"}
-#'   (default), \code{"population"}, or \code{"gcta"}. Ignored when \code{R} is
-#'   provided directly.
+#'   \code{X} is provided: \code{"sample"} (default), which uses the
+#'   genotypes directly, or \code{"population"} or \code{"gcta"}, which go
+#'   through \code{computeLd}. Ignored when \code{R} is provided directly.
 #' @param seed Integer or \code{NULL}. Random seed for the iterative
 #'   variant-partitioning RNG. \code{NULL} (default) preserves the original
 #'   DENTIST hard-coded seeds (\code{10} for the initial partition,
@@ -565,16 +631,9 @@ dentistSingleWindow <- function(
     ldMethod = "sample",
     seed = NULL
 ) {
-    ld <- resolveLdInput(
-        R = R,
-        X = X,
-        nSample = nSample,
-        needNSample = TRUE,
-        ldMethod = ldMethod
-    )
+    ld <- .dentistLdInput(R, X, nSample, ldMethod)
     nSample <- ld$nSample
-    ldMat <- ld$R
-    .dentistValidateInput(zScore, ldMat)
+    .dentistValidateInput(zScore, ld)
     p <- list(
         pValueThreshold = pValueThreshold,
         propSVD = propSVD,
@@ -586,8 +645,8 @@ dentistSingleWindow <- function(
         seed = seed
     )
     orgZscore <- zScore
-    dedup <- .dentistDedup(zScore, ldMat, duprThreshold)
-    imputed <- .dentistRunImpute(dedup$ldMat, nSample, dedup$zScore, p)
+    dedup <- .dentistDedup(zScore, ld, duprThreshold)
+    imputed <- .dentistRunImpute(dedup$ld, nSample, dedup$zScore, p)
     res <- if (duprThreshold < 1.0) {
         addDupsBackDentist(orgZscore, imputed, dedup$dedupRes)
     } else {
@@ -596,21 +655,6 @@ dentistSingleWindow <- function(
     .dentistOutlierStat(res, pValueThreshold)
 }
 
-#' Add duplicates back to DENTIST output
-#'
-#' This function takes the output from the DENTIST algorithm and adds back the
-#' duplicated variants based on the output from the `findDuplicateVariants`
-#' function.
-#' @param zScore The original zScore
-#' @param dentistOutput A data frame containing the output from the DENTIST
-#'   algorithm.
-#' @param findDupOutput A list containing the output from the
-#'   `findDuplicateVariants` function.
-#'
-#' @return A data frame with duplicated variants added back and an additional
-#'   column indicating duplicates.
-#'
-#' @noRd
 # --- addDupsBackDentist helpers ---------------------------------------------
 
 # Validate DENTIST output vs the duplicate-bearer bookkeeping.
@@ -666,6 +710,21 @@ dentistSingleWindow <- function(
     )
 }
 
+#' Add duplicates back to DENTIST output
+#'
+#' This function takes the output from the DENTIST algorithm and adds back the
+#' duplicated variants based on the output from the `findDuplicateVariants`
+#' function.
+#' @param zScore The original zScore
+#' @param dentistOutput A data frame containing the output from the DENTIST
+#'   algorithm.
+#' @param findDupOutput A list containing the output from the
+#'   `findDuplicateVariants` function.
+#'
+#' @return A data frame with duplicated variants added back and an additional
+#'   column indicating duplicates.
+#'
+#' @noRd
 addDupsBackDentist <- function(zScore, dentistOutput, findDupOutput) {
     dupBearer <- findDupOutput$dupBearer
     nrowsDup <- length(dupBearer)
@@ -764,37 +823,6 @@ buildSegmentResult <- function(
     )
 }
 
-#' Sliding Window Loop for Genomic Segmentation
-#'
-#' Core overlapping-window loop shared by both distance-based and count-based
-#' segmentation strategies. Iterates over contiguous blocks (separated by gaps),
-#' creates overlapping windows within each block using mode-specific callbacks,
-#' and assembles the result.
-#'
-#' @param allGaps Integer vector of 1-based block boundaries from
-#'   \code{\link{detectGaps}}.
-#' @param n Total number of positions.
-#' @param ctx Named list bundling the caller's mode-specific segmentation state;
-#'   passed as the final argument to every callback below (so they can be
-#'   top-level functions rather than closures).
-#' @param minBlockFn Function(blockSize, ctx) -> logical; returns TRUE if the
-#'   block is large enough to process.
-#' @param initEndFn Function(startIdx, blockEnd, ctx) -> integer; computes the
-#'   initial window end index for the first window in a block.
-#' @param fillFn Function(startIdx, endIdx, notStartInterval, notLastInterval,
-#'   ctx) -> list(start, end); computes fill boundaries for each window.
-#' @param stepFn Function(startIdx, blockEnd, ctx) -> list(startIdx, endIdx);
-#'   advances to the next window.
-#' @param adjustLastFn Optional function(startIdx, oldStartIdx, endIdx,
-#'   blockEnd, ctx) -> integer; adjusts startIdx when the last interval is
-#'   detected. Used by distance mode for small-last-interval correction. Default
-#'   is NULL (no adjustment).
-#' @param verbose Logical; print interval info. Default is FALSE.
-#'
-#' @return A data frame with columns: windowIdx, windowStartIdx, windowEndIdx,
-#'   fillStartIdx, fillEndIdx.
-#'
-#' @noRd
 # --- slidingWindowLoop helpers ----------------------------------------------
 
 # Generate the window tuples for one block via the mode-specific callbacks in
@@ -932,6 +960,37 @@ buildSegmentResult <- function(
     )
 }
 
+#' Sliding Window Loop for Genomic Segmentation
+#'
+#' Core overlapping-window loop shared by both distance-based and count-based
+#' segmentation strategies. Iterates over contiguous blocks (separated by gaps),
+#' creates overlapping windows within each block using mode-specific callbacks,
+#' and assembles the result.
+#'
+#' @param allGaps Integer vector of 1-based block boundaries from
+#'   \code{\link{detectGaps}}.
+#' @param n Total number of positions.
+#' @param ctx Named list bundling the caller's mode-specific segmentation state;
+#'   passed as the final argument to every callback below (so they can be
+#'   top-level functions rather than closures).
+#' @param minBlockFn Function(blockSize, ctx) -> logical; returns TRUE if the
+#'   block is large enough to process.
+#' @param initEndFn Function(startIdx, blockEnd, ctx) -> integer; computes the
+#'   initial window end index for the first window in a block.
+#' @param fillFn Function(startIdx, endIdx, notStartInterval, notLastInterval,
+#'   ctx) -> list(start, end); computes fill boundaries for each window.
+#' @param stepFn Function(startIdx, blockEnd, ctx) -> list(startIdx, endIdx);
+#'   advances to the next window.
+#' @param adjustLastFn Optional function(startIdx, oldStartIdx, endIdx,
+#'   blockEnd, ctx) -> integer; adjusts startIdx when the last interval is
+#'   detected. Used by distance mode for small-last-interval correction. Default
+#'   is NULL (no adjustment).
+#' @param verbose Logical; print interval info. Default is FALSE.
+#'
+#' @return A data frame with columns: windowIdx, windowStartIdx, windowEndIdx,
+#'   fillStartIdx, fillEndIdx.
+#'
+#' @noRd
 slidingWindowLoop <- function(
     allGaps,
     n,
@@ -974,9 +1033,6 @@ slidingWindowLoop <- function(
     )
 }
 
-# Apply the quarter-distance index map `quaterIdx` `n` times to `x` (n = 1..4
-# gives the 1st..4th quarter boundary from x). Used by segmentByDist.
-# @noRd
 # One quarter-index hop; the step index is unused, `reduce` just applies it
 # `n` times.
 # @noRd
@@ -984,53 +1040,17 @@ slidingWindowLoop <- function(
     quaterIdx[x]
 }
 
+# Apply the quarter-distance index map `quaterIdx` `n` times to `x` (n = 1..4
+# gives the 1st..4th quarter boundary from x). Used by segmentByDist.
+# @noRd
 .nthQuaterIdx <- function(x, n, quaterIdx) {
     reduce(seq_len(n), .nthQuaterStep, quaterIdx = quaterIdx, .init = x)
 }
 
-#' Segment Genomic Region by Distance (Original DENTIST Algorithm)
-#'
-#' Implements the same windowing/segmentation algorithm as the original DENTIST
-#' C++ binary's \code{segmentingByDist} function. Windows are created using
-#' quarter-distance SNP index lookups, with gap detection for centromeres and
-#' large gaps.
-#'
-#' @param pos Integer vector of base pair positions (must be sorted).
-#' @param maxDist Maximum distance (bp) between SNPs for windowing. Default is
-#'   2000000.
-#' @param minDim Minimum number of SNPs per window. Default is 2000.
-#' @param verbose Logical; print segmentation info. Default is FALSE.
-#'
-#' @return A data frame with columns: windowIdx, windowStartIdx, windowEndIdx,
-#'   fillStartIdx, fillEndIdx. Start indices are 1-based inclusive; end indices
-#'   (windowEndIdx, fillEndIdx) are 1-based exclusive (one past last element),
-#'   matching the C++ convention. Use \code{startIdx:(endIdx - 1)} for R
-#'   inclusive ranges.
-#'
-#' @details
-#' This is a faithful R translation of the C++ \code{segmentingByDist} function.
-#' The algorithm:
-#' \enumerate{
-#'   \item Precomputes for each SNP: the index of the farthest SNP within
-#'   \code{maxDist},
-#'         and the index of the SNP at \code{maxDist/4} distance.
-#'   \item Detects gaps > \code{maxDist/4} in the position vector (e.g.,
-#'   centromeres).
-#'   \item Creates overlapping windows that slide by half the distance cutoff,
-#'   with fill
-#'         regions covering the inner three-quarters of each window.
-#'   \item The first window's fill starts at the window start; the last
-#'   window's fill
-#'         ends at the window end.
-#' }
-#'
-#' @seealso \code{\link{dentistSingleWindow}}, \code{\link{dentist}}
-#'
-#' @noRd
 # --- segmentByDist helpers --------------------------------------------------
 
-# For each SNP, the last SNP index within cutoff/4 distance (clamped to [1, n]).
-# For each SNP, the index of the last SNP within a quarter of `cutoff`.
+# For each SNP, the index of the last SNP within a quarter of `cutoff`,
+# clamped to [1, n].
 #
 # The C++ original walks a second pointer forward, which is the same thing as
 # counting how many positions fall strictly below each target -- that is
@@ -1087,6 +1107,45 @@ slidingWindowLoop <- function(
     )
 }
 
+#' Segment Genomic Region by Distance (Original DENTIST Algorithm)
+#'
+#' Implements the same windowing/segmentation algorithm as the original DENTIST
+#' C++ binary's \code{segmentingByDist} function. Windows are created using
+#' quarter-distance SNP index lookups, with gap detection for centromeres and
+#' large gaps.
+#'
+#' @param pos Integer vector of base pair positions (must be sorted).
+#' @param maxDist Maximum distance (bp) between SNPs for windowing. Default is
+#'   2000000.
+#' @param minDim Minimum number of SNPs per window. Default is 2000.
+#' @param verbose Logical; print segmentation info. Default is FALSE.
+#'
+#' @return A data frame with columns: windowIdx, windowStartIdx, windowEndIdx,
+#'   fillStartIdx, fillEndIdx. Start indices are 1-based inclusive; end indices
+#'   (windowEndIdx, fillEndIdx) are 1-based exclusive (one past last element),
+#'   matching the C++ convention. Use \code{startIdx:(endIdx - 1)} for R
+#'   inclusive ranges.
+#'
+#' @details
+#' This is a faithful R translation of the C++ \code{segmentingByDist} function.
+#' The algorithm:
+#' \enumerate{
+#'   \item Precomputes for each SNP: the index of the farthest SNP within
+#'   \code{maxDist},
+#'         and the index of the SNP at \code{maxDist/4} distance.
+#'   \item Detects gaps > \code{maxDist/4} in the position vector (e.g.,
+#'   centromeres).
+#'   \item Creates overlapping windows that slide by half the distance cutoff,
+#'   with fill
+#'         regions covering the inner three-quarters of each window.
+#'   \item The first window's fill starts at the window start; the last
+#'   window's fill
+#'         ends at the window end.
+#' }
+#'
+#' @seealso \code{\link{dentistSingleWindow}}, \code{\link{dentist}}
+#'
+#' @noRd
 segmentByDist <- function(
     pos,
     maxDist = 2000000,
@@ -1171,6 +1230,22 @@ segmentByCount <- function(pos, maxCount, gapDist = 1e6, verbose = FALSE) {
     )
 }
 
+# Window `k`'s rows, indexed globally and trimmed to that window's fill range.
+# @noRd
+.dentistMergeWindowAt <- function(k, dentistResultByWindow, windowDividedRes) {
+    imputedK <- dentistResultByWindow[[k]]
+    offset <- windowDividedRes$windowStartIdx[k] - 1
+    imputedK |>
+        mutate(
+            index_within_window = seq_len(nrow(imputedK)),
+            index_global = .data$index_within_window + offset
+        ) |>
+        filter(
+            .data$index_global >= windowDividedRes$fillStartIdx[k] &
+                .data$index_global < windowDividedRes$fillEndIdx[k]
+        )
+}
+
 #' Merge dentist Results by Window
 #'
 #' This function merges DENTIST results by window into a single data frame.
@@ -1188,22 +1263,6 @@ segmentByCount <- function(pos, maxCount, gapDist = 1e6, verbose = FALSE) {
 #'   within the fillers and combines them into a single data frame.
 #'
 #' @noRd
-# Window `k`'s rows, indexed globally and trimmed to that window's fill range.
-# @noRd
-.dentistMergeWindowAt <- function(k, dentistResultByWindow, windowDividedRes) {
-    imputedK <- dentistResultByWindow[[k]]
-    offset <- windowDividedRes$windowStartIdx[k] - 1
-    imputedK |>
-        mutate(
-            index_within_window = seq_len(nrow(imputedK)),
-            index_global = .data$index_within_window + offset
-        ) |>
-        filter(
-            .data$index_global >= windowDividedRes$fillStartIdx[k] &
-                .data$index_global < windowDividedRes$fillEndIdx[k]
-        )
-}
-
 mergeWindows <- function(dentistResultByWindow, windowDividedRes) {
     if (length(dentistResultByWindow) != nrow(windowDividedRes)) {
         abort("Different number of windows and imputed results!")
@@ -1253,12 +1312,22 @@ mergeWindows <- function(dentistResultByWindow, windowDividedRes) {
 
 # --- slalom helpers ---------------------------------------------------------
 
-# Require exactly one of R (LD matrix) or X (genotype matrix).
-# Lead-variant LD column. `R` has already been resolved from `X` where the
-# caller gave genotypes, so there is one source here and `ldMethod` has
-# already been applied.
+# Lead-variant LD column. From genotypes under the sample estimator it is read
+# off X's LD factor -- crossprod(F, F[, lead]) / (n - 1), computeLd()'s column
+# exactly -- without forming the p x p matrix. The population and GCTA
+# estimators treat missing calls their own way, so they still build it
+# through resolveLdInput(), as dentist does.
 #' @importFrom checkmate assertMatrix
-.slalomLeadR <- function(zScore, R, leadIdx) {
+.slalomLeadR <- function(zScore, R, X, leadIdx, ldMethod) {
+    if (is.null(R) && identical(ldMethod, "sample")) {
+        factor <- .ldFactorFromDosage(as.matrix(X))
+        assertMatrix(factor, ncols = length(zScore))
+        lead <- crossprod(factor, factor[, leadIdx, drop = FALSE])
+        # The lead's correlation with itself is 1 exactly, as on the
+        # matrix's unit diagonal, not 1 give or take rounding.
+        return(replace(drop(lead) / (nrow(factor) - 1), leadIdx, 1))
+    }
+    R <- resolveLdInput(R = R, X = X, ldMethod = ldMethod)$R
     assertMatrix(R, nrows = length(zScore), ncols = length(zScore))
     R[, leadIdx]
 }
@@ -1326,12 +1395,15 @@ mergeWindows <- function(dentistResultByWindow, windowDividedRes) {
 #' p-values from z-scores assuming a two-sided standard normal distribution.
 #'
 #' Provide either an LD correlation matrix \code{R} or a genotype matrix
-#' \code{X} (from which LD is derived automatically via \code{computeLd}).
+#' \code{X}. SLALOM needs only the lead variant's LD with the others, so with
+#' \code{ldMethod = "sample"} it computes that one column from the genotypes
+#' and never forms the LD matrix.
 #'
 #' @param zScore Numeric vector of z-scores corresponding to each variant.
 #' @param R Square LD correlation matrix. Provide either \code{R} or \code{X}.
-#' @param X Genotype matrix (samples x SNPs). If provided, LD is computed via
-#'   \code{computeLd(X)}.
+#' @param X Genotype matrix (samples x SNPs). With \code{ldMethod = "sample"}
+#'   only the lead variant's LD column is computed from it; any other
+#'   \code{ldMethod} computes the LD matrix via \code{computeLd(X)}.
 #' @param standardError Optional numeric vector of standard errors corresponding
 #'   to each z-score. If not provided, a default value of 1 is assumed for all
 #'   variants.
@@ -1344,9 +1416,9 @@ mergeWindows <- function(dentistResultByWindow, windowDividedRes) {
 #' @param leadVariantChoice Character, method to choose the lead variant, either
 #'   "pvalue" or "abf", with default "pvalue".
 #' @param ldMethod Character string specifying the LD computation method when
-#'   \code{X} is provided. Passed to \code{computeLd}. One of \code{"sample"}
-#'   (default), \code{"population"}, or \code{"gcta"}. Ignored when \code{R} is
-#'   provided directly.
+#'   \code{X} is provided: \code{"sample"} (default), which uses the
+#'   genotypes directly, or \code{"population"} or \code{"gcta"}, which go
+#'   through \code{computeLd}. Ignored when \code{R} is provided directly.
 #' @return A list containing the annotated LD matrix with ABF results, credible
 #'   sets, lead variant, and DENTIST-S statistics; and a summary dataframe with
 #'   aggregate statistics.
@@ -1373,13 +1445,7 @@ slalom <- function(
     leadVariantChoice = "pvalue",
     ldMethod = "sample"
 ) {
-    # Resolve the LD the same way dentist does, so `ldMethod` selects the
-    # estimator it advertises. This used to correlate the lead column of `X`
-    # with cor() directly, which skipped computeLd entirely: "population"
-    # and "gcta" were accepted and silently given sample LD. Building the
-    # full matrix is the cost of honouring the choice, and is what the
-    # sibling QC method already pays on the same input.
-    R <- resolveLdInput(R = R, X = X, ldMethod = ldMethod)$R
+    .ldRequireOneSource(R, X)
     # One-sided p-value matching the original Python (stats.norm.cdf): lead is
     # the most negative z-score when leadVariantChoice == "pvalue".
     pvalue <- pnorm(zScore)
@@ -1396,7 +1462,7 @@ slalom <- function(
     } else {
         which.max(prob)
     }
-    rLead <- .slalomLeadR(zScore, R, leadIdx)
+    rLead <- .slalomLeadR(zScore, R, X, leadIdx, ldMethod)
     ds <- .slalomDentistS(
         zScore,
         rLead,
@@ -1492,28 +1558,6 @@ autoDecision <- function(df, highCorrCols) {
 # RAISS: regression-based sumstats imputation
 # =============================================================================
 
-#' Core RAISS implementation for a single LD matrix
-#'
-#' @param refPanel A data frame containing 'chrom', 'pos', 'variant_id', 'A1',
-#'   and 'A2'.
-#' @param knownZscores A data frame containing 'chrom', 'pos', 'variant_id',
-#'   'A1', 'A2', and 'z' values.
-#' @param ldMatrix A square matrix of dimension equal to the number of rows in
-#'   refPanel.
-#' @param lamb Regularization term added to the diagonal of the ldMatrix.
-#' @param rcond Threshold for filtering eigenvalues in the pseudo-inverse
-#'   computation.
-#' @param r2Threshold R square threshold below which SNPs are filtered from the
-#'   output.
-#' @param minimumLd Minimum LD score threshold for SNP filtering.
-#' @param verbose Logical indicating whether to print progress information.
-#'
-#' @return A list containing filtered and unfiltered results, and filtered LD
-#'   matrix.
-#' @importFrom MASS ginv
-#' @importFrom dplyr arrange
-#' @noRd
-# Drop LD-matrix rows/cols for variants filtered out of the imputation result.
 # Panel rows that are unsafe to impute, over and above being already known.
 #
 # Both cases come from a reference panel that carries a variant and its own
@@ -1614,13 +1658,16 @@ autoDecision <- function(df, highCorrCols) {
     if (is.null(refPanel$chrom) || is.null(knownZ$chrom) || n == 0L) {
         return(rep(FALSE, n))
     }
-    key <- function(chrom, pos) {
-        str_c(canonChrom(as.character(chrom)), ":", as.character(pos))
-    }
     is_in(
-        key(refPanel$chrom, refPanel$pos),
-        key(knownZ$chrom, knownZ$pos)
+        .raissPositionKey(refPanel$chrom, refPanel$pos),
+        .raissPositionKey(knownZ$chrom, knownZ$pos)
     )
+}
+
+# Canonical "chrom:pos" keys, so a "chr1"/"1" difference is one site.
+# @noRd
+.raissPositionKey <- function(chrom, pos) {
+    str_c(canonChrom(as.character(chrom)), ":", as.character(pos))
 }
 
 # Imputation targets: panel rows the sumstats do not carry, minus the rows no
@@ -1634,6 +1681,8 @@ autoDecision <- function(df, highCorrCols) {
     which(candidate & !unsafe & !observed)
 }
 
+# Drop LD-matrix rows/cols for variants filtered out of the imputation result.
+# @noRd
 .raissFilterLd <- function(ldMatrix, refPanel, resultFilter) {
     filteredOutVariant <- setdiff(refPanel$variant_id, resultFilter$variant_id)
     if (length(filteredOutVariant) > 0) {
@@ -1644,6 +1693,27 @@ autoDecision <- function(df, highCorrCols) {
     }
 }
 
+#' Core RAISS implementation for a single LD matrix
+#'
+#' @param refPanel A data frame containing 'chrom', 'pos', 'variant_id', 'A1',
+#'   and 'A2'.
+#' @param knownZscores A data frame containing 'chrom', 'pos', 'variant_id',
+#'   'A1', 'A2', and 'z' values.
+#' @param ldMatrix A square matrix of dimension equal to the number of rows in
+#'   refPanel.
+#' @param lamb Regularization term added to the diagonal of the ldMatrix.
+#' @param rcond Threshold for filtering eigenvalues in the pseudo-inverse
+#'   computation.
+#' @param r2Threshold R square threshold below which SNPs are filtered from the
+#'   output.
+#' @param minimumLd Minimum LD score threshold for SNP filtering.
+#' @param verbose Logical indicating whether to print progress information.
+#'
+#' @return A list containing filtered and unfiltered results, and filtered LD
+#'   matrix.
+#' @importFrom MASS ginv
+#' @importFrom dplyr arrange
+#' @noRd
 raissSingleMatrix <- function(
     refPanel,
     knownZscores,
@@ -1684,33 +1754,6 @@ raissSingleMatrix <- function(
     )
 }
 
-#' Core RAISS implementation from a genotype matrix X (SVD-based)
-#'
-#' Performs the same imputation as \code{raissSingleMatrix} but works directly
-#' with the genotype matrix X instead of the LD correlation matrix R. This
-#' avoids forming the p x p LD matrix, saving O(p^2) memory and O(np^2) compute.
-#'
-#' The reformulation is mathematically exact: using the thin SVD of Xt (the
-#' known variant columns), all RAISS quantities (mu, var, ld_score) are computed
-#' in the SVD basis without ever forming R = X'X/(n-1).
-#'
-#' @param refPanel A data frame containing 'chrom', 'pos', 'variant_id', 'A1',
-#'   and 'A2'.
-#' @param knownZscores A data frame containing 'chrom', 'pos', 'variant_id',
-#'   'A1', 'A2', and 'z' values.
-#' @param X Centered and scaled genotype matrix (nSamples x pVariants). Column
-#'   order must match the variant order in refPanel.
-#' @param lamb Regularization term (same role as in the LD-based path).
-#' @param svdTol Relative tolerance for filtering small singular values in the
-#'   SVD of Xt.
-#' @param r2Threshold R square threshold below which SNPs are filtered from the
-#'   output.
-#' @param minimumLd Minimum LD score threshold for SNP filtering.
-#' @param verbose Logical indicating whether to print progress information.
-#'
-#' @return A list containing filtered and unfiltered results, and ldMat = NULL.
-#' @importFrom dplyr arrange
-#' @noRd
 # --- raissSingleMatrixFromX helpers ----------------------------------------
 
 # Early-return cases: no known variants (NULL) or nothing to impute (knowns).
@@ -1745,7 +1788,24 @@ raissSingleMatrix <- function(
 
 # SVD-based imputation from the genotype matrix (avoids forming R). Computes
 # X' %*% [w | U] in a single BLAS call to skip an O(n*m) copy of X_unknown.
-.raissSvdImpute <- function(X, knowns, unknowns, zt, lamb, svdTol, nSamples) {
+#
+# The LD route pseudo-inverts the ridged LD of the known variants with
+# MASS::ginv(tol = rcond), which drops every eigen-direction whose eigenvalue
+# is below `rcond` times the largest. Here those eigenvalues are
+# (d^2 + cReg) / (nSamples - 1), so the same directions are dropped and the
+# two routes impute identically. Directions outside the genotypes' span carry
+# no LD with the variants being imputed, so they change neither route. The LD
+# score inverts nothing and keeps every direction.
+.raissSvdImpute <- function(
+    X,
+    knowns,
+    unknowns,
+    zt,
+    lamb,
+    rcond,
+    svdTol,
+    nSamples
+) {
     # Thin SVD of the known columns (n x k -> U: n x r, d: r, V: k x r).
     Xt <- X[, knowns, drop = FALSE]
     svdResult <- .safeSvd(Xt, tol = svdTol)
@@ -1756,9 +1816,11 @@ raissSingleMatrix <- function(
     cReg <- lamb * (nSamples - 1)
     d2 <- d^2
     d2PlusC <- d2 + cReg
-    # w = U %*% diag(d / (d^2 + c)) %*% V' zt  (projection of zt through SVD).
+    inverted <- d2PlusC > rcond * d2PlusC[[1L]]
+    # w = U %*% diag(d / (d^2 + c)) %*% V' zt  (projection of zt through SVD),
+    # over the directions the pseudo-inverse keeps.
     VtZt <- crossprod(V, zt)
-    w <- U %*% (d / d2PlusC * VtZt)
+    w <- U %*% (inverted * d / d2PlusC * VtZt)
     # Single dgemm X' %*% [w | U]: col 1 (rows unknowns) -> mu; rest -> A.
     XtWU <- crossprod(X, cbind(w, U))
     muRaw <- as.numeric(XtWU[unknowns, 1])
@@ -1767,33 +1829,59 @@ raissSingleMatrix <- function(
     # Variance and LD score in one pass over A^2.
     ASq <- A^2
     rm(A)
-    dWeights <- cbind(d2 / d2PlusC, d2)
+    dWeights <- cbind(inverted * d2 / d2PlusC, d2)
     scores <- ASq %*% dWeights
     rm(ASq)
     nm1 <- nSamples - 1
     varRaw <- (1 + lamb) - scores[, 1] / nm1
     raissLdScore <- scores[, 2] / nm1^2
     rm(scores)
-    conditionNumber <- rep(d[1] / d[length(d)], length(unknowns))
-    correctInversion <- rep(TRUE, length(unknowns))
-    # R2 correction (same as raissModel).
-    varNorm <- varInBoundaries(varRaw, lamb)
-    R2 <- (1 + lamb) - varNorm
-    mu <- muRaw / sqrt(R2)
-    list(
-        var = varNorm,
-        mu = mu,
+    .raissResult(
+        varRaw = varRaw,
+        muRaw = muRaw,
+        lamb = lamb,
         raissLdScore = raissLdScore,
-        conditionNumber = conditionNumber,
-        correctInversion = correctInversion
+        conditionNumber = rep(d[1] / d[length(d)], length(unknowns)),
+        correctInversion = rep(TRUE, length(unknowns))
     )
 }
 
+#' Core RAISS implementation from a genotype matrix X (SVD-based)
+#'
+#' Performs the same imputation as \code{raissSingleMatrix} but works directly
+#' with the genotype matrix X instead of the LD correlation matrix R. This
+#' avoids forming the p x p LD matrix, saving O(p^2) memory and O(np^2) compute.
+#'
+#' The reformulation is mathematically exact: using the thin SVD of Xt (the
+#' known variant columns), all RAISS quantities (mu, var, ld_score) are computed
+#' in the SVD basis without ever forming R = X'X/(n-1).
+#'
+#' @param refPanel A data frame containing 'chrom', 'pos', 'variant_id', 'A1',
+#'   and 'A2'.
+#' @param knownZscores A data frame containing 'chrom', 'pos', 'variant_id',
+#'   'A1', 'A2', and 'z' values.
+#' @param X Centered and scaled genotype matrix (nSamples x pVariants). Column
+#'   order must match the variant order in refPanel.
+#' @param lamb Regularization term (same role as in the LD-based path).
+#' @param rcond Eigenvalue cutoff for the pseudo-inverse, as on the LD-based
+#'   path: directions whose ridged eigenvalue is below \code{rcond} times the
+#'   largest are dropped.
+#' @param svdTol Relative tolerance below which singular values of Xt are
+#'   treated as numerically zero.
+#' @param r2Threshold R square threshold below which SNPs are filtered from the
+#'   output.
+#' @param minimumLd Minimum LD score threshold for SNP filtering.
+#' @param verbose Logical indicating whether to print progress information.
+#'
+#' @return A list containing filtered and unfiltered results, and ldMat = NULL.
+#' @importFrom dplyr arrange
+#' @noRd
 raissSingleMatrixFromX <- function(
     refPanel,
     knownZscores,
     X,
     lamb = 0.01,
+    rcond = 0.01,
     svdTol = 1e-8,
     r2Threshold = 0.6,
     minimumLd = 5,
@@ -1814,9 +1902,10 @@ raissSingleMatrixFromX <- function(
         knowns,
         unknowns,
         knownZscores$z,
-        lamb,
-        svdTol,
-        nrow(X)
+        lamb = lamb,
+        rcond = rcond,
+        svdTol = svdTol,
+        nSamples = nrow(X)
     )
     results <- formatRaissDf(imp, refPanel, unknowns) |>
         filterRaissOutput(r2Threshold, minimumLd, verbose)
@@ -1831,255 +1920,34 @@ raissSingleMatrixFromX <- function(
     )
 }
 
-# Sequentially append RAISS block results, resolving the shared boundary variant
-# (duplicated across adjacent blocks) by keeping the higher-R2 imputation.
+# --- raiss: the genotype and LD-matrix routes --------------------------------
+
+# The genotype route: SVD-based imputation from a standardized genotype
+# matrix, which never forms the p x p LD matrix.
 # @noRd
-.combineWithBoundaryCheck <- function(combinedResult, newResult) {
-    # If either is empty, simply return the non-empty one or empty data frame
-    if (is.null(combinedResult)) {
-        return(newResult)
-    }
-    if (is.null(newResult)) {
-        return(combinedResult)
-    }
-
-    # Check if the last variant of combined matches the first of new
-    lastVar <- combinedResult$variant_id[nrow(combinedResult)]
-    firstVar <- newResult$variant_id[1]
-
-    if (lastVar != firstVar) {
-        # No overlap - combine all rows
-        return(bind_rows(combinedResult, newResult))
-    }
-    # The shared boundary variant is kept from whichever side imputed it
-    # better; two NAs, a tie, or an NA on the new side keep the existing row.
-    newR2 <- newResult$raissR2[1]
-    oldR2 <- combinedResult$raissR2[nrow(combinedResult)]
-    preferNew <- !is.na(newR2) && (is.na(oldR2) || newR2 > oldR2)
-    resolved <- if (preferNew) {
-        bind_rows(combinedResult[-nrow(combinedResult), ], newResult[1, ])
-    } else {
-        combinedResult
-    }
-    # Every row of `newResult` past the boundary variant is new.
-    bind_rows(resolved, newResult[-1, ])
-}
-
-# --- raiss: genotype-matrix and LD-matrix path helpers ---------------------
-
-# List of genotype-matrix blocks: impute each via SVD, then row-bind.
-# One genotype block's imputation, or NULL when the block yields nothing.
-# @noRd
-.raissGenotypeBlockAt <- function(
-    i,
-    refPanel,
-    knownZscores,
-    genotypeMatrix,
-    p
-) {
+.raissGenotypePath <- function(refPanel, knownZscores, genotypeMatrix, p) {
     if (p$verbose) {
-        nBlocks <- length(genotypeMatrix)
-        msg <- glue("Processing block {i} of {nBlocks}")
-        inform(msg)
+        inform("Processing genotype matrix via SVD-based imputation...")
     }
     raissSingleMatrixFromX(
         refPanel,
         knownZscores,
-        genotypeMatrix[[i]],
-        p$lamb,
-        p$svdTol,
-        p$r2Threshold,
-        p$minimumLd,
-        verbose = FALSE
+        genotypeMatrix,
+        lamb = p$lamb,
+        rcond = p$rcond,
+        svdTol = p$svdTol,
+        r2Threshold = p$r2Threshold,
+        minimumLd = p$minimumLd,
+        verbose = p$verbose
     )
 }
 
-.raissGenotypeBlocks <- function(refPanel, knownZscores, genotypeMatrix, p) {
-    if (p$verbose) {
-        msg <- glue(
-            "Processing multiple genotype matrix blocks via SVD-based ",
-            "imputation..."
-        )
-        inform(msg)
-    }
-    resultsList <- compact(map(
-        seq_along(genotypeMatrix),
-        .raissGenotypeBlockAt,
-        refPanel = refPanel,
-        knownZscores = knownZscores,
-        genotypeMatrix = genotypeMatrix,
-        p = p
-    ))
-    if (length(resultsList) == 0) {
-        if (p$verbose) {
-            inform("No blocks could be processed.")
-        }
-        return(NULL)
-    }
-    combinedNofilter <- bind_rows(map(resultsList, "resultNofilter"))
-    combinedFilter <- bind_rows(map(resultsList, "resultFilter"))
-    list(
-        resultNofilter = combinedNofilter |> arrange(.data$pos),
-        resultFilter = combinedFilter |> arrange(.data$pos),
-        ldMat = NULL
-    )
-}
-
-# Genotype-matrix imputation path: single matrix, list of blocks, or error.
-.raissGenotypePath <- function(refPanel, knownZscores, genotypeMatrix, p) {
-    if (is.matrix(genotypeMatrix)) {
-        if (p$verbose) {
-            inform("Processing genotype matrix via SVD-based imputation...")
-        }
-        return(raissSingleMatrixFromX(
-            refPanel,
-            knownZscores,
-            genotypeMatrix,
-            p$lamb,
-            p$svdTol,
-            p$r2Threshold,
-            p$minimumLd,
-            p$verbose
-        ))
-    }
-    if (is.list(genotypeMatrix)) {
-        return(.raissGenotypeBlocks(refPanel, knownZscores, genotypeMatrix, p))
-    }
-    abort("genotypeMatrix must be a matrix or a list of matrices.")
-}
-
-# Impute one LD block against its reference-panel subset.
-.raissLdBlockOne <- function(
-    refPanel,
-    knownZscores,
-    ldMatrix,
-    variantIndices,
-    blockId,
-    p
-) {
-    blockVariantIds <- variantIndices$variant_id[
-        variantIndices$blockId == blockId
-    ]
-    blockIndices <- match(blockVariantIds, refPanel$variant_id)
-    blockRefPanel <- refPanel[blockIndices, ]
-    blockLdMatrix <- ldMatrix$ldMatrices[[blockId]]
-    blockKnownZscores <- knownZscores |>
-        filter(is_in(.data$variant_id, blockVariantIds))
-    if (nrow(blockLdMatrix) != nrow(blockRefPanel)) {
-        msg <- glue(
-            "Block {blockId} : LD matrix dimension does not match number ",
-            "of variants in reference panel"
-        )
-        abort(msg)
-    }
-    raissSingleMatrix(
-        blockRefPanel,
-        blockKnownZscores,
-        blockLdMatrix,
-        p$lamb,
-        p$rcond,
-        p$r2Threshold,
-        p$minimumLd,
-        verbose = FALSE
-    )
-}
-
-# Combine per-block imputation results (boundary-dedup) + rebuild LD matrix.
-.raissLdBlocksCombine <- function(resultsList) {
-    combinedNofilter <- reduce(
-        map(resultsList, "resultNofilter"),
-        .combineWithBoundaryCheck
-    )
-    combinedFilter <- reduce(
-        map(resultsList, "resultFilter"),
-        .combineWithBoundaryCheck
-    )
-    ldFilteredList <- map(resultsList, "ldMat")
-    variantList <- map(ldFilteredList, .ldVariantsDf)
-    ldMatrix <- createLdMatrix(
-        ldMatrices = ldFilteredList,
-        variants = variantList
-    )
-    list(
-        resultNofilter = combinedNofilter,
-        resultFilter = combinedFilter,
-        ldMat = ldMatrix
-    )
-}
-
-# LD-block imputation path: impute each block then combine.
-# One LD block's imputation, or NULL when the block yields nothing.
+# The LD-matrix route: imputation from the correlation matrix of refPanel's
+# variants.
 # @noRd
-.raissLdBlockAt <- function(
-    blockId,
-    refPanel,
-    knownZscores,
-    ldMatrix,
-    variantIndices,
-    blockIds,
-    p
-) {
+.raissLdPath <- function(refPanel, knownZscores, ldMatrix, p) {
     if (p$verbose) {
-        nBlocks <- length(blockIds)
-        msg <- glue("Processing block {blockId} of {nBlocks}")
-        inform(msg)
-    }
-    .raissLdBlockOne(
-        refPanel,
-        knownZscores,
-        ldMatrix,
-        variantIndices,
-        blockId,
-        p
-    )
-}
-
-.raissLdBlocksPath <- function(refPanel, knownZscores, ldMatrix, p) {
-    if (p$verbose) {
-        inform("Processing multiple LD blocks...")
-    }
-    variantIndices <- ldMatrix$variantIndices
-    blockIds <- unique(variantIndices$blockId)
-    perBlock <- map(
-        blockIds,
-        .raissLdBlockAt,
-        refPanel = refPanel,
-        knownZscores = knownZscores,
-        ldMatrix = ldMatrix,
-        variantIndices = variantIndices,
-        blockIds = blockIds,
-        p = p
-    )
-    # `resultsList[[blockId]] <- ...` named the entries only when blockIds are
-    # character, so keep that distinction rather than inventing names.
-    blockResults <- if (is.character(blockIds)) {
-        set_names(perBlock, blockIds)
-    } else {
-        perBlock
-    }
-    resultsList <- compact(blockResults)
-    if (length(resultsList) == 0) {
-        if (p$verbose) {
-            msg <- glue(
-                "No blocks could be processed. Check that knownZscores ",
-                "overlap with variants in the blocks."
-            )
-            inform(msg)
-        }
-        return(NULL)
-    }
-    .raissLdBlocksCombine(resultsList)
-}
-
-# Single LD-matrix imputation path (extracts matrix from a 1-block list).
-.raissSingleLdPath <- function(refPanel, knownZscores, ldMatrix, p) {
-    if (p$verbose) {
-        fromList <- if (!is.matrix(ldMatrix)) " from list" else ""
-        msg <- glue("Processing single LD matrix{fromList}...")
-        inform(msg)
-    }
-    if (!is.matrix(ldMatrix)) {
-        ldMatrix <- ldMatrix$ldMatrices[[1]]
+        inform("Processing LD matrix...")
     }
     raissSingleMatrix(
         refPanel,
@@ -2091,6 +1959,65 @@ raissSingleMatrixFromX <- function(
         p$minimumLd,
         p$verbose
     )
+}
+
+# The LD reference a raiss() call names, if any: an LdMatrix passed as
+# `ldMatrix`, or the genotype panel (or mixture of panels) passed as
+# `genotypes`. Genotypes are taken only that way, never as a bare matrix:
+# centring, scaling, column order and allele coding are all the caller's to get
+# right in a bare matrix, and every one of them fails silently. A reference
+# passed through the other argument is refused rather than read the wrong way.
+# @noRd
+.raissReferenceOf <- function(ldMatrix, genotypes) {
+    if (.ldIsGenotypeRef(ldMatrix)) {
+        abort("Pass genotypes as `genotypes`, not `ldMatrix`.")
+    }
+    if (!is.null(genotypes) && !.ldIsGenotypeRef(genotypes)) {
+        abort(c(
+            "`genotypes` must be a genotype panel or a GenotypeMixture.",
+            i = "Read one with readGenotypes(), or pass LD as `ldMatrix`."
+        ))
+    }
+    if (.ldIsMatrixRef(ldMatrix) || !is.null(genotypes)) {
+        return(ldMatrix %||% genotypes)
+    }
+    if (!is.null(ldMatrix) && !is.matrix(ldMatrix)) {
+        abort("`ldMatrix` must be a square LD matrix or an LdMatrix.")
+    }
+    NULL
+}
+
+# An LD reference brings its own variant table, which refPanel defaults to.
+# Known and imputed rows are merged on chrom, and the table labels
+# chromosomes canonically ("22"), so knownZscores has to as well; say so here
+# rather than in a failed join.
+# @noRd
+.raissRefPanelOf <- function(ref, knownZscores) {
+    panel <- .refVariantsFromLdRef(ref)
+    sameLabels <- is.character(knownZscores$chrom) &&
+        any(is_in(knownZscores$chrom, panel$chrom))
+    if (!sameLabels) {
+        abort(c(
+            str_c(
+                "`knownZscores$chrom` must use the LD reference's chromosome ",
+                "labels."
+            ),
+            i = glue(
+                "They are canonical character labels, like ",
+                "'{panel$chrom[[1L]]}'."
+            )
+        ))
+    }
+    panel
+}
+
+# The genotypes' LD factor for refPanel's variants (see .ldRefFactor()), the
+# way summaryStatsQc() hands it to the SVD route, re-signed into refPanel's
+# allele coding.
+# @noRd
+.raissScaledDosage <- function(genotypes, refPanel) {
+    m <- .ldFromRefMatch(genotypes, refPanel$variant_id, "raiss", "error")
+    sweep(.ldRefFactor(genotypes, m$idx), 2L, m$sign, `*`)
 }
 
 #' Impute Summary Statistics Using LD (RAISS)
@@ -2105,34 +2032,43 @@ raissSingleMatrixFromX <- function(
 #' statistics enhances evidence of functional enrichment", Bioinformatics
 #' 30(20):2906-2914. \doi{10.1093/bioinformatics/btu416}
 #'
-#' This function can process either a single LD matrix or a list of LD matrices
-#' for different blocks. For a list of matrices, it processes each block
-#' separately and combines the results. Alternatively, it can accept a genotype
-#' matrix X directly, avoiding the need to form the p x p LD matrix (memory and
+#' One call imputes one region, from either of the two kinds of LD reference.
+#' The LD can be given as a square correlation matrix or an
+#' \code{\link{LdMatrix}}, and the imputation then inverts it. Or a genotype
+#' panel from \code{\link{readGenotypes}} can be given instead, and the
+#' imputation then works from the singular value decomposition of its
+#' standardized dosages, never forming the p x p LD matrix (memory and
 #' compute savings when n << p).
 #'
 #' @param refPanel A data frame containing 'chrom', 'pos', 'variant_id', 'A1',
-#'   and 'A2'.
+#'   and 'A2'. Optional when the LD comes as an \code{LdMatrix} or a genotype
+#'   panel, whose own variants are used; \code{knownZscores} must then label
+#'   chromosomes canonically, as character (e.g. \code{"22"}). Required
+#'   with a plain \code{ldMatrix}, whose rows and columns follow it.
 #' @param knownZscores A data frame containing 'chrom', 'pos', 'variant_id',
 #'   'A1', 'A2', and 'z' values.
-#' @param ldMatrix Either a square matrix or a list of matrices for LD blocks.
-#'   Provide either \code{ldMatrix} or \code{genotypeMatrix}, not both.
-#' @param genotypeMatrix A centered and scaled genotype matrix (n x p) as an
-#'   alternative to \code{ldMatrix}. Column order must match the variant order
-#'   in \code{refPanel}. When provided, the imputation uses an SVD-based
-#'   approach that avoids forming the p x p LD matrix.
+#' @param ldMatrix A square LD matrix over \code{refPanel}'s variants, in its
+#'   order, or an \code{LdMatrix} covering them. Provide either
+#'   \code{ldMatrix} or \code{genotypes}, not both.
+#' @param genotypes A genotype panel (see \code{\link{readGenotypes}}) or a
+#'   \code{\link{GenotypeMixture}} covering the variants, as an alternative
+#'   to \code{ldMatrix}. Its dosages are matched to \code{refPanel} by
+#'   variant and allele, mean-imputed and standardized here.
 #' @param lamb Regularization term added to the diagonal of the ldMatrix.
-#' @param rcond Threshold for filtering eigenvalues in the pseudo-inverse
-#'   computation (only used with ldMatrix path).
-#' @param svdTol Relative tolerance for filtering small singular values (only
-#'   used with genotypeMatrix path).
+#' @param rcond Eigenvalue cutoff for the pseudo-inverse of the known
+#'   variants' LD: directions whose ridged eigenvalue is below \code{rcond}
+#'   times the largest are dropped. Applied on both routes, so a genotype
+#'   panel and the LD matrix computed from it give the same imputation.
+#' @param svdTol Relative tolerance below which singular values of the
+#'   standardized genotypes are treated as numerically zero (genotype route
+#'   only).
 #' @param r2Threshold R square threshold below which SNPs are filtered from the
 #'   output.
 #' @param minimumLd Minimum LD score threshold for SNP filtering.
 #' @param verbose Logical indicating whether to print progress information.
 #'
 #' @return A list containing filtered and unfiltered results, and filtered LD
-#'   matrix (ldMat is NULL when using genotypeMatrix path).
+#'   matrix (ldMat is NULL on the genotype route).
 #' @importFrom dplyr arrange bind_rows
 #' @examples
 #' data(eqtlRegionExample)
@@ -2146,10 +2082,10 @@ raissSingleMatrixFromX <- function(
 #'   ldMatrix = cor(X))
 #' @export
 raiss <- function(
-    refPanel,
+    refPanel = NULL,
     knownZscores,
     ldMatrix = NULL,
-    genotypeMatrix = NULL,
+    genotypes = NULL,
     lamb = 0.01,
     rcond = 0.01,
     svdTol = 1e-8,
@@ -2165,23 +2101,31 @@ raiss <- function(
         minimumLd = minimumLd,
         verbose = verbose
     )
-    if (!is.null(genotypeMatrix)) {
-        if (!is.null(ldMatrix)) {
-            abort("Provide either ldMatrix or genotypeMatrix, not both.")
-        }
-        return(.raissGenotypePath(refPanel, knownZscores, genotypeMatrix, p))
+    if (!is.null(genotypes) && !is.null(ldMatrix)) {
+        abort("Provide either ldMatrix or genotypes, not both.")
     }
-    if (is.null(ldMatrix)) {
-        abort("Provide either ldMatrix or genotypeMatrix.")
+    if (is.null(genotypes) && is.null(ldMatrix)) {
+        abort("Provide either ldMatrix or genotypes.")
     }
-    isSingleMatrixCase <- is.matrix(ldMatrix) ||
-        (is.list(ldMatrix) &&
-            !is.null(ldMatrix$ldMatrices) &&
-            length(ldMatrix$ldMatrices) == 1)
-    if (isSingleMatrixCase) {
-        return(.raissSingleLdPath(refPanel, knownZscores, ldMatrix, p))
+    ref <- .raissReferenceOf(ldMatrix, genotypes)
+    if (!is.null(ref)) {
+        refPanel <- refPanel %||% .raissRefPanelOf(ref, knownZscores)
+    } else if (is.null(refPanel)) {
+        abort(str_c(
+            "`refPanel` is required unless the LD comes as an LdMatrix or a ",
+            "genotype panel."
+        ))
     }
-    .raissLdBlocksPath(refPanel, knownZscores, ldMatrix, p)
+    if (!is.null(genotypes)) {
+        X <- .raissScaledDosage(genotypes, refPanel)
+        return(.raissGenotypePath(refPanel, knownZscores, X, p))
+    }
+    R <- if (is.null(ref)) {
+        ldMatrix
+    } else {
+        .ldFromRef(ref, refPanel$variant_id, label = "raiss")
+    }
+    .raissLdPath(refPanel, knownZscores, R, p)
 }
 
 #' @rdname RaissParam
@@ -2192,6 +2136,7 @@ setClass(
     contains = "MethodParam",
     slots = c(
         lamb = "numeric",
+        rcond = "numeric",
         svdTol = "numeric",
         r2Threshold = "numeric",
         minimumLd = "numeric",
@@ -2204,20 +2149,25 @@ setClass(
 
 #' @title Arguments For RAISS Imputation During Summary-Statistic QC
 #' @description The settings \code{\link{summaryStatsQc}} uses when
-#'   \code{impute = TRUE}. Four are forwarded to \code{\link{raiss}}; the
+#'   \code{impute = TRUE}. Five are forwarded to \code{\link{raiss}}; the
 #'   other four are pecotmr's own, bounding which panel variants RAISS is
 #'   asked to impute and how wide a window it reads.
 #'
-#'   \code{\link{raiss}} also takes an \code{rcond}, but only on its
-#'   LD-matrix path. QC always hands it a genotype matrix, which routes
-#'   through the SVD solver and uses \code{svdTol} instead, so \code{rcond}
-#'   is not offered here --- naming it is an error rather than a setting that
-#'   silently does nothing.
+#'   \code{rcond} applies whatever the collection's LD reference is: QC hands
+#'   RAISS a genotype panel's dosages, which route through the SVD solver, or
+#'   an \code{\link{LdMatrix}}'s correlations, which are inverted directly,
+#'   and both drop the same weak directions. \code{svdTol} only matters on
+#'   the genotype route.
 #' @param lamb Regularization term added to the LD diagonal. Default
 #'   \code{0.01}.
-#' @param svdTol Singular-value cutoff for the pseudo-inverse. Default
-#'   \code{1e-12}. Note this is tighter than \code{\link{raiss}}'s own
-#'   \code{1e-8} default.
+#' @param rcond Eigenvalue cutoff for the pseudo-inverse of the known
+#'   variants' LD: directions whose ridged eigenvalue is below \code{rcond}
+#'   times the largest are dropped. Default \code{0.01}, as
+#'   \code{\link{raiss}}'s own.
+#' @param svdTol Relative tolerance below which singular values of the
+#'   standardized genotypes are treated as numerically zero, used when the LD
+#'   reference is a genotype panel. Default \code{1e-12}. Note this is
+#'   tighter than \code{\link{raiss}}'s own \code{1e-8} default.
 #' @param r2Threshold Imputation \eqn{R^2} below which a variant is dropped
 #'   from the output. Default \code{0.6}.
 #' @param minimumLd Minimum LD score for retaining an imputed variant.
@@ -2236,6 +2186,7 @@ setClass(
 #' @export
 RaissParam <- function(
     lamb = 0.01,
+    rcond = 0.01,
     svdTol = 1e-12,
     r2Threshold = 0.6,
     minimumLd = 5,
@@ -2247,6 +2198,7 @@ RaissParam <- function(
     new(
         "RaissParam",
         lamb = lamb,
+        rcond = rcond,
         svdTol = svdTol,
         r2Threshold = r2Threshold,
         minimumLd = minimumLd,
@@ -2258,15 +2210,15 @@ RaissParam <- function(
 }
 
 # The RAISS bundle as a plain list with every field present. A constructor
-# result already carries all eight -- they are all formals with defaults --
+# result already carries all nine -- they are all formals with defaults --
 # and the empty list that means "no options" becomes the defaults outright,
 # so the read sites need no per-field fallback.
 # @noRd
-.ssqcResolveImputeArgs <- function(imputeArgs) {
-    if (length(imputeArgs) == 0L) {
+.ssqcResolveImputeArgs <- function(raissParam) {
+    if (length(raissParam) == 0L) {
         return(as.list(RaissParam()))
     }
-    as.list(imputeArgs)
+    as.list(raissParam)
 }
 
 #' @importFrom checkmate assertNumeric
@@ -2296,39 +2248,73 @@ raissModel <- function(
     assertNumeric(zt)
     assertNumeric(sigT)
     assertNumeric(sigIT)
-    if (batch) {
-        conditionNumber <- if (reportConditionNumber) {
-            rep(kappa(sigT, exact = TRUE, norm = "2"), nrow(sigIT))
-        } else {
-            NA
-        }
-        correctInversion <- rep(checkInversion(sigT, sigTInv), nrow(sigIT))
-    } else {
-        conditionNumber <- if (reportConditionNumber) {
-            kappa(sigT, exact = TRUE, norm = "2")
-        } else {
-            NA
-        }
-        correctInversion <- checkInversion(sigT, sigTInv)
-    }
-
+    checks <- .raissInversionChecks(
+        sigT,
+        sigTInv,
+        lamb,
+        nOut = if (batch) nrow(sigIT) else 1L,
+        reportConditionNumber = reportConditionNumber
+    )
     varRaissLdScore <- computeVar(sigIT, sigTInv, lamb, batch)
-    var <- varRaissLdScore$var
-    raissLdScore <- varRaissLdScore$raissLdScore
+    .raissResult(
+        varRaw = varRaissLdScore$var,
+        muRaw = computeMu(sigIT, sigTInv, zt),
+        lamb = lamb,
+        raissLdScore = varRaissLdScore$raissLdScore,
+        conditionNumber = checks$conditionNumber,
+        correctInversion = checks$correctInversion
+    )
+}
 
-    mu <- computeMu(sigIT, sigTInv, zt)
-    varNorm <- varInBoundaries(var, lamb)
+# The inversion's diagnostics, repeated for each of the `nOut` variants a
+# batch imputes: sigT's condition number when asked for (NA otherwise), and
+# whether sigTInv inverts what was inverted. That is the ridged matrix
+# (diagonal 1 + lamb), so it is what the inverse is checked against; against
+# the raw sigT the check could only fail, off by O(lamb). The original RAiSS
+# implementation checks the ridged matrix too: its fill_diagonal() writes the
+# ridge into sig_t in place.
+# @noRd
+.raissInversionChecks <- function(
+    sigT,
+    sigTInv,
+    lamb,
+    nOut,
+    reportConditionNumber
+) {
+    conditionNumber <- if (reportConditionNumber) {
+        rep(kappa(sigT, exact = TRUE, norm = "2"), nOut)
+    } else {
+        NA
+    }
+    sigTRidged <- `diag<-`(sigT, 1 + lamb)
+    list(
+        conditionNumber = conditionNumber,
+        correctInversion = rep(checkInversion(sigTRidged, sigTInv), nOut)
+    )
+}
 
-    R2 <- ((1 + lamb) - varNorm)
-    mu <- mu / sqrt(R2)
-
-    return(list(
+# An imputation's result from its raw variances and means, as both RAiSS
+# routes (raissModel(), .raissSvdImpute()) report it: the variances bounded
+# by varInBoundaries(), and each mean scaled by sqrt(R2), with R2 = (1 + lamb)
+# minus that variance.
+# @noRd
+.raissResult <- function(
+    varRaw,
+    muRaw,
+    lamb,
+    raissLdScore,
+    conditionNumber,
+    correctInversion
+) {
+    varNorm <- varInBoundaries(varRaw, lamb)
+    R2 <- (1 + lamb) - varNorm
+    list(
         var = varNorm,
-        mu = mu,
+        mu = muRaw / sqrt(R2),
         raissLdScore = raissLdScore,
         conditionNumber = conditionNumber,
         correctInversion = correctInversion
-    ))
+    )
 }
 
 #' @param imp is the output of raissModel()
@@ -2502,8 +2488,10 @@ computeVar <- function(sigIT, sigTInv, lamb, batch = TRUE) {
     return(list(var = var, raissLdScore = raissLdScore))
 }
 
+# TRUE when sigTInv is a pseudo-inverse of sigT (sigT sigTInv sigT == sigT),
+# else FALSE -- never all.equal()'s text describing the difference.
 checkInversion <- function(sigT, sigTInv) {
-    return(all.equal(sigT, sigT %*% (sigTInv %*% sigT), tolerance = 1e-5))
+    isTRUE(all.equal(sigT, sigT %*% (sigTInv %*% sigT), tolerance = 1e-5))
 }
 
 varInBoundaries <- function(var, lamb) {
@@ -2545,31 +2533,6 @@ invertMatRecursive <- function(mat, lamb, rcond) {
         }
     )
 }
-
-invertMatEigen <- function(mat, tol = 1e-3) {
-    eigenMat <- eigen(mat)
-    L <- which(cumsum(eigenMat$values) / sum(eigenMat$values) > 1 - tol)[1]
-    if (is.na(L)) {
-        # all eigen values are extremely small
-        msg <- glue(
-            "Cannot invert the input matrix because all its eigen ",
-            "values are negative or close to zero"
-        )
-        abort(msg)
-    }
-    # Both guards matter when L == 1: the subscript would drop to a vector,
-    # and diag() of a length-one value returns an identity matrix of THAT
-    # ORDER -- diag(0.1) is 0x0 -- not a 1x1 matrix holding the value, so
-    # the product failed with "non-conformable arguments".
-    kept <- seq_len(L)
-    vectors <- eigenMat$vectors[, kept, drop = FALSE]
-    matInv <- vectors %*%
-        diag(1 / eigenMat$values[kept], nrow = L) %*%
-        t(vectors)
-
-    return(matInv)
-}
-
 
 # =============================================================================
 # Top-level summaryStatsQc() pipeline + helpers
@@ -2729,8 +2692,10 @@ DentistParam <- function(
 #'
 #' @param zScore Numeric vector of z-scores.
 #' @param R Square LD correlation matrix. Provide either \code{R} or \code{X}.
-#' @param X Genotype matrix (samples x SNPs). If provided, LD is computed via
-#'   \code{computeLd} and \code{nSample} defaults to \code{nrow(X)}.
+#' @param X Genotype matrix (samples x SNPs). With \code{ldMethod = "sample"}
+#'   both methods work on the genotypes without forming the LD matrix; any
+#'   other \code{ldMethod} computes LD via \code{computeLd}. \code{nSample}
+#'   defaults to \code{nrow(X)}.
 #' @param nSample Number of samples in the LD reference panel. Required when
 #'   \code{R} is provided and \code{method = "dentist"}; inferred from \code{X}
 #'   when \code{X} is provided.
@@ -2771,7 +2736,7 @@ ldMismatchQc <- function(
         names(.ldMismatchCtors()),
         "method"
     )
-    methodArgs <- chosen$args
+    engineParam <- chosen$args
     if (chosen$engine == "dentist") {
         callArgs <- list_modify(
             list(
@@ -2781,13 +2746,13 @@ ldMismatchQc <- function(
                 nSample = nSample,
                 ldMethod = ldMethod
             ),
-            !!!methodArgs
+            !!!engineParam
         )
         return(exec(dentistSingleWindow, !!!callArgs))
     } else {
         callArgs <- list_modify(
             list(zScore, R = R, X = X, ldMethod = ldMethod),
-            !!!methodArgs
+            !!!engineParam
         )
         qcResults <- exec(slalom, !!!callArgs)
         # Standardize output: slalom uses "outliers", rename to "outlier" for
@@ -2838,7 +2803,7 @@ effectiveN <- function(nCase, nControl) {
 
 # =============================================================================
 # summaryStatsQc -- SumStats-input QC pipeline (replaces the previous
-# data.frame/LdData/QcResult-based summaryStatsQc and rssBasicQc).
+# data.frame- and QcResult-based summaryStatsQc and rssBasicQc).
 # =============================================================================
 
 # Convert one entry's GRanges into a flat tibble with the column shape
@@ -2857,18 +2822,18 @@ effectiveN <- function(nCase, nControl) {
 
 # Build a refVariants data.frame (chrom, pos, A1, A2, variant_id) from the
 # panel's own variant ranges so harmonizeAlleles can join by (chrom, pos).
-# The id comes from `.ldSketchMatchIds()`, not the raw SNP label: a panel entry
+# The id comes from `.ldRefMatchIds()`, not the raw SNP label: a panel entry
 # that spells a tag where an allele belongs still harmonizes off its A1/A2
 # columns, and the repaired id is what the LD lookups downstream can find.
-.refVariantsFromSketch <- function(ldSketch) {
-    gr <- .ldSketchRanges(ldSketch)
+.refVariantsFromLdRef <- function(ldReference) {
+    gr <- .ldRefRanges(ldReference)
     mc <- S4Vectors::mcols(gr)
     data.frame(
-        chrom = .ldSketchChrom(ldSketch),
+        chrom = .ldRefChrom(ldReference),
         pos = as.integer(GenomicRanges::start(gr)),
         A1 = as.character(mc$A1),
         A2 = as.character(mc$A2),
-        variant_id = .ldSketchMatchIds(ldSketch),
+        variant_id = .ldRefMatchIds(ldReference),
         stringsAsFactors = FALSE
     )
 }
@@ -2930,46 +2895,38 @@ effectiveN <- function(nCase, nControl) {
 # Shared entry-to-sumstat data.frame converter
 # -----------------------------------------------------------------------------
 
-# Internal: convert one sumstat-entry GRanges into a flat data.frame with
-# (variant_id, chrom, pos, A1, A2) base columns plus a configurable set
-# of stats columns (z, beta, se, N, maf). Shared by the four pipelines
-# that walk sumstats GRanges (fineMappingPipeline, twasWeights,
-# ctwasPipeline, colocboostPipeline).
-#
-# `require`   character vector of mcol names that MUST be present; errors
-#             when any is missing. Use this for the strict callers
-#             (e.g. `.fmExtractZn` needs SNP + Z + N to proceed).
-# `derive`    when "zFromBetaSe" and `z` is absent but BETA + SE are
-#             present, set z := BETA/SE. Default "none".
-# `label`     error-message prefix for missing-`require` errors.
-# `keepChrPrefix`  when TRUE keep the seqname as-is ("chr1"); when FALSE,
-#                  strip any leading "chr" so callers that expect numeric
-#                  chrom (ctwas, colocboost) see "1".
 # Base (variant_id/chrom/pos/A1/A2) frame for one sumstat-entry GRanges.
+# @noRd
 .entryDfBase <- function(gr, mc, chr) {
-    colOr <- function(name) {
-        if (is_in(name, colnames(mc))) {
-            as.character(mc[[name]])
-        } else {
-            rep(NA_character_, length(gr))
-        }
-    }
+    n <- length(gr)
     tibble(
-        variant_id = colOr("SNP"),
+        variant_id = .entryDfCharColumn("SNP", mc, n),
         chrom = chr,
         pos = unname(as.integer(GenomicRanges::start(gr))),
-        A1 = colOr("A1"),
-        A2 = colOr("A2")
+        A1 = .entryDfCharColumn("A1", mc, n),
+        A2 = .entryDfCharColumn("A2", mc, n)
     )
 }
 
-# Append the optional numeric stat columns present on the entry's mcols.
+# One mcols column as character, or NA for each of the `n` variants when the
+# entry does not carry it.
+# @noRd
+.entryDfCharColumn <- function(name, mc, n) {
+    if (is_in(name, colnames(mc))) {
+        as.character(mc[[name]])
+    } else {
+        rep(NA_character_, n)
+    }
+}
+
 # One mcols column as numeric.
 # @noRd
 .entryStatColumn <- function(src, mc) {
     as.numeric(mc[[src]])
 }
 
+# Append the optional numeric stat columns present on the entry's mcols.
+# @noRd
 .entryDfAddStats <- function(df, mc) {
     statMap <- c(
         z = "Z",
@@ -3009,6 +2966,22 @@ effectiveN <- function(nCase, nControl) {
     mutate(df, maf = pmin(.data$af, 1 - .data$af))
 }
 
+# Convert one sumstat-entry GRanges into a flat data.frame with
+# (variant_id, chrom, pos, A1, A2) base columns plus a configurable set
+# of stats columns (z, beta, se, N, maf). Shared by the four pipelines
+# that walk sumstats GRanges (fineMappingPipeline, twasWeights,
+# ctwasPipeline, colocboostPipeline).
+#
+# `require`   character vector of mcol names that MUST be present; errors
+#             when any is missing. Use this for the strict callers
+#             (e.g. `.fmExtractZn` needs SNP + Z + N to proceed).
+# `derive`    when "zFromBetaSe" and `z` is absent but BETA + SE are
+#             present, set z := BETA/SE. Default "none".
+# `label`     error-message prefix for missing-`require` errors.
+# `keepChrPrefix`  when TRUE keep the seqname as-is ("chr1"); when FALSE,
+#                  strip any leading "chr" so callers that expect numeric
+#                  chrom (ctwas, colocboost) see "1".
+# @noRd
 .entryToSumstatDf <- function(
     gr,
     require = character(0),
@@ -3085,33 +3058,70 @@ effectiveN <- function(nCase, nControl) {
 # bookkeeping that DENTIST's addDupsBackDentist uses to splice the
 # dropped variants back into the output.
 .findDuplicateVariants <- function(z, ld, rThreshold) {
+    walk <- .dupWalk(z, rThreshold, list(R = ld))
+    kept <- walk$dupBearer == -1
+    c(
+        list(
+            filteredZ = z[kept],
+            filteredLD = ld[kept, kept, drop = FALSE]
+        ),
+        walk
+    )
+}
+
+# .findDuplicateVariants() from a factor of the LD: the same walk, its LD rows
+# computed a stripe at a time from the factor, so the p x p matrix is never
+# formed; the duplicates are dropped from the factor's columns.
+# @noRd
+.findDuplicateVariantsFactor <- function(z, factor, rThreshold) {
+    walk <- .dupWalk(z, rThreshold, list(F = factor))
+    kept <- walk$dupBearer == -1
+    c(
+        list(
+            filteredZ = z[kept],
+            filteredFactor = factor[, kept, drop = FALSE]
+        ),
+        walk
+    )
+}
+
+# The duplicate walk: left to right, each variant not yet marked a duplicate
+# anchors every later unmarked variant whose |r| with it exceeds rThreshold.
+# Its LD rows are read from the LD source `ld` (.ldSourceRows()) a stripe of
+# anchors at a time, so a factor never has to supply more than a stripe.
+# @noRd
+.dupWalk <- function(z, rThreshold, ld) {
     p <- length(z)
     dupBearer <- rep(-1, p)
     corABS <- rep(0, p)
     sign <- rep(1, p)
     count <- 1L
     minValue <- 1
+    blockSize <- .ldStripeSize()
+    block <- NULL
+    blockStart <- 0L
     for (i in seq_len(p - 1L)) {
         if (dupBearer[i] != -1) {
             next
         }
+        if (is.null(block) || i >= blockStart + nrow(block)) {
+            blockStart <- i
+            block <- .ldSourceRows(ld, i:min(i + blockSize - 1L, p - 1L))
+        }
+        row <- block[i - blockStart + 1L, ]
         idx <- (i + 1L):p
-        corVec <- abs(ld[i, idx])
+        corVec <- abs(row[idx])
         dupIdx <- which(dupBearer[idx] == -1 & corVec > rThreshold)
         if (length(dupIdx) > 0) {
             j <- idx[dupIdx]
-            sign[j] <- if_else(ld[i, j] < 0, -1, sign[j])
+            sign[j] <- if_else(row[j] < 0, -1, sign[j])
             corABS[j] <- corVec[dupIdx]
             dupBearer[j] <- count
         }
         minValue <- min(minValue, min(corVec))
         count <- count + 1L
     }
-    filteredZ <- z[dupBearer == -1]
-    filteredLD <- ld[dupBearer == -1, dupBearer == -1, drop = FALSE]
     list(
-        filteredZ = filteredZ,
-        filteredLD = filteredLD,
         dupBearer = dupBearer,
         corABS = corABS,
         sign = sign,
@@ -3215,18 +3225,18 @@ effectiveN <- function(nCase, nControl) {
 }
 
 # Apply the panel-vs-sumstats allele harmonization using the slim
-# harmonizeAlleles against the ldSketch's variant info. Threads the
+# harmonizeAlleles against the ldReference's variant info. Threads the
 # variant-level filters (indels, strand-ambiguous, duplicates) through
 # so the LD-panel-anchored pass handles them in a single sweep.
-.matchAgainstSketch <- function(
+.matchAgainstLdRef <- function(
     df,
-    ldSketch,
+    ldReference,
     matchMinProp,
     removeIndels = FALSE,
     removeStrandAmbiguous = TRUE,
     removeDups = TRUE
 ) {
-    refVariants <- .refVariantsFromSketch(ldSketch)
+    refVariants <- .refVariantsFromLdRef(ldReference)
     flipCandidates <- c("Z", "BETA")
     colToFlip <- intersect(flipCandidates, colnames(df))
     if (length(colToFlip) == 0L) {
@@ -3634,38 +3644,64 @@ effectiveN <- function(nCase, nControl) {
 # leaves the drop to onMissing here, so they are dropped here (keeping df
 # aligned with the returned LD) rather than aborting the run.
 #
-# Returns list(R, df, dropped). `R` is NULL when no variant is panel-supported,
-# and `df` is empty then -- each caller shapes its own empty result.
+# Returns list(R, X, df, dropped): a genotype reference gives X, the factor of
+# its LD (.ldFactorFromRef()), which the mismatch QC reads directly; an
+# LdMatrix gives the matrix R. Both are NULL when no variant is
+# panel-supported, and `df` is empty then -- each caller shapes its own empty
+# result. .qcPanelLdMatrix() turns either into the matrix for a step that
+# needs one.
 # @noRd
-.qcPanelSupportedLd <- function(df, ldSketch, label) {
+.qcPanelSupportedLd <- function(df, ldReference, label) {
     nIn <- nrow(df)
-    raw <- .ldFromSketch(ldSketch, df$SNP, label = label, onMissing = "drop")
+    isFactor <- .ldIsGenotypeRef(ldReference)
+    ldFrom <- if (isFactor) .ldFactorFromRef else .ldFromRef
+    raw <- ldFrom(ldReference, df$SNP, label = label, onMissing = "drop")
     if (is.null(raw)) {
-        return(list(R = NULL, df = df[0L, , drop = FALSE], dropped = nIn))
+        return(list(df = df[0L, , drop = FALSE], dropped = nIn))
     }
     keptIds <- attr(raw, "keptVariantIds")
-    R <- `attr<-`(raw, "keptVariantIds", NULL)
-    if (is.null(keptIds) || length(keptIds) >= nIn) {
-        return(list(R = R, df = df, dropped = 0L))
+    ld <- `attr<-`(raw, "keptVariantIds", NULL)
+    supported <- if (is.null(keptIds) || length(keptIds) >= nIn) {
+        list(df = df, dropped = 0L)
+    } else {
+        list(
+            df = filter(df, is_in(.data$SNP, keptIds)),
+            dropped = nIn - length(keptIds)
+        )
     }
-    list(
-        R = R,
-        df = filter(df, is_in(.data$SNP, keptIds)),
-        dropped = nIn - length(keptIds)
-    )
+    c(if (isFactor) list(X = ld) else list(R = ld), supported)
 }
 
+# The LD matrix of a .qcPanelSupportedLd() result, formed from its factor
+# when that is what the reference gave.
 # @noRd
-.applyLdMismatchQcToEntry <- function(df, ldSketch, method) {
+.qcPanelLdMatrix <- function(panel) {
+    panel$R %||% (crossprod(panel$X) / (nrow(panel$X) - 1))
+}
+
+# DENTIST truncates its SVD at a rank bounded by the panel's real size, so it
+# needs that size; SLALOM does not, so a reference that cannot say (an
+# LdMatrix built without `nSamples`) passes NULL there.
+# @noRd
+.qcMismatchNSample <- function(ldReference, method) {
+    if (identical(method, "dentist")) {
+        return(.ldRefRequireNSamples(ldReference, "DENTIST"))
+    }
+    n <- .ldRefRealNSamples(ldReference)
+    if (is.na(n)) NULL else n
+}
+
+.applyLdMismatchQcToEntry <- function(df, ldReference, method, panel = NULL) {
     if (is.null(df$SNP) || any(is.na(df$SNP))) {
         abort("summaryStatsQc: ldMismatchQc requires SNP column on the entry.")
     }
-    panel <- .qcPanelSupportedLd(
-        df,
-        ldSketch,
-        "summaryStatsQc: ldMismatchQcMethod"
-    )
-    if (is.null(panel$R)) {
+    panel <- panel %||%
+        .qcPanelSupportedLd(
+            df,
+            ldReference,
+            "summaryStatsQc: ldMismatchQcMethod"
+        )
+    if (is.null(panel$R) && is.null(panel$X)) {
         return(list(
             df = panel$df,
             outliers = 0L,
@@ -3673,13 +3709,15 @@ effectiveN <- function(nCase, nControl) {
             panelUnsupportedDropped = panel$dropped
         ))
     }
-    R <- panel$R
     df <- panel$df
     variantIds <- df$SNP
+    # A genotype reference's factor goes in as X: SLALOM reads only the lead
+    # column of it.
     qc <- ldMismatchQc(
         zScore = df$Z,
-        R = R,
-        nSample = .ldSketchNSamples(ldSketch),
+        R = panel$R,
+        X = panel$X,
+        nSample = .qcMismatchNSample(ldReference, method),
         method = method
     )
     # slalom / dentist can leave NA in the outlier column when their
@@ -3688,22 +3726,26 @@ effectiveN <- function(nCase, nControl) {
     # "no evidence of being an outlier" (conservative: keep the variant)
     # so the downstream df / sum() / IRanges construction stay finite.
     outlierFlags <- replace(qc$outlier, is.na(qc$outlier), FALSE)
-    # Attach the variant_id column so the diagnostics data.frame stays
-    # self-describing once it's separated from the input df.
-    diagnostics <- if (is.data.frame(qc)) {
-        cbind(
-            variant_id = as.character(variantIds),
-            qc,
-            stringsAsFactors = FALSE
-        )
-    } else {
-        NULL
-    }
     list(
         df = filter(df, !outlierFlags),
         outliers = sum(outlierFlags),
-        diagnostics = diagnostics,
+        diagnostics = .ldMismatchDiagnostics(qc, variantIds),
         panelUnsupportedDropped = panel$dropped
+    )
+}
+
+# The QC's per-variant statistics with each variant's id attached, so the
+# table stays self-describing once it is separated from the entry; NULL when
+# the method returned no table.
+# @noRd
+.ldMismatchDiagnostics <- function(qc, variantIds) {
+    if (!is.data.frame(qc)) {
+        return(NULL)
+    }
+    cbind(
+        variant_id = as.character(variantIds),
+        qc,
+        stringsAsFactors = FALSE
     )
 }
 
@@ -3897,7 +3939,7 @@ effectiveN <- function(nCase, nControl) {
 # --- .runEntrySummaryStatsQc: RAISS imputation step helpers ----------------
 
 # Panel/dosage window indices for the entry, scoped per chromosome.
-.qcRaissWindowIdx <- function(df, ldSketch, flank) {
+.qcRaissWindowIdx <- function(df, ldReference, flank) {
     # canonChrom on BOTH sides: the panel answers in its own seqnames
     # convention, so the two are only comparable once canonicalized.
     bounds <- tibble(
@@ -3913,9 +3955,9 @@ effectiveN <- function(nCase, nControl) {
     # inner_join keeps only sketch SNPs whose chromosome appears in df (the
     # old is_in(skChrom, names(loByChr)) guard); filter keeps those inside the
     # [lo, hi] window. idx carries the original sketch row positions.
-    gr <- .ldSketchRanges(ldSketch)
+    gr <- .ldRefRanges(ldReference)
     tibble(
-        chrom = .ldSketchChrom(ldSketch),
+        chrom = .ldRefChrom(ldReference),
         bp = as.integer(GenomicRanges::start(gr)),
         idx = seq_along(gr)
     ) |>
@@ -3960,37 +4002,81 @@ effectiveN <- function(nCase, nControl) {
     knownZ |> mutate(!!!extras) |> arrange(.data$pos)
 }
 
-.qcRaissBuildInputs <- function(df, ldSketch, windowIdx, opts) {
-    windowPanel <- .refVariantsFromSketch(ldSketch)[
+.qcRaissBuildInputs <- function(df, ldReference, windowIdx, opts) {
+    # `refIdx` keeps each window variant's position in the reference through
+    # the sort, so dosage, frequencies and LD are all read in panel order.
+    windowPanel <- .refVariantsFromLdRef(ldReference)[
         windowIdx,
         ,
         drop = FALSE
     ] |>
-        mutate(variant_id = normalizeVariantId(.data$variant_id)) |>
+        mutate(
+            variant_id = normalizeVariantId(.data$variant_id),
+            refIdx = windowIdx
+        ) |>
         arrange(.data$pos)
     knownZ <- .qcRaissKnownZ(df)
-    # meanImpute = FALSE so per-variant missingness is still visible; the
-    # surviving columns are mean-imputed below, which is what meanImpute =
-    # TRUE did.
-    windowDosage <- `colnames<-`(
-        .ldSketchDosage(ldSketch, windowIdx, meanImpute = FALSE),
-        normalizeVariantId(.ldSketchMatchIds(ldSketch)[windowIdx])
+    rp <- opts$raissParam
+    windowed <- if (.ldIsPanel(ldReference)) {
+        # meanImpute = FALSE so per-variant missingness is still visible; the
+        # surviving columns are mean-imputed below.
+        .ldRefDosage(ldReference, windowPanel$refIdx, meanImpute = FALSE)
+    }
+    keep <- .qcRaissTargetMask(
+        windowPanel,
+        knownZ,
+        .qcRaissTargetStats(ldReference, windowPanel$refIdx, windowed, rp),
+        opts,
+        nSamples = .ldRefMacSamples(ldReference, rp$macCutoff)
     )
-    windowed <- windowDosage[, windowPanel$variant_id, drop = FALSE]
-    keep <- .qcRaissTargetMask(windowPanel, knownZ, windowed, opts)
-    refPanel <- windowPanel[keep, , drop = FALSE]
+    c(
+        list(
+            refPanel = select(windowPanel[keep, , drop = FALSE], -"refIdx"),
+            knownZ = knownZ,
+            nDroppedTargets = sum(!keep)
+        ),
+        .qcRaissLdInput(ldReference, windowPanel$refIdx[keep], windowed, keep)
+    )
+}
+
+# What RAISS imputes from: a panel's standardized dosages or a mixture's
+# stacked factor, for its singular-value route, or an LdMatrix's block over
+# the kept variants.
+# @noRd
+.qcRaissLdInput <- function(ldReference, refIdx, windowed, keep) {
+    if (.ldIsMatrixRef(ldReference)) {
+        return(list(ldMatrix = .ldRefLdAt(ldReference, refIdx)))
+    }
+    if (.ldIsMixtureRef(ldReference)) {
+        return(list(genotypeMatrix = .ldRefFactor(ldReference, refIdx)))
+    }
     scaled <- scale(.qtlMeanImpute(windowed[, keep, drop = FALSE]))
-    scaledDosage <- replace(scaled, is.na(scaled), 0)
-    list(
-        refPanel = refPanel,
-        knownZ = knownZ,
-        scaledDosage = scaledDosage,
-        nDroppedTargets = sum(!keep)
+    list(genotypeMatrix = replace(scaled, is.na(scaled), 0))
+}
+
+# The per-variant statistics the target cutoffs are judged on, or NULL when
+# no cutoff is set. A panel of real genotypes measures them on the window's
+# dosages, already in hand; a sketch or an LdMatrix answers from what it
+# records (see .ldRefVariantStats()).
+# @noRd
+.qcRaissTargetStats <- function(ldReference, refIdx, windowed, rp) {
+    if (rp$mafCutoff <= 0 && rp$macCutoff <= 0 && rp$imissCutoff >= 1) {
+        return(NULL)
+    }
+    if (!is.null(windowed) && !.ldRefIsProjection(ldReference)) {
+        return(.qcRaissVariantStats(windowed))
+    }
+    .ldRefVariantStats(
+        ldReference,
+        refIdx,
+        needMissing = rp$imissCutoff < 1,
+        step = "RAISS target filtering"
     )
 }
 
 # Which reference-panel variants to keep, given the MAF / MAC / missingness
-# cutoffs in `imputeArgs`.
+# cutoffs in `raissParam` and the per-variant `stats` they are judged on
+# (NULL when no cutoff is set).
 #
 # The cutoffs govern what RAISS is willing to IMPUTE, not what it is willing to
 # keep, so an observed variant survives whatever its frequency in the LD panel.
@@ -4003,14 +4089,12 @@ effectiveN <- function(nCase, nControl) {
 # an imputation target, which is both slow and statistically pointless when the
 # study is much smaller than the panel.
 # @noRd
-.qcRaissTargetMask <- function(refPanel, knownZ, dosage, opts) {
-    mafCutoff <- opts$imputeArgs$mafCutoff
-    macCutoff <- opts$imputeArgs$macCutoff
-    imissCutoff <- opts$imputeArgs$imissCutoff
+.qcRaissTargetMask <- function(refPanel, knownZ, stats, opts, nSamples) {
     keep <- rep(TRUE, nrow(refPanel))
-    if (mafCutoff <= 0 && macCutoff <= 0 && imissCutoff >= 1) {
+    if (is.null(stats)) {
         return(keep)
     }
+    rp <- opts$raissParam
     # Identified exactly as raissSingleMatrixFromX() does, so this mask cannot
     # disagree with the knowns/unknowns split it derives moments later.
     knownIds <- intersect(knownZ$variant_id, refPanel$variant_id)
@@ -4020,11 +4104,11 @@ effectiveN <- function(nCase, nControl) {
     unsafe <- isTarget &
         (.raissUnsafeToImpute(refPanel$variant_id, knownZ$variant_id) |
             .raissObservedPosition(refPanel, knownZ))
-    stats <- .qcRaissVariantStats(dosage)
-    effectiveMaf <- .panelEffectiveMaf(mafCutoff, macCutoff, nrow(dosage))
-    fails <- (!is.na(stats$maf) & stats$maf < effectiveMaf) |
-        stats$missRate > imissCutoff |
-        is.na(stats$maf)
+    effectiveMaf <- .panelEffectiveMaf(rp$mafCutoff, rp$macCutoff, nSamples)
+    fails <- (!is.na(stats$maf) & stats$maf < effectiveMaf) | is.na(stats$maf)
+    if (!is.null(stats$missRate)) {
+        fails <- fails | stats$missRate > rp$imissCutoff
+    }
     keep & !(isTarget & fails) & !unsafe
 }
 
@@ -4038,30 +4122,35 @@ effectiveN <- function(nCase, nControl) {
 }
 
 
-# RaissParam() covers two audiences: four fields are raiss()'s own formals and
+# RaissParam() covers two audiences: five fields are raiss()'s own formals and
 # four bound what RAISS is asked to impute. Splitting the bundle here lets the
 # call site splice rather than name each field, and keeps the two groups from
 # being confused for one another.
 # @noRd
 .raissForwardedNames <- function() {
-    c("lamb", "svdTol", "r2Threshold", "minimumLd")
+    c("lamb", "rcond", "svdTol", "r2Threshold", "minimumLd")
 }
 
 # @noRd
-.raissForwardedArgs <- function(imputeArgs) {
-    as.list(imputeArgs)[.raissForwardedNames()]
+.raissForwardedArgs <- function(raissParam) {
+    as.list(raissParam)[.raissForwardedNames()]
 }
 
-# Run RAISS with per-call option defaults.
+# Run RAISS on the inputs .qcRaissBuildInputs() assembled: the window's
+# standardized dosages on the genotype route, or its LD block on the matrix
+# route. These were built here from the collection's own LD reference, so
+# they go straight to the route rather than back through raiss()'s checks.
 .qcRaissRun <- function(inp, opts) {
-    exec(
-        raiss,
-        refPanel = inp$refPanel,
-        knownZscores = inp$knownZ,
-        genotypeMatrix = inp$scaledDosage,
-        verbose = FALSE,
-        !!!.raissForwardedArgs(opts$imputeArgs)
-    )
+    p <- c(.raissForwardedArgs(opts$raissParam), list(verbose = FALSE))
+    if (!is.null(inp$genotypeMatrix)) {
+        return(.raissGenotypePath(
+            inp$refPanel,
+            inp$knownZ,
+            inp$genotypeMatrix,
+            p
+        ))
+    }
+    .raissLdPath(inp$refPanel, inp$knownZ, inp$ldMatrix, p)
 }
 
 # Convert the imputer output back into a QC tibble.
@@ -4150,12 +4239,12 @@ effectiveN <- function(nCase, nControl) {
     )
 }
 
-# Optional RAISS imputation against the ldSketch. Returns updated df + audit
+# Optional RAISS imputation against the ldReference. Returns updated df + audit
 # fields + before/after counts (imputation adds variants, so not monotonic).
-.qcRaissImpute <- function(df, ldSketch, opts, lbl) {
+.qcRaissImpute <- function(df, ldReference, opts, lbl) {
     imputeBefore <- nrow(df)
-    flank <- as.integer(opts$imputeArgs$flank)
-    windowIdx <- .qcRaissWindowIdx(df, ldSketch, flank)
+    flank <- as.integer(opts$raissParam$flank)
+    windowIdx <- .qcRaissWindowIdx(df, ldReference, flank)
     if (length(windowIdx) == 0L) {
         .qcEmit(
             lbl,
@@ -4170,7 +4259,7 @@ effectiveN <- function(nCase, nControl) {
             imputeAfter = nrow(df)
         ))
     }
-    inp <- .qcRaissBuildInputs(df, ldSketch, windowIdx, opts)
+    inp <- .qcRaissBuildInputs(df, ldReference, windowIdx, opts)
     if (inp$nDroppedTargets > 0L) {
         .qcEmit(
             lbl,
@@ -4268,18 +4357,18 @@ effectiveN <- function(nCase, nControl) {
 # --- .runEntrySummaryStatsQc: harmonization / kriging / mismatch steps ------
 
 # Panel-vs-sumstats allele harmonization + counter bookkeeping.
-.qcHarmonizeEntry <- function(df, ldSketch, opts, lbl) {
+.qcHarmonizeEntry <- function(df, ldReference, opts, lbl) {
     nHarmIn <- nrow(df)
-    matched <- .matchAgainstSketch(
+    matched <- .matchAgainstLdRef(
         df,
-        ldSketch,
+        ldReference,
         matchMinProp = opts$matchMinProp,
-        removeIndels = opts$sumstatsFilterArgs$removeIndels,
-        removeStrandAmbiguous = opts$sumstatsFilterArgs$removeStrandAmbiguous,
+        removeIndels = opts$sumstatsFilterParam$removeIndels,
+        removeStrandAmbiguous = opts$sumstatsFilterParam$removeStrandAmbiguous,
         removeDups = TRUE
     )
     harmCounts <- attr(matched, "qcCounts")
-    # Re-key SNP to the harmonized id: .matchAgainstSketch rewrites variant_id
+    # Re-key SNP to the harmonized id: .matchAgainstLdRef rewrites variant_id
     # to the panel orientation + sign-flips swapped variants but leaves SNP; a
     # stale SNP makes flipped variants miss the panel in later lookups.
     reKeyed <- mutate(
@@ -4306,7 +4395,7 @@ effectiveN <- function(nCase, nControl) {
     )
     list(
         df = reKeyed,
-        audit = list(matchedAgainstSketch = nrow(reKeyed)),
+        audit = list(matchedAgainstLdReference = nrow(reKeyed)),
         counts = counts
     )
 }
@@ -4359,17 +4448,18 @@ effectiveN <- function(nCase, nControl) {
 }
 
 # @noRd
-.qcKrigingFlip <- function(df, ldSketch, opts, lbl) {
-    if (!isTRUE(opts$alleleFlipKriging) || nrow(df) < 2L) {
+.qcKrigingFlip <- function(df, ldReference, opts, lbl, panel = NULL) {
+    if (!.qcKrigingRuns(df, opts)) {
         return(list(df = df, audit = list(), count = 0L))
     }
     nKrIn <- nrow(df)
-    panel <- .qcPanelSupportedLd(
-        df,
-        ldSketch,
-        "summaryStatsQc: kriging prefilter"
-    )
-    if (is.null(panel$R)) {
+    panel <- panel %||%
+        .qcPanelSupportedLd(
+            df,
+            ldReference,
+            "summaryStatsQc: kriging prefilter"
+        )
+    if (is.null(panel$R) && is.null(panel$X)) {
         return(list(
             df = panel$df,
             count = 0L,
@@ -4379,9 +4469,10 @@ effectiveN <- function(nCase, nControl) {
     supported <- panel$df
     nPanelDrop <- panel$dropped
     .qcEmitPanelDrop(lbl, nPanelDrop, nKrIn)
+    # kriging_rss takes nothing but the matrix (dev/ld-factor-audit.md).
     kr <- krigingOutlierQc(
         supported$Z,
-        panel$R,
+        .qcPanelLdMatrix(panel),
         n = .qcKrigingN(supported, opts),
         variantIds = supported$SNP
     )
@@ -4406,16 +4497,32 @@ effectiveN <- function(nCase, nControl) {
     )
 }
 
+# TRUE when the kriging allele-flip check runs on this entry.
+# @noRd
+.qcKrigingRuns <- function(df, opts) {
+    isTRUE(opts$alleleFlipKriging) && nrow(df) >= 2L
+}
+
+# TRUE when an LD-mismatch check runs on this entry.
+# @noRd
+.qcMismatchRuns <- function(df, opts) {
+    !identical(.engineOf(opts$ldMismatchQcMethod), "none") && nrow(df) >= 2L
+}
+
 # LD-mismatch QC (SLALOM / DENTIST). Retains full per-variant diagnostics.
-.qcMismatchQc <- function(df, ldSketch, opts, lbl) {
-    if (
-        identical(.engineOf(opts$ldMismatchQcMethod), "none") ||
-            nrow(df) < 2L
-    ) {
+# `panel` is the entry's panel-supported LD when the caller has already read
+# it (see .qcPhaseLdChecks()).
+.qcMismatchQc <- function(df, ldReference, opts, lbl, panel = NULL) {
+    if (!.qcMismatchRuns(df, opts)) {
         return(list(df = df, audit = list(), count = 0L))
     }
     nMmIn <- nrow(df)
-    ldQc <- .applyLdMismatchQcToEntry(df, ldSketch, opts$ldMismatchQcMethod)
+    ldQc <- .applyLdMismatchQcToEntry(
+        df,
+        ldReference,
+        opts$ldMismatchQcMethod,
+        panel = panel
+    )
     df <- ldQc$df
     baseAudit <- list(
         ldMismatchOutliersDropped = ldQc$outliers,
@@ -4485,7 +4592,7 @@ effectiveN <- function(nCase, nControl) {
     nSanIn <- nrow(df)
     # The boundary: the bundle travels this far, and .applySanityChecks and
     # the per-check helpers below it keep plain scalars.
-    cleaning <- opts$sumstatsCleaningArgs
+    cleaning <- opts$sumstatsCleaningParam
     sanity <- exec(.applySanityChecks, df, !!!cleaning)
     df <- sanity$df
     audit <- .qcAudit(
@@ -4535,8 +4642,8 @@ effectiveN <- function(nCase, nControl) {
     cf <- .applyContentFilters(
         df,
         mafCutoff = opts$panelFilterParam$mafCutoff,
-        infoCutoff = opts$sumstatsFilterArgs$infoCutoff,
-        nCutoff = opts$sumstatsFilterArgs$nCutoff
+        infoCutoff = opts$sumstatsFilterParam$infoCutoff,
+        nCutoff = opts$sumstatsFilterParam$nCutoff
     )
     df <- cf$df
     audit <- .qcAudit(
@@ -4585,7 +4692,7 @@ effectiveN <- function(nCase, nControl) {
 # Re-clamp the P values just derived from Z, and report how many moved.
 # @noRd
 .qcClampDerivedP <- function(df, opts) {
-    cleaning <- opts$sumstatsCleaningArgs
+    cleaning <- opts$sumstatsCleaningParam
     if (!isTRUE(cleaning$clampSmallP) || nrow(df) == 0L) {
         return(list(df = df, nClamped = 0L))
     }
@@ -4659,11 +4766,11 @@ effectiveN <- function(nCase, nControl) {
 }
 
 # Optional RAISS imputation step wrapper (guarded; threads impute counters).
-.qcRaissImputeStep <- function(df, ldSketch, opts, lbl, qcCount) {
+.qcRaissImputeStep <- function(df, ldReference, opts, lbl, qcCount) {
     if (!isTRUE(opts$impute) || nrow(df) < 1L) {
         return(list(df = df, audit = list(), qcCount = qcCount))
     }
-    imp <- .qcRaissImpute(df, ldSketch, opts, lbl)
+    imp <- .qcRaissImpute(df, ldReference, opts, lbl)
     list(
         df = imp$df,
         audit = imp$audit,
@@ -4690,7 +4797,7 @@ effectiveN <- function(nCase, nControl) {
 
 # Each QC phase below is (state) -> state, so the sequence reads as a pipeline
 # rather than a run of reassignments. `state` carries df + entryAudit + opts +
-# qcCount + lbl (+ ldSketch for the panel-aware phases); a phase touches only
+# qcCount + lbl (+ ldReference for the panel-aware phases); a phase touches only
 # the parts it owns and passes the rest through.
 
 # Per-row sanity checks.
@@ -4751,7 +4858,7 @@ effectiveN <- function(nCase, nControl) {
 .qcPhaseHarmonize <- function(state) {
     harm <- .qcHarmonizeEntry(
         state$df,
-        state$ldSketch,
+        state$ldReference,
         state$opts,
         state$lbl
     )
@@ -4778,8 +4885,32 @@ effectiveN <- function(nCase, nControl) {
 # reads the kriging-corrected frame and the two counts are reported together.
 # @noRd
 .qcPhaseLdChecks <- function(state) {
-    kr <- .qcKrigingFlip(state$df, state$ldSketch, state$opts, state$lbl)
-    mm <- .qcMismatchQc(kr$df, state$ldSketch, state$opts, state$lbl)
+    # Both checks read the same panel-supported variants -- kriging only flips
+    # signs -- so when both run the reference is read once, for the two.
+    shared <- if (
+        .qcKrigingRuns(state$df, state$opts) &&
+            .qcMismatchRuns(state$df, state$opts)
+    ) {
+        .qcPanelSupportedLd(state$df, state$ldReference, "summaryStatsQc")
+    }
+    kr <- .qcKrigingFlip(
+        state$df,
+        state$ldReference,
+        state$opts,
+        state$lbl,
+        panel = shared
+    )
+    mm <- .qcMismatchQc(
+        kr$df,
+        state$ldReference,
+        state$opts,
+        state$lbl,
+        # Kriging has already recorded the panel's drops; its output carries
+        # only supported variants.
+        panel = if (!is.null(shared)) {
+            list_assign(shared, df = kr$df, dropped = 0L)
+        }
+    )
     list_assign(
         state,
         df = mm$df,
@@ -4800,7 +4931,7 @@ effectiveN <- function(nCase, nControl) {
 .qcPhaseImpute <- function(state) {
     imp <- .qcRaissImputeStep(
         state$df,
-        state$ldSketch,
+        state$ldReference,
         state$opts,
         state$lbl,
         state$qcCount
@@ -4840,7 +4971,7 @@ effectiveN <- function(nCase, nControl) {
 
 .runEntrySummaryStatsQc <- function(
     gr,
-    ldSketch,
+    ldReference,
     opts,
     entryLabel = NULL
 ) {
@@ -4861,7 +4992,7 @@ effectiveN <- function(nCase, nControl) {
         qcCount = pre$qcCount,
         opts = pre$opts,
         lbl = pre$lbl,
-        ldSketch = ldSketch
+        ldReference = ldReference
     ) |>
         .qcPhaseHarmonize() |>
         .qcPhaseScreen() |>
@@ -4881,6 +5012,12 @@ effectiveN <- function(nCase, nControl) {
     )
 }
 
+# Number of ranges an entry contributes, NULL-safe.
+# @noRd
+.entryRangeCount <- function(gr) {
+    if (is.null(gr)) 0L else length(gr)
+}
+
 # Shrink an LD-sketch GenotypeHandle to the panel variants inside the summary
 # statistics' per-chromosome position span. `entries` is a list/SimpleList of
 # per-study (or per-tuple) GRanges. A genome-wide sketch otherwise carries a
@@ -4889,14 +5026,8 @@ effectiveN <- function(nCase, nControl) {
 # rest is dropped at load time. NULL-safe; a no-op when the span already covers
 # the panel. See [[.subsetGenotypeHandle]] for why this is read-safe.
 # @noRd
-# Number of ranges an entry contributes, NULL-safe.
-# @noRd
-.entryRangeCount <- function(gr) {
-    if (is.null(gr)) 0L else length(gr)
-}
-
-.subsetSketchToRange <- function(ldSketch, entries) {
-    if (is.null(ldSketch)) {
+.subsetLdRefToRange <- function(ldReference, entries) {
+    if (is.null(ldReference)) {
         return(NULL)
     }
     chromAll <- unname(list_c(map(entries, .entryChrom)))
@@ -4907,18 +5038,18 @@ effectiveN <- function(nCase, nControl) {
     if (length(pos) == 0L) {
         # No span to keep: a zero-variant object references no LD, so the
         # retained panel is empty rather than the full genome-wide sketch.
-        return(.emptySketch(ldSketch))
+        return(.emptyLdRef(ldReference))
     }
     bounds <- tibble(chrom = chrom, pos = pos) |>
         group_by(chrom) |>
         summarise(lo = min(pos), hi = max(pos), .groups = "drop")
-    gr <- .ldSketchRanges(ldSketch)
+    gr <- .ldRefRanges(ldReference)
     # left_join keeps every sketch SNP; one on a chromosome absent from the
     # entries gets lo/hi = NA -> inWindow FALSE (the old is_in guard). The
     # explicit is.na() guards force FALSE (never NA) for an absent chrom or an
     # NA bp, replacing the base keep[is.na(keep)] <- FALSE.
     keep <- tibble(
-        chrom = .ldSketchChrom(ldSketch),
+        chrom = .ldRefChrom(ldReference),
         bp = as.integer(GenomicRanges::start(gr))
     ) |>
         left_join(bounds, by = "chrom") |>
@@ -4929,7 +5060,7 @@ effectiveN <- function(nCase, nControl) {
                 .data$bp <= .data$hi
         ) |>
         pull("inWindow")
-    .ldSketchSubset(ldSketch, keep)
+    .ldRefSubset(ldReference, keep)
 }
 
 # Shrink an LD-sketch GenotypeHandle to EXACTLY the variants present across the
@@ -4937,8 +5068,8 @@ effectiveN <- function(nCase, nControl) {
 # matched by canonical variant id. Applied at the end of summaryStatsQc so the
 # retained sketch mirrors the object's final variant set. NULL-safe.
 # @noRd
-.subsetSketchToIds <- function(ldSketch, entries) {
-    if (is.null(ldSketch)) {
+.subsetLdRefToIds <- function(ldReference, entries) {
+    if (is.null(ldReference)) {
         return(NULL)
     }
     # Genuine variant count (ranges) across entries, read independently of the
@@ -4948,11 +5079,11 @@ effectiveN <- function(nCase, nControl) {
     # sketch rather than blanking a panel it simply could not key.
     nRanges <- sum(map_int(entries, .entryRangeCount))
     if (nRanges == 0L) {
-        return(.emptySketch(ldSketch))
+        return(.emptyLdRef(ldReference))
     }
     ids <- unname(list_c(map(entries, .entrySnpIds)))
     if (length(ids) == 0L) {
-        return(ldSketch)
+        return(ldReference)
     }
     # Match on the (chrom, pos, allele) tuple rather than the raw id string.
     # The entry ids have just been canonicalized to chr:pos:A2:A1 by the QC
@@ -4961,15 +5092,15 @@ effectiveN <- function(nCase, nControl) {
     # -- so a panel keyed chr:pos:A1:A2 (which is how a PLINK .bim writes ids;
     # a .pvar writes REF:ALT and is therefore already canonical) matches
     # nothing under string equality and the panel is silently emptied. This is
-    # the matcher `.ldFromSketchMatch()` and every other LD lookup already use.
-    panelIds <- .ldSketchMatchIds(ldSketch)
+    # the matcher `.ldFromRefMatch()` and every other LD lookup already use.
+    panelIds <- .ldRefMatchIds(ldReference)
     matched <- matchVariants(
         panelIds,
         unique(ids),
         removeStrandAmbiguous = FALSE
     )
     keep <- is_in(seq_along(panelIds), matched$idxA)
-    .ldSketchSubset(ldSketch, keep)
+    .ldRefSubset(ldReference, keep)
 }
 
 # --- summaryStatsQc orchestration helpers ----------------------------------
@@ -5018,39 +5149,39 @@ effectiveN <- function(nCase, nControl) {
 
 # Build the per-entry QC options list from the captured call parameters.
 .ssqcBuildOpts <- function(
-    sumstatsFilterArgs,
+    sumstatsFilterParam,
     panelFilterParam,
     skipRegion,
     ldMismatchQcMethod,
     alleleFlipKriging,
     effectiveN,
     impute,
-    imputeArgs,
+    raissParam,
     matchMinProp,
-    sumstatsCleaningArgs,
+    sumstatsCleaningParam,
     keepVariants,
-    signalScreenArgs
+    signalScreenParam
 ) {
     # Built explicitly rather than by subsetting a captured environment with a
     # character vector: a renamed argument is now an error, not a NULL entry.
     opts <- list(
-        sumstatsFilterArgs = sumstatsFilterArgs,
+        sumstatsFilterParam = sumstatsFilterParam,
         panelFilterParam = panelFilterParam,
         skipRegion = skipRegion,
         ldMismatchQcMethod = ldMismatchQcMethod,
         alleleFlipKriging = alleleFlipKriging,
         effectiveN = effectiveN,
         impute = impute,
-        imputeArgs = imputeArgs,
+        raissParam = raissParam,
         matchMinProp = matchMinProp,
-        sumstatsCleaningArgs = sumstatsCleaningArgs
+        sumstatsCleaningParam = sumstatsCleaningParam
     )
     # nCase / nControl / nForPip are deliberately absent here: they are
     # per-entry, and `.ssqcEntryOpts()` adds them for the entry being run.
     list_assign(
         opts,
         keepVariants = as.character(keepVariants),
-        screen = .screenResolve(signalScreenArgs)
+        screen = .screenResolve(signalScreenParam)
     )
 }
 
@@ -5099,38 +5230,38 @@ effectiveN <- function(nCase, nControl) {
 # retained panel no longer covers, and kriging, SLALOM/DENTIST and the RAISS
 # known/unknown split then only ever see what survived.
 # @noRd
-.ssqcPrunePanel <- function(ldSketch, cutoffs, label) {
-    if (is.null(ldSketch) || is.null(cutoffs)) {
-        return(ldSketch)
+.ssqcPrunePanel <- function(ldReference, cutoffs, label) {
+    if (is.null(ldReference) || is.null(cutoffs)) {
+        return(ldReference)
     }
-    ids <- .ldSketchMatchIds(ldSketch)
+    ids <- .ldRefMatchIds(ldReference)
     if (length(ids) == 0L) {
-        return(ldSketch)
+        return(ldReference)
     }
-    keep <- .panelKeepMask(ids, ldSketch, cutoffs, label)
+    keep <- .panelKeepMask(ids, ldReference, cutoffs, label)
     if (all(keep)) {
-        return(ldSketch)
+        return(ldReference)
     }
-    # Prune the underlying GenotypeHandle, not just an RSE row view: the
-    # handle is the dosage DelayedArray's seed, and `sketch[keep, ]` leaves
-    # that seed carrying the whole panel (the trap `.emptySketch()`
-    # documents), so every read would still see the dropped variants. This is
-    # a seed-level edit, which is why it reaches for the handle.
-    pruned <- .subsetGenotypeHandle(.ldSketchHandle(ldSketch), keep)
-    if (methods::is(ldSketch, "GenotypeHandle")) {
-        return(pruned)
+    if (.ldIsMatrixRef(ldReference) || .ldIsMixtureRef(ldReference)) {
+        return(.ldRefSubset(ldReference, keep))
     }
-    .genotypeExperiment(pruned)
+    if (methods::is(ldReference, "GenotypeHandle")) {
+        return(.subsetGenotypeHandle(ldReference, keep))
+    }
+    # A panel is cut where it can shed the dropped variants from its seed as
+    # well as from its rows (.panelSubsetRows()). The mask is over the
+    # PANEL's rows, so it is never applied to a handle whose rows differ.
+    .panelSubsetRows(ldReference, keep)
 }
 
 # One entry's QC result: list(gr, audit). `opts` arrives as the shared base
 # options; the per-entry fields are derived here rather than carried over from
 # the previous entry.
 # @noRd
-.ssqcRunEntry <- function(i, sumstats, opts, ldSketch, isQtl) {
+.ssqcRunEntry <- function(i, sumstats, opts, ldReference, isQtl) {
     .runEntrySummaryStatsQc(
         gr = .collectionEntry(sumstats, i),
-        ldSketch = ldSketch,
+        ldReference = ldReference,
         opts = .ssqcEntryOpts(opts, sumstats, i),
         entryLabel = .ssqcEntryLabel(sumstats, i, isQtl)
     )
@@ -5142,8 +5273,8 @@ effectiveN <- function(nCase, nControl) {
     # Panel filter, once for the shared LD reference and BEFORE any entry is
     # harmonized, so a variant the panel cannot support is gone from the LD
     # and from the summary statistics alike.
-    ldSketch <- .ssqcPrunePanel(
-        ldSketch(sumstats),
+    ldReference <- .ssqcPrunePanel(
+        ldReference(sumstats),
         .panelCutoffs(opts$panelFilterParam),
         "summaryStatsQc"
     )
@@ -5153,13 +5284,13 @@ effectiveN <- function(nCase, nControl) {
         .ssqcRunEntry,
         sumstats = sumstats,
         opts = opts,
-        ldSketch = ldSketch,
+        ldReference = ldReference,
         isQtl = isQtl
     )
     list(
         newEntries = map(results, "gr"),
         entryAudits = map(results, "audit"),
-        ldSketch = ldSketch
+        ldReference = ldReference
     )
 }
 
@@ -5168,21 +5299,21 @@ effectiveN <- function(nCase, nControl) {
 # like qcDiagnostics() index these four names, so the output shape is kept
 # even though the input is now one argument.
 # @noRd
-.ssqcScreenEcho <- function(signalScreenArgs, metric) {
-    signalScreenArgs[[metric]] %||% 0
+.ssqcScreenEcho <- function(signalScreenParam, metric) {
+    signalScreenParam[[metric]] %||% 0
 }
 
 # Assemble the qcInfo record (echoed options + per-entry audits).
 .ssqcBuildQcInfo <- function(
     entryAudits,
-    sumstatsFilterArgs,
+    sumstatsFilterParam,
     panelFilterParam,
-    signalScreenArgs,
+    signalScreenParam,
     ldMismatchQcMethod,
     alleleFlipKriging,
     effectiveN,
     impute,
-    sumstatsCleaningArgs
+    sumstatsCleaningParam
 ) {
     list(
         timestamp = NA_character_,
@@ -5191,50 +5322,58 @@ effectiveN <- function(nCase, nControl) {
         # these names. The bundles are an argument convention, not an
         # output one.
         options = list(
-            removeIndels = sumstatsFilterArgs$removeIndels,
-            removeStrandAmbiguous = sumstatsFilterArgs$removeStrandAmbiguous,
+            removeIndels = sumstatsFilterParam$removeIndels,
+            removeStrandAmbiguous = sumstatsFilterParam$removeStrandAmbiguous,
             mafCutoff = panelFilterParam$mafCutoff,
             macCutoff = panelFilterParam$macCutoff,
             imissCutoff = panelFilterParam$imissCutoff,
-            infoCutoff = sumstatsFilterArgs$infoCutoff,
-            nCutoff = sumstatsFilterArgs$nCutoff,
-            pipCutoffToSkip = .ssqcScreenEcho(signalScreenArgs, "pip"),
-            absZCutoffToSkip = .ssqcScreenEcho(signalScreenArgs, "absZ"),
-            bfCutoffToSkip = .ssqcScreenEcho(signalScreenArgs, "bf"),
-            logBfCutoffToSkip = .ssqcScreenEcho(signalScreenArgs, "logBf"),
+            infoCutoff = sumstatsFilterParam$infoCutoff,
+            nCutoff = sumstatsFilterParam$nCutoff,
+            pipCutoffToSkip = .ssqcScreenEcho(signalScreenParam, "pip"),
+            absZCutoffToSkip = .ssqcScreenEcho(signalScreenParam, "absZ"),
+            bfCutoffToSkip = .ssqcScreenEcho(signalScreenParam, "bf"),
+            logBfCutoffToSkip = .ssqcScreenEcho(signalScreenParam, "logBf"),
             ldMismatchQcMethod = ldMismatchQcMethod,
             alleleFlipKriging = alleleFlipKriging,
             effectiveN = effectiveN,
             impute = impute,
             # Echoed FLAT for the same reason the screen cutoffs are: these
             # nine names are part of the returned object's shape.
-            coerceNumeric = sumstatsCleaningArgs$coerceNumeric,
-            normalizeChr = sumstatsCleaningArgs$normalizeChr,
-            dropNonstandardChr = sumstatsCleaningArgs$dropNonstandardChr,
-            dropMissData = sumstatsCleaningArgs$dropMissData,
-            dropPOutOfRange = sumstatsCleaningArgs$dropPOutOfRange,
-            clampSmallP = sumstatsCleaningArgs$clampSmallP,
-            smallPFloor = sumstatsCleaningArgs$smallPFloor,
-            dropZeroEffect = sumstatsCleaningArgs$dropZeroEffect,
-            dropNonpositiveSe = sumstatsCleaningArgs$dropNonpositiveSe
+            coerceNumeric = sumstatsCleaningParam$coerceNumeric,
+            normalizeChr = sumstatsCleaningParam$normalizeChr,
+            dropNonstandardChr = sumstatsCleaningParam$dropNonstandardChr,
+            dropMissData = sumstatsCleaningParam$dropMissData,
+            dropPOutOfRange = sumstatsCleaningParam$dropPOutOfRange,
+            clampSmallP = sumstatsCleaningParam$clampSmallP,
+            smallPFloor = sumstatsCleaningParam$smallPFloor,
+            dropZeroEffect = sumstatsCleaningParam$dropZeroEffect,
+            dropNonpositiveSe = sumstatsCleaningParam$dropNonpositiveSe
         ),
         entryAudit = entryAudits
     )
 }
 
 # Rebuild the SumStats object with QC'd entries, trimmed sketch, and qcInfo.
-.ssqcRebuild <- function(sumstats, newEntries, newLdSketch, qcInfo) {
-    has <- function(nm) is_in(nm, .tupleColumnNames(sumstats))
-    nSample <- if (has("nSample")) as.numeric(sumstats$nSample) else NULL
+.ssqcRebuild <- function(sumstats, newEntries, newLdReference, qcInfo) {
+    cols <- .tupleColumnNames(sumstats)
+    nSample <- if (is_in("nSample", cols)) {
+        as.numeric(sumstats$nSample)
+    } else {
+        NULL
+    }
     if (methods::is(sumstats, "GwasSumStats")) {
         GwasSumStats(
             studyName = as.character(sumstats$study),
             entry = newEntries,
             genome = unique(unname(GenomeInfoDb::genome(sumstats))),
-            ldSketch = newLdSketch,
+            ldReference = newLdReference,
             varY = as.numeric(sumstats$varY),
-            nCase = if (has("nCase")) as.numeric(sumstats$nCase) else NULL,
-            nControl = if (has("nControl")) {
+            nCase = if (is_in("nCase", cols)) {
+                as.numeric(sumstats$nCase)
+            } else {
+                NULL
+            },
+            nControl = if (is_in("nControl", cols)) {
                 as.numeric(sumstats$nControl)
             } else {
                 NULL
@@ -5244,7 +5383,7 @@ effectiveN <- function(nCase, nControl) {
             # Carry the existing block keys through: the entries are already
             # split, so without this the constructor re-derives them from
             # seqname and every block on one chromosome collapses to one key.
-            blockId = if (has("blockId")) {
+            blockId = if (is_in("blockId", cols)) {
                 as.character(sumstats$blockId)
             } else {
                 NULL
@@ -5257,7 +5396,7 @@ effectiveN <- function(nCase, nControl) {
             trait = as.character(sumstats$trait),
             entry = newEntries,
             genome = unique(unname(GenomeInfoDb::genome(sumstats))),
-            ldSketch = newLdSketch,
+            ldReference = newLdReference,
             varY = as.numeric(sumstats$varY),
             nSample = nSample,
             qcInfo = qcInfo
@@ -5273,10 +5412,11 @@ effectiveN <- function(nCase, nControl) {
 #' tiny P; normalize CHR; coerce signed columns to numeric), variant-content
 #' filters (MAF / INFO / N) via \code{.applyContentFilters}, optional
 #' \code{skipRegion} drop, optional PIP screen, panel-vs-sumstats allele
-#' harmonization against the \code{ldSketch} via \code{harmonizeAlleles} (which
-#' handles indels, strand-ambiguous variants, sign / strand flips, and duplicate
-#' drops in a single sweep), optional SLALOM/DENTIST LD-mismatch QC, and
-#' optional RAISS imputation. No Bioconductor genome / dbSNP packages required.
+#' harmonization against the \code{ldReference} via \code{harmonizeAlleles}
+#' (which handles indels, strand-ambiguous variants, sign / strand flips, and
+#' duplicate drops in a single sweep), optional SLALOM/DENTIST LD-mismatch QC,
+#' and optional RAISS imputation. No Bioconductor genome / dbSNP packages
+#' required.
 #'
 #' The returned collection has its \code{qcInfo} slot populated with a per-entry
 #' audit record (variant counts, drop counts at each step, which filters fired,
@@ -5310,7 +5450,7 @@ effectiveN <- function(nCase, nControl) {
 #'   variant common in the panel but rare in the study is dropped as well.
 #'
 #' @param sumstats A \code{QtlSumStats} or \code{GwasSumStats} collection.
-#' @param sumstatsFilterArgs Row filters applied to the summary statistics
+#' @param sumstatsFilterParam Row filters applied to the summary statistics
 #'   themselves, built with \code{\link{SumstatsFilterParam}}:
 #'   \code{removeIndels} drops indels during panel harmonization,
 #'   \code{removeStrandAmbiguous} drops A/T and C/G variants,
@@ -5321,8 +5461,10 @@ effectiveN <- function(nCase, nControl) {
 #' @param panelFilterParam LD-reference-panel filters, built with
 #'   \code{\link{PanelFilterParam}}. \code{macCutoff} is converted to a MAF
 #'   equivalent using \code{macCutoff / (2 * nSamples)} and the stricter of
-#'   it and \code{mafCutoff} applies; \code{imissCutoff} is a per-variant
-#'   missingness ceiling. See the panel-filters section below.
+#'   it and \code{mafCutoff} applies; \code{nSamples} counts the panel's real
+#'   samples, which for a stochastic LD sketch are those its \code{.afreq}
+#'   records rather than its pseudo-samples. \code{imissCutoff} is a
+#'   per-variant missingness ceiling. See the panel-filters section below.
 #'
 #'   \code{mafCutoff} is the one setting that reaches past the panel: it is
 #'   measured wherever it can be, against the summary statistics' own
@@ -5333,7 +5475,7 @@ effectiveN <- function(nCase, nControl) {
 #'   retain prior to harmonization.
 #' @param skipRegion Optional character vector of \code{"chr:start-end"}
 #'   strings, or a \code{GRanges}, of regions to drop.
-#' @param signalScreenArgs Whether to skip an entry before fitting it,
+#' @param signalScreenParam Whether to skip an entry before fitting it,
 #'   built with
 #'   \code{\link{SignalScreenParam}} --- the same bundle
 #'   \code{\link{fineMappingPipeline}} and \code{\link{colocboostPipeline}}
@@ -5366,14 +5508,14 @@ effectiveN <- function(nCase, nControl) {
 #'   records the setting and each entry's \code{nSource} is one of
 #'   \code{"effective"}, \code{"column"}, \code{"total"}, or \code{NA}.
 #' @param impute Logical (length 1). Run RAISS imputation against the
-#'   \code{ldSketch}. Default \code{FALSE}. (Note: RAISS against the sketch is
-#'   not yet fully wired for the new path; the option is accepted but currently
-#'   emits a warning and is skipped.)
-#' @param imputeArgs RAISS settings, built with \code{\link{RaissParam}}.
+#'   \code{ldReference}'s genotype panel as the last QC step, adding z-scores
+#'   for panel variants the input lacks (see \code{raissParam}). The audit
+#'   records how many variants were imputed. Default \code{FALSE}.
+#' @param raissParam RAISS settings, built with \code{\link{RaissParam}}.
 #'   A bare list is refused, since it cannot be checked.
 #'
 #'   RAISS imputation scopes its reference panel to the analysis-region window
-#'   (so a per-chromosome / genome-wide \code{ldSketch} does not materialize
+#'   (so a per-chromosome / genome-wide \code{ldReference} does not materialize
 #'   its full dosage); \code{flank} widens that window by the given number of
 #'   base pairs on each side to retain LD context for edge variants.
 #'
@@ -5390,7 +5532,7 @@ effectiveN <- function(nCase, nControl) {
 #'   the panel handed to RAISS holds nothing below those. Use them to impute
 #'   only common variants from a panel deliberately kept wider than that ---
 #'   e.g. \code{mafCutoff = 0.001} with
-#'   \code{imputeArgs = RaissParam(mafCutoff = 0.01)}. A variant present in
+#'   \code{raissParam = RaissParam(mafCutoff = 0.01)}. A variant present in
 #'   the sumstats is never dropped here: RAISS derives its LD basis from those
 #'   same panel rows.
 #'
@@ -5398,12 +5540,12 @@ effectiveN <- function(nCase, nControl) {
 #'   are forwarded to \code{\link{raiss}} itself.
 #' @param matchMinProp Minimum proportion of LD panel variants that must be
 #'   matched by the sumstats; default 0.
-#' @param sumstatsCleaningArgs What makes a row a well-formed record, built with
-#'   \code{\link{SumstatsCleaningParam}}: \code{coerceNumeric},
+#' @param sumstatsCleaningParam What makes a row a well-formed record, built
+#'   with \code{\link{SumstatsCleaningParam}}: \code{coerceNumeric},
 #'   \code{normalizeChr} / \code{dropNonstandardChr}, \code{dropMissData},
 #'   \code{dropPOutOfRange}, \code{clampSmallP} / \code{smallPFloor},
 #'   \code{dropZeroEffect} and \code{dropNonpositiveSe}. Applied before any
-#'   filter or screen. Distinct from \code{sumstatsFilter}, which applies
+#'   filter or screen. Distinct from \code{sumstatsFilterParam}, which applies
 #'   quality thresholds to rows that are already well formed.
 #' @return A new \code{QtlSumStats} / \code{GwasSumStats} with cleaned entries
 #'   and \code{qcInfo} populated.
@@ -5413,55 +5555,44 @@ effectiveN <- function(nCase, nControl) {
 #' @export
 summaryStatsQc <- function(
     sumstats,
-    sumstatsFilterArgs = SumstatsFilterParam(),
+    sumstatsFilterParam = SumstatsFilterParam(),
     panelFilterParam = PanelFilterParam(),
     keepVariants = NULL,
     skipRegion = NULL,
-    signalScreenArgs = SignalScreenParam(),
+    signalScreenParam = SignalScreenParam(),
     ldMismatchQcMethod = c("none", "slalom", "dentist"),
     alleleFlipKriging = FALSE,
     effectiveN = TRUE,
     impute = FALSE,
-    imputeArgs = RaissParam(),
+    raissParam = RaissParam(),
     matchMinProp = 0,
-    sumstatsCleaningArgs = SumstatsCleaningParam()
+    sumstatsCleaningParam = SumstatsCleaningParam()
 ) {
     r <- .ssqcResolveInputs(
         sumstats,
-        sumstatsFilterArgs,
+        sumstatsFilterParam,
         panelFilterParam,
-        signalScreenArgs,
-        sumstatsCleaningArgs,
-        imputeArgs,
+        signalScreenParam,
+        sumstatsCleaningParam,
+        raissParam,
         ldMismatchQcMethod
     )
     opts <- .ssqcBuildOpts(
-        sumstatsFilterArgs = sumstatsFilterArgs,
+        sumstatsFilterParam = sumstatsFilterParam,
         panelFilterParam = panelFilterParam,
         skipRegion = skipRegion,
         ldMismatchQcMethod = r$ldMismatchQcMethod,
         alleleFlipKriging = alleleFlipKriging,
         effectiveN = effectiveN,
         impute = impute,
-        imputeArgs = r$imputeArgs,
+        raissParam = r$raissParam,
         matchMinProp = matchMinProp,
-        sumstatsCleaningArgs = r$cleaning,
+        sumstatsCleaningParam = r$cleaning,
         keepVariants = keepVariants,
-        signalScreenArgs = signalScreenArgs
+        signalScreenParam = signalScreenParam
     )
     res <- .ssqcRunEntries(sumstats, opts)
-    .ssqcAssemble(
-        sumstats,
-        res,
-        sumstatsFilterArgs = sumstatsFilterArgs,
-        panelFilterParam = panelFilterParam,
-        signalScreenArgs = signalScreenArgs,
-        ldMismatchQcMethod = r$ldMismatchQcMethod,
-        alleleFlipKriging = alleleFlipKriging,
-        effectiveN = effectiveN,
-        impute = impute,
-        cleaning = r$cleaning
-    )
+    .ssqcAssemble(sumstats, res, opts, signalScreenParam)
 }
 
 # Validate every bundle and resolve the three that have a resolved form:
@@ -5471,59 +5602,47 @@ summaryStatsQc <- function(
 # @noRd
 .ssqcResolveInputs <- function(
     sumstats,
-    sumstatsFilterArgs,
+    sumstatsFilterParam,
     panelFilterParam,
-    signalScreenArgs,
-    sumstatsCleaningArgs,
-    imputeArgs,
+    signalScreenParam,
+    sumstatsCleaningParam,
+    raissParam,
     ldMismatchQcMethod
 ) {
     .assertMethodParam(
-        sumstatsFilterArgs,
-        "SumstatsFilterParam",
-        "sumstatsFilter"
+        sumstatsFilterParam,
+        "SumstatsFilterParam"
     )
-    .assertMethodParam(panelFilterParam, "PanelFilterParam", "panelFilter")
-    .assertMethodParam(signalScreenArgs, "SignalScreenParam", "signalScreen")
-    .assertMethodParam(imputeArgs, "RaissParam", "imputeArgs")
-    .ssqcCheckEntries(sumstats, sumstatsFilterArgs$infoCutoff)
+    .assertMethodParam(panelFilterParam, "PanelFilterParam")
+    .assertMethodParam(signalScreenParam, "SignalScreenParam")
+    .assertMethodParam(raissParam, "RaissParam")
+    .ssqcCheckEntries(sumstats, sumstatsFilterParam$infoCutoff)
     .ssqcCheckPanelCutoffs(panelFilterParam)
     list(
         ldMismatchQcMethod = .resolveLdMismatchChoice(ldMismatchQcMethod),
-        cleaning = .sumstatsCleaningResolve(sumstatsCleaningArgs),
-        imputeArgs = .ssqcResolveImputeArgs(imputeArgs)
+        cleaning = .sumstatsCleaningResolve(sumstatsCleaningParam),
+        raissParam = .ssqcResolveImputeArgs(raissParam)
     )
 }
 
 # The QC record and the rebuilt object around the filtered entries.
 # @noRd
-.ssqcAssemble <- function(
-    sumstats,
-    res,
-    sumstatsFilterArgs,
-    panelFilterParam,
-    signalScreenArgs,
-    ldMismatchQcMethod,
-    alleleFlipKriging,
-    effectiveN,
-    impute,
-    cleaning
-) {
+.ssqcAssemble <- function(sumstats, res, opts, signalScreenParam) {
     qcInfo <- .ssqcBuildQcInfo(
         res$entryAudits,
-        sumstatsFilterArgs = sumstatsFilterArgs,
-        panelFilterParam = panelFilterParam,
-        signalScreenArgs = signalScreenArgs,
-        ldMismatchQcMethod = ldMismatchQcMethod,
-        alleleFlipKriging = alleleFlipKriging,
-        effectiveN = effectiveN,
-        impute = impute,
-        sumstatsCleaningArgs = cleaning
+        sumstatsFilterParam = opts$sumstatsFilterParam,
+        panelFilterParam = opts$panelFilterParam,
+        signalScreenParam = signalScreenParam,
+        ldMismatchQcMethod = opts$ldMismatchQcMethod,
+        alleleFlipKriging = opts$alleleFlipKriging,
+        effectiveN = opts$effectiveN,
+        impute = opts$impute,
+        sumstatsCleaningParam = opts$sumstatsCleaningParam
     )
     # From the PRUNED panel, not the input's: narrowing the original again
     # would hand back a sketch the panel filter never reached.
-    newLdSketch <- .subsetSketchToIds(res$ldSketch, res$newEntries)
-    .ssqcRebuild(sumstats, res$newEntries, newLdSketch, qcInfo)
+    newLdReference <- .subsetLdRefToIds(res$ldReference, res$newEntries)
+    .ssqcRebuild(sumstats, res$newEntries, newLdReference, qcInfo)
 }
 
 # ---- slidingWindowLoop callbacks (distance mode) ------------------------
@@ -5802,21 +5921,20 @@ SumstatsCleaningParam <- function(
 # .assertMethodOptions accepts `list()` as "no options", and .applySanityChecks
 # tests these with `if (!flag)`, so a missing field must not arrive as NULL.
 # @noRd
-.sumstatsCleaningResolve <- function(sumstatsCleaningArgs) {
+.sumstatsCleaningResolve <- function(sumstatsCleaningParam) {
     .assertMethodParam(
-        sumstatsCleaningArgs,
-        "SumstatsCleaningParam",
-        "sumstatsCleaning"
+        sumstatsCleaningParam,
+        "SumstatsCleaningParam"
     )
     list(
-        coerceNumeric = sumstatsCleaningArgs$coerceNumeric %||% TRUE,
-        normalizeChr = sumstatsCleaningArgs$normalizeChr %||% TRUE,
-        dropNonstandardChr = sumstatsCleaningArgs$dropNonstandardChr %||% TRUE,
-        dropMissData = sumstatsCleaningArgs$dropMissData %||% TRUE,
-        dropPOutOfRange = sumstatsCleaningArgs$dropPOutOfRange %||% TRUE,
-        clampSmallP = sumstatsCleaningArgs$clampSmallP %||% TRUE,
-        smallPFloor = sumstatsCleaningArgs$smallPFloor %||% 5e-324,
-        dropZeroEffect = sumstatsCleaningArgs$dropZeroEffect %||% TRUE,
-        dropNonpositiveSe = sumstatsCleaningArgs$dropNonpositiveSe %||% TRUE
+        coerceNumeric = sumstatsCleaningParam$coerceNumeric %||% TRUE,
+        normalizeChr = sumstatsCleaningParam$normalizeChr %||% TRUE,
+        dropNonstandardChr = sumstatsCleaningParam$dropNonstandardChr %||% TRUE,
+        dropMissData = sumstatsCleaningParam$dropMissData %||% TRUE,
+        dropPOutOfRange = sumstatsCleaningParam$dropPOutOfRange %||% TRUE,
+        clampSmallP = sumstatsCleaningParam$clampSmallP %||% TRUE,
+        smallPFloor = sumstatsCleaningParam$smallPFloor %||% 5e-324,
+        dropZeroEffect = sumstatsCleaningParam$dropZeroEffect %||% TRUE,
+        dropNonpositiveSe = sumstatsCleaningParam$dropNonpositiveSe %||% TRUE
     )
 }

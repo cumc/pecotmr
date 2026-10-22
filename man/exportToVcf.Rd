@@ -37,9 +37,10 @@ exportToVcf(x, outputPath, sampleName = NULL, ...)
 )
 }
 \arguments{
-\item{x}{A \code{GwasSumStats}, \code{FineMappingResult} or
-\code{TwasWeights} object, or a \code{list} of \code{FineMappingResult}
-/ \code{TwasWeights} objects to combine first.}
+\item{x}{A \code{GwasSumStats}, \code{QtlFineMappingResult},
+\code{GwasFineMappingResult} or \code{TwasWeights} object, or a
+\code{list} of fine-mapping results or of \code{TwasWeights} objects to
+combine first.}
 
 \item{outputPath}{File path for output. Extension determines format:
 \code{.vcf.gz} or \code{.vcf.bgz} for bgzipped VCF, \code{.bcf} for BCF,
@@ -84,7 +85,7 @@ Which FORMAT fields are written depends on the input:
 \describe{
   \item{\code{GwasSumStats}}{\code{ES} / \code{SS} / \code{AF} for one
     study.}
-  \item{\code{FineMappingResult}}{the marginal fields (\code{ES},
+  \item{a fine-mapping result}{the marginal fields (\code{ES},
     \code{SE}, \code{LP}, \code{SS}, \code{AF}) plus the posterior ones
     (\code{PIP}, \code{LBF}, \code{LFSR}, and a \code{CS}/\code{PUR} pair
     per credible-set coverage present).}

@@ -47,9 +47,14 @@ data(ldScoreExample, ldEigenExample)
 ldScoreExample
 ```
 
-Both bundled references describe the same 1300 variants across 14 chr22 LD
-blocks, taken from the de-identified `protocol_example` panel, so the four
-methods can be compared on one dataset.
+Both bundled references describe the same `r length(ldScoreExample)`
+variants across `r length(ldBlocks(ldScoreExample))` chr22 LD blocks, so the
+four methods can be compared on one dataset. Their LD is that of a reference
+panel of `r ldPanelNSamples(ldScoreExample)` people simulated from the chr22
+LD of the de-identified `protocol_example` panel. That panel itself is a
+sketch of 60 people: far too few for these estimators, which correct for the
+noise in a reference's LD, so the examples carry the LD of a large panel
+drawn from it instead (`inst/scripts/build_h2_examples.R`).
 
 ## Variants must line up
 
@@ -93,7 +98,7 @@ gwas <- GwasSumStats(
     studyName = "trait1",
     entry = list(gr),
     genome = unique(unname(GenomeInfoDb::genome(ldScoreExample))),
-    ldSketch = readGenotypes(
+    ldReference = readGenotypes(
         system.file("extdata", "toy_ref.bed", package = "pecotmr")
     )
 )
@@ -137,9 +142,9 @@ a negative partitioned heritability.
 
 One deliberate difference: LDER here clamps negative eigenvalues before
 forming its regression weights. A real, rank-deficient LD block decomposes
-with a tail of tiny negative values that are floating-point noise, and
-upstream takes `sqrt()` of the resulting negative weight and aborts. The
-clamp changes nothing wherever upstream runs.
+with a tail of tiny negative values that are floating-point noise, and the
+original LDER implementation takes `sqrt()` of the resulting negative weight
+and aborts. The clamp changes nothing wherever the original runs.
 
 [ldsc]: https://github.com/bulik/ldsc
 [hdl]: https://github.com/zhenin/HDL
@@ -153,11 +158,11 @@ variance. Once the reference is small relative to the GWAS, that term
 outgrows the signal, the modelled variance is driven to its floor across
 most eigen-directions, and the optimiser walks the intercept out to the top
 of its range — returning a number that reflects that bound rather than the
-data. At `N = 1e5` against this reference (`nRef` =
-`r ldPanelNSamples(ldEigenExample)`) it drifts to about 0.56 for a true 0.4 and
-warns that the fit sits on a bound. At the `N = 1e4` used here it is
-comfortably inside its range. If HDL disagrees sharply with the others,
-check for that warning and compare `nSamples()` against `ldPanelNSamples()`.
+data. This reference's `r ldPanelNSamples(ldEigenExample)` people are plenty:
+even at `N = 1e5` HDL recovers about 0.40 for a true 0.4. Against a
+1,000-person panel at that `N` it drifts to about 0.57 and warns that the fit
+sits on a bound. If HDL disagrees sharply with the others, check for that
+warning and compare `nSamples()` against `ldPanelNSamples()`.
 
 A standard error of zero, or an estimate pinned at a boundary, almost always
 means the reference is too small rather than that the trait has no
@@ -167,26 +172,34 @@ more; `estimateH2()` refuses a single-block reference outright.
 ## Building an LD reference
 
 The bundled references were built with `buildLdEigen()` / `buildLdScore()`,
-which turn already-loaded LD into the statistic each estimator needs. Load
-the LD **per block** — loading a whole region at once returns one dense
-matrix, which is one block, and one block has no jackknife.
+which turn an LD reference into the statistic each estimator needs. The
+reference comes **per LD block**: a genotype panel together with the blocks
+to cut it into, or one `LdMatrix` per block. One block has no jackknife.
 
 ```{r build-ref, eval=FALSE}
-metaPath <- "/path/to/ld_meta_file.tsv"
-blocks <- read.delim(metaPath, check.names = FALSE)
-regions <- sprintf("chr22:%d-%d", blocks$start, blocks$end)
+panel <- readGenotypes(plink2Prefix = "/path/to/reference.chr22")
+blocks <- read.delim("/path/to/ld_blocks.tsv") # chrom, start, end
 
-ldList <- lapply(regions, function(r) loadLdMatrix(metaPath, region = r))
+ldEigen <- buildLdEigen(panel, ldBlocks = blocks, genome = "hg38")
+ldScore <- buildLdScore(panel, ldBlocks = blocks, genome = "hg38")
 
-ldEigen <- buildLdEigen(ldList, genome = "hg38")
-ldScore <- buildLdScore(ldList, genome = "hg38")
+# Or from LD matrices you built, one LdMatrix per block:
+ldScore <- buildLdScore(list(ldBlock1, ldBlock2, ldBlock3), genome = "hg38")
 ```
 
-`nRef` and the genome build default to what the loaded LD records.
+`nSamples` (the reference panel size) and the genome build default to what
+the reference records: a panel's sample count (for a stochastic sketch, the
+effective size of its LD), or the `nSamples` of each `LdMatrix`. The panel
+size matters beyond HDL: LD scores sum ldsc's unbiased r²,
+`r^2 - (1 - r^2) / (n - 2)`, so `n` should be the number of samples the LD
+was estimated from.
 `buildLdScore(keepLdMatrices = FALSE)` drops the per-block matrices, which
 shrinks the object by roughly an order of magnitude — but only unstratified
 `"sldsc"` can use the result, since `"gldsc"` and stratified `"sldsc"` both
-form their per-annotation scores from those matrices.
+form their per-annotation scores from each block's LD. An `LdScore` or
+`LdEigen` built from a genotype panel stores none of it: it keeps the panel
+and reads each block's LD when an estimator reaches that block, so every
+method runs on it while only one block's LD is in memory at a time.
 
 ## Stratified estimation and enrichment
 
@@ -218,7 +231,7 @@ gwasStrat <- GwasSumStats(
     studyName = "trait1",
     entry = list(gr),
     genome = unique(unname(GenomeInfoDb::genome(ldScoreExample))),
-    ldSketch = readGenotypes(
+    ldReference = readGenotypes(
         system.file("extdata", "toy_ref.bed", package = "pecotmr")
     )
 )
@@ -250,9 +263,10 @@ as.data.frame(stratifiedHeritabilityEnrichment(strat))[, c(
 
 `enrichment` is the proportion of heritability divided by the proportion of
 variants: above 1 means the annotation carries more heritability than its
-share of the genome. The simulated truth here is 3, and the estimate is
-directionally right but attenuated — again a consequence of the reference's
-size rather than of the annotation.
+share of the genome. The simulated truth here is 1.5 — three times the
+per-variant heritability on half the variants puts 75% of it in `annotA` —
+and the estimate is directionally right but attenuated, again a consequence
+of the reference's size rather than of the annotation.
 
 Annotations come from files via `readAnnotations()`, which reads BED, BigWig
 and LDSC `.annot` formats at a given set of variant positions:
@@ -357,10 +371,12 @@ scores <- computeLdScores(ldEigenExample)
 head(round(as.vector(scores[, 1]), 3))
 ```
 
-This is the same quantity `buildLdScore()` stores, reconstructed from the
-eigendecomposition — `sum_i V[j,i]^2 d[i]^2` rather than `sum_k r^2_jk`.
-The two agree, which is worth knowing when you have one object and need the
-other's input.
+This is the same quantity `buildLdScore()` stores: each variant's sum, over
+its block, of ldsc's unbiased r² rather than the raw sample r², which
+overstates LD on a finite panel. From an `LdEigen` the raw sum comes out of
+the eigendecomposition as `sum_i V[j,i]^2 d[i]^2`, and the correction applies
+to that sum exactly, so the two agree — worth knowing when you have one
+object and need the other's input.
 
 ## Bridging the two tracks
 

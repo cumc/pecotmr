@@ -13,11 +13,15 @@ ldMatrixList(x)
 \item{x}{An \code{LdScore}.}
 }
 \value{
-List of matrices (empty list for S-LDSC).
+A list with one element per block, each a list with \code{R} and
+  \code{snpIdx}; empty for a scores-only \code{LdScore}.
 }
 \description{
-Return the list of per-block LD (R^2) matrices used for the FGLS
-  residual covariance in g-LDSC.
+Return the per-block LD correlation matrices g-LDSC forms its
+  FGLS residual covariance from: the stored ones, or, for an
+  \code{LdScore} built from a genotype panel (which stores none), every
+  block's computed from the panel now. That holds all of them in memory at
+  once, which the estimators avoid by reading one block at a time.
 }
 \examples{
 data(ldScoreExample)

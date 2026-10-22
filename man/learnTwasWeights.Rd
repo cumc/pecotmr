@@ -16,7 +16,7 @@ learnTwasWeights(
   fitRetention = c("none", "slim", "full"),
   weightStandardized = FALSE,
   weightsDataType = NULL,
-  ldSketch = NULL,
+  ldReference = NULL,
   verbose = 1,
   seed = NULL
 )
@@ -68,8 +68,9 @@ are already standardized. Default \code{FALSE}.}
 \item{weightsDataType}{Character or \code{NULL}. Data-type label recorded on
 the weights (e.g. \code{"individual"}).}
 
-\item{ldSketch}{A genotype panel (see \code{\link{readGenotypes}}) to
-record on the weights as their LD sketch, or \code{NULL}.}
+\item{ldReference}{An LD reference (a genotype panel, see
+\code{\link{readGenotypes}}, a \code{GenotypeMixture} or an
+\code{LdMatrix}) to record on the weights, or \code{NULL}.}
 
 \item{verbose}{Integer controlling verbosity level: 0 = suppress all
 messages, 1 = suppress external package messages (default), 2 = show all

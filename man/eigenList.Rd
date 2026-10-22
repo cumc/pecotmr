@@ -13,11 +13,17 @@ eigenList(x)
 \item{x}{An \code{LdEigen}.}
 }
 \value{
-List of per-block eigen decompositions.
+A list with one element per block, each a list with
+  \code{values}, \code{vectors} and \code{snpIdx}. One computed from a
+  panel also carries \code{nNull}: the number of the block's directions
+  whose eigenvalue is exactly zero, which it does not list.
 }
 \description{
-Return the per-block eigendecomposition list carried by an
-  \code{LdEigen} object.
+Return the per-block eigendecompositions of an
+  \code{LdEigen}: the stored ones, or, for one built from a genotype
+  panel (which stores none), every block's computed from the panel now.
+  That holds all of them in memory at once, which the estimators avoid by
+  decomposing one block at a time.
 }
 \examples{
 data(ldEigenExample)

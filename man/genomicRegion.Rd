@@ -24,7 +24,7 @@ A \code{GRanges} with one range per row of \code{x}, or an empty
 \description{
 Return the genomic interval each row was analysed over, as a
   \code{GRanges} with one range per row -- the trait's own region for a
-  \code{TwasWeights}, and for a \code{FineMappingResult} the window the fit
+  \code{TwasWeights}, and for a fine-mapping result the window the fit
   was run over (the requested region, or the trait's cis-window when the fit
   was driven by \code{traitId} + \code{cisWindow}). This is location
   provenance (e.g. for cTWAS LD-block placement).

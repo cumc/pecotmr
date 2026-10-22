@@ -60,45 +60,10 @@ marginal effect size estimates from regression and an external LD reference
 panel and infers posterior SNP effect sizes using Bayesian regression with
 continuous shrinkage priors.
 }
-\examples{
-# Generate example data
-set.seed(985115)
-n <- 350
-p <- 16
-sigmasq_error <- 0.5
-zeroes <- rbinom(p, 1, 0.6)
-beta.true <- rnorm(p, 1, sd = 4)
-beta.true[zeroes] <- 0
-
-X <- cbind(matrix(rnorm(n * p), nrow = n))
-X <- scale(X, center = TRUE, scale = FALSE)
-y <- X \%*\% matrix(beta.true, ncol = 1) + rnorm(n, 0, sqrt(sigmasq_error))
-y <- scale(y, center = TRUE, scale = FALSE)
-
-# Calculate sufficient statistics
-XtX <- t(X) \%*\% X
-Xty <- t(X) \%*\% y
-yty <- t(y) \%*\% y
-
-# Set the prior
-K <- 9
-sigma0 <- c(0.001, .1, .5, 1, 5, 10, 20, 30, .005)
-omega0 <- rep(1 / K, K)
-
-# Calculate summary statistics
-b.hat <- sapply(1:p, function(j) {
-  summary(lm(y ~ X[, j]))$coefficients[-1, 1]
-})
-s.hat <- sapply(1:p, function(j) {
-  summary(lm(y ~ X[, j]))$coefficients[-1, 2]
-})
-R.hat <- cor(X)
-var_y <- var(y)
-sigmasq_init <- 1.5
-
-# Run PRS CS
-maf <- rep(0.5, length(b.hat)) # fake MAF
-out <- prsCs(b.hat, R.hat, n, maf = maf)
-# In sample prediction correlations
-cor(X \%*\% out$betaEst, y) # 0.9944553
+\details{
+Internal: \code{\link{prsCsWeights}} is the public interface. It forwards
+the arguments below other than \code{bhat}, \code{R} and \code{n} through
+\code{\link{PrsCsOptions}}, and with \code{fitRetention} returns this
+function's list as the \code{"fit"} attribute of its weights.
 }
+\keyword{internal}

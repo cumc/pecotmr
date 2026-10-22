@@ -8,11 +8,7 @@
 \usage{
 GenotypeHandle(
   path = NULL,
-  plink1Prefix = NULL,
   plink2Prefix = NULL,
-  bed = NULL,
-  bim = NULL,
-  fam = NULL,
   pgen = NULL,
   pvar = NULL,
   psam = NULL,
@@ -20,19 +16,13 @@ GenotypeHandle(
   region = NULL,
   genoMeta = NULL,
   chroms = NULL,
-  format = NULL,
-  vcfArgs = list()
+  format = NULL
 )
 }
 \arguments{
-\item{path}{Single file path (.vcf/.vcf.gz/.vcf.bgz/.bcf/.gds), or
-\code{NULL}.}
-
-\item{plink1Prefix}{Path prefix for a PLINK1 triplet, or \code{NULL}.}
+\item{path}{Single file path (.bgen/.pgen), or \code{NULL}.}
 
 \item{plink2Prefix}{Path prefix for a PLINK2 triplet, or \code{NULL}.}
-
-\item{bed, bim, fam}{Explicit paths to the PLINK1 triplet, or all \code{NULL}.}
 
 \item{pgen, pvar, psam}{Explicit paths to the PLINK2 triplet, or all
 \code{NULL}.}
@@ -41,10 +31,11 @@ GenotypeHandle(
 \code{start}, \code{end}, \code{path}; the \code{path} column may be
 comma-separated as \code{ld_file,bim_file}). Requires \code{region}. The
 constructor resolves the row covering \code{region}, then delegates to the
-appropriate file-based handler. When the resolved row points at PLINK1 /
-PLINK2 / VCF / GDS files, the corresponding reader is used; \code{.cor.xz}
-(pre-computed LD-matrix) rows are not supported here -- use
-\code{\link{loadLdMatrix}} for that case.}
+appropriate file-based handler. When the resolved row points at PLINK2
+or BGEN files, the corresponding reader is used; a row pointing
+at a pre-computed LD matrix (\code{.cor.xz}) is refused, as pecotmr reads
+no pre-computed LD from disk -- wrap such a matrix in an
+\code{\link{LdMatrix}} instead.}
 
 \item{region}{Region specification for \code{ldMeta} lookup:
 \code{"chr:start-end"} string or a one-row data.frame with \code{chrom},
@@ -53,7 +44,7 @@ PLINK2 / VCF / GDS files, the corresponding reader is used; \code{.cor.xz}
 \item{genoMeta}{One-file-per-chromosome specification: a path to a
 \code{#chr,path} meta file or a named character vector (names =
 chromosomes, values = payload paths/prefixes). Optionally pass
-\code{format} via \code{...} to force a single backend for every shard.}
+\code{format} to force a single backend for every shard.}
 
 \item{chroms}{Optional character vector of chromosomes. With \code{genoMeta}
 (a sharded, one-file-per-chromosome panel) only the shards whose chromosome
@@ -65,42 +56,43 @@ shard is read (so the caller's own absence check can report the mismatch).
 Only meaningful with \code{genoMeta}; supplying it with any other source is
 an error (a single-file panel has no per-chromosome shards to skip).}
 
-\item{vcfArgs}{Optional named list of arguments forwarded to
-\code{VariantAnnotation::readVcf} when the source is a VCF.}
+\item{format}{Character, \code{"plink2"} or \code{"bgen"}, forcing the
+backend of \code{path} or of every \code{genoMeta} shard. If NULL,
+inferred from the file extension.}
 }
 \value{
 A \code{GenotypeHandle} object.
 }
 \description{
 S4 container holding a path + format + metadata for lazy
-  genotype access. Supports PLINK1 (.bed/.bim/.fam), PLINK2
-  (.pgen/.pvar/.psam), VCF/BCF, and GDS.
+  genotype access. Supports PLINK2 (.pgen/.pvar/.psam) and BGEN (.bgen
+  with its .bgi index); a VCF, GDS or PLINK1 file is read as a panel by
+  \code{readGenotypes()} without one.
 
 Construct a \code{GenotypeHandle} from one of several input
   forms. Exactly one of the following must be specified:
   \describe{
     \item{\code{path}}{A single file path with a recognized extension:
-      \code{.vcf}, \code{.vcf.gz}, \code{.vcf.bgz}, \code{.bcf}, or
-      \code{.gds}. Format is auto-detected from the extension.}
-    \item{\code{plink1Prefix}}{A path prefix; the constructor appends
-      \code{.bed}, \code{.bim}, and \code{.fam} to locate the triplet.}
+      \code{.bgen} or \code{.pgen}. Format is auto-detected from the
+      extension. A BGEN file needs its \code{.bgi} index beside it, and
+      its sample ids in the file or in a \code{.sample} file beside it. A
+      VCF, GDS or PLINK1 file is refused: it is read as a panel by
+      \code{readGenotypes()}.}
     \item{\code{plink2Prefix}}{A path prefix; the constructor appends
       \code{.pgen}, \code{.pvar} (or \code{.pvar.zst}), and \code{.psam}
       to locate the triplet.}
-    \item{\code{bed} + \code{bim} + \code{fam}}{Explicit PLINK1 triplet.
-      The three files must share a stem; if they don't, use
-      \code{plink1Prefix} or arrange symlinks at a common stem.}
     \item{\code{pgen} + \code{pvar} + \code{psam}}{Explicit PLINK2
-      triplet. Same shared-stem requirement.}
+      triplet. The three files must share a stem; if they don't, use
+      \code{plink2Prefix} or arrange symlinks at a common stem.}
     \item{\code{genoMeta}}{One genotype file per chromosome. Either a path
       to a whitespace/TSV meta file whose first column is the chromosome
       (\code{#chr}) and second column the per-chromosome payload
-      (a \code{.bed}/\code{.pgen}/\code{.vcf[.gz]}/\code{.bcf}/\code{.gds}
-      file or a PLINK prefix; relative paths resolve against the meta
-      file's directory), or a named character vector mapping chromosome to
-      payload. All shards must share one format and identical sample IDs in
-      the same order. Extraction is routed to the correct file by the
-      requested region's chromosome.}
+      (a \code{.pgen}/\code{.bgen} file or a PLINK2 prefix;
+      relative paths resolve against the meta file's directory), or a
+      named character vector mapping chromosome to payload. All shards
+      must share one format and identical sample IDs in the same order.
+      Extraction is routed to the correct file by the requested region's
+      chromosome.}
   }
   The constructor opens the file for metadata only (sample IDs and SNP
   info); dosage extraction is deferred until \code{extractBlockGenotypes()}
@@ -118,8 +110,7 @@ Internal: the handle is the seed layer behind a genotype
 the chrom-meta file path (a display/provenance value); the per-chromosome
 payload files live in \code{chromPaths}.}
 
-\item{\code{format}}{Character, one of \code{"plink1"}, \code{"plink2"},
-\code{"vcf"}, \code{"gds"}.}
+\item{\code{format}}{Character, \code{"plink2"} or \code{"bgen"}.}
 
 \item{\code{snpInfo}}{data.frame, SNP metadata read from the index/sidecar. For a
 sharded handle this is the union across chromosomes (row-bound in the order

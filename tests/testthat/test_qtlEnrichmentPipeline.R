@@ -27,7 +27,7 @@ context("qtlEnrichmentPipeline")
     new(
         "GenotypeHandle",
         path = path,
-        format = "gds",
+        format = "plink2",
         snpInfo = data.frame(
             SNP = sprintf("chr1:%d:A:G", 100L * seq_len(snp_n)),
             CHR = rep("1", snp_n),
@@ -85,7 +85,7 @@ context("qtlEnrichmentPipeline")
         studyName = studyVec,
         method = methodVec,
         entry = entries,
-        ldSketch = if (with_sketch) .qep_makeHandle() else NULL
+        ldReference = if (with_sketch) .qep_makeHandle() else NULL
     )
 }
 
@@ -110,7 +110,7 @@ context("qtlEnrichmentPipeline")
         trait = trs,
         method = methods,
         entry = entries,
-        ldSketch = if (with_sketch) .qep_makeHandle() else NULL
+        ldReference = if (with_sketch) .qep_makeHandle() else NULL
     )
 }
 
@@ -170,7 +170,7 @@ test_that("qtlEnrichmentPipeline: the real estimator fills the value columns", {
             ),
             topLoci = data.frame(variant_id = ids, pip = gwasPip)
         )),
-        ldSketch = sketch
+        ldReference = sketch
     )
     qfmr <- QtlFineMappingResult(
         studyName = "Q1",
@@ -186,13 +186,13 @@ test_that("qtlEnrichmentPipeline: the real estimator fills the value columns", {
             ),
             topLoci = data.frame(variant_id = ids, pip = colSums(alpha))
         )),
-        ldSketch = sketch
+        ldReference = sketch
     )
     suppressWarnings(capture.output(
         out <- qtlEnrichmentPipeline(
             gwasFineMappingResult = gfmr,
             qtlFineMappingResult = qfmr,
-            methodArgs = QtlEnrichmentParam(impN = 5),
+            qtlEnrichmentParam = QtlEnrichmentParam(impN = 5),
             seed = 1L
         )
     ))
@@ -221,7 +221,7 @@ test_that("qtlEnrichmentPipeline: keys a QTL outcome side by its trait", {
             .qep_makeFmEntry(pip = c(0.9, 0.05, 0.02, 0.02, 0.01)),
             .qep_makeFmEntry(pip = c(0.1, 0.7, 0.1, 0.05, 0.05))
         ),
-        ldSketch = .qep_makeHandle()
+        ldReference = .qep_makeHandle()
     )
     local_mocked_bindings(
         qtlEnrichment = .qep_mockEnrichment(2.0),
@@ -257,7 +257,7 @@ test_that("qtlEnrichmentPipeline: pairs two GWAS collections", {
     ))))
 })
 
-test_that("qtlEnrichmentPipeline: a QTL outcome side may carry no ldSketch", {
+test_that("qtlEnrichmentPipeline: a QTL outcome may carry no ldReference", {
     # The RSS-derived requirement is a GWAS-side contract; an individual-level
     # QTL outcome has no panel to check.
     local_mocked_bindings(
@@ -297,7 +297,7 @@ test_that("qtlEnrichmentPipeline: rejects non-QtlFineMappingResult qtlFmr", {
     )
 })
 
-test_that("qtlEnrichmentPipeline: NULL ldSketch on the GWAS side errors", {
+test_that("qtlEnrichmentPipeline: NULL ldReference on the GWAS side errors", {
     gfmr <- .qep_makeGwasFmr(with_sketch = FALSE)
     qfmr <- .qep_makeQtlFmr()
     expect_error(
@@ -305,11 +305,11 @@ test_that("qtlEnrichmentPipeline: NULL ldSketch on the GWAS side errors", {
             gwasFineMappingResult = gfmr,
             qtlFineMappingResult = qfmr
         ),
-        "must have a non-NULL ldSketch"
+        "must have a non-NULL ldReference"
     )
 })
 
-test_that("qtlEnrichmentPipeline: ldSketch mismatch errors", {
+test_that("qtlEnrichmentPipeline: ldReference mismatch errors", {
     # Build the QTL with a sketch carrying a different sample set.
     gfmr <- .qep_makeGwasFmr()
     qSketch <- .qep_makeHandle()
@@ -320,7 +320,7 @@ test_that("qtlEnrichmentPipeline: ldSketch mismatch errors", {
         trait = "t1",
         method = "susie",
         entry = list(.qep_makeFmEntry()),
-        ldSketch = qSketch
+        ldReference = qSketch
     )
     expect_error(
         qtlEnrichmentPipeline(
@@ -367,7 +367,7 @@ test_that("qtlEnrichmentPipeline: distinguishes two QTL studies that share a con
         trait = c("t1", "t1"),
         method = c("susie", "susie"),
         entry = list(e1, e2),
-        ldSketch = .qep_makeHandle()
+        ldReference = .qep_makeHandle()
     )
     gfmr <- .qep_makeGwasFmr()
     capturedRegions <- list()
@@ -422,7 +422,7 @@ test_that("qtlEnrichmentPipeline: empty input collections yield the empty schema
         studyName = "G1",
         method = "susie",
         entry = list(emptyEntry),
-        ldSketch = .qep_makeHandle()
+        ldReference = .qep_makeHandle()
     )
     qfmr <- .qep_makeQtlFmr()
     expect_warning(
@@ -475,7 +475,7 @@ test_that(".enrBuildGwasPipVector: deduplicates identical PIPs across blocks", {
         studyName = c("G1", "G1"),
         method = c("susie", "susie"),
         entry = list(e1, e2),
-        ldSketch = .qep_makeHandle()
+        ldReference = .qep_makeHandle()
     )
     out <- pecotmr:::.enrBuildGwasPipVector(g, .qep_gwasIdent("G1"))
     expect_setequal(
@@ -504,7 +504,7 @@ test_that(".enrBuildGwasPipVector: conflicting PIPs across blocks errors", {
         studyName = c("G1", "G1"),
         method = c("susie", "susie"),
         entry = list(e1, e2),
-        ldSketch = .qep_makeHandle()
+        ldReference = .qep_makeHandle()
     )
     expect_error(
         pecotmr:::.enrBuildGwasPipVector(g, .qep_gwasIdent("G1")),
@@ -542,7 +542,7 @@ test_that(".enrBuildQtlRegionsList: returns empty list when the (study, context)
 
 # ===========================================================================
 # qtlEnrichment() — kernel wrapper + real C++ integration
-# These tests deliberately do NOT mock qtlEnrichmentRcpp so the C++
+# These tests deliberately do NOT mock qtlEnrichmentCpp so the C++
 # kernel in src/qtl_enrichment.cpp gets coverage. The wrapper itself
 # (R/qtlEnrichmentPipeline.R::qtlEnrichment) is exercised here directly
 # rather than via the deprecated `computeQtlEnrichment` shim (which has
@@ -874,7 +874,7 @@ test_that(".enrBuildGwasPipVector: skips a block whose pip length disagrees with
         studyName = "G1",
         method = "susie",
         entry = list(badEntry),
-        ldSketch = .qep_makeHandle()
+        ldReference = .qep_makeHandle()
     )
     expect_identical(
         pecotmr:::.enrBuildGwasPipVector(g, .qep_gwasIdent("G1")),
@@ -903,7 +903,7 @@ test_that(".enrBuildQtlRegionsList: skips an entry whose fit lacks alpha/pip", {
         trait = "t1",
         method = "susie",
         entry = list(badEntry),
-        ldSketch = NULL
+        ldReference = NULL
     )
     expect_equal(
         length(pecotmr:::.enrBuildQtlRegionsList(
@@ -934,7 +934,7 @@ test_that(".enrBuildQtlRegionsList: skips a fit with no V and no prior_variance"
         trait = "t1",
         method = "susie",
         entry = list(entry),
-        ldSketch = NULL
+        ldReference = NULL
     )
     expect_equal(
         length(pecotmr:::.enrBuildQtlRegionsList(
@@ -966,7 +966,7 @@ test_that(".enrBuildQtlRegionsList: names an unnamed pip from the entry's varian
         trait = "t1",
         method = "susie",
         entry = list(entry),
-        ldSketch = NULL
+        ldReference = NULL
     )
     out <- pecotmr:::.enrBuildQtlRegionsList(qfmr, .qep_qtlIdent("Q1", "c1"))
     expect_equal(length(out), 1L)
@@ -988,7 +988,7 @@ test_that("qtlEnrichmentPipeline: empty QTL collection errors with the no-triple
         trait = character(0),
         method = character(0),
         entry = list(),
-        ldSketch = NULL
+        ldReference = NULL
     )
     expect_error(
         qtlEnrichmentPipeline(
@@ -1015,7 +1015,7 @@ test_that("qtlEnrichmentPipeline: alignTuple cache is reused across GWAS studies
         studyName = c("G1", "G2"),
         method = c("susie", "susie"),
         entry = list(e1, e2),
-        ldSketch = .qep_makeHandle()
+        ldReference = .qep_makeHandle()
     )
     qfmr <- .qep_makeQtlFmr()
     local_mocked_bindings(
@@ -1047,7 +1047,7 @@ test_that("qtlEnrichmentPipeline: a tuple with no usable QTL regions warns and i
         trait = "t1",
         method = "susie",
         entry = list(emptyQtlEntry),
-        ldSketch = .qep_makeHandle()
+        ldReference = .qep_makeHandle()
     )
     expect_warning(
         out <- qtlEnrichmentPipeline(
@@ -1071,7 +1071,7 @@ test_that(".enrRunEnrichment turns a stored alignment failure into a warning", {
             gwasPip = NULL,
             k = 1L,
             alignedByTuple = list(cnd),
-            methodArgs = QtlEnrichmentParam(),
+            qtlEnrichmentParam = QtlEnrichmentParam(),
             numThreads = 1L,
             seed = NULL,
             verbose = FALSE,
@@ -1149,12 +1149,12 @@ test_that("every QtlEnrichmentParam field is a qtlEnrichment formal", {
     ))
 })
 
-test_that("qtlEnrichmentPipeline refuses a bare list for methodArgs", {
+test_that("qtlEnrichmentPipeline refuses a bare list for qtlEnrichmentParam", {
     expect_error(
         qtlEnrichmentPipeline(
             gwasFineMappingResult = NULL,
             qtlFineMappingResult = NULL,
-            methodArgs = list(impN = 5)
+            qtlEnrichmentParam = list(impN = 5)
         ),
         "must be built with QtlEnrichmentParam"
     )

@@ -26,7 +26,7 @@
 # DFrame-subclass collection keyed by the identity tuple (study, context,
 # trait, method). Each row holds a TwasWeightsRow payload (variant ids
 # + per-variant weight vector/matrix). Class-level slots:
-#   * ldSketch   GenotypeHandle (NULL for individual-level fits, the
+#   * ldReference   GenotypeHandle (NULL for individual-level fits, the
 #                LD-sketch handle for RSS-derived weights).
 # Constructor + accessors below. The twasWeights pipeline helpers
 # (learnTwasWeights, CV, ensemble, etc.) follow at the bottom.
@@ -52,21 +52,22 @@ NULL
 #' column lists the semicolon-joined members of the joined axis. For non-joint
 #' rows the joint columns are \code{NA_character_}. Tuple uniqueness is enforced
 #' jointly across the identity-tuple columns and any present joint columns.
-#' @slot ldSketch The LD reference genotype panel the weights were
-#'   derived against, or \code{NULL} when the weights were learned from
-#'   individual-level data. Used downstream for cross-pipeline LD-sketch
-#'   identity validation.
+#' @slot ldReference The LD reference the weights were derived against (a
+#'   genotype panel, a \code{GenotypeMixture} or an \code{LdMatrix}), or
+#'   \code{NULL} when the weights were learned from individual-level data.
+#'   Used downstream to check that pipelines combining results share one LD
+#'   reference.
 #' @export
 setClass(
     "TwasWeights",
     contains = "RangedTupleList",
-    representation(ldSketch = "LdSketch_OR_NULL"),
+    representation(ldReference = "LdReference_OR_NULL"),
     validity = function(object) .validateTwasWeights(object)
 )
 
 # Validity for the TwasWeights collection: required columns, entry payloads,
 # region/traitPos provenance, joint* column types, tuple uniqueness, and the
-# optional ldSketch. Returns TRUE or a character vector of error messages.
+# optional ldReference. Returns TRUE or a character vector of error messages.
 # @noRd
 #' @importFrom checkmate makeAssertCollection assertNames
 .validateTwasWeights <- function(object) {
@@ -170,7 +171,7 @@ setClass(
 #'   shape as \code{jointStudies}.
 #' @param jointTraits Optional character vector for cross-trait joints. Same
 #'   shape as \code{jointStudies}.
-#' @param ldSketch An optional genotype panel (see
+#' @param ldReference An optional genotype panel (see
 #'   \code{\link{readGenotypes}}), or \code{NULL} for individual-level fits.
 #' @param traitPos Optional per-row trait genomic anchor (a \code{GRanges} or
 #'   \code{NULL}), carried forward as provenance; not part of the identity key.
@@ -202,7 +203,7 @@ TwasWeights <- function(
     jointTraits = NULL,
     traitPos = NULL,
     region = NULL,
-    ldSketch = NULL
+    ldReference = NULL
 ) {
     .twasAssertArgs(
         studyName,
@@ -230,13 +231,7 @@ TwasWeights <- function(
         region,
         n
     )
-    obj <- new(
-        "TwasWeights",
-        .rtlGrlWithMetadata(entry, cols),
-        ldSketch = .asLdSketch(ldSketch)
-    )
-    validObject(obj)
-    obj
+    .rtlNewValidated("TwasWeights", entry, cols, ldReference)
 }
 
 # The identity and joint-axis arguments, checked. Mirrors
@@ -302,23 +297,10 @@ TwasWeights <- function(
     .appendRegionCol(.appendTraitPosCol(withJoint, traitPos, n), region, n)
 }
 
-# One entry -> its element: the variants as a GRanges, with the per-variant
-# weights carried in the element's own mcols alongside the alleles.
-# @noRd
-
-# The non-variant half of each entry, as outer mcols columns. Objects of
-# arbitrary shape (fits, cvResult, dataType) ride in SimpleLists.
-# @noRd
-
 # @noRd
 .twPayloadStandardized <- function(p) {
     weightStandardized(p)
 }
-
-# Every `entry` must be a TwasWeightsRow. Checked before the payload is
-# unpacked, so a wrong type reports itself rather than surfacing as a missing
-# method on whatever was passed instead.
-# @noRd
 
 # Require study/context/trait/method/entry to share one length; returns it.
 # @noRd
@@ -431,15 +413,6 @@ setMethod(
 .twasRowWeights <- function(i, x) {
     mcols(x[[i]])$weight
 }
-
-# Rebuild the TwasWeightsRow for a tuple from its stored element(s).
-#
-# The entry is a DERIVED VIEW, not stored state: the variants live in the
-# element, the weights in that element's mcols, and the rest of the payload in
-# the collection's mcols. A tuple split across chromosomes owns several
-# elements, so they are stitched back into the single entry callers expect --
-# the same contract sumStats() keeps.
-# @noRd
 
 # The row payload a (study, context, trait, method) selector pins.
 #
@@ -609,9 +582,9 @@ setMethod(
 #' @export
 setMethod("studyName", "TwasWeights", function(x) unique(as.character(x$study)))
 
-#' @rdname ldSketch
+#' @rdname ldReference
 #' @export
-setMethod("ldSketch", "TwasWeights", function(x) x@ldSketch)
+setMethod("ldReference", "TwasWeights", function(x) x@ldReference)
 
 #' @rdname contexts
 #' @export
@@ -645,12 +618,12 @@ setMethod("show", "TwasWeights", function(object) {
             .trim = FALSE
         ))
     }
-    ldSrc <- if (is.null(object@ldSketch)) {
+    ldSrc <- if (is.null(object@ldReference)) {
         "NULL (individual-level fit)"
     } else {
-        .ldSketchLabel(object@ldSketch)
+        .ldRefLabel(object@ldReference)
     }
-    cat(glue("  LD sketch: {ldSrc}\n", .trim = FALSE))
+    cat(glue("  LD reference: {ldSrc}\n", .trim = FALSE))
 })
 
 
@@ -715,7 +688,7 @@ setMethod("show", "TwasWeights", function(object) {
     mrash = list(
         fn = "mrash_weights",
         impl = "mrashWeights",
-        args = list(initPriorSd = TRUE, max.iter = 100)
+        args = list(max.iter = 100)
     ),
     enet = list(fn = "enet_weights", impl = "enetWeights", args = list()),
     lasso = list(
@@ -857,7 +830,7 @@ setMethod("show", "TwasWeights", function(object) {
 # fit enters -- not by reading the sources, which hides forwarding behind
 # list_modify()/exec() and imported-without-:: calls. test_twasWeights.R
 # re-traces them and fails if one drifts.
-# @noRd
+
 # Which wrapper and engine each TWAS weight method actually reaches. Split
 # by data path because the two share almost nothing: a method's individual
 # and summary-statistic routes usually run different engines entirely, and
@@ -909,7 +882,12 @@ setMethod("show", "TwasWeights", function(object) {
 }
 
 # Summary statistics: each chain ends in pecotmr's own RSS solver or an
-# upstream *.rss entry point, never the individual-level engine.
+# upstream *.rss entry point, never the individual-level engine. pecotmr's
+# solvers are reached through their LD-source paths (.penalizedRssPath(),
+# .lassosumRssPath(), .prsCsRun(), .sdprRun()), which take the options of
+# penalizedRss(), lassosumRss(), prsCs() and sdpr() under the same names, so
+# a genotype reference can be used through its factor without forming the LD
+# matrix.
 # @noRd
 .twasMethodChainsSumstat <- function() {
     list(
@@ -917,26 +895,26 @@ setMethod("show", "TwasWeights", function(object) {
             "scadRssWeights",
             ".penalizedRssWeights",
             ".rssShrinkGridWeights",
-            "penalizedRss"
+            ".penalizedRssPath"
         ),
         mcp = c(
             "mcpRssWeights",
             ".penalizedRssWeights",
             ".rssShrinkGridWeights",
-            "penalizedRss"
+            ".penalizedRssPath"
         ),
         l0learn = c(
             "l0learnRssWeights",
             ".rssShrinkGridWeights",
-            "penalizedRss"
+            ".penalizedRssPath"
         ),
         lasso = c(
             "lassosumRssWeights",
             ".rssShrinkGridWeights",
-            "lassosumRss"
+            ".lassosumRssPath"
         ),
-        prsCs = c("prsCsWeights", "prsCs"),
-        dprGibbs = c("sdprWeights", "sdpr"),
+        prsCs = c("prsCsWeights", ".prsCsRun"),
+        dprGibbs = c("sdprWeights", ".sdprRun"),
         mrash = c("mrashRssWeights", "susieR::mr.ash.rss"),
         mrmash = c(
             "mrmashRssWeights",
@@ -964,7 +942,9 @@ setMethod("show", "TwasWeights", function(object) {
         "Y",
         "y",
         "stat",
+        "ldReference",
         "LD",
+        "ld",
         "bhat",
         "shat",
         "R",
@@ -994,7 +974,7 @@ setMethod("show", "TwasWeights", function(object) {
     fn <- if (str_detect(nm, fixed("::"))) {
         .engineCallee(nm)
     } else {
-        tryCatch(
+        try_fetch(
             get(nm, envir = asNamespace("pecotmr")),
             error = function(cnd) NULL
         )
@@ -1028,11 +1008,6 @@ setMethod("show", "TwasWeights", function(object) {
 }
 
 
-# The argument constructor for each weight-method token. Several tokens share
-# an engine, so this maps token -> constructor rather than token -> package.
-# Tokens absent from this list take no options at all; .twasTokenNoArgsReason
-# says why, so the error can be specific.
-# @noRd
 # The implementation that runs one method on one input path.
 # @noRd
 .twasMethodImplFor <- function(token, inputKind) {
@@ -1060,7 +1035,7 @@ setMethod("show", "TwasWeights", function(object) {
     if (is.null(impl)) {
         return(NULL)
     }
-    fn <- tryCatch(
+    fn <- try_fetch(
         get(impl, envir = asNamespace("pecotmr")),
         error = function(cnd) NULL
     )
@@ -1083,7 +1058,7 @@ setMethod("show", "TwasWeights", function(object) {
     if (is.null(nm)) {
         return(NULL)
     }
-    tryCatch(
+    try_fetch(
         get(nm, envir = asNamespace("pecotmr")),
         error = function(cnd) NULL
     )
@@ -1105,7 +1080,8 @@ setMethod("show", "TwasWeights", function(object) {
 .twasMethodsFor <- function(inputKind) {
     conf <- keep(
         .twasConfigurableMethods(),
-        function(tk) !is.null(.twasMethodImplFor(tk, inputKind))
+        .twasMethodRunsOn,
+        inputKind = inputKind
     )
     unique(c(
         conf,
@@ -1113,26 +1089,17 @@ setMethod("show", "TwasWeights", function(object) {
     ))
 }
 
+# Whether configurable method `token` has an implementation on `inputKind`.
+# @noRd
+.twasMethodRunsOn <- function(token, inputKind) {
+    !is.null(.twasMethodImplFor(token, inputKind))
+}
+
 # Every configurable method's name, independent of input path. The answer to
 # "is this a method that takes options", which the token normalisers ask.
 # @noRd
 .twasConfigurableMethods <- function() {
     names(.twasMethodCapabilities)
-}
-
-# Path-blind view, kept for the callers that have not yet been taught which
-# input class they are serving: the individual-level constructor, or the
-# summary-statistics one for a method that only runs there (prsCs).
-# @noRd
-.twasMethodCtors <- function() {
-    toks <- .twasConfigurableMethods()
-    set_names(
-        map(toks, function(tk) {
-            .twasMethodCtorFor(tk, "QtlDataset") %||%
-                .twasMethodCtorFor(tk, "QtlSumStats")
-        }),
-        toks
-    )
 }
 
 # Why a token takes no options, so the error can say something useful rather
@@ -1460,15 +1427,15 @@ setMethod("show", "TwasWeights", function(object) {
 # the fit it needs. These wrappers extract weights from an existing fit and
 # never fine-map, so the run is already doomed; checking here reports the
 # missing fit by name instead of surfacing it from inside the per-fold map.
-# `available(token)` answers "is this token's fit present?" for the caller's
-# own supply channel.
+# `available(token, ...)` answers "is this token's fit present?" for the
+# caller's own supply channel; `...` carries what that channel needs.
 # @noRd
-.twasRequireSusieFits <- function(weightMethods, available, fnLabel, how) {
+.twasRequireSusieFits <- function(weightMethods, available, fnLabel, how, ...) {
     tokens <- .twasSusieTokensRequested(weightMethods)
     if (length(tokens) == 0L) {
         return(invisible(NULL))
     }
-    missing <- tokens[!map_lgl(tokens, available)]
+    missing <- tokens[!map_lgl(tokens, available, ...)]
     if (length(missing) == 0L) {
         return(invisible(NULL))
     }
@@ -1895,7 +1862,7 @@ twasWeightsCv <- function(
 # fit trained on a different split has seen some of this split's held-out
 # samples, so its out-of-fold predictions are contaminated and the CV metrics
 # come out optimistic -- silently. Fits carry the producer's partition
-# fingerprint (see .cvPartitionKey); anything unstamped is refused too, since
+# fingerprint (see .cvPartitionKey); a fit carrying none is refused too, since
 # it cannot be shown to match.
 # @noRd
 .twasCheckFoldFitPartition <- function(fittedModelsCv, samplePartitions) {
@@ -2028,15 +1995,14 @@ twasWeightsCv <- function(
     .twasCheckFoldFitPartition(fittedModelsCv, samplePartitions)
     .twasRequireSusieFits(
         weightMethods,
-        available = function(tk) {
-            !is.null(.twasFoldFitsFor(fittedModelsCv, tk))
-        },
+        available = .twasFoldFitAvailable,
         fnLabel = "twasWeightsCv",
         how = str_c(
             "Cross-validation refits on each fold, so it needs that fold's ",
             "own fit: pass `fittedModelsCv = list(<token> = <fold fits>)` ",
             "from a fineMappingPipeline() run with cvFolds > 1."
-        )
+        ),
+        fittedModelsCv = fittedModelsCv
     )
     if (is.null(seed) && !exists(".Random.seed") && verbose >= 1) {
         inform(str_c(
@@ -2045,6 +2011,12 @@ twasWeightsCv <- function(
         ))
     }
     .twasAsMethodRecord(weightMethods)
+}
+
+# Whether `fittedModelsCv` carries per-fold fits for `tk`.
+# @noRd
+.twasFoldFitAvailable <- function(tk, fittedModelsCv) {
+    !is.null(.twasFoldFitsFor(fittedModelsCv, tk))
 }
 
 # Fit one TWAS weight method by name against the filtered design matrix,
@@ -2321,8 +2293,9 @@ twasWeightsCv <- function(
 #'   are already standardized. Default \code{FALSE}.
 #' @param weightsDataType Character or \code{NULL}. Data-type label recorded on
 #'   the weights (e.g. \code{"individual"}).
-#' @param ldSketch A genotype panel (see \code{\link{readGenotypes}}) to
-#'   record on the weights as their LD sketch, or \code{NULL}.
+#' @param ldReference An LD reference (a genotype panel, see
+#'   \code{\link{readGenotypes}}, a \code{GenotypeMixture} or an
+#'   \code{LdMatrix}) to record on the weights, or \code{NULL}.
 #' @param seed Integer or \code{NULL}. When supplied, seeds the main-process
 #'   RNG and the parallel method-fitting RNG via the \code{BiocParallel}
 #'   \code{RNGseed}, for reproducibility under multi-threading. The
@@ -2360,7 +2333,7 @@ learnTwasWeights <- function(
     fitRetention = c("none", "slim", "full"),
     weightStandardized = FALSE,
     weightsDataType = NULL,
-    ldSketch = NULL,
+    ldReference = NULL,
     verbose = 1,
     seed = NULL
 ) {
@@ -2391,7 +2364,7 @@ learnTwasWeights <- function(
         fitRetention = fitRetention,
         weightStandardized = weightStandardized,
         weightsDataType = weightsDataType,
-        ldSketch = ldSketch,
+        ldReference = ldReference,
         verbose = verbose,
         seed = seed
     )
@@ -2479,17 +2452,15 @@ learnTwasWeights <- function(
 .twasRequireLearnFits <- function(resolvedMethods, fittedModels) {
     .twasRequireSusieFits(
         resolvedMethods,
-        available = partial(
-            .twasLearnFitAvailable,
-            resolvedMethods = resolvedMethods,
-            fittedModels = fittedModels
-        ),
+        available = .twasLearnFitAvailable,
         fnLabel = "learnTwasWeights",
         how = str_c(
             "Pass it as `fittedModels = list(<token> = <fit>)`, or on the ",
             "method's own arguments; run fineMappingPipeline() first to ",
             "produce one."
-        )
+        ),
+        resolvedMethods = resolvedMethods,
+        fittedModels = fittedModels
     )
 }
 
@@ -2505,7 +2476,7 @@ learnTwasWeights <- function(
     fitRetention,
     weightStandardized,
     weightsDataType,
-    ldSketch,
+    ldReference,
     verbose,
     seed
 ) {
@@ -2539,7 +2510,7 @@ learnTwasWeights <- function(
     ) |>
         .twasApplyRownames(X)
     rows <- .buildTwasWeightEntries(weightsList, .twasVariantIds(X), ctx)
-    .twasLearnResult(rows, ldSketch)
+    .twasLearnResult(rows, ldReference)
 }
 
 # The learn path's column-wise row record as a TwasWeights collection. NOT
@@ -2547,14 +2518,14 @@ learnTwasWeights <- function(
 # and map_chr()s across them -- a different input entirely, and sharing a
 # name with it would let collate order decide which one a call reaches.
 # @noRd
-.twasLearnResult <- function(rows, ldSketch) {
+.twasLearnResult <- function(rows, ldReference) {
     TwasWeights(
         studyName = rows$study,
         context = rows$context,
         trait = rows$trait,
         method = rows$method,
         entry = rows$entry,
-        ldSketch = ldSketch
+        ldReference = ldReference
     )
 }
 
@@ -2748,7 +2719,7 @@ estimateSparsity <- function(weightResults) {
 }
 
 # Route a caller's per-method arguments into a weight function. A wrapper's
-# own formals (a pre-fit, fitRetention, initPriorSd, ...) bind by name; any
+# own formals (a pre-fit, fitRetention, ...) bind by name; any
 # else is a tool option and goes in the wrapper's `methodArgs` list, so an
 # unknown option errors inside the wrapper rather than vanishing. Wrappers
 # with no `methodArgs` formal get everything by name, and R reports an unused

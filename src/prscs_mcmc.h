@@ -7,6 +7,7 @@
 #define MCMC_HPP
 
 #include <armadillo.hpp>
+#include <utility>
 #include <vector>
 #include <string>
 #include <cmath>
@@ -172,6 +173,84 @@ double gigrnd(double p, double a, double b, std::mt19937& rng) {
 }
 
 /**
+ * @brief One LD block's update of beta in the PRS-CS sampler, from the block's LD matrix R.
+ *
+ * Draws beta ~ N(A^-1 b, (sigma / n) A^-1) with A = R + diag(1 / psi) and b the block's
+ * marginal effects, through the Cholesky factor of A, and returns beta'A beta for the
+ * update of sigma.
+ */
+class DenseLdBlock {
+public:
+	explicit DenseLdBlock(arma::mat R) : R_(std::move(R)) {}
+
+	arma::uword size() const { return R_.n_rows; }
+
+	double draw(const arma::vec& psi, const arma::vec& b, double scale,
+	            std::normal_distribution<double>& normal_dist, std::mt19937& rng,
+	            arma::vec& beta) const {
+		arma::mat dinvt = R_ + arma::diagmat(1.0 / psi);
+		arma::mat dinvt_chol = arma::chol(dinvt);
+		arma::vec beta_tmp = arma::solve(arma::trimatl(dinvt_chol.t()), b) +
+		                     arma::vec(R_.n_rows).transform([&](double) {
+			return normal_dist(rng);
+		}) * std::sqrt(scale);
+		beta = arma::solve(arma::trimatu(dinvt_chol), beta_tmp);
+		return arma::as_scalar(beta.t() * dinvt * beta);
+	}
+
+private:
+	arma::mat R_;
+};
+
+/**
+ * @brief One LD block's update of beta in the PRS-CS sampler, from a factor W of the
+ * block's LD, R = W'W (W is m x p).
+ *
+ * The same draw as DenseLdBlock without forming R or A. With D = diag(psi) and
+ * M = W D W' + I (m x m), Woodbury gives A^-1 = D - D W' M^-1 W D, so the mean A^-1 b
+ * costs one solve against M, and the noise comes from the sampler of Bhattacharya,
+ * Chakraborty and Mallick (2016): u ~ N(0, D), delta ~ N(0, I), v = W u + delta,
+ * theta = u - D W' M^-1 v is N(0, A^-1). One Cholesky factor of M serves both, at
+ * O(m^2 p + m^3) per draw instead of the O(p^3) of factoring A. The draws consume the
+ * random stream differently from DenseLdBlock's, so the two samplers agree in
+ * distribution, not draw for draw.
+ */
+class FactorLdBlock {
+public:
+	explicit FactorLdBlock(arma::mat W) : W_(std::move(W)) {}
+
+	arma::uword size() const { return W_.n_cols; }
+
+	double draw(const arma::vec& psi, const arma::vec& b, double scale,
+	            std::normal_distribution<double>& normal_dist, std::mt19937& rng,
+	            arma::vec& beta) const {
+		arma::uword p = W_.n_cols;
+		arma::uword m = W_.n_rows;
+		arma::mat WD = W_.each_row() % psi.t();
+		arma::mat M = WD * W_.t();
+		M.diag() += 1.0;
+		arma::mat L = arma::chol(M, "lower");
+		arma::vec mean = psi % b - WD.t() * solveChol(L, WD * b);
+		arma::vec u = arma::sqrt(psi) % arma::vec(p).transform([&](double) {
+			return normal_dist(rng);
+		});
+		arma::vec delta = arma::vec(m).transform([&](double) { return normal_dist(rng); });
+		arma::vec theta = u - WD.t() * solveChol(L, W_ * u + delta);
+		beta = mean + std::sqrt(scale) * theta;
+		arma::vec Wbeta = W_ * beta;
+		return arma::dot(Wbeta, Wbeta) + arma::sum(arma::square(beta) / psi);
+	}
+
+private:
+	arma::mat W_;
+
+	// M^-1 x from the lower Cholesky factor L of M.
+	static arma::vec solveChol(const arma::mat& L, const arma::vec& x) {
+		return arma::solve(arma::trimatu(L.t()), arma::solve(arma::trimatl(L), x));
+	}
+};
+
+/**
  * @brief Markov Chain Monte Carlo (MCMC) sampler for polygenic prediction with continuous shrinkage (CS) priors.
  *
  * @param a Shape parameter for the prior distribution of psi.
@@ -180,7 +259,7 @@ double gigrnd(double p, double a, double b, std::mt19937& rng) {
  * @param bhat Vector of effect sizes.
  * @param maf Vector of minor allele frequencies.
  * @param n Sample size.
- * @param ld_blk List of LD blocks.
+ * @param ld_blk The LD blocks, each a DenseLdBlock or each a FactorLdBlock.
  * @param n_iter Number of MCMC iterations.
  * @param n_burnin Number of burn-in iterations.
  * @param thin Thinning interval.
@@ -188,9 +267,10 @@ double gigrnd(double p, double a, double b, std::mt19937& rng) {
  * @param seed Random seed. If nullptr, no seed is set.
  * @return A map containing the posterior estimates.
  */
+template <class LdBlock>
 std::map<std::string, arma::vec> prs_cs_mcmc(double a, double b, double* phi,
                                              const std::vector<double>& bhat, const std::vector<double>& maf,
-                                             int n, const std::vector<arma::mat>& ld_blk,
+                                             int n, const std::vector<LdBlock>& ld_blk,
                                              int n_iter, int n_burnin, int thin,
                                              bool verbose, unsigned int seed) {
 	if (verbose) {
@@ -199,7 +279,6 @@ std::map<std::string, arma::vec> prs_cs_mcmc(double a, double b, double* phi,
 
 	// Derived statistics
 	arma::vec beta_mrg(bhat);
-	// std::cout << "beta_mrg " << beta_mrg << std::endl;
 	int n_pst = (n_iter - n_burnin) / thin;
 	int p = beta_mrg.n_elem;
 
@@ -234,29 +313,19 @@ std::map<std::string, arma::vec> prs_cs_mcmc(double a, double b, double* phi,
 		int mm = 0;
 		double quad = 0.0;
 		for (std::size_t kk = 0; kk < ld_blk.size(); ++kk) {
-			if (ld_blk[kk].n_rows == 0) {
+			if (ld_blk[kk].size() == 0) {
 				continue;
 			}
 
-			arma::uvec idx_blk = arma::regspace<arma::uvec>(mm, mm + ld_blk[kk].n_rows - 1);
-			mm += ld_blk[kk].n_rows;
+			arma::uvec idx_blk = arma::regspace<arma::uvec>(mm, mm + ld_blk[kk].size() - 1);
+			mm += ld_blk[kk].size();
 
-			arma::mat dinvt = ld_blk[kk] + arma::diagmat(1.0 / psi.elem(idx_blk));
-
-			arma::mat dinvt_chol = arma::chol(dinvt);
-
-			arma::vec beta_tmp = arma::solve(arma::trimatl(dinvt_chol.t()), beta_mrg(idx_blk)) +
-			                     arma::vec(ld_blk[kk].n_rows).transform([&](double) {
-				return normal_dist(rng);
-			}) * std::sqrt(sigma / n);
-			// std::cout << "beta_tmp " << beta_tmp << std::endl;
-			beta(idx_blk) = arma::solve(arma::trimatu(dinvt_chol), beta_tmp);
-
-			quad += arma::as_scalar(beta(idx_blk).t() * dinvt * beta(idx_blk));
-			// std::cout << "quad " << quad << std::endl;
+			arma::vec beta_blk;
+			quad += ld_blk[kk].draw(psi.elem(idx_blk), beta_mrg(idx_blk), sigma / n,
+			                        normal_dist, rng, beta_blk);
+			beta(idx_blk) = beta_blk;
 		}
-		// std::cout << "beta " << beta << std::endl;
-		double err = std::max(n / 2.0 * (1.0 - 2.0 * arma::dot(beta, beta_mrg) + quad),
+	double err = std::max(n / 2.0 * (1.0 - 2.0 * arma::dot(beta, beta_mrg) + quad),
 		                      n / 2.0 * arma::sum(arma::pow(beta, 2) / psi));
 
 		// Original PRS-CS (Ge et al.): sigma = 1/Gamma((n+p)/2, scale=1/err)

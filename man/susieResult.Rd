@@ -9,17 +9,18 @@ susieResult(conData)
 \arguments{
 \item{conData}{List. The method-layer entry from a finemapping pipeline
 result, expected to carry \code{$finemappingEntry} as a
-\code{FineMappingRow} object.}
+\code{FineMappingRow} or a single-row fine-mapping result.}
 }
 \value{
 The trimmed fit (a list with \code{pip}, \code{sets}, etc.) or NULL.
 }
 \description{
-Returns the trimmed model fit underlying \code{con_data$finemappingEntry} (a
-\code{FineMappingRow} S4 object), or NULL if no fine-mapping entry is
-attached.
+Returns the trimmed model fit underlying \code{conData$finemappingEntry} (a
+\code{FineMappingRow}, or a single-row fine-mapping result), or NULL if no
+fine-mapping entry is attached.
 }
 \examples{
-data(qtlSumStatsExample)
-susieResult(qtlSumStatsExample)
+data(qtlFineMappingExample)
+fit <- susieResult(list(finemappingEntry = qtlFineMappingExample[1]))
+head(fit$pip)
 }

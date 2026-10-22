@@ -545,8 +545,8 @@ test_that("chromosome paths union when they agree and abort when they clash", {
     mk <- function(paths) {
         new(
             "GenotypeHandle",
-            path = "/tmp/x.gds",
-            format = "gds",
+            path = "/tmp/x",
+            format = "plink2",
             snpInfo = data.frame(
                 SNP = "a",
                 CHR = "1",
@@ -572,6 +572,39 @@ test_that("chromosome paths union when they agree and abort when they clash", {
     expect_error(
         pecotmr:::.ssUnionChromPaths(list(h1, h3), "combineX"),
         "chromosome '1' maps to two different genotype"
+    )
+})
+
+
+test_that("panels read through no handle union their rows", {
+    # A PLINK1, VCF or GDS panel has no handle whose snpInfo could be
+    # widened, so the parts' assays are bound: each variant once, in genomic
+    # order. A panel from another file is refused, not bound.
+    skip_if_not_installed("PlinkMatrix")
+    skip_if_not_installed("pgenlibr")
+    stem <- test_path("test_data", "test_variants")
+    panel <- readGenotypes(plink1Prefix = stem)
+    a <- pecotmr:::.panelSubsetRows(panel, 4:8)
+    b <- pecotmr:::.panelSubsetRows(panel, 1:5)
+    pecotmr:::.ssCheckSameSource(list(a, b), "combineX")
+    out <- pecotmr:::.ssUnionPanels(list(a, b), character(0))
+    expect_identical(rownames(out), rownames(panel)[1:8])
+    expect_equal(
+        as.matrix(SummarizedExperiment::assay(out, "dosage")),
+        as.matrix(SummarizedExperiment::assay(panel, "dosage"))[1:8, ]
+    )
+    expect_identical(
+        pecotmr:::.ldRefSource(out)$path,
+        pecotmr:::.ldRefSource(panel)$path
+    )
+    # The same panel twice is that panel.
+    expect_identical(pecotmr:::.ssUnionPanels(list(a, a), character(0)), a)
+    expect_error(
+        pecotmr:::.ssCheckSameSource(
+            list(a, readGenotypes(plink2Prefix = stem)),
+            "combineX"
+        ),
+        "reference different genotype panels"
     )
 })
 
@@ -615,7 +648,7 @@ test_that("a collection-level slot with no merge rule is refused", {
         contains = "RangedTupleList",
         representation(
             genome = "character",
-            ldSketch = "ANY",
+            ldReference = "ANY",
             surprise = "character"
         )
     )
@@ -625,7 +658,7 @@ test_that("a collection-level slot with no merge rule is refused", {
             a = GenomicRanges::GRanges("chr1", IRanges::IRanges(1L, width = 1L))
         ),
         genome = "hg38",
-        ldSketch = NULL,
+        ldReference = NULL,
         surprise = "boo"
     )
     expect_error(
@@ -749,4 +782,28 @@ test_that(".asAnalysisWindow normalizes strings, GRanges and multi-range input",
     expect_length(span, 1L)
     expect_identical(GenomicRanges::start(span)[[1L]], 100L)
     expect_identical(GenomicRanges::end(span)[[1L]], 900L)
+})
+
+
+test_that("collections sharing one LdMatrix combine; differing ones need it", {
+    ids <- c("chr22:100:A:G", "chr22:200:C:T", "chr22:300:G:A")
+    vars <- data.frame(
+        chrom = "chr22",
+        pos = c(100L, 200L, 300L),
+        SNP = ids,
+        A1 = c("G", "T", "A"),
+        A2 = c("A", "C", "G")
+    )
+    R <- matrix(c(1, 0.5, 0.2, 0.5, 1, 0.3, 0.2, 0.3, 1), 3L, 3L)
+    ld <- LdMatrix(R, variants = vars, nSamples = 100)
+    # The widest reference covering the others is the combined one.
+    expect_identical(
+        pecotmr:::.combineLdMatrixRefs(list(ld, ld[1:2]), "combine"),
+        ld
+    )
+    # Two subsets neither of which covers the other cannot be unioned.
+    expect_error(
+        pecotmr:::.combineLdMatrixRefs(list(ld[1:2], ld[2:3]), "combine"),
+        "cover different variants"
+    )
 })

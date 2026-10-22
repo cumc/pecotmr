@@ -25,9 +25,9 @@ NULL
 # The three argument groups, checked in one place so the pipeline body does
 # not open with three near-identical lines.
 # @noRd
-.colocAssertGroups <- function(priors, lbfFilterArgs, methodArgs) {
-    .assertMethodParam(priors, "ColocPriorParam", "priors")
-    .assertMethodParam(lbfFilterArgs, "ColocLbfFilterParam", "lbfFilter")
+.colocAssertGroups <- function(priors, colocLbfFilterParam, methodArgs) {
+    .assertMethodParam(priors, "ColocPriorParam")
+    .assertMethodParam(colocLbfFilterParam, "ColocLbfFilterParam")
     .assertMethodOptions(methodArgs, "ColocOptions", "methodArgs")
 }
 
@@ -175,8 +175,8 @@ setClass(
 #'   \code{\link{fineMappingPipeline}}; the settings that pipeline exposes
 #'   but that cannot apply here are deliberately absent:
 #'   \code{fineMappingResult} (the pipeline is being asked to produce one),
-#'   \code{crossValidation} (refused on summary statistics) and
-#'   \code{residualization} (nothing to regress out).
+#'   \code{crossValidationParam} (refused on summary statistics) and
+#'   \code{residualizationParam} (nothing to regress out).
 #'
 #'   The whole bundle is inert when \code{gwasInput} is already a
 #'   fine-mapping result, since no fit is run.
@@ -260,7 +260,7 @@ GwasFineMappingParam <- function(
 #'   \item \strong{fSuSiE support}: the LBF matrix lives at a different
 #'     slot for fSuSiE fits (\code{fsusie_result$lBF}) and gets stacked
 #'     into a single matrix.
-#'   \item \strong{Effect filtering}: \code{lbfFilter}'s
+#'   \item \strong{Effect filtering}: \code{colocLbfFilterParam}'s
 #'     \code{filterLbfCs} keeps only effects that produced a credible
 #'     set, its \code{secondary} keeps effects at a secondary coverage;
 #'     otherwise the default filter drops effects whose prior variance is
@@ -282,16 +282,18 @@ GwasFineMappingParam <- function(
 #'           inline fine-mapping.
 #'   }
 #'
-#' @section LD-sketch compatibility check: If
-#'   \code{ldSketch(qtlFineMappingResult)} is non-\code{NULL}, it must come
-#'   from the same reference panel as the LD sketch on \code{gwasInput}: the
-#'   same samples, and the same allele orientation on the variants the two
-#'   carry in common. The two need NOT carry the same variants --- running
-#'   \code{\link{summaryStatsQc}} on the two sides separately normally leaves
-#'   each sketch trimmed to its own surviving variants, and LD is looked up per
-#'   variant, so a partial overlap only warns (once per session). No shared
-#'   variant at all, a different sample set, or a swapped A1/A2 on a shared
-#'   variant is a hard error. When the first side's \code{ldSketch} is
+#' @section LD reference compatibility check: If
+#'   \code{ldReference(qtlFineMappingResult)} is non-\code{NULL}, it must be
+#'   the same LD reference as the one on \code{gwasInput}.
+#'   The two must be the same kind of reference. Two genotype panels must
+#'   share their samples and allele orientation; two \code{LdMatrix} objects
+#'   must agree on the LD they share; two \code{GenotypeMixture} objects must
+#'   average the same panels with the same weights. The two need NOT
+#'   carry the same variants --- running \code{\link{summaryStatsQc}} on the
+#'   two sides separately normally leaves each reference trimmed to its own
+#'   surviving variants, and LD is looked up per variant, so a partial overlap
+#'   only warns (once per session). No shared variant at all, or a mismatch of
+#'   any of those, is a hard error. When the first side's \code{ldReference} is
 #'   \code{NULL} (individual-level fit), the validation is skipped on that side
 #'   and the second side's panel is what the result carries forward.
 #'
@@ -302,7 +304,7 @@ GwasFineMappingParam <- function(
 #'   \code{\link{GwasFineMappingResult}}, or the summary statistics to
 #'   fine-map inline (\code{\link{QtlSumStats}} or
 #'   \code{\link{GwasSumStats}}).
-#' @param lbfFilterArgs Credible-set filtering applied before scoring,
+#' @param colocLbfFilterParam Credible-set filtering applied before scoring,
 #'   built with
 #'   \code{\link{ColocLbfFilterParam}}. \code{filterLbfCs} keeps only effects
 #'   that produced a credible set; supplying \code{secondary} instead runs a
@@ -317,7 +319,7 @@ GwasFineMappingParam <- function(
 #'   \code{\link{ColocPriorParam}}: \code{p1} (QTL signal), \code{p2} (GWAS
 #'   signal) and \code{p12} (shared). Mutually exclusive with
 #'   \code{enrichment}, which derives the same three.
-#' @param gwasFineMappingArgs How \code{gwasInput} is fine-mapped when it is
+#' @param gwasFineMappingParam How \code{gwasInput} is fine-mapped when it is
 #'   summary statistics rather than a fine-mapping result, built with
 #'   \code{\link{GwasFineMappingParam}}: \code{methods},
 #'   \code{credibleSetParam}, \code{susieRssParam},
@@ -405,8 +407,8 @@ colocPipeline <- function(
     qtlFineMappingResult,
     gwasInput,
     priors = ColocPriorParam(),
-    lbfFilterArgs = ColocLbfFilterParam(),
-    gwasFineMappingArgs = GwasFineMappingParam(),
+    colocLbfFilterParam = ColocLbfFilterParam(),
+    gwasFineMappingParam = GwasFineMappingParam(),
     returnGwasFineMapping = FALSE,
     enrichment = NULL,
     adjustPips = TRUE,
@@ -417,17 +419,17 @@ colocPipeline <- function(
         qtlFineMappingResult = qtlFineMappingResult,
         gwasInput = gwasInput,
         priors = priors,
-        gwasFineMappingArgs = gwasFineMappingArgs,
+        gwasFineMappingParam = gwasFineMappingParam,
         enrichment = enrichment,
         adjustPips = adjustPips,
         methodArgs = methodArgs,
-        lbfFilterArgs = lbfFilterArgs,
+        colocLbfFilterParam = colocLbfFilterParam,
         priorsMissing = missing(priors)
     )
-    # Pre-extract per-GWAS-tuple LBF matrices: group the GWAS FMR by study,
-    # stack each study's LBF rows, and store per-(study, method) batched
-    # matrices (reproduces the legacy row-wise combine per xQTL).
-    gwasLbfByPair <- .colocPreextractGwasLbf(prepared$gwasFmr, lbfFilterArgs)
+    gwasLbfByPair <- .colocPreextractGwasLbf(
+        prepared$gwasFmr,
+        colocLbfFilterParam
+    )
     # Both exits -- no scorable GWAS effect, and the scored result -- shape
     # their output from the same five values, so they are named once.
     shape <- list(
@@ -443,7 +445,7 @@ colocPipeline <- function(
     results <- .colocScoreAll(
         prepared,
         gwasLbfByPair,
-        lbfFilterArgs = lbfFilterArgs,
+        colocLbfFilterParam = colocLbfFilterParam,
         enrichment = enrichment,
         priors = priors,
         alleleFlip = alleleFlip
@@ -456,7 +458,7 @@ colocPipeline <- function(
 .colocScoreAll <- function(
     prepared,
     gwasLbfByPair,
-    lbfFilterArgs,
+    colocLbfFilterParam,
     enrichment,
     priors,
     alleleFlip
@@ -466,7 +468,7 @@ colocPipeline <- function(
         .colocScoreQtlTuple,
         qtlFineMappingResult = prepared$qtlFineMappingResult,
         gwasLbfByPair = gwasLbfByPair,
-        lbfFilterArgs = lbfFilterArgs,
+        colocLbfFilterParam = colocLbfFilterParam,
         useEnrichment = prepared$useEnrichment,
         enrichment = enrichment,
         priors = priors,
@@ -484,14 +486,14 @@ colocPipeline <- function(
     qtlFineMappingResult,
     gwasInput,
     priors,
-    gwasFineMappingArgs,
+    gwasFineMappingParam,
     enrichment,
     adjustPips,
     methodArgs,
-    lbfFilterArgs,
+    colocLbfFilterParam,
     priorsMissing
 ) {
-    .colocAssertGroups(priors, lbfFilterArgs, methodArgs)
+    .colocAssertGroups(priors, colocLbfFilterParam, methodArgs)
     .colocRefusePriorsWithEnrichment(priors, enrichment, priorsMissing)
     useEnrichment <- !is.null(enrichment)
     .colocValidateInputs(
@@ -500,10 +502,10 @@ colocPipeline <- function(
         enrichment = enrichment,
         useEnrichment = useEnrichment
     )
-    rawGwasFmr <- .colocResolveGwasFmr(gwasInput, gwasFineMappingArgs)
-    .colocRequireMatchingLdSketches(
-        ldSketch(qtlFineMappingResult),
-        ldSketch(rawGwasFmr)
+    rawGwasFmr <- .colocResolveGwasFmr(gwasInput, gwasFineMappingParam)
+    .colocRequireMatchingLdRefs(
+        ldReference(qtlFineMappingResult),
+        ldReference(rawGwasFmr)
     )
     adjusted <- .colocMaybeAdjustPips(
         adjustPips = adjustPips,
@@ -598,17 +600,16 @@ colocPipeline <- function(
 # Resolve the second side to a fine-mapping collection (fine-map QC'd sumstats
 # when summary statistics are passed, whichever flavour they are).
 # @noRd
-.colocResolveGwasFmr <- function(gwasInput, gwasFineMappingArgs) {
+.colocResolveGwasFmr <- function(gwasInput, gwasFineMappingParam) {
     if (methods::is(gwasInput, "FineMappingResultBase")) {
         # Already fine-mapped: nothing in the bundle applies, so a setting
         # given here would be dropped rather than honoured.
-        .colocAssertGwasFmrUnset(gwasFineMappingArgs, class(gwasInput)[[1L]])
+        .colocAssertGwasFmrUnset(gwasFineMappingParam, class(gwasInput)[[1L]])
         return(gwasInput)
     }
     .assertMethodParam(
-        gwasFineMappingArgs,
-        "GwasFineMappingParam",
-        "gwasFineMapping"
+        gwasFineMappingParam,
+        "GwasFineMappingParam"
     )
     if (length(qcInfo(gwasInput)) == 0L) {
         msg <- glue(
@@ -619,44 +620,44 @@ colocPipeline <- function(
     }
     # The bundle's terminal: fineMappingPipeline takes these as its own
     # arguments, so it is unrolled once, here.
+    withSusieInf <- gwasFineMappingParam$initializeWithSusieInf %||% TRUE
     fineMappingPipeline(
         gwasInput,
-        methods = gwasFineMappingArgs$methods %||% "susie",
-        credibleSetParam = gwasFineMappingArgs$credibleSetParam %||%
+        methods = gwasFineMappingParam$methods %||% "susie",
+        credibleSetParam = gwasFineMappingParam$credibleSetParam %||%
             CredibleSetParam(),
-        susieRssParam = gwasFineMappingArgs$susieRssParam %||% SusieRssParam(),
-        panelFilterParam = gwasFineMappingArgs$panelFilterParam %||%
+        susieRssParam = gwasFineMappingParam$susieRssParam %||% SusieRssParam(),
+        panelFilterParam = gwasFineMappingParam$panelFilterParam %||%
             PanelFilterParam(),
-        initializeWithSusieInf = gwasFineMappingArgs$initializeWithSusieInf %||%
-            TRUE,
-        fitRetention = gwasFineMappingArgs$fitRetention %||% "slim"
+        initializeWithSusieInf = withSusieInf,
+        fitRetention = gwasFineMappingParam$fitRetention %||% "slim"
     )
 }
 
-# `gwasFineMapping` configures the fine-mapping run colocPipeline does on a
-# raw GWAS input. A caller who has already fine-mapped the GWAS has no such
+# `gwasFineMappingParam` configures the fine-mapping run colocPipeline does on
+# a raw GWAS input. A caller who has already fine-mapped the GWAS has no such
 # run, so a non-default bundle is an instruction that cannot be carried out.
 # @noRd
-.colocAssertGwasFmrUnset <- function(gwasFineMappingArgs, inputClass) {
-    if (!.isMethodParam(gwasFineMappingArgs)) {
+.colocAssertGwasFmrUnset <- function(gwasFineMappingParam, inputClass) {
+    if (!.isMethodParam(gwasFineMappingParam)) {
         return(invisible(NULL))
     }
     defaults <- GwasFineMappingParam()
     set <- keep(
         names(defaults),
         .colocGwasFmrFieldSet,
-        given = gwasFineMappingArgs,
+        given = gwasFineMappingParam,
         defaults = defaults
     )
     if (length(set) == 0L) {
         return(invisible(NULL))
     }
     abort(glue(
-        "colocPipeline: `gwasFineMapping` ",
+        "colocPipeline: `gwasFineMappingParam` ",
         "({str_flatten(str_c(set, ' ='), ', ')}) configures the GWAS ",
         "fine-mapping run, but `gwasInput` is already a ",
         "{inputClass} -- there is no run to configure. ",
-        "Drop `gwasFineMapping`, or pass the raw GwasSumStats instead."
+        "Drop `gwasFineMappingParam`, or pass the raw GwasSumStats instead."
     ))
 }
 
@@ -695,12 +696,12 @@ colocPipeline <- function(
 # The LD reference the result carries forward, so colocCredibleSets() can
 # recompute purity (section 3.7) without being handed a sketch separately. The
 # two sides' sketches are already required to match by
-# .colocRequireMatchingLdSketches, so either one identifies the panel -- but a
+# .colocRequireMatchingLdRefs, so either one identifies the panel -- but a
 # first side fit on individual-level data carries none, and then the second
 # side's panel is the only one there is.
 # @noRd
-.colocLdSketch <- function(qtlFineMappingResult, gwasFmr) {
-    ldSketch(qtlFineMappingResult) %||% ldSketch(gwasFmr)
+.colocLdRef <- function(qtlFineMappingResult, gwasFmr) {
+    ldReference(qtlFineMappingResult) %||% ldReference(gwasFmr)
 }
 
 # Empty-result early return (attaching the GWAS fine-mapping when requested).
@@ -714,7 +715,7 @@ colocPipeline <- function(
 ) {
     out <- .colocEmptyResult(
         enriched = useEnrichment,
-        ldSketch = .colocLdSketch(qtlFineMappingResult, gwasFmr)
+        ldReference = .colocLdRef(qtlFineMappingResult, gwasFmr)
     )
     .colocAttachGwasFm(out, returnGwasFineMapping, gwasInput, gwasFmr)
 }
@@ -725,7 +726,7 @@ colocPipeline <- function(
     qi,
     qtlFineMappingResult,
     gwasLbfByPair,
-    lbfFilterArgs,
+    colocLbfFilterParam,
     useEnrichment,
     enrichment,
     priors,
@@ -735,7 +736,7 @@ colocPipeline <- function(
     q <- .colocQtlTupleInfo(qi, qtlFineMappingResult)
     qLbfInfo <- .colocExtractLbfFromEntry(
         q$parts,
-        lbfFilterArgs,
+        colocLbfFilterParam,
         label = q$label
     )
     if (is.null(qLbfInfo)) {
@@ -1050,7 +1051,7 @@ colocPipeline <- function(
     out <- .colocAssemble(
         results,
         useEnrichment,
-        .colocLdSketch(qtlFineMappingResult, gwasFmr)
+        .colocLdRef(qtlFineMappingResult, gwasFmr)
     )
     .colocAttachGwasFm(out, returnGwasFineMapping, gwasInput, gwasFmr)
 }
@@ -1067,13 +1068,16 @@ colocPipeline <- function(
 
 # Row-bind + column-order the per-pair summary rows (empty result when none).
 # @noRd
-.colocAssemble <- function(results, useEnrichment, ldSketch = NULL) {
+.colocAssemble <- function(results, useEnrichment, ldReference = NULL) {
     if (length(results) == 0L) {
-        return(.colocEmptyResult(enriched = useEnrichment, ldSketch = ldSketch))
+        return(.colocEmptyResult(
+            enriched = useEnrichment,
+            ldReference = ldReference
+        ))
     }
     rows <- bind_rows(map(map(results, "rows"), .colocStandardiseRow))
     variants <- list_c(map(results, "variants"))
-    ColocResult(.colocOrderColumns(rows, useEnrichment), variants, ldSketch)
+    ColocResult(.colocOrderColumns(rows, useEnrichment), variants, ldReference)
 }
 
 # Identity columns first, then everything coloc produced.
@@ -1101,11 +1105,11 @@ colocPipeline <- function(
 # =============================================================================
 
 # LD-sketch compatibility check. Thin wrapper over the shared
-# `.requireMatchingLdSketches` helper (R/ld.R). Shared with
+# `.requireMatchingLdRefs` helper (R/ld.R). Shared with
 # qtlEnrichmentPipeline.
 # @noRd
-.colocRequireMatchingLdSketches <- function(qtlLd, gwasLd) {
-    .requireMatchingLdSketches(qtlLd, gwasLd, pipelineName = "colocPipeline")
+.colocRequireMatchingLdRefs <- function(qtlLd, gwasLd) {
+    .requireMatchingLdRefs(qtlLd, gwasLd, pipelineName = "colocPipeline")
 }
 
 # SuSiE credible-set concentration filter. Given a trimmed SuSiE fit
@@ -1136,7 +1140,8 @@ colocPipeline <- function(
 
 # Extract an LBF matrix (effects x variants) from a FineMappingRow,
 # applying the same filtering knobs as the legacy .extractLbfMatrix, now
-# carried as one `lbfFilter` bundle rather than three loose arguments:
+# carried as one `colocLbfFilterParam` bundle rather than three loose
+# arguments:
 #   - filterLbfCs (CS-only)
 #   - secondary (secondary coverage CS, with a concentration cutoff)
 #   - priorTol drop on V (default)
@@ -1146,7 +1151,7 @@ colocPipeline <- function(
 # @noRd
 .colocExtractLbfFromEntry <- function(
     parts,
-    lbfFilterArgs,
+    colocLbfFilterParam,
     label = "entry"
 ) {
     fit <- susieFit(parts)
@@ -1161,7 +1166,7 @@ colocPipeline <- function(
     # stays a skip; it is only an ABSENT LBF that is an error.
     allRows <- .colocLbfMatrix(fit, label)
     allMass <- .colocEffectRetainedMass(fit, nrow(allRows))
-    keep <- .colocSelectLbfRows(allRows, fit, lbfFilterArgs)
+    keep <- .colocSelectLbfRows(allRows, fit, colocLbfFilterParam)
     kept <- allRows[keep, , drop = FALSE]
     mass <- allMass[keep]
     if (nrow(kept) == 0L) {
@@ -1223,25 +1228,28 @@ colocPipeline <- function(
 # matching when the exact name is absent, so a fit carrying `sets_secondary`
 # but no `sets` would silently filter on the wrong element.
 # @noRd
-.colocSelectLbfRows <- function(lbfMatrix, fit, lbfFilterArgs) {
+.colocSelectLbfRows <- function(lbfMatrix, fit, colocLbfFilterParam) {
     # Read off the bundle like the other three filter fields, rather than
     # taken as a second copy of a value the caller already has in hand.
-    priorTol <- lbfFilterArgs$priorTol %||% 1e-9
+    priorTol <- colocLbfFilterParam$priorTol %||% 1e-9
     # The only place the filter's fields are read. Every function between
     # here and colocPipeline carries the bundle whole, so the names cannot
     # drift apart on the way down.
     allRows <- seq_len(nrow(lbfMatrix))
-    if (isTRUE(lbfFilterArgs$filterLbfCs) && is.null(lbfFilterArgs$secondary)) {
+    if (
+        isTRUE(colocLbfFilterParam$filterLbfCs) &&
+            is.null(colocLbfFilterParam$secondary)
+    ) {
         csIdx <- fit[["sets"]][["cs_index"]]
         if (!is.null(csIdx) && length(csIdx) > 0L) {
             return(csIdx)
         }
-    } else if (!is.null(lbfFilterArgs$secondary)) {
+    } else if (!is.null(colocLbfFilterParam$secondary)) {
         secIdx <- try_fetch(
             .colocFilterCsByConcentration(
                 fit,
-                coverage = lbfFilterArgs$secondary,
-                concentration = lbfFilterArgs$concentration
+                coverage = colocLbfFilterParam$secondary,
+                concentration = colocLbfFilterParam$concentration
             ),
             error = function(cnd) NULL
         )
@@ -1299,7 +1307,7 @@ colocPipeline <- function(
 # another's. Nothing downstream indexes this list by name, so positional
 # records make the collision impossible instead of merely unlikely.
 # @noRd
-.colocPreextractGwasLbf <- function(gwasFmr, lbfFilterArgs) {
+.colocPreextractGwasLbf <- function(gwasFmr, colocLbfFilterParam) {
     if (nrow(gwasFmr) == 0L) {
         return(list())
     }
@@ -1309,7 +1317,7 @@ colocPipeline <- function(
         gwasFmr = gwasFmr,
         blockIds = .colocGwasBlockIds(gwasFmr),
         side = .fmrSideName(gwasFmr),
-        lbfFilterArgs = lbfFilterArgs
+        colocLbfFilterParam = colocLbfFilterParam
     ))
 }
 
@@ -1321,14 +1329,14 @@ colocPipeline <- function(
     gwasFmr,
     blockIds,
     side,
-    lbfFilterArgs
+    colocLbfFilterParam
 ) {
     ident <- .colocTupleIdentity(gwasFmr, ri)
     blockId <- blockIds[[ri]]
     label <- .fmrTupleLabel(side, ident, block = blockId)
     info <- .colocExtractLbfFromEntry(
         .fmrRowParts(gwasFmr, ri),
-        lbfFilterArgs,
+        colocLbfFilterParam,
         label = label
     )
     if (is.null(info)) {
@@ -1387,7 +1395,7 @@ colocPipeline <- function(
 # do not have to special-case a NULL return. When `enriched = TRUE` the
 # enrichment + p12Used columns are appended (the enloc-mode schema).
 # @noRd
-.colocEmptyResult <- function(enriched = FALSE, ldSketch = NULL) {
+.colocEmptyResult <- function(enriched = FALSE, ldReference = NULL) {
     base <- tibble(
         study = character(0),
         context = character(0),
@@ -1414,7 +1422,7 @@ colocPipeline <- function(
     ColocResult(
         mutate(base, !!!.colocEnrichmentCols(enriched, NULL)),
         list(),
-        ldSketch = ldSketch
+        ldReference = ldReference
     )
 }
 
@@ -1541,9 +1549,6 @@ colocPipeline <- function(
 }
 
 # ---- map/apply helpers (lambda-free callbacks) ---------------------------
-
-# The variant ids of one fine-mapping entry (S4 slot; not pluckable by name).
-# @noRd
 
 # Score the first side's LBF against one second-side record -> a summary row
 # (or NULL).

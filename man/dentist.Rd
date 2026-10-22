@@ -13,7 +13,7 @@ dentist(
   windowMode = c("distance", "count"),
   minDim = 2000,
   ldMethod = "sample",
-  methodArgs = DentistParam()
+  dentistParam = DentistParam()
 )
 }
 \arguments{
@@ -22,8 +22,10 @@ dentist(
 
 \item{R}{Square LD correlation matrix. Provide either \code{R} or \code{X}.}
 
-\item{X}{Genotype matrix (samples x SNPs). If provided, LD is computed via
-\code{computeLd(X)} and \code{nSample} defaults to \code{nrow(X)}.}
+\item{X}{Genotype matrix (samples x SNPs). With \code{ldMethod = "sample"}
+DENTIST works on the standardized genotypes and never forms the LD
+matrix; any other \code{ldMethod} computes LD via \code{computeLd(X)}.
+\code{nSample} defaults to \code{nrow(X)}.}
 
 \item{nSample}{The number of samples in the LD reference panel (NOT the GWAS
 sample size). This controls the SVD truncation rank K = min(idx_size,
@@ -44,11 +46,11 @@ windows by variant count using \code{segmentByCount} (C++ \code{--wind}).}
 size).}
 
 \item{ldMethod}{Character string specifying the LD computation method when
-\code{X} is provided. Passed to \code{computeLd}. One of \code{"sample"}
-(default), \code{"population"}, or \code{"gcta"}. Ignored when \code{R} is
-provided directly.}
+\code{X} is provided: \code{"sample"} (default), which uses the
+genotypes directly, or \code{"population"} or \code{"gcta"}, which go
+through \code{computeLd}. Ignored when \code{R} is provided directly.}
 
-\item{methodArgs}{The DENTIST algorithm settings, built with
+\item{dentistParam}{The DENTIST algorithm settings, built with
 \code{\link{DentistParam}}: \code{pValueThreshold}, \code{propSVD},
 \code{gcControl}, \code{nIter}, \code{gPvalueThreshold},
 \code{duprThreshold}, \code{numThreads}, \code{correctChenEtAlBug}

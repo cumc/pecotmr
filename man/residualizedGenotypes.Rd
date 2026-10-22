@@ -14,7 +14,7 @@ residualizedGenotypes(x, ...)
   region = NULL,
   cisWindow = NULL,
   samples = NULL,
-  residualizationArgs = ResidualizationParam()
+  residualizationParam = ResidualizationParam()
 )
 }
 \arguments{
@@ -41,7 +41,7 @@ around the trait; \code{NULL} uses the dataset default.}
 \item{samples}{Character vector or \code{NULL}. Restrict to these sample IDs;
 \code{NULL} uses all samples.}
 
-\item{residualizationArgs}{What the data is residualized on, built with
+\item{residualizationParam}{What the data is residualized on, built with
 \code{\link{ResidualizationParam}}: \code{phenotypeCovariates} and
 \code{genotypeCovariates} choose the covariate sets,
 \code{residualizePhenotype} / \code{residualizeGenotype} turn each

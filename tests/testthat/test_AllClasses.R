@@ -13,8 +13,8 @@ context("AllClasses (virtual base classes)")
 .alc_makeHandle <- function(snp_n = 3L) {
     new(
         "GenotypeHandle",
-        path = "/tmp/test.gds",
-        format = "gds",
+        path = "/tmp/test",
+        format = "plink2",
         snpInfo = data.frame(
             SNP = paste0("rs", seq_len(snp_n)),
             CHR = rep("1", snp_n),
@@ -52,7 +52,7 @@ context("AllClasses (virtual base classes)")
         studyName = "g1",
         entry = list(.alc_makeGr()),
         genome = "hg19",
-        ldSketch = .alc_makeHandle(),
+        ldReference = .alc_makeHandle(),
         qcInfo = qcInfo
     )
 }
@@ -189,7 +189,7 @@ test_that("FineMappingResultBase: adjustPips on a zero-row collection returns th
         trait = c("t1", "t2"),
         method = c("susie", "susie"),
         entry = list(.alc_makeFmEntry(), .alc_makeFmEntry()),
-        ldSketch = .alc_makeHandle()
+        ldReference = .alc_makeHandle()
     )
 }
 
@@ -240,7 +240,7 @@ test_that("FineMappingResultBase aggregate view: an empty collection yields a 0-
         trait = character(0),
         method = character(0),
         entry = list(),
-        ldSketch = .alc_makeHandle()
+        ldReference = .alc_makeHandle()
     )
     expect_equal(nrow(credibleSets(empty)), 0L)
 })
@@ -250,15 +250,30 @@ test_that("FineMappingResultBase aggregate view: an empty collection yields a 0-
 # Variant reconciliation: intersectVariants + retainedMass
 # ===========================================================================
 
-.rc_makeFmr <- function(vids, studyName = "s1", maxNumSingleEffects = 3L, seed = 3L) {
+.rc_makeFmr <- function(
+    vids,
+    studyName = "s1",
+    maxNumSingleEffects = 3L,
+    seed = 3L
+) {
     set.seed(seed)
     p <- length(vids)
-    lbf <- matrix(rnorm(maxNumSingleEffects * p, sd = 3), maxNumSingleEffects, p, dimnames = list(NULL, vids))
+    lbf <- matrix(
+        rnorm(maxNumSingleEffects * p, sd = 3),
+        maxNumSingleEffects,
+        p,
+        dimnames = list(NULL, vids)
+    )
     alpha <- lbfToAlpha(lbf)
     pip <- as.numeric(1 - apply(1 - alpha, 2, prod))
     e <- fineMappingRow(
         vids,
-        list(pip = pip, alpha = alpha, lbf_variable = lbf, V = rep(1, maxNumSingleEffects)),
+        list(
+            pip = pip,
+            alpha = alpha,
+            lbf_variable = lbf,
+            V = rep(1, maxNumSingleEffects)
+        ),
         data.frame(variant_id = vids, pip = pip, stringsAsFactors = FALSE)
     )
     QtlFineMappingResult(
@@ -544,13 +559,17 @@ test_that("an empty collection has no variants", {
     setClass(
         "RcEmptyKid",
         contains = "RangedTupleList",
-        representation(genome = "character", ldSketch = "ANY", qcInfo = "list")
+        representation(
+            genome = "character",
+            ldReference = "ANY",
+            qcInfo = "list"
+        )
     )
     empty <- new(
         "RcEmptyKid",
         GenomicRanges::GRangesList(),
         genome = "hg38",
-        ldSketch = NULL,
+        ldReference = NULL,
         qcInfo = list()
     )
     expect_equal(nrow(empty), 0L)

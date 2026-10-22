@@ -283,9 +283,6 @@ QvalueOptions <- function(...) {
     keep & !is.na(keep)
 }
 
-# Q-value significance: per-entry mask of variant q-values below the threshold
-# for the FDR-significant genes.
-# @noRd
 # Entry `i`'s q-value mask, or the incoming mask when the gene is not
 # FDR-significant or carries no per-variant q-values.
 # @noRd
@@ -297,6 +294,9 @@ QvalueOptions <- function(...) {
     !is.na(mc$qvalue) & mc$qvalue < threshold
 }
 
+# Q-value significance: per-entry mask of variant q-values below the threshold
+# for the FDR-significant genes.
+# @noRd
 .qapMaskQvalue <- function(x, masks, threshold) {
     qCol <- if (!is.null(x$q_beta)) "q_beta" else "q_bonferroni_min_original"
     if (is.null(.tupleColumn(x, qCol))) {
@@ -381,7 +381,7 @@ setMethod(
     methods::new(
         "QtlSumStats",
         grl,
-        ldSketch = ldSketch(x),
+        ldReference = ldReference(x),
         qcInfo = qcInfo
     )
 }
@@ -565,10 +565,6 @@ setMethod(
     as.numeric(x$n_variants)
 }
 
-# Per-gene min Bonferroni-adjusted p (original + filtered). The upstream p-value
-# pre-filter always retains the global-min variant, so the min over the entry is
-# the exact per-gene min. Returns list(orig, filt).
-# @noRd
 # One gene's Bonferroni-adjusted minimum p-value, before and after the
 # variant filter. NA on either side means the gene had nothing to adjust.
 # @noRd
@@ -606,6 +602,10 @@ setMethod(
     )
 }
 
+# Per-gene min Bonferroni-adjusted p (original + filtered). The upstream p-value
+# pre-filter always retains the global-min variant, so the min over the entry is
+# the exact per-gene min. Returns list(orig, filt).
+# @noRd
 .qapBonferroniPerGene <- function(
     x,
     nVar,

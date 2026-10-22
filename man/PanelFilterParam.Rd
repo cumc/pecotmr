@@ -12,8 +12,9 @@ PanelFilterParam(mafCutoff = 0, macCutoff = 0, imissCutoff = 1)
 \item{mafCutoff}{Minor-allele-frequency floor. Default \code{0}.}
 
 \item{macCutoff}{Minor-allele-count floor; the stricter of this and
-\code{mafCutoff} applies, using the panel's own sample count. Default
-\code{0}.}
+\code{mafCutoff} applies, using the panel's real sample count -- for a
+stochastic LD sketch, the one its \code{.afreq} records, not its
+pseudo-samples. Default \code{0}.}
 
 \item{imissCutoff}{Per-variant missingness ceiling. Default \code{1}, which
 filters nothing and lets the allele-frequency sidecar be read instead of

@@ -1,7 +1,7 @@
 #include "qtl_enrichment.h"
 
 [[cpp11::register]]
-cpp11::writable::list qtlEnrichmentRcpp(
+cpp11::writable::list qtlEnrichmentCpp(
 	SEXP rGwasPip, SEXP rQtlSusieFit,
 	double piGwas = 0, double piQtl = 0,
 	int ImpN = 25, double shrinkageLambda = 1.0,

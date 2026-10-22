@@ -18,6 +18,8 @@
 \alias{perCsColumns<-}
 \alias{maxNumSingleEffects}
 \alias{maxNumSingleEffectsGreedy}
+\alias{CredibleSetParam-class}
+\alias{CredibleSetParam}
 \alias{csCoverage,CredibleSetParam-method}
 \alias{csCoverage<-,CredibleSetParam-method}
 \alias{secondaryCoverage,CredibleSetParam-method}
@@ -34,8 +36,6 @@
 \alias{perCsColumns<-,CredibleSetParam-method}
 \alias{maxNumSingleEffects,CredibleSetParam-method}
 \alias{maxNumSingleEffectsGreedy,CredibleSetParam-method}
-\alias{CredibleSetParam-class}
-\alias{CredibleSetParam}
 \title{Credible-Set Construction And Reporting}
 \usage{
 csCoverage(x, ...)
@@ -70,6 +70,18 @@ maxNumSingleEffects(x, ...)
 
 maxNumSingleEffectsGreedy(x, ...)
 
+CredibleSetParam(
+  coverage = 0.95,
+  secondaryCoverage = c(0.7, 0.5),
+  signalCutoff = 0.025,
+  minAbsCorr = 0.8,
+  medianAbsCorr = NULL,
+  includeAllCs = FALSE,
+  perCsColumns = c("none", "alpha", "full"),
+  maxNumSingleEffects = 10L,
+  maxNumSingleEffectsGreedy = NULL
+)
+
 \S4method{csCoverage}{CredibleSetParam}(x)
 
 \S4method{csCoverage}{CredibleSetParam}(x) <- value
@@ -101,18 +113,6 @@ maxNumSingleEffectsGreedy(x, ...)
 \S4method{maxNumSingleEffects}{CredibleSetParam}(x)
 
 \S4method{maxNumSingleEffectsGreedy}{CredibleSetParam}(x)
-
-CredibleSetParam(
-  coverage = 0.95,
-  secondaryCoverage = c(0.7, 0.5),
-  signalCutoff = 0.025,
-  minAbsCorr = 0.8,
-  medianAbsCorr = NULL,
-  includeAllCs = FALSE,
-  perCsColumns = c("none", "alpha", "full"),
-  maxNumSingleEffects = 10L,
-  maxNumSingleEffectsGreedy = NULL
-)
 }
 \arguments{
 \item{x}{A \code{CredibleSetParam}.}

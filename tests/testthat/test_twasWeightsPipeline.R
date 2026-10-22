@@ -22,8 +22,8 @@ context("twasWeightsPipeline (S4 dispatch) with mocked weight methods")
 .tp_makeHandle <- function(snp_n = 20L, n_samples = 40L) {
     new(
         "GenotypeHandle",
-        path = "/tmp/tp.gds",
-        format = "gds",
+        path = "/tmp/tp",
+        format = "plink2",
         snpInfo = data.frame(
             SNP = sprintf("chr1:%d:A:G", 100L * seq_len(snp_n)),
             CHR = rep("1", snp_n),
@@ -128,7 +128,7 @@ context("twasWeightsPipeline (S4 dispatch) with mocked weight methods")
     }
 }
 
-# Build a minimal FineMappingResult that satisfies .twasCheckFineMappingMethods.
+# A minimal QtlFineMappingResult that satisfies .twasCheckFineMappingMethods.
 # Each entry stores a stub fit list under the susieFit slot; the per-tuple
 # loop pulls these via .twasFineMappingFits() and threads them into the
 # corresponding *Weights wrapper as susieFit / susieInfFit / mvsusieFit / etc.
@@ -225,8 +225,8 @@ test_that("twasWeightsPipeline(QtlDataset): runs end-to-end with mocked solvers"
             cisWindow = 1000L,
             estimatePi = FALSE,
             verbose = 0,
-            crossValidationArgs = CrossValidationParam(folds = 0),
-            ensembleArgs = EnsembleParam()
+            crossValidationParam = CrossValidationParam(folds = 0),
+            ensembleParam = EnsembleParam()
         )
     )
     expect_s4_class(res, "TwasWeights")
@@ -276,8 +276,8 @@ test_that("twasWeightsPipeline(QtlDataset): mafCutoff/xvarCutoff overrides tight
             estimatePi = FALSE,
             verbose = 0,
             ...,
-            crossValidationArgs = CrossValidationParam(folds = 0),
-            ensembleArgs = EnsembleParam()
+            crossValidationParam = CrossValidationParam(folds = 0),
+            ensembleParam = EnsembleParam()
         ))
     }
     vcount <- function(res) {
@@ -322,12 +322,83 @@ test_that("twasWeightsPipeline(QtlDataset): contexts filter restricts the per-co
             cisWindow = 1000L,
             estimatePi = FALSE,
             verbose = 0,
-            crossValidationArgs = CrossValidationParam(folds = 0),
-            ensembleArgs = EnsembleParam()
+            crossValidationParam = CrossValidationParam(folds = 0),
+            ensembleParam = EnsembleParam()
         )
     )
     expect_setequal(contexts(res), "brain")
     expect_equal(nrow(res), 1L)
+})
+
+# A study measured in brain and liver, on the synthetic genotypes.
+.tp_twoContextStudy <- function(studyName) {
+    QtlDataset(
+        studyName = studyName,
+        genotypes = .tp_makeHandle(snp_n = 20L, n_samples = 40L),
+        phenotypes = list(
+            brain = .tp_makeSe(traits = c("ENSG_A", "ENSG_B"), n_samples = 40L),
+            liver = .tp_makeSe(traits = c("ENSG_A", "ENSG_B"), n_samples = 40L)
+        ),
+        genotypeCovariates = matrix(numeric(0), nrow = 0, ncol = 0)
+    )
+}
+
+test_that("twasWeightsPipeline(QtlDataset): traitId chosen per context", {
+    mocks <- c(
+        list(extractBlockGenotypes = .tp_mockExtractor()),
+        .tp_mockIndividualWeights()
+    )
+    exec(local_mocked_bindings, !!!c(mocks, list(.package = "pecotmr")))
+    res <- suppressMessages(twasWeightsPipeline(
+        .tp_twoContextStudy("A"),
+        methods = list(lasso = list()),
+        traitId = list(A = list(brain = "ENSG_B")),
+        cisWindow = 1000L,
+        estimatePi = FALSE,
+        verbose = 0,
+        crossValidationParam = CrossValidationParam(folds = 0),
+        ensembleParam = EnsembleParam()
+    ))
+    # The grid spans every (context, trait) pair; the selection keeps
+    # ENSG_B alone in brain and both traits in liver, which it does not name.
+    expect_setequal(
+        paste(res$context, res$trait),
+        c("brain ENSG_B", "liver ENSG_A", "liver ENSG_B")
+    )
+})
+
+test_that("twasWeightsPipeline(MultiStudy): list selections stay per study", {
+    mocks <- c(
+        list(extractBlockGenotypes = .tp_mockExtractor()),
+        .tp_mockIndividualWeights()
+    )
+    exec(local_mocked_bindings, !!!c(mocks, list(.package = "pecotmr")))
+    mt <- MultiStudyQtlDataset(
+        qtlDatasets = list(
+            A = .tp_twoContextStudy("A"),
+            B = .tp_twoContextStudy("B")
+        )
+    )
+    res <- suppressMessages(twasWeightsPipeline(
+        mt,
+        methods = "lasso",
+        traitId = list(A = "ENSG_B"),
+        contexts = list(B = "brain"),
+        cisWindow = 1000L,
+        estimatePi = FALSE,
+        verbose = 0,
+        crossValidationParam = CrossValidationParam(folds = 0),
+        ensembleParam = EnsembleParam()
+    ))
+    expect_setequal(
+        paste(res$study, res$context, res$trait),
+        c(
+            "A brain ENSG_B",
+            "A liver ENSG_B",
+            "B brain ENSG_A",
+            "B brain ENSG_B"
+        )
+    )
 })
 
 test_that("twasWeightsPipeline(QtlDataset): unknown context errors", {
@@ -338,7 +409,7 @@ test_that("twasWeightsPipeline(QtlDataset): unknown context errors", {
             contexts = "ghost",
             methods = list(lasso = list())
         ),
-        "unknown context"
+        "no study has: ghost"
     )
 })
 
@@ -398,7 +469,7 @@ test_that("twasWeightsPipeline(QtlDataset): RSS-only method rejected", {
         trait = traits,
         entry = entries,
         genome = "hg19",
-        ldSketch = .tp_makeHandle(snp_n = 20L),
+        ldReference = .tp_makeHandle(snp_n = 20L),
         qcInfo = if (qc) list(step1 = "ok") else list()
     )
 }
@@ -406,11 +477,21 @@ test_that("twasWeightsPipeline(QtlDataset): RSS-only method rejected", {
 # Mock sumstat weight methods to return zero vectors of the LD dim.
 .tp_mockSumstatWeights <- function() {
     list(
-        susieRssWeights = function(stat, LD, ...) rep(0, nrow(LD)),
-        lassosumRssWeights = function(stat, LD, ...) rep(0, nrow(LD)),
-        mrashRssWeights = function(stat, LD, ...) rep(0, nrow(LD)),
-        susieInfRssWeights = function(stat, LD, ...) rep(0, nrow(LD)),
-        sdprWeights = function(stat, LD, ...) rep(0, nrow(LD))
+        susieRssWeights = function(stat, ldReference, ...) {
+            rep(0, length(stat$variantNames))
+        },
+        lassosumRssWeights = function(stat, ldReference, ...) {
+            rep(0, length(stat$variantNames))
+        },
+        mrashRssWeights = function(stat, ldReference, ...) {
+            rep(0, length(stat$variantNames))
+        },
+        susieInfRssWeights = function(stat, ldReference, ...) {
+            rep(0, length(stat$variantNames))
+        },
+        sdprWeights = function(stat, ldReference, ...) {
+            rep(0, length(stat$variantNames))
+        }
     )
 }
 
@@ -424,7 +505,7 @@ test_that("twasWeightsPipeline(QtlSumStats): runs end-to-end with mocked solvers
     # Method tokens are the bare short names; the QtlSumStats dispatch
     # resolves them to the *Rss impl via the .twasMethodCapabilities table.
     # Fine-mapping methods (susie / susieInf / etc.) require a
-    # FineMappingResult and are covered by separate tests.
+    # fine-mapping result and are covered by separate tests.
     res <- suppressMessages(suppressWarnings(
         twasWeightsPipeline(ss, methods = c("mrash", "lasso"), verbose = 0)
     ))
@@ -452,8 +533,13 @@ test_that("twasWeightsPipeline(QtlSumStats): individual-only method rejected", {
 test_that("twasWeightsPipeline(QtlSumStats): empty contexts/trait filter errors", {
     ss <- .tp_makeQtlSumStats()
     expect_error(
-        twasWeightsPipeline(ss, methods = "lasso", contexts = "ghost"),
+        twasWeightsPipeline(ss, methods = "lasso", traitId = "ghost"),
         "no entries matched"
+    )
+    # A context no study has is caught earlier, when the selection is parsed.
+    expect_error(
+        twasWeightsPipeline(ss, methods = "lasso", contexts = "ghost"),
+        "no study has: ghost"
     )
 })
 
@@ -464,7 +550,7 @@ test_that("twasWeightsPipeline(QtlSumStats): per-method failure surfaces as warn
         .tp_mockSumstatWeights()
     )
     # Override lassosumRssWeights with the failure-producing version.
-    mocks$lassosumRssWeights <- function(stat, LD, ...) {
+    mocks$lassosumRssWeights <- function(stat, ldReference, ...) {
         stop("synthetic test failure")
     }
     exec(local_mocked_bindings, !!!c(mocks, list(.package = "pecotmr")))
@@ -483,7 +569,7 @@ test_that("twasWeightsPipeline(
     trait
 )", {
     ss <- .tp_makeQtlSumStats(n_entries = 1L) # 1 context per (study, trait)
-    # Provide a stub FineMappingResult so the gate passes; the multivariate
+    # Provide a stub fine-mapping result so the gate passes; the multivariate
     # guard is what we want to exercise here.
     fmr <- .tp_makeStubFineMappingResult(
         studyName = "s1",
@@ -499,7 +585,7 @@ test_that("twasWeightsPipeline(
 
 # ===========================================================================
 # Fine-mapping method gate: every fine-mapping method (susie / susieInf /
-# susieAsh / mvsusie / fsusie) must be paired with a FineMappingResult.
+# susieAsh / mvsusie / fsusie) must be paired with a fine-mapping result.
 # twasWeightsPipeline is not allowed to re-fit them from scratch. Input-
 # class compatibility is delegated to .fmCheckMethodCapabilities so the
 # rule set stays in sync with fineMappingPipeline.
@@ -554,12 +640,12 @@ test_that("gate: fsusie now has a TWAS-weight extractor (accepted with FMR)", {
         method = "fsusie"
     )
     # fsusie is registered in .twasFineMappingMethodAdapters (fsusieWeights), so
-    # the gate accepts it when a FineMappingResult is supplied ...
+    # the gate accepts it when a fine-mapping result is supplied ...
     expect_silent(
         pecotmr:::.twasCheckFineMappingMethods("fsusie", fmr, "QtlDataset")
     )
-    # ... but still requires a FineMappingResult (it is a fine-mapping method and
-    # is not re-fit by twasWeightsPipeline).
+    # ... but still requires a fine-mapping result (it is a fine-mapping
+    # method and is not re-fit by twasWeightsPipeline).
     expect_error(
         pecotmr:::.twasCheckFineMappingMethods("fsusie", NULL, "QtlDataset"),
         "may not be re-fit"
@@ -582,7 +668,7 @@ test_that("gate: fsusie on QtlSumStats delegates to .fmCheckMethodCapabilities",
     )
 })
 
-test_that("gate: non-FineMappingResult object passed in errors", {
+test_that("gate: an object that is not a fine-mapping result errors", {
     qd <- .tp_makeQtlDataset(contexts = "brain", traits = "ENSG_A")
     expect_error(
         twasWeightsPipeline(qd, methods = "susie", fineMappingResult = list()),
@@ -599,7 +685,7 @@ test_that("gate: unknown method tokens still error with full menu", {
 })
 
 # ---------------------------------------------------------------------------
-# Success: when a FineMappingResult is supplied, the fit is threaded into
+# Success: when a fine-mapping result is supplied, the fit is threaded into
 # the corresponding *Weights wrapper via its *Fit argument. The wrappers
 # are mocked to verify the fit arrives and the underlying fitter is NOT
 # re-invoked.
@@ -630,8 +716,8 @@ test_that("gate: QtlDataset + susie + fineMappingResult threads the susieFit", {
             cisWindow = 1000L,
             estimatePi = FALSE,
             verbose = 0,
-            crossValidationArgs = CrossValidationParam(folds = 0),
-            ensembleArgs = EnsembleParam()
+            crossValidationParam = CrossValidationParam(folds = 0),
+            ensembleParam = EnsembleParam()
         )
     ))
     expect_s4_class(res, "TwasWeights")
@@ -651,11 +737,16 @@ test_that("gate: QtlSumStats + susie + fineMappingResult threads the susieRssFit
     fitsSeen <- 0L
     mocks <- list(
         extractBlockGenotypes = .tp_mockExtractor(),
-        susieRssWeights = function(stat, LD, susieRssFit = NULL, ...) {
+        susieRssWeights = function(
+            stat,
+            ldReference,
+            susieRssFit = NULL,
+            ...
+        ) {
             if (!is.null(susieRssFit)) {
                 fitsSeen <<- fitsSeen + 1L
             }
-            rep(0, nrow(LD))
+            rep(0, length(stat$variantNames))
         }
     )
     exec(local_mocked_bindings, !!!c(mocks, list(.package = "pecotmr")))
@@ -684,9 +775,14 @@ test_that("gate: QtlSumStats + susieAsh + fineMappingResult threads the susieAsh
     sawFit <- FALSE
     mocks <- list(
         extractBlockGenotypes = .tp_mockExtractor(),
-        susieAshRssWeights = function(stat, LD, susieAshRssFit = NULL, ...) {
+        susieAshRssWeights = function(
+            stat,
+            ldReference,
+            susieAshRssFit = NULL,
+            ...
+        ) {
             sawFit <<- !is.null(susieAshRssFit)
-            rep(0, nrow(LD))
+            rep(0, length(stat$variantNames))
         }
     )
     exec(local_mocked_bindings, !!!c(mocks, list(.package = "pecotmr")))
@@ -706,7 +802,7 @@ test_that("gate: QtlSumStats + susieAsh + fineMappingResult threads the susieAsh
 
 test_that("gate: missing matching tuple in fineMappingResult warns and skips", {
     ss <- .tp_makeQtlSumStats()
-    # FineMappingResult has a row for a DIFFERENT (study, context, trait):
+    # The fine-mapping result has a row for a DIFFERENT (study, context, trait):
     # the gate passes (any fine-mapping fit present satisfies the object
     # check), but the per-tuple lookup finds nothing and warns.
     fmr <- .tp_makeStubFineMappingResult(
@@ -776,8 +872,8 @@ test_that("twasWeightsPipeline(
             cisWindow = 1000L,
             estimatePi = FALSE,
             verbose = 0,
-            crossValidationArgs = CrossValidationParam(folds = 0),
-            ensembleArgs = EnsembleParam()
+            crossValidationParam = CrossValidationParam(folds = 0),
+            ensembleParam = EnsembleParam()
         )
     ))
     expect_s4_class(res, "TwasWeights")
@@ -813,8 +909,8 @@ test_that("twasWeightsPipeline(QtlDataset): mr.mash multivariate path with 2 tra
             cisWindow = 1000L,
             estimatePi = FALSE,
             verbose = 0,
-            crossValidationArgs = CrossValidationParam(folds = 0),
-            ensembleArgs = EnsembleParam()
+            crossValidationParam = CrossValidationParam(folds = 0),
+            ensembleParam = EnsembleParam()
         )
     ))
     expect_s4_class(res, "TwasWeights")
@@ -876,8 +972,8 @@ test_that("twasWeightsPipeline(QtlDataset): mr.mash retains its fit parts in the
             cisWindow = 1000L,
             estimatePi = FALSE,
             verbose = 0,
-            crossValidationArgs = CrossValidationParam(folds = 0),
-            ensembleArgs = EnsembleParam()
+            crossValidationParam = CrossValidationParam(folds = 0),
+            ensembleParam = EnsembleParam()
         )
     ))
     fit <- methodFits(
@@ -915,7 +1011,7 @@ test_that("twasWeightsPipeline(QtlDataset): mr.mash retains its fit parts in the
         trait = rep("t1", n),
         entry = entries,
         genome = "hg19",
-        ldSketch = .tp_makeHandle(snp_n = 20L),
+        ldReference = .tp_makeHandle(snp_n = 20L),
         qcInfo = list(step1 = "ok")
     )
 }
@@ -931,16 +1027,21 @@ test_that("twasWeightsPipeline(QtlSumStats): mvsusie multivariate path returns o
     shapesSeen <- list()
     mocks <- list(
         extractBlockGenotypes = .tp_mockExtractor(),
-        mvsusieRssWeights = function(stat, LD, mvsusieRssFit = NULL, ...) {
+        mvsusieRssWeights = function(
+            stat,
+            ldReference,
+            mvsusieRssFit = NULL,
+            ...
+        ) {
             shapesSeen[[length(shapesSeen) + 1L]] <<- list(
                 Zdim = dim(stat$z),
-                LDdim = dim(LD),
+                nVariants = length(stat$variantNames),
                 ctxNames = colnames(stat$z),
                 sawFit = !is.null(mvsusieRssFit)
             )
             matrix(
                 0,
-                nrow = nrow(LD),
+                nrow = length(stat$variantNames),
                 ncol = ncol(stat$z),
                 dimnames = list(stat$variantNames, colnames(stat$z))
             )
@@ -973,7 +1074,7 @@ test_that("twasWeightsPipeline(QtlSumStats): mr.mash multivariate solver failure
     ss <- .tp_makeMultiCtxQtlSumStats(contexts = c("c1", "c2"))
     mocks <- list(
         extractBlockGenotypes = .tp_mockExtractor(),
-        mrmashRssWeights = function(stat, LD, ...) {
+        mrmashRssWeights = function(stat, ldReference, ...) {
             stop("synthetic multivariate failure")
         }
     )
@@ -1029,8 +1130,8 @@ test_that("twasWeightsPipeline(QtlDataset): full cache hit avoids all weight fit
             estimatePi = FALSE,
             twasWeights = cached,
             verbose = 0,
-            crossValidationArgs = CrossValidationParam(folds = 0),
-            ensembleArgs = EnsembleParam()
+            crossValidationParam = CrossValidationParam(folds = 0),
+            ensembleParam = EnsembleParam()
         )
     )
     expect_s4_class(res, "TwasWeights")
@@ -1075,8 +1176,8 @@ test_that("twasWeightsPipeline(QtlDataset): partial cache hit fits only missing 
             estimatePi = FALSE,
             twasWeights = cached,
             verbose = 0,
-            crossValidationArgs = CrossValidationParam(folds = 0),
-            ensembleArgs = EnsembleParam()
+            crossValidationParam = CrossValidationParam(folds = 0),
+            ensembleParam = EnsembleParam()
         )
     )
     expect_setequal(methodNames(res), c("lasso", "enet"))
@@ -1099,9 +1200,9 @@ test_that("twasWeightsPipeline(QtlSumStats): cache hit on a per-tuple basis", {
         list(extractBlockGenotypes = .tp_mockExtractor()),
         .tp_mockSumstatWeights()
     )
-    mocks$lassosumRssWeights <- function(stat, LD, ...) {
+    mocks$lassosumRssWeights <- function(stat, ldReference, ...) {
         rssCalls <<- rssCalls + 1L
-        rep(0, nrow(LD))
+        rep(0, length(stat$variantNames))
     }
     exec(local_mocked_bindings, !!!c(mocks, list(.package = "pecotmr")))
     res <- suppressMessages(suppressWarnings(
@@ -1209,8 +1310,8 @@ test_that("twasWeightsPipeline: mr.mash and mvSuSiE fit side by side", {
             cisWindow = 1000L,
             estimatePi = FALSE,
             verbose = 0,
-            crossValidationArgs = CrossValidationParam(folds = 0),
-            ensembleArgs = EnsembleParam()
+            crossValidationParam = CrossValidationParam(folds = 0),
+            ensembleParam = EnsembleParam()
         )
     ))
     expect_s4_class(res, "TwasWeights")
@@ -1907,8 +2008,8 @@ test_that(".twasCheckMultivariateY: mvsusie/mrmash error with single trait, sing
     )
     gh <- new(
         "GenotypeHandle",
-        path = "/tmp/x.gds",
-        format = "gds",
+        path = "/tmp/x",
+        format = "plink2",
         snpInfo = data.frame(),
         nSamples = 0L,
         sampleIds = character(),
@@ -1918,7 +2019,7 @@ test_that(".twasCheckMultivariateY: mvsusie/mrmash error with single trait, sing
         studyName = "g1",
         entry = list(gr),
         genome = "hg19",
-        ldSketch = gh
+        ldReference = gh
     )
 }
 
@@ -1944,8 +2045,8 @@ test_that(".twasAssertQcd: passes when qcInfo is populated", {
     )
     gh <- new(
         "GenotypeHandle",
-        path = "/tmp/x.gds",
-        format = "gds",
+        path = "/tmp/x",
+        format = "plink2",
         snpInfo = data.frame(),
         nSamples = 0L,
         sampleIds = character(),
@@ -1955,7 +2056,7 @@ test_that(".twasAssertQcd: passes when qcInfo is populated", {
         studyName = "g1",
         entry = list(gr),
         genome = "hg19",
-        ldSketch = gh,
+        ldReference = gh,
         qcInfo = list(step1 = "ok")
     )
     expect_silent(pecotmr:::.twasAssertQcd(ss))
@@ -1969,8 +2070,8 @@ test_that(".twasAssertQcd: passes when qcInfo is populated", {
 .gsd_makeHandle <- function(snp_n = 2L) {
     new(
         "GenotypeHandle",
-        path = "/tmp/sketch.gds",
-        format = "gds",
+        path = "/tmp/sketch",
+        format = "plink2",
         snpInfo = data.frame(
             SNP = paste0("rs", seq_len(snp_n)),
             CHR = rep("1", snp_n),
@@ -1998,7 +2099,7 @@ test_that(".twasAssertQcd: passes when qcInfo is populated", {
         studyName = "G1",
         entry = list(gr),
         genome = "hg19",
-        ldSketch = .gsd_makeHandle(snp_n),
+        ldReference = .gsd_makeHandle(snp_n),
         qcInfo = list(prebuilt = "synthetic")
     )
 }
@@ -2177,7 +2278,7 @@ test_that(".twasFineMappingFits: NULL input returns an empty list", {
     expect_equal(out, list())
 })
 
-test_that(".twasFineMappingFits: non-FineMappingResult input errors", {
+test_that(".twasFineMappingFits: refuses a non-result input", {
     expect_error(
         pecotmr:::.twasFineMappingFits(
             "not_a_result",
@@ -2371,46 +2472,6 @@ test_that(".twasNormalizeCharMethods: fine-mapping-only tokens skip lookup", {
     expect_equal(res$methodList[["fsusie_weights"]], list())
 })
 
-test_that(".twasMergedEntryForRow gathers one key across regions", {
-    data(twasWeightsExample)
-    tw <- twasWeightsExample
-    base <- data.frame(
-        study = as.character(tw$study),
-        context = as.character(tw$context),
-        trait = as.character(tw$trait),
-        method = as.character(tw$method),
-        stringsAsFactors = FALSE
-    )
-    m <- pecotmr:::.twasMergedEntryForRow(1L, base, list(tw, tw), c("rA", "rB"))
-    expect_s4_class(m, "TwasWeightsRow")
-    expect_equal(names(methodFits(m)), c("rA", "rB"))
-    # Same table twice: the merged entry carries both regions' variants.
-    one <- pecotmr:::.twasMergedEntryForRow(1L, base, list(tw), "rA")
-    expect_equal(
-        length(pecotmr:::.twrPartsVariantIds(m)),
-        2L * length(pecotmr:::.twrPartsVariantIds(one))
-    )
-})
-
-test_that(".twasMergedEntryForRow returns NULL when no region matches", {
-    data(twasWeightsExample)
-    bad <- data.frame(
-        study = "nope",
-        context = "x",
-        trait = "y",
-        method = "z",
-        stringsAsFactors = FALSE
-    )
-    expect_null(
-        pecotmr:::.twasMergedEntryForRow(
-            1L,
-            bad,
-            list(twasWeightsExample),
-            "rA"
-        )
-    )
-})
-
 test_that("twasWeightsPipeline(QtlDataset): region + cisWindow is rejected", {
     qd <- .tp_makeQtlDataset(traits = "ENSG_A")
     expect_error(
@@ -2446,8 +2507,8 @@ test_that("twasWeightsPipeline(QtlDataset): jointRegions=FALSE concatenates per-
         jointRegions = FALSE,
         estimatePi = FALSE,
         verbose = 0,
-        crossValidationArgs = CrossValidationParam(folds = 0),
-        ensembleArgs = EnsembleParam()
+        crossValidationParam = CrossValidationParam(folds = 0),
+        ensembleParam = EnsembleParam()
     ))
     expect_s4_class(res, "TwasWeights")
     # 1 ctx x 1 trait x 1 method -> a single merged row.
@@ -2485,8 +2546,8 @@ test_that("twasWeightsPipeline(QtlDataset): jointRegions=TRUE fits one concatena
         jointRegions = TRUE,
         estimatePi = FALSE,
         verbose = 0,
-        crossValidationArgs = CrossValidationParam(folds = 0),
-        ensembleArgs = EnsembleParam()
+        crossValidationParam = CrossValidationParam(folds = 0),
+        ensembleParam = EnsembleParam()
     ))
     expect_equal(nrow(res), 1L)
     w <- weights(
@@ -2533,8 +2594,8 @@ test_that("twasWeightsPipeline(QtlDataset): mr.mash jointRegions=FALSE concatena
         jointRegions = FALSE,
         estimatePi = FALSE,
         verbose = 0,
-        crossValidationArgs = CrossValidationParam(folds = 0),
-        ensembleArgs = EnsembleParam()
+        crossValidationParam = CrossValidationParam(folds = 0),
+        ensembleParam = EnsembleParam()
     )))
     expect_s4_class(res, "TwasWeights")
     # 2 contexts x 2 traits = 4 rows, each with weights concatenated over regions.
@@ -3007,17 +3068,33 @@ test_that("ensembleWeights: twasWeightList non-list and dimension-mismatch warni
 # twasWeightsPipeline(QtlDataset): remaining branches
 # -----------------------------------------------------------------------------
 
-test_that("twasWeightsPipeline(QtlDataset): fitFullData=FALSE without CV errors", {
+test_that("QtlDataset: CrossValidationParam(fitFullData) reaches the engine", {
     qd <- .tp_makeQtlDataset(contexts = "brain", traits = "ENSG_A")
+    cap <- new.env(parent = emptyenv())
+    local_mocked_bindings(
+        .twasQdsRunGrid = function(grid, marker, ...) {
+            cap$marker <- marker
+            abort("captured")
+        },
+        .package = "pecotmr"
+    )
     expect_error(
         twasWeightsPipeline(
             qd,
             methods = list(lasso = list()),
-            fitFullData = FALSE,
-            crossValidationArgs = CrossValidationParam(folds = 0)
+            cisWindow = 1000L,
+            verbose = 0,
+            crossValidationParam = CrossValidationParam(
+                folds = 2,
+                fitFullData = FALSE
+            )
         ),
-        "fitFullData = FALSE requires cross-validation"
+        "captured"
     )
+    cfg <- pecotmr:::.jpConfig(cap$marker)
+    expect_false(cfg$crossValidationParam$fitFullData)
+    # One home for the setting: the marker no longer carries a second copy.
+    expect_null(cfg$fitFullData)
 })
 
 test_that("twasWeightsPipeline(QtlDataset): mashPrior with no mrmash warns and is ignored", {
@@ -3038,8 +3115,8 @@ test_that("twasWeightsPipeline(QtlDataset): mashPrior with no mrmash warns and i
             cisWindow = 1000L,
             estimatePi = FALSE,
             verbose = 0,
-            crossValidationArgs = CrossValidationParam(folds = 0),
-            ensembleArgs = EnsembleParam()
+            crossValidationParam = CrossValidationParam(folds = 0),
+            ensembleParam = EnsembleParam()
         )),
         "not among `methods`"
     )
@@ -3070,8 +3147,8 @@ test_that("twasWeightsPipeline(QtlDataset): mashPrior full prior is threaded int
         cisWindow = 1000L,
         estimatePi = FALSE,
         verbose = 0,
-        crossValidationArgs = CrossValidationParam(folds = 0),
-        ensembleArgs = EnsembleParam()
+        crossValidationParam = CrossValidationParam(folds = 0),
+        ensembleParam = EnsembleParam()
     )))
     expect_identical(captured, ddpm)
 })
@@ -3102,8 +3179,8 @@ test_that("twasWeightsPipeline(QtlDataset): jointSpec mr.mash + univariate lasso
         cisWindow = 1000L,
         estimatePi = FALSE,
         verbose = 0,
-        crossValidationArgs = CrossValidationParam(folds = 0),
-        ensembleArgs = EnsembleParam()
+        crossValidationParam = CrossValidationParam(folds = 0),
+        ensembleParam = EnsembleParam()
     )))
     expect_s4_class(res, "TwasWeights")
     expect_true("mrmash" %in% as.character(res$method)) # from jointResult
@@ -3127,8 +3204,8 @@ test_that("twasWeightsPipeline(QtlDataset): region selects overlapping traits", 
         region = region,
         estimatePi = FALSE,
         verbose = 0,
-        crossValidationArgs = CrossValidationParam(folds = 0),
-        ensembleArgs = EnsembleParam()
+        crossValidationParam = CrossValidationParam(folds = 0),
+        ensembleParam = EnsembleParam()
     )))
     expect_setequal(traitNames(res), "ENSG_A") # only the overlapping gene
 })
@@ -3144,7 +3221,9 @@ test_that("twasWeightsPipeline(QtlSumStats): NULL methods uses the default RSS p
         !!!c(
             list(
                 extractBlockGenotypes = .tp_mockExtractor(),
-                prsCsWeights = function(stat, LD, ...) rep(0, nrow(LD))
+                prsCsWeights = function(stat, ldReference, ...) {
+                    rep(0, length(stat$variantNames))
+                }
             ),
             # .tp_mockSumstatWeights() already mocks sdprWeights. Passing a
             # binding to local_mocked_bindings() twice makes it record the
@@ -3212,9 +3291,10 @@ test_that("twasWeightsPipeline(QtlSumStats): multivariate mr.mash returns a colu
         !!!c(
             list(
                 extractBlockGenotypes = .tp_mockExtractor(),
-                mrmashRssWeights = function(stat, LD, ...) {
+                mrmashRssWeights = function(stat, ldReference, ...) {
                     k <- if (is.matrix(stat$z)) ncol(stat$z) else 1L
-                    matrix(0, nrow(LD), k, dimnames = list(rownames(LD), NULL))
+                    ids <- stat$variantNames
+                    matrix(0, length(ids), k, dimnames = list(ids, NULL))
                 }
             ),
             .tp_mockSumstatWeights(),
@@ -3230,7 +3310,7 @@ test_that("twasWeightsPipeline(QtlSumStats): multivariate mr.mash returns a colu
 
 test_that("twasWeightsPipeline(QtlSumStats): fine-mapping method absent from fineMappingResult errors", {
     ss <- .tp_makeQtlSumStats(n_entries = 2L)
-    # FineMappingResult that does NOT contain an mvsusie fit (only susie).
+    # A fine-mapping result that does NOT contain an mvsusie fit (only susie).
     fmr <- .tp_makeStubFineMappingResult(
         studyName = "s1",
         contexts = "c1",
@@ -3262,7 +3342,7 @@ test_that("twasWeightsPipeline(QtlSumStats): fine-mapping method absent from fin
 
 test_that("twasWeightsPipeline(MultiStudyQtlDataset): per-study options are not dropped", {
     # residualization and fit retention were declared on the multi-study
-    # method and never reached .twasMsDriver's config, and the
+    # method and never reached .twasMsCfg's config, and the
     # QtlDataset-only options rode `...` into the embedded QtlSumStats call.
     cap <- new.env(parent = emptyenv())
     local_mocked_bindings(
@@ -3282,20 +3362,83 @@ test_that("twasWeightsPipeline(MultiStudyQtlDataset): per-study options are not 
             cisWindow = 1000L,
             verbose = 0,
             estimatePi = FALSE,
-            fitFullData = FALSE,
+            usePCA = TRUE,
+            nPCs = 3L,
+            weightsDataType = "rnaseq",
             fitRetention = "none",
-            residualizationArgs = ResidualizationParam(
+            residualizationParam = ResidualizationParam(
                 residualizeGenotype = FALSE
             ),
-            crossValidationArgs = CrossValidationParam(folds = 0)
+            crossValidationParam = CrossValidationParam(
+                folds = 2,
+                fitFullData = FALSE
+            )
         ))),
         "no entries produced weights"
     )
     expect_false(cap$cfg$estimatePi)
-    expect_false(cap$cfg$fitFullData)
+    expect_true(cap$cfg$usePCA)
+    expect_equal(cap$cfg$nPCs, 3L)
+    expect_equal(cap$cfg$weightsDataType, "rnaseq")
+    expect_false(cap$cfg$crossValidationParam$fitFullData)
     # "none" is provably not the default, and lasso can honour it.
     expect_equal(cap$cfg$fitRetention, "none")
-    expect_false(cap$cfg$residualizationArgs$residualizeGenotype)
+    expect_false(cap$cfg$residualizationParam$residualizeGenotype)
+})
+
+test_that("MultiStudyQtlDataset: components get fitRetention as asked", {
+    # .twasRetentionEnum() once tested isTRUE() on this enum, so every
+    # component ran with "none" whatever the caller asked for. The test above
+    # could not see it: it inspects the record, and it asks for "none".
+    cap <- new.env(parent = emptyenv())
+    local_mocked_bindings(
+        twasWeightsPipeline = function(data, ...) {
+            cap$args <- list(...)
+            NULL
+        },
+        .package = "pecotmr"
+    )
+    # Real components: each worker first takes its own share of the
+    # selection, which needs the study it is working on.
+    qd <- .tp_makeQtlDataset()
+    ss <- .tp_makeQtlSumStats()
+    for (level in c("slim", "none", "full")) {
+        cfg <- list(
+            methods = "lasso",
+            fitRetention = level,
+            usePCA = TRUE,
+            nPCs = 3L,
+            weightsDataType = "rnaseq"
+        )
+        pecotmr:::.twasPerStudy(qd, cfg)
+        expect_equal(cap$args$fitRetention, level)
+        expect_true(cap$args$usePCA)
+        expect_equal(cap$args$nPCs, 3L)
+        expect_equal(cap$args$weightsDataType, "rnaseq")
+        pecotmr:::.twasSumStats(ss, cfg)
+        expect_equal(cap$args$fitRetention, level)
+        expect_equal(cap$args$weightsDataType, "rnaseq")
+    }
+})
+
+test_that("MultiStudyQtlDataset takes every component argument", {
+    # The MultiStudy method recurses into its QtlDataset and QtlSumStats
+    # components, so an argument either takes but the MultiStudy method lacks
+    # cannot reach them at all -- usePCA / nPCs went missing exactly this way.
+    # The record handed to the components must carry each of them too; the
+    # cfg-forwarding test in test_fineMappingPipeline.R checks the last leg,
+    # record -> component.
+    ms <- .methodFormalNames("twasWeightsPipeline", "MultiStudyQtlDataset")
+    comp <- union(
+        .methodFormalNames("twasWeightsPipeline", "QtlDataset"),
+        .methodFormalNames("twasWeightsPipeline", "QtlSumStats")
+    )
+    expect_equal(setdiff(comp, ms), character(0))
+    expect_equal(setdiff(ms, comp), character(0))
+    expect_equal(
+        setdiff(ms, c(.cfgFieldNames(".twasMsCfg"), "jointSpecification")),
+        character(0)
+    )
 })
 
 test_that("twasWeightsPipeline(MultiStudyQtlDataset): a misspelled option errors", {
@@ -3327,8 +3470,8 @@ test_that("twasWeightsPipeline(MultiStudyQtlDataset): recurses into components a
         cisWindow = 1000L,
         estimatePi = FALSE,
         verbose = 0,
-        crossValidationArgs = CrossValidationParam(folds = 0),
-        ensembleArgs = EnsembleParam()
+        crossValidationParam = CrossValidationParam(folds = 0),
+        ensembleParam = EnsembleParam()
     )))
     expect_s4_class(res, "TwasWeights")
     expect_setequal(as.character(res$study), c("study1", "s1")) # both phases
@@ -3397,8 +3540,8 @@ test_that("twasWeightsPipeline(MultiStudyQtlDataset): jointSpec mr.mash + univar
         cisWindow = 1000L,
         estimatePi = FALSE,
         verbose = 0,
-        crossValidationArgs = CrossValidationParam(folds = 0),
-        ensembleArgs = EnsembleParam()
+        crossValidationParam = CrossValidationParam(folds = 0),
+        ensembleParam = EnsembleParam()
     )))
     expect_s4_class(res, "TwasWeights")
     expect_true("mrmash" %in% as.character(res$method))
@@ -3497,14 +3640,15 @@ test_that("twasWeightsPipeline(
         trait = c("t1", "t1", "t2"),
         entry = entries,
         genome = "hg19",
-        ldSketch = .tp_makeHandle(snp_n = 20L),
+        ldReference = .tp_makeHandle(snp_n = 20L),
         qcInfo = list(step1 = "ok")
     )
     local_mocked_bindings(
         extractBlockGenotypes = .tp_mockExtractor(),
-        mrmashRssWeights = function(stat, LD, ...) {
+        mrmashRssWeights = function(stat, ldReference, ...) {
             k <- if (is.matrix(stat$z)) ncol(stat$z) else 1L
-            matrix(0, nrow(LD), k, dimnames = list(rownames(LD), NULL))
+            ids <- stat$variantNames
+            matrix(0, length(ids), k, dimnames = list(ids, NULL))
         },
         .package = "pecotmr"
     )
@@ -3814,6 +3958,26 @@ test_that("twasWeightsPipeline(QtlSumStats) drops panel-rare variants", {
     expect_lt(tight, loose)
 })
 
+test_that("twasWeightsPipeline(QtlSumStats) fits PRS-CS and SDPR", {
+    # Unmocked: both read the entry's z. They used to read a `b` this path
+    # never supplies, so every entry failed with a warning.
+    ss <- .twrssf_qcd()
+    res <- suppressMessages(twasWeightsPipeline(
+        ss,
+        methods = list(
+            prsCs = PrsCsOptions(nIter = 40, nBurnin = 10, thin = 1, seed = 1),
+            dprGibbs = SdprOptions(
+                iter = 40,
+                burn = 10,
+                thin = 1,
+                verbose = FALSE
+            )
+        ),
+        verbose = 0
+    ))
+    expect_setequal(methodNames(res), c("prsCs", "dprGibbs"))
+})
+
 test_that("twasWeightsPipeline RSS cutoffs match .panelVariantFilter", {
     # Exactly the variants the shared filter names: no more (something else is
     # filtering) and no fewer (the cutoff silently did nothing).
@@ -3830,7 +3994,7 @@ test_that("twasWeightsPipeline RSS cutoffs match .panelVariantFilter", {
         expect_equal(
             .twrssf_n(ss, mafCutoff = cut),
             length(.panelVariantFilter(
-                ldSketch(ss),
+                ldReference(ss),
                 ids,
                 PanelFilterParam(mafCutoff = cut)
             )),
@@ -3841,7 +4005,7 @@ test_that("twasWeightsPipeline RSS cutoffs match .panelVariantFilter", {
 
 test_that("twasWeightsPipeline RSS treats MAC as a MAF equivalent", {
     ss <- .twrssf_qcd()
-    nSamp <- ncol(ldSketch(ss))
+    nSamp <- ncol(ldReference(ss))
     expect_equal(
         .twrssf_n(ss, macCutoff = 0.1 * 2 * nSamp),
         .twrssf_n(ss, mafCutoff = 0.1)
@@ -3854,9 +4018,9 @@ test_that("twasWeightsPipeline RSS honours a missingness cutoff", {
     expect_equal(.twrssf_n(ss, imissCutoff = 1), sum(lengths(ss)))
 })
 
-test_that(".twasQssUnivariateFitCtx keeps z, ids and LD aligned", {
+test_that(".twasQssUnivariateFitCtx keeps z, ids and LD reference aligned", {
     ss <- .twrssf_qcd()
-    sketch <- ldSketch(ss)
+    sketch <- ldReference(ss)
     args <- list(ss, ss$study[[1L]], ss$context[[1L]], ss$trait[[1L]], sketch)
     plain <- exec(pecotmr:::.twasQssUnivariateFitCtx, !!!args)
     cut <- suppressMessages(exec(
@@ -3865,11 +4029,17 @@ test_that(".twasQssUnivariateFitCtx keeps z, ids and LD aligned", {
         cutoffs = list(mafCutoff = 0.2, macCutoff = 0, imissCutoff = 1)
     ))
     expect_lt(length(cut$variantIds), length(plain$variantIds))
-    # z, the stored variant names and the LD matrix all agree on the set.
+    # z, the stored variant names and the LD reference all agree on the set:
+    # the in-memory reference block holds exactly the kept variants, with its
+    # dosage realized once for every method fitted to it.
     expect_equal(length(cut$stat$z), length(cut$variantIds))
     expect_equal(cut$stat$variantNames, cut$variantIds)
-    expect_equal(nrow(cut$ldMat), length(cut$variantIds))
-    expect_equal(rownames(cut$ldMat), cut$variantIds)
+    expect_equal(nrow(cut$ldReference), length(cut$variantIds))
+    expect_true(is.matrix(
+        SummarizedExperiment::assay(cut$ldReference, "dosage")
+    ))
+    R <- pecotmr:::.ldFromRef(cut$ldReference, cut$variantIds, "test")
+    expect_equal(rownames(R), cut$variantIds)
     keep <- is_in(plain$variantIds, cut$variantIds)
     expect_equal(cut$stat$z, plain$stat$z[keep])
 })
@@ -3944,27 +4114,6 @@ test_that("mrmash is stripped from either shape, leaving others intact", {
     # An unrecognised shape passes through untouched.
     expect_equal(g(42), 42)
 })
-
-test_that("a region lacking a tuple contributes no entry for it", {
-    # NULL, not an empty row: a region that never fitted the tuple must not
-    # dilute the merged weights with zeros.
-    data(twasWeightsExample)
-    tw <- twasWeightsExample
-    key <- c(
-        as.character(tw$study)[[1L]],
-        as.character(tw$context)[[1L]],
-        as.character(tw$trait)[[1L]],
-        as.character(tw$method)[[1L]]
-    )
-    expect_s4_class(
-        pecotmr:::.twasEntryMatchingKey(tw, key),
-        "TwasWeightsRow"
-    )
-    expect_null(
-        pecotmr:::.twasEntryMatchingKey(tw, c("nope", "x", "y", "z"))
-    )
-})
-
 
 # ===========================================================================
 # Merging per-region and joint results
@@ -4073,7 +4222,7 @@ test_that(".twasQssMultivariateFitOne promotes vector weights to a matrix", {
 test_that(".twasQssAssemble passes the joint result through alone", {
     jr <- "SENTINEL_JOINT"
     expect_identical(
-        pecotmr:::.twasQssAssemble(list(), jr, ldSketch = NULL),
+        pecotmr:::.twasQssAssemble(list(), jr, ldReference = NULL),
         jr
     )
 })
@@ -4104,14 +4253,17 @@ test_that(".twasMsJointPhase aborts when only mrmash asked and it fails", {
     )
 })
 
-test_that(".twasRunMultivariateGrid returns NULL when every region is empty", {
+test_that(".twasRunJointSpecGrid returns NULL when every region is empty", {
     local_mocked_bindings(
-        .twasMvGridRegion = function(...) NULL,
+        .twasJointSpecRegion = function(...) NULL,
         .twasRegionLabel = function(x) "rX",
         .package = "pecotmr"
     )
     expect_null(
-        pecotmr:::.twasRunMultivariateGrid(
+        pecotmr:::.twasRunJointSpecGrid(
+            spec = list(list(axes = "context", scope = NULL)),
+            tokens = "mrmash",
+            contexts = NULL,
             traits = "T1",
             marker = NULL,
             ctx = list(xRegions = list(1, 2))
@@ -4283,28 +4435,89 @@ test_that("each path takes that path's own constructor", {
 })
 
 test_that("twasWeightsPipeline: fitRetention='full' says so when unhonourable", {
-    # Only the mr.mash engines distinguish the levels; for every other
-    # method "full" was silently indistinguishable from "slim".
+    # Few methods distinguish the levels; for every other method "full" was
+    # silently indistinguishable from "slim". On individual-level data only
+    # mr.mash does.
     expect_error(
         twasWeightsPipeline(
             .tp_makeQtlDataset(contexts = "brain", traits = "ENSG_A"),
             methods = "lasso",
             fitRetention = "full"
         ),
-        "only honoured by the mr.mash methods"
+        "honoured on QtlDataset input only by mrmash"
     )
     # A mixed run warns and proceeds -- mr.mash honours "full", lasso does
     # not. Asserted on the rule itself: driving it through the pipeline would
     # also need mr.mash mocked, which tests the mock rather than the rule.
+    warnFull <- pecotmr:::.twasWarnUnretainableDetail
     expect_warning(
-        pecotmr:::.twasWarnUnretainableDetail("full", c("lasso", "mrmash")),
+        warnFull("full", c("lasso", "mrmash"), "QtlDataset"),
         "lasso retain their usual fit"
     )
-    expect_silent(pecotmr:::.twasWarnUnretainableDetail("full", "mrmash"))
-    expect_silent(pecotmr:::.twasWarnUnretainableDetail("slim", "lasso"))
-    expect_silent(pecotmr:::.twasWarnUnretainableDetail("none", "lasso"))
+    expect_silent(warnFull("full", "mrmash", "QtlDataset"))
+    expect_silent(warnFull("slim", "lasso", "QtlDataset"))
+    expect_silent(warnFull("none", "lasso", "QtlDataset"))
+    # On summary statistics the shrinkage-grid methods keep their candidate
+    # coefficients at "full"; PRS-CS keeps the same fit either way.
+    expect_silent(warnFull("full", c("lasso", "scad"), "QtlSumStats"))
+    expect_warning(
+        warnFull("full", c("lasso", "prsCs"), "QtlSumStats"),
+        "prsCs retain their usual fit"
+    )
+    expect_error(
+        warnFull("full", "prsCs", "QtlSumStats"),
+        "honoured on QtlSumStats input only by"
+    )
     # Tokens unknown yet (methods = NULL) defers rather than guessing.
-    expect_silent(pecotmr:::.twasWarnUnretainableDetail("full", NULL))
+    expect_silent(warnFull("full", NULL, "QtlDataset"))
+})
+
+test_that("twasWeightsPipeline(QtlSumStats) hands its fitRetention down", {
+    # A weight function taking fitRetention receives the run's level --
+    # "none" too, which the fine-mapping adapters here need told -- unless
+    # the method sets its own; the fit it returns is kept on the row.
+    ss <- .tp_makeQtlSumStats()
+    seen <- new.env(parent = emptyenv())
+    local_mocked_bindings(
+        extractBlockGenotypes = .tp_mockExtractor(),
+        lassosumRssWeights = function(
+            stat,
+            ldReference,
+            fitRetention = "none",
+            ...
+        ) {
+            seen$level <- fitRetention
+            w <- rep(0, length(stat$variantNames))
+            if (identical(fitRetention, "none")) {
+                return(w)
+            }
+            `attr<-`(w, "fit", list(level = fitRetention))
+        },
+        .package = "pecotmr"
+    )
+    run <- function(...) {
+        suppressMessages(suppressWarnings(
+            twasWeightsPipeline(ss, verbose = 0, ...)
+        ))
+    }
+    fitOf <- function(res) {
+        methodFits(
+            res,
+            studyName = "s1",
+            context = "c1",
+            trait = "t1",
+            method = "lasso"
+        )
+    }
+    slim <- run(methods = "lasso")
+    expect_identical(seen$level, "slim")
+    expect_identical(fitOf(slim), list(level = "slim"))
+    none <- run(methods = "lasso", fitRetention = "none")
+    expect_identical(seen$level, "none")
+    expect_null(fitOf(none))
+    own <- run(methods = list(lasso = list(fitRetention = "full")))
+    expect_identical(seen$level, "full")
+    expect_identical(fitOf(own), list(level = "full"))
 })
 
 test_that("twasWeightsPipeline: fitRetention rejects an unknown level", {
@@ -4323,8 +4536,8 @@ test_that("twasWeightsPipeline(QtlDataset): residualization reaches the fit", {
     # take, so every QtlDataset run used the default regardless of the ask.
     cap <- new.env(parent = emptyenv())
     local_mocked_bindings(
-        .fmResidGeno = function(x, residualizationArgs, ...) {
-            cap$geno <- residualizationArgs
+        .fmResidGeno = function(x, residualizationParam, ...) {
+            cap$geno <- residualizationParam
             matrix(
                 0,
                 nrow = 2,
@@ -4340,8 +4553,8 @@ test_that("twasWeightsPipeline(QtlDataset): residualization reaches the fit", {
             methods = "lasso",
             cisWindow = 1000L,
             verbose = 0,
-            crossValidationArgs = CrossValidationParam(folds = 0),
-            residualizationArgs = ResidualizationParam(
+            crossValidationParam = CrossValidationParam(folds = 0),
+            residualizationParam = ResidualizationParam(
                 residualizeGenotype = FALSE
             )
         )),
@@ -4374,8 +4587,8 @@ test_that("twasWeightsPipeline(QtlDataset): usePCA adds top-PC rows", {
             verbose = 0,
             usePCA = usePCA,
             nPCs = 2L,
-            crossValidationArgs = CrossValidationParam(folds = 0),
-            ensembleArgs = EnsembleParam()
+            crossValidationParam = CrossValidationParam(folds = 0),
+            ensembleParam = EnsembleParam()
         )))
     }
     plain <- run(FALSE)
@@ -4471,10 +4684,11 @@ test_that("twasWeightsPipeline: multivariate resume is all-or-nothing", {
         !!!c(
             list(
                 extractBlockGenotypes = .tp_mockExtractor(),
-                mrmashRssWeights = function(stat, LD, ...) {
+                mrmashRssWeights = function(stat, ldReference, ...) {
                     calls$n <- calls$n + 1L
                     k <- if (is.matrix(stat$z)) ncol(stat$z) else 1L
-                    matrix(0, nrow(LD), k, dimnames = list(rownames(LD), NULL))
+                    ids <- stat$variantNames
+                    matrix(0, length(ids), k, dimnames = list(ids, NULL))
                 }
             ),
             .tp_mockSumstatWeights(),
@@ -4516,7 +4730,7 @@ test_that("twasWeightsPipeline: multivariate resume is all-or-nothing", {
 
 test_that(".ensembleAssertCv reports the fold count it actually saw", {
     # The message interpolated `crossValidation$folds`, but the formal is
-    # `crossValidationArgs` -- so firing the assertion raised glue's own
+    # `crossValidationParam` -- so firing the assertion raised glue's own
     # "failed to evaluate" instead of the actionable message. Error paths
     # are where this hides: the condition was right, only the report was not.
     expect_error(
@@ -4566,7 +4780,7 @@ test_that("twasWeightsPipeline(QtlDataset) records the standardized scale", {
         cisWindow = 1000L,
         estimatePi = FALSE,
         verbose = 0,
-        crossValidationArgs = CrossValidationParam(folds = 0)
+        crossValidationParam = CrossValidationParam(folds = 0)
     )))
     # Derived, not declared: genotypes are standardized on the way to every
     # fitter, so there is nothing for a caller to say.
@@ -4613,8 +4827,8 @@ test_that("the TWAS genotype scale also comes from the accessor", {
             cisWindow = 1000L,
             estimatePi = FALSE,
             verbose = 0,
-            crossValidationArgs = CrossValidationParam(folds = 0),
-            residualizationArgs = ResidualizationParam(...)
+            crossValidationParam = CrossValidationParam(folds = 0),
+            residualizationParam = ResidualizationParam(...)
         )))
         unique(as.logical(S4Vectors::mcols(res)$standardized))
     }
@@ -4626,5 +4840,120 @@ test_that("no TWAS pipeline takes a standardizeGenotypes argument", {
     expect_false(is_in(
         "standardizeGenotypes",
         names(formals(pecotmr:::.twasPipelineQtlDataset))
+    ))
+})
+
+# ---- joint fits receive the caller's settings ------------------------------
+
+test_that("QtlDataset: explicit joint fits get every caller setting", {
+    # The explicit-joint dispatch built its own pipeline record -- default
+    # cross-validation, no fitRetention -- and handed the engine neither the
+    # residualization settings nor the per-method options.
+    cap <- new.env(parent = emptyenv())
+    .captureJointEngine(cap)
+    rp <- ResidualizationParam(scaleResiduals = FALSE)
+    expect_error(
+        suppressMessages(twasWeightsPipeline(
+            .tp_makeQtlDataset(contexts = c("brain", "liver")),
+            methods = list(mrmash = list(max_iter = 5)),
+            traitId = "ENSG_A",
+            cisWindow = 1000L,
+            jointSpecification = "context",
+            residualizationParam = rp,
+            crossValidationParam = CrossValidationParam(
+                folds = 2,
+                fitFullData = FALSE
+            ),
+            fitRetention = "full",
+            weightsDataType = "rnaseq",
+            seed = 7L
+        )),
+        "no joint fits produced"
+    )
+    ind <- .capturedCall(cap, "individual")
+    expect_identical(ind$args$residualizationParam, rp)
+    expect_equal(ind$config$crossValidationParam$folds, 2)
+    expect_false(ind$config$crossValidationParam$fitFullData)
+    expect_equal(ind$config$fitRetention, "full")
+    expect_equal(ind$config$dataType, "rnaseq")
+    # Honest now that the setting reaches the fit.
+    expect_false(ind$config$standardized)
+    expect_equal(ind$args$methodList$mrmash_weights$max_iter, 5)
+})
+
+test_that("QtlSumStats: joint fits get fitRetention and the mr.mash options", {
+    cap <- new.env(parent = emptyenv())
+    .captureJointEngine(cap)
+    expect_error(
+        suppressMessages(twasWeightsPipeline(
+            .tp_makeMultiCtxQtlSumStats(),
+            methods = list(mrmash = list(max_iter = 5)),
+            jointSpecification = "context",
+            fitRetention = "full",
+            weightsDataType = "rnaseq"
+        )),
+        "no joint fits produced"
+    )
+    ss <- .capturedCall(cap, "sumstats")
+    expect_equal(ss$config$fitRetention, "full")
+    expect_equal(ss$config$dataType, "rnaseq")
+    expect_equal(ss$args$methodArgs$mrmash$max_iter, 5)
+})
+
+test_that("MultiStudyQtlDataset: joint fits get every caller setting", {
+    cap <- new.env(parent = emptyenv())
+    .captureJointEngine(cap)
+    rp <- ResidualizationParam(scaleResiduals = FALSE)
+    expect_error(
+        suppressMessages(twasWeightsPipeline(
+            .tp_makeMultiStudy(),
+            methods = list(mrmash = list(max_iter = 5)),
+            cisWindow = 1000L,
+            jointSpecification = "context",
+            residualizationParam = rp,
+            crossValidationParam = CrossValidationParam(folds = 2),
+            genotypeFilterParam = GenotypeFilterParam(mafCutoff = 0.05),
+            fitRetention = "full",
+            weightsDataType = "rnaseq",
+            seed = 7L
+        )),
+        "no joint fits produced"
+    )
+    ind <- .capturedCall(cap, "individual")
+    expect_identical(ind$args$residualizationParam, rp)
+    expect_equal(ind$config$crossValidationParam$folds, 2)
+    expect_equal(ind$config$fitRetention, "full")
+    expect_equal(ind$config$dataType, "rnaseq")
+    expect_equal(ind$args$methodList$mrmash_weights$max_iter, 5)
+    expect_equal(mafCutoff(ind$data), 0.05)
+    ss <- .capturedCall(cap, "sumstats")
+    expect_equal(ss$config$fitRetention, "full")
+    expect_equal(ss$config$dataType, "rnaseq")
+    expect_equal(ss$args$methodArgs$mrmash$max_iter, 5)
+})
+
+
+test_that("refuses full-data weights from a CV-only fineMappingResult", {
+    # A fine-mapping-derived weight is read off the fine-mapping fit, which a
+    # cross-validation-only row does not have; a cross-validation-only TWAS
+    # run needs only the folds, which the row does carry.
+    cv <- list(samplePartition = data.frame(Sample = "s1", Fold = 1L))
+    fmr <- QtlFineMappingResult(
+        studyName = "s",
+        context = "c",
+        trait = "t",
+        method = "susie",
+        entry = list(pecotmr:::.fmCvOnlyRow(cv))
+    )
+    expect_error(
+        pecotmr:::.twasCheckFineMappingMethods("susie", fmr, "QtlDataset"),
+        "cross-validation-only"
+    )
+    expect_silent(pecotmr:::.twasCheckFineMappingMethods(
+        "susie",
+        fmr,
+        "QtlDataset",
+        cvFolds = 3,
+        fitFullData = FALSE
     ))
 })

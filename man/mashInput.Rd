@@ -19,7 +19,7 @@ mashInput(
 }
 \arguments{
 \item{objects}{A named \code{list} of \code{\link{QtlSumStats}} and/or
-\code{FineMappingResult} objects, one per region. Names disambiguate
+fine-mapping result objects, one per region. Names disambiguate
 rownames across regions (defaults to \code{region1}, \code{region2}, ...).
 For \code{QtlSumStats} inputs \code{\link{summaryStatsQc}} must have been
 run (the matrix builder rejects un-QC'd SumStats).}
@@ -28,8 +28,8 @@ run (the matrix builder rejects un-QC'd SumStats).}
 
 \item{excludeCondition}{Character vector of condition (column) names to drop.}
 
-\item{coverage}{Credible-set coverage for \code{FineMappingResult} strong
-selection (default 0.95).}
+\item{coverage}{Credible-set coverage for the strong selection on
+fine-mapping results (default 0.95).}
 
 \item{zOnly}{When \code{TRUE} the returned partitions carry only \code{.z}
 (the \code{.b}/\code{.s} matrices are dropped after z is derived).}
@@ -39,7 +39,7 @@ selection (default 0.95).}
 
 \item{inputScale}{Matrix scale for \code{QtlSumStats} inputs
 (\code{"auto"}/\code{"beta"}/\code{"z"}); ignored for
-\code{FineMappingResult} (always effect-size scale).}
+fine-mapping results (always effect-size scale).}
 
 \item{independentVariants}{Optional character vector of variant ids (e.g. an
 LD-pruned independent SNP list). When supplied, the \emph{random} and
@@ -71,7 +71,7 @@ For EACH object three partitions are extracted:
 \describe{
   \item{strong}{The high-signal variants (deterministic, class-specific).
     \code{QtlSumStats}: the single most significant variant (\eqn{\max|z|})
-    per condition, unioned. \code{FineMappingResult}: the lead variant
+    per condition, unioned. A fine-mapping result: the lead variant
     (\eqn{\max} PIP) of each credible set in each condition, unioned
     (conditions with no credible set contribute nothing).}
   \item{random}{\code{nRandom} variants sampled uniformly at random --

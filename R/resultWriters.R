@@ -7,10 +7,11 @@
 #   exportToVcf(x, path, ...)   GWAS-VCF-style: one record per variant, one
 #                               SAMPLE per study / fitted model, the statistics
 #                               as FORMAT fields. GwasSumStats, every
-#                               FineMappingResult, TwasWeights.
+#                               FineMappingResultBase, TwasWeights.
 #   exportToBed(x, path, ...)   the published long-format tables, one row per
 #                               published observation, bgzipped + tabix-indexed
-#                               on request. FineMappingResult, TwasWeights.
+#                               on request. FineMappingResultBase,
+#                               TwasWeights.
 #
 # One file because they are one problem -- project an S4 collection onto a
 # FIXED published schema, join the posterior view to the marginal one, sort
@@ -170,8 +171,9 @@ NULL
         return(combineFineMappingResults(x))
     }
     abort(glue(
-        "`x` must be a TwasWeights or FineMappingResult object, or a list ",
-        "of one of those; got a list of {class(x[[1L]])[[1L]]}."
+        "`x` must be a TwasWeights, QtlFineMappingResult or ",
+        "GwasFineMappingResult object, or a list of one of those; got a ",
+        "list of {class(x[[1L]])[[1L]]}."
     ))
 }
 
@@ -250,15 +252,16 @@ NULL
 # Refuse to export a collection whose rows lack a FULL-DATA fit.
 #
 # Cross-validation alone is not publishable. A CV-only run -- which is what
-# `twasWeightsPipeline(fitFullData = FALSE)` produces, and which is legal only
-# WITH cross-validation -- stores each row as an empty element with no weights
-# and nothing but its `cvResult`. All it holds is fold-level results, and those
-# cannot go in a published file: fold membership is sample-level information
-# and sample names can be protected. So an export needs the full-data fit, and
-# its absence is an ERROR rather than a silently empty output file.
+# twasWeightsPipeline() produces under `CrossValidationParam(fitFullData =
+# FALSE)`, legal only WITH cross-validation -- stores each row as an empty
+# element with no weights and nothing but its `cvResult`. All it holds is
+# fold-level results, and those cannot go in a published file: fold
+# membership is sample-level information and sample names can be protected.
+# So an export needs the full-data fit, and its absence is an ERROR rather
+# than a silently empty output file.
 #
-# The check is on the OBJECT, not on the flag: `fitFullData` is a pipeline
-# argument that may not have been the thing that emptied a row, and an export
+# The check is on the OBJECT, not on the flag: `fitFullData` is a run setting
+# that may not have been the thing that emptied a row, and an export
 # has to be safe whatever produced its input.
 #
 # It also keeps genomicRegion() honest. That derives a row's analysis window
@@ -275,7 +278,8 @@ NULL
         "full-data fit, only cross-validation results -- ",
         "{str_flatten(.pubRowLabels(x, incomplete), ', ')}. Fold-level ",
         "results cannot be published (fold membership is sample-level ",
-        "information), so refit with `fitFullData = TRUE` and export that. ",
+        "information), so refit with ",
+        "`CrossValidationParam(fitFullData = TRUE)` and export that. ",
         "The cross-validation record stays available through cvResult()."
     ))
 }
@@ -293,10 +297,9 @@ NULL
 # @noRd
 .twbRowHasWeights <- function(i, x) !is.null(mcols(x[[i]])$weight)
 
-# Rows of a FineMappingResult with no fitted variants. Fine-mapping has no
-# CV-only mode today -- .fmAttachCv() rebuilds the row around its existing
-# susieFit and topLoci, so CV is strictly additive -- but the export checks
-# rather than assumes it.
+# Rows of a fine-mapping result with no fitted variants: what a
+# cross-validation only run (CrossValidationParam(fitFullData = FALSE)) leaves
+# in each row.
 # @noRd
 .fmbIncompleteRows <- function(x) {
     which(lengths(x) == 0L)
@@ -409,10 +412,10 @@ genomicOrder <- function(chrom, start, end = NULL) {
 #
 # utils::write.table(), not vroom_write(): the two differ in how they format a
 # float (1e-06 vs 1e-6) and in how many digits they keep.
-# @noRd
 # `emptySchema` is the header an empty result still documents -- the schema of
 # whichever table was being written, since the fsusie table's vocabulary is not
 # the per-variant one.
+# @noRd
 .pubWriteTable <- function(
     out,
     path,
@@ -788,6 +791,12 @@ setMethod(
 # susie posterior mean IS the TWAS coefficient.
 # @noRd
 .vcfCoreSpecs <- function(base, m, nSnps) {
+    c(.vcfMarginalSpecs(m, nSnps), .vcfFitSpecs(base, nSnps))
+}
+
+# The marginal-association FORMAT fields, from the joined marginals `m`.
+# @noRd
+.vcfMarginalSpecs <- function(m, nSnps) {
     p <- suppressWarnings(as.numeric(.pubCol(m, "p", nSnps)))
     list(
         .vcfSpec(
@@ -825,7 +834,15 @@ setMethod(
                 "Variant-specific number of samples/individuals with called ",
                 "genotypes used to test association with specified trait"
             )
-        ),
+        )
+    )
+}
+
+# The per-variant FORMAT fields read off the fit itself (`base`): allele
+# frequency and the posterior effect / prediction weight.
+# @noRd
+.vcfFitSpecs <- function(base, nSnps) {
+    list(
         .vcfSpec(
             "AF",
             .pubCol(base, "af", nSnps),
@@ -843,6 +860,15 @@ setMethod(
             .pubCol(base, "posterior_se", nSnps),
             "Float",
             "Standard error of the posterior effect estimate"
+        ),
+        .vcfSpec(
+            "THETA",
+            .pubCol(base, "theta", nSnps),
+            "Float",
+            str_c(
+                "Infinitesimal component of WGT (susieInf / susieAsh); ",
+                "already included in WGT, 0 for methods without one"
+            )
         )
     )
 }
@@ -1247,7 +1273,6 @@ setMethod(
     )
 }
 
-# @noRd
 # One mcols cell as a string. `[[row]]` then pack, rather than
 # as.character() on the column: several of these are List columns (a
 # TwasWeights `dataType` is one) and as.character() on a CompressedList
@@ -1290,7 +1315,7 @@ setMethod(
         }
         # The same rule the BED path applies, and for the same reason: a
         # fine-mapping method's "weights" are the posterior re-expressed, so
-        # the FineMappingResult says strictly more. This path used to publish
+        # the fine-mapping result says strictly more. This path used to publish
         # them, which made the two formats disagree about what a weights file
         # contains.
         rows <- intersect(rows, .twbExportableRows(x, "exportToVcf"))
@@ -1298,7 +1323,7 @@ setMethod(
             abort(str_c(
                 "exportToVcf: every selected row is fine-mapping-derived, so ",
                 "there is nothing to write as weights. Export the ",
-                "FineMappingResult."
+                "fine-mapping result."
             ))
         }
         .twvWriteSamples(
@@ -1699,12 +1724,12 @@ setMethod(
     "grid_band_halfwidth"
 )
 
-# @noRd
 # The trait-level group. `joint_traits` rather than a new `trait_names`: these
 # ARE the joint members (fsusieTraitEffects() reads them from the row's
 # `jointTraits` column), so they use the vocabulary the rest of the schema
 # already has for joint membership. "epi_mark" also presumed epigenomic data,
 # which a functional fit does not require.
+# @noRd
 .FMB_FSUSIE_TRAIT_COLUMNS <- c(
     "trait_positions",
     "trait_effects",
@@ -1773,6 +1798,15 @@ setMethod(
 # One (row, credible set) block of the fSuSiE table. `v` is that CS's
 # credibleSets() rows; `band` / `marks` are the matching curve views, already
 # narrowed to the same row.
+#
+# The "chr" prefix is kept, as in the other two schemas and in the protocol's
+# own phenotype BEDs; stripping it here was unique to this table and made one
+# reader rule impossible. AF, not MAF, is published: the same `af` the other
+# table publishes. Writing pmin(af, 1 - af) here lost which allele the
+# frequency referred to, so one export of an object was recoverable and the
+# other was not. Membership is written at EVERY coverage the fit carries, not
+# just the one keying the rows -- a secondary coverage would otherwise be
+# silently dropped.
 # @noRd
 .fmbFsusieBlock <- function(
     v,
@@ -1788,41 +1822,26 @@ setMethod(
     key <- .pubIdentityKey(v, .PUB_ROW_COLS)[[1L]]
     cs <- v[[str_c("cs_", primary)]][[1L]]
     context <- v$context[[1L]]
-    bKey <- .pubIdentityKey(band, .PUB_ROW_COLS)
-    mKey <- .pubIdentityKey(marks, .PUB_ROW_COLS)
-    b <- band[bKey == key & band$cs == cs, , drop = FALSE]
+    b <- .fmbCurveRows(band, key, cs)
     if (nrow(b) == 0L) {
         return(NULL)
     }
-    m <- marks[mKey == key & marks$cs == cs, , drop = FALSE]
+    m <- .fmbCurveRows(marks, key, cs)
     i <- match(key, names(rowRegionIds))
     regionId <- rowRegionIds[[i]]
     rg <- rowRegions[i]
     csId <- str_c(context, regionId, str_remove(cs, "^fsusie_"), sep = ":")
     out <- tibble(
-        # The "chr" prefix is kept, as in the other two schemas and in the
-        # protocol's own phenotype BEDs; stripping it here was unique to this
-        # table and made one reader rule impossible.
         `#chr` = as.character(v$chrom),
         start = v$pos - 1L,
         end = v$pos,
         ID = v$variant_id,
         REF = .pubCol(v, "A2"),
         ALT = .pubCol(v, "A1"),
-        # AF, not MAF: the same `af` the other table publishes. Writing
-        # pmin(af, 1 - af) here lost which allele the frequency referred to,
-        # so one export of an object was recoverable and the other was not.
         AF = .pubCol(v, "af"),
         PIP = v$pip,
         cs_id = csId,
         cs_root = csId,
-        grid_resolution = nrow(b),
-        grid_positions = .pubPack(b$pos),
-        grid_effects = .pubPack(b$effect),
-        grid_band_halfwidth = .pubPack(b$halfwidth),
-        trait_positions = .pubPack(m$traitPos),
-        trait_effects = .pubPack(m$effect),
-        joint_traits = .pubPack(m$jointTrait),
         study = .pubCol(v, "study"),
         context = context,
         trait = .pubCol(v, "trait"),
@@ -1831,15 +1850,46 @@ setMethod(
         region_start = start(rg) - 1L,
         region_end = end(rg)
     )
-    # Membership at EVERY coverage the fit carries, not just the one keying
-    # the rows -- a secondary coverage would otherwise be silently dropped.
-    out <- bind_cols(out, .pubFrameCs(v, csCols))
+    out <- bind_cols(out, .fmbFsusieGrid(b, m), .pubFrameCs(v, csCols))
     bind_cols(
         select(out, all_of(.fmbFsusieColumns(levels, csCols))),
         select(v, all_of(added))
     )
 }
 
+# The rows of a curve view (credible band or trait marks) belonging to one
+# (row identity, credible set) pair.
+# @noRd
+.fmbCurveRows <- function(view, key, cs) {
+    keep <- .pubIdentityKey(view, .PUB_ROW_COLS) == key & view$cs == cs
+    view[keep, , drop = FALSE]
+}
+
+# The packed functional-grid columns of one fSuSiE block: the credible band
+# `b` over the grid and the per-trait marks `m`.
+# @noRd
+.fmbFsusieGrid <- function(b, m) {
+    tibble(
+        grid_resolution = nrow(b),
+        grid_positions = .pubPack(b$pos),
+        grid_effects = .pubPack(b$effect),
+        grid_band_halfwidth = .pubPack(b$halfwidth),
+        trait_positions = .pubPack(m$traitPos),
+        trait_effects = .pubPack(m$effect),
+        joint_traits = .pubPack(m$jointTrait)
+    )
+}
+
+# The fSuSiE BED table: one block per (row, credible set) of the fsusie rows.
+#
+# genomicRegion() is the window each row was ANALYSED over (the requested
+# region, or the trait's cis window), which is what a publication table means
+# by its region -- not the narrower span of whichever variants survived QC.
+#
+# Splitting the views on (context, cs) alone is only safe for a single
+# region: once several regions are combined into one table, two regions can
+# each contribute context "c1" / "fsusie_1", and they must stay separate rows
+# with their own windows.
 # @noRd
 .fmbFsusieTable <- function(x, columns, levels, coverage) {
     fs <- x[as.character(.tupleColumn(x, "method")) == "fsusie"]
@@ -1858,19 +1908,11 @@ setMethod(
     primary <- .fmbPrimaryCsLevel(csTbl, coverage)
     csCols <- .pubCsColumns(csTbl, coverage)
     marks <- as.data.frame(fsusieTraitEffects(fs))
-    # genomicRegion() is the window each row was ANALYSED over (the requested
-    # region, or the trait's cis window), which is what a publication table
-    # means by its region -- not the narrower span of whichever variants
-    # survived QC.
     rowRegions <- genomicRegion(fs)
     rowRegionIds <- set_names(
         .pubRegionIds(rowRegions),
         .pubCollectionKey(fs, .PUB_ROW_COLS)
     )
-    # Splitting the views on (context, cs) alone is only safe for a single
-    # region: once several regions are combined into one table, two regions can
-    # each contribute context "c1" / "fsusie_1", and they must stay separate
-    # rows with their own windows.
     pieces <- compact(map(
         split(
             csTbl,
@@ -1946,6 +1988,11 @@ setMethod(
     # columns that are both here.
     "WGT",
     "WGTSE",
+    # The infinitesimal half of WGT. susieInf / susieAsh split the posterior
+    # into a sparse and an infinitesimal term and coef.susie() sums them, so
+    # WGT is right either way -- this is what makes the split visible, which
+    # is otherwise unrecoverable from the published file. 0 elsewhere.
+    "THETA",
     # Fine-mapping posterior. CS<n>/PUR<n> are spliced in after these.
     "PIP",
     "LBF",
@@ -1959,7 +2006,8 @@ setMethod(
     "block_id",
     # Provenance. `data_type` is the assay/modality; `data_source` is
     # individual-level vs summary-statistics, which `data_type` was being
-    # mistaken for and which is derivable from whether an ldSketch is present.
+    # mistaken for and which is derivable from whether an ldReference is
+    # present.
     "data_type",
     "data_source",
     "weight_standardized",
@@ -2114,6 +2162,14 @@ setMethod(
     "p"
 )
 
+# The topLoci BED table.
+#
+# `tl$beta`/`tl$se` are the POSTERIOR mean and sd -- topLoci() is the
+# posterior view -- while `mm$beta`/`mm$se` are the MARGINAL estimates. Same
+# column name, different quantity, which is why they land in different
+# published fields. Per-CS variant-level columns from a fullFit build ride
+# after the fixed schema; `columns` adds whatever else the caller asked for
+# after those.
 # @noRd
 .fmbTopLociTable <- function(x, signalCutoff, minPurity, columns, coverage) {
     tl <- as.data.frame(
@@ -2122,10 +2178,6 @@ setMethod(
     if (nrow(tl) == 0L) {
         return(NULL)
     }
-    # `tl$beta`/`tl$se` are the POSTERIOR mean and sd -- topLoci() is the
-    # posterior view -- while `mm$beta`/`mm$se` are the MARGINAL estimates.
-    # Same column name, different quantity, which is why they land in
-    # different published fields.
     mm <- .pubJoinMarginals(tl, as.data.frame(marginalEffects(x)))
     win <- .fmbRowWindows(x, tl)
     pos <- .pubCol(tl, "pos")
@@ -2147,6 +2199,7 @@ setMethod(
             LP = if_else(is.na(p) | p <= 0, NA_real_, -log10(p)),
             WGT = .pubCol(tl, "posterior_effect"),
             WGTSE = .pubCol(tl, "posterior_se"),
+            THETA = .pubCol(tl, "theta"),
             PIP = .pubCol(tl, "pip"),
             LBF = .pubCol(tl, "logBF"),
             LFSR = .pubCol(tl, "lfsr")
@@ -2160,8 +2213,6 @@ setMethod(
         )
     )
     out <- .pubFrame(cols, .pubSchema(csCols))
-    # Per-CS variant-level columns from a fullFit build ride after the fixed
-    # schema; `columns` adds whatever else the caller asked for after those.
     added <- union(
         .pubFullFitColumns(tl),
         .pubViewColumns(tl, columns, .FMB_TOPLOCI_SOURCE)
@@ -2211,8 +2262,9 @@ setMethod(
 }
 
 # The identity and provenance values shared by both record kinds. `data_source`
-# is derived rather than stored: a collection's ldSketch is the LD reference the
-# fit was run against, so its absence means the fit saw individual-level data.
+# is derived rather than stored: a collection's ldReference is the LD reference
+# the fit was run against, so its absence means the fit saw individual-level
+# data.
 # @noRd
 .pubIdentityValues <- function(x, view) {
     list(
@@ -2230,19 +2282,15 @@ setMethod(
     )
 }
 
-# The collection-level fallback for `data_source`: an ldSketch is the LD
+# The collection-level fallback for `data_source`: an ldReference is the LD
 # reference a fit was run against, so its absence means individual-level data.
 # Only a fallback -- a row that recorded its own wins, because a combined
-# collection can hold rows of both kinds and has only one ldSketch.
+# collection can hold rows of both kinds and has only one ldReference.
 # @noRd
 .pubDataSource <- function(x) {
-    if (is.null(ldSketch(x))) "individual" else "sumstat"
+    if (is.null(ldReference(x))) "individual" else "sumstat"
 }
 
-# @noRd
-# Absent OR entirely empty both mean "the rows did not record this", because
-# .fmrRowMetadata() NA-fills a column the collection lacks -- so testing only
-# for absence would return the NA column and never reach the fallback.
 # `EZ` only when the SOURCE supplied z. The spec defines the field as the z
 # "provided if it was used to derive the ES and SE fields", so publishing a z
 # that pecotmr itself computed as beta/se would invert its meaning -- and a
@@ -2262,6 +2310,9 @@ setMethod(
     replace(z, is.na(supplied) | !supplied, NA_real_)
 }
 
+# Absent OR entirely empty both mean "the rows did not record this", because
+# .fmrRowMetadata() NA-fills a column the collection lacks -- so testing only
+# for absence would return the NA column and never reach the fallback.
 # @noRd
 .pubRowOrDerived <- function(view, nm, fallback) {
     v <- .pubCol(view, nm)
@@ -2291,11 +2342,6 @@ setMethod(
         end = end(rg)[idx]
     )
 }
-
-# The analysis window of the collection row each long-view row came from,
-# matched on the row identity so a folded multi-row table keeps each row's own
-# window rather than the first one's.
-# @noRd
 
 # ---- BED: fine-mapping entry point ------------------------------------------
 
@@ -2465,7 +2511,7 @@ setMethod(
 }
 
 # Fine-mapping methods have no business in a weights export: their "weights"
-# are the fine-mapping posterior re-expressed, so the FineMappingResult says
+# are the fine-mapping posterior re-expressed, so the fine-mapping result says
 # strictly more. Those rows are skipped with a message rather than written.
 # @noRd
 .TWB_FINE_MAPPING_METHODS <- c(
@@ -2485,8 +2531,8 @@ setMethod(
             "{label}: skipping {length(skip)} fine-mapping-derived ",
             "row(s) ({str_flatten(unique(methods[skip]), ', ')}). Those ",
             "weights are the fine-mapping posterior re-expressed -- export ",
-            "the FineMappingResult instead, which carries the posterior, its ",
-            "standard error and the credible sets."
+            "the fine-mapping result instead, which carries the posterior, ",
+            "its standard error and the credible sets."
         ))
     }
     setdiff(seq_len(nrow(x)), skip)
@@ -2574,24 +2620,21 @@ setMethod(
     ))
 }
 
-# Per-variant allele frequency, from the collection's LD panel when it has one.
-# A TwasWeights element records only alleles and a weight, so without a panel
-# there is no frequency to publish -- and `AF` is what the standardized-to-raw
-# weight conversion needs, so its absence is worth seeing rather than faking.
+# Per-variant allele frequency, from the collection's LD reference when it
+# records one (an LdMatrix with an AF column, or a stochastic sketch, whose
+# real frequencies are recorded from its sidecar). A TwasWeights element
+# records only alleles and a weight, so otherwise there is no frequency to
+# publish -- and `AF` is what the standardized-to-raw weight conversion needs,
+# so its absence is worth seeing rather than faking.
 # @noRd
 .twbVariantAf <- function(x, gr) {
-    panel <- ldSketch(x)
-    if (is.null(panel)) {
+    ref <- ldReference(x)
+    af <- if (is.null(ref)) NULL else .ldRefAf(ref)
+    if (is.null(af)) {
         return(NA_real_)
     }
-    rr <- try_fetch(
-        SummarizedExperiment::rowRanges(panel),
-        error = function(cnd) NULL
-    )
-    if (is.null(rr) || !is_in("af", colnames(mcols(rr)))) {
-        return(NA_real_)
-    }
-    as.numeric(mcols(rr)$af)[match(.grVariantIds(gr), .grVariantIds(rr))]
+    rr <- .ldRefRanges(ref)
+    as.numeric(af)[match(.grVariantIds(gr), .grVariantIds(rr))]
 }
 
 # @noRd
@@ -2600,7 +2643,7 @@ setMethod(
     if (length(rows) == 0L) {
         abort(str_c(
             "exportToBed: every row is fine-mapping-derived, so there is ",
-            "nothing to write as weights. Export the FineMappingResult."
+            "nothing to write as weights. Export the fine-mapping result."
         ))
     }
     schema <- .pubSchema(.pubCsColumns(tibble(), coverage))

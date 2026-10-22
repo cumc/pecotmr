@@ -92,7 +92,7 @@ setClass("MethodOptions", contains = "SimpleList")
     if (!requireNamespace(parts[[1L]], quietly = TRUE)) {
         return(NULL)
     }
-    tryCatch(
+    try_fetch(
         get(parts[[2L]], envir = asNamespace(parts[[1L]])),
         error = function(cnd) NULL
     )
@@ -123,7 +123,7 @@ setClass("MethodOptions", contains = "SimpleList")
     if (is.null(fn)) {
         return(NULL)
     }
-    fm <- tryCatch(names(formals(fn)), error = function(cnd) NULL)
+    fm <- try_fetch(names(formals(fn)), error = function(cnd) NULL)
     if (is.null(fm)) {
         return(NULL)
     }
@@ -150,7 +150,7 @@ setClass("MethodOptions", contains = "SimpleList")
     if (is.null(fn)) {
         return(FALSE)
     }
-    fm <- tryCatch(names(formals(fn)), error = function(cnd) NULL)
+    fm <- try_fetch(names(formals(fn)), error = function(cnd) NULL)
     !is.null(fm) && is_in("...", fm)
 }
 
@@ -169,7 +169,7 @@ setClass("MethodOptions", contains = "SimpleList")
 # One callee's formals with `...` removed, NULL when they cannot be read.
 # @noRd
 .engineExplicitFormals <- function(fn) {
-    setdiff(tryCatch(names(formals(fn)), error = function(cnd) NULL), "...")
+    setdiff(try_fetch(names(formals(fn)), error = function(cnd) NULL), "...")
 }
 
 # --- which input classes a set of engine arguments belongs to -------------
@@ -300,7 +300,7 @@ setClass("MethodOptions", contains = "SimpleList")
     defaults <- discard(defaults, is.null)
     overridden <- intersect(names(defaults), names(extra))
     defaults[overridden] <- extra[overridden]
-    c(defaults, extra[!names(extra) %in% overridden])
+    c(defaults, extra[!is_in(names(extra), overridden)])
 }
 
 # Build one engine's argument record: pecotmr's defaults, overlaid with the
@@ -575,7 +575,7 @@ setClass("MethodOptions", contains = "SimpleList")
 # sibling key that shares the same engine.
 # @noRd
 .nestedExpectedEngine <- function(key, ctors) {
-    rec <- tryCatch(ctors[[key]](), error = function(cnd) NULL)
+    rec <- try_fetch(ctors[[key]](), error = function(cnd) NULL)
     if (is.null(rec)) {
         return(key)
     }
@@ -631,7 +631,7 @@ setClass("MethodOptions", contains = "SimpleList")
             "'{str_split_1(callee, fixed('::'))[[1L]]}' is not installed"
         ))
     }
-    fm <- tryCatch(names(formals(fn)), error = function(cnd) NULL)
+    fm <- try_fetch(names(formals(fn)), error = function(cnd) NULL)
     if (is.null(fm)) {
         return("argument names NOT checked: the engine's formals are unknown")
     }

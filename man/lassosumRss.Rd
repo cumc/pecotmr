@@ -48,16 +48,11 @@ where \eqn{R} is the LD matrix (pre-shrunk if desired) and \eqn{r =
 \details{
 Based on Mak et al (2017) "Polygenic scores via penalized regression on
 summary statistics", Genetic Epidemiology 41(6):469-480.
+
+Internal: \code{\link{lassosumRssWeights}} is the public interface. It
+runs this over a grid of LD shrinkage values, forwards \code{lambda},
+\code{thr} and \code{maxiter} through \code{\link{LassosumOptions}}, and
+with \code{fitRetention} returns the paths as the \code{"fit"} attribute
+of its weights.
 }
-\examples{
-set.seed(42)
-p <- 10
-n <- 100
-bhat <- rnorm(p, sd = 0.1)
-R <- diag(p)
-for (i in 1:(p - 1)) {
-  R[i, i + 1] <- 0.3
-  R[i + 1, i] <- 0.3
-}
-out <- lassosumRss(bhat, R, n)
-}
+\keyword{internal}

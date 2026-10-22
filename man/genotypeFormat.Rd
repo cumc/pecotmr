@@ -13,7 +13,7 @@ genotypeFormat(x)
 \item{x}{A \code{GenotypeHandle}.}
 }
 \value{
-Character (length 1): one of "gds", "vcf", "plink1", "plink2".
+Character (length 1): one of "plink1", "plink2", "bgen".
 }
 \description{
 Return the detected genotype storage format.

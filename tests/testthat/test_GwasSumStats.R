@@ -152,7 +152,7 @@ test_that("subsetChr() preserves study-level nCase/nControl/nSample scalars", {
         studyName = "g1",
         entry = list(gr),
         genome = "hg19",
-        ldSketch = .sh_makeGenotypeHandle(),
+        ldReference = .sh_makeGenotypeHandle(),
         nCase = 5000,
         nControl = 15000,
         nSample = 20000
@@ -209,11 +209,11 @@ test_that("show.GwasSumStats prints nrow and genome build", {
         studyName = c("g1", "g2"),
         entry = list(.sh_makeQtlSumstatsGr(), .sh_makeQtlSumstatsGr()),
         genome = "hg19",
-        ldSketch = .sh_makeGenotypeHandle()
+        ldReference = .sh_makeGenotypeHandle()
     )
     out <- capture.output(show(ss))
     expect_true(any(grepl("GwasSumStats: 2 studies, genome build hg19", out)))
-    expect_true(any(grepl("LD sketch: gds @ /tmp/test.gds", out)))
+    expect_true(any(grepl("LD reference: plink2 @ /tmp/test", out)))
 })
 
 # === Tests migrated from test_h2ClassesSumstats.R (showMethods) ===
@@ -234,7 +234,7 @@ test_that("GwasSumStats() errors when genome is not a single string", {
             studyName = "g1",
             entry = list(.sh_makeQtlSumstatsGr()),
             genome = c("hg19", "hg38"),
-            ldSketch = .sh_makeGenotypeHandle()
+            ldReference = .sh_makeGenotypeHandle()
         ),
         "single character string"
     )
@@ -246,7 +246,7 @@ test_that("GwasSumStats() errors when entry is not a list", {
             studyName = "g1",
             entry = "not_a_list",
             genome = "hg19",
-            ldSketch = .sh_makeGenotypeHandle()
+            ldReference = .sh_makeGenotypeHandle()
         ),
         "must be a list"
     )
@@ -258,7 +258,7 @@ test_that("GwasSumStats() errors when length(entry) != length(study)", {
             studyName = c("g1", "g2"),
             entry = list(.sh_makeQtlSumstatsGr()),
             genome = "hg19",
-            ldSketch = .sh_makeGenotypeHandle()
+            ldReference = .sh_makeGenotypeHandle()
         ),
         "must equal length"
     )
@@ -270,7 +270,7 @@ test_that("GwasSumStats() errors when a per-study column has a bad length", {
             studyName = c("g1", "g2"),
             entry = list(.sh_makeQtlSumstatsGr(), .sh_makeQtlSumstatsGr()),
             genome = "hg19",
-            ldSketch = .sh_makeGenotypeHandle(),
+            ldReference = .sh_makeGenotypeHandle(),
             nCase = c(1, 2, 3)
         ),
         "must have length 1 or length"
@@ -282,7 +282,7 @@ test_that("GwasSumStats() attaches extra per-study columns via ...", {
         studyName = c("g1", "g2"),
         entry = list(.sh_makeQtlSumstatsGr(), .sh_makeQtlSumstatsGr()),
         genome = "hg19",
-        ldSketch = .sh_makeGenotypeHandle(),
+        ldReference = .sh_makeGenotypeHandle(),
         extraCols = list(cohort = c("UKB", "FinnGen"))
     )
     expect_equal(as.character(obj$cohort), c("UKB", "FinnGen"))
@@ -304,7 +304,7 @@ test_that("sumStats() errors on an empty GwasSumStats", {
         studyName = character(0),
         entry = list(),
         genome = "hg19",
-        ldSketch = .sh_makeGenotypeHandle(),
+        ldReference = .sh_makeGenotypeHandle(),
         varY = numeric(0)
     )
     expect_equal(nrow(empty), 0L)
@@ -316,29 +316,29 @@ test_that("sumStats() on a multi-study GwasSumStats needs a study selector", {
         studyName = c("g1", "g2"),
         entry = list(.sh_makeQtlSumstatsGr(), .sh_makeQtlSumstatsGr()),
         genome = "hg19",
-        ldSketch = .sh_makeGenotypeHandle()
+        ldReference = .sh_makeGenotypeHandle()
     )
     expect_error(sumStats(two), "studies. Pass")
     expect_error(sumStats(two, studyName = "ghost"), "Unknown study")
 })
 
-test_that("GwasSumStats: ldSketch is optional (NULL for LD-free workflows)", {
+test_that("GwasSumStats: ldReference is optional (NULL when LD-free)", {
     ss <- GwasSumStats(
         studyName = "g1",
         entry = list(.sh_makeQtlSumstatsGr()),
         genome = "hg19"
-    ) # ldSketch omitted -> NULL
-    expect_null(ldSketch(ss))
+    ) # ldReference omitted -> NULL
+    expect_null(ldReference(ss))
     expect_output(show(ss), "none \\(LD-free\\)")
 })
 
-test_that("GwasSumStats: a non-GenotypeHandle ldSketch is rejected", {
+test_that("GwasSumStats: a non-GenotypeHandle ldReference is rejected", {
     expect_error(
         GwasSumStats(
             studyName = "g1",
             entry = list(.sh_makeQtlSumstatsGr()),
             genome = "hg19",
-            ldSketch = "not_a_handle"
+            ldReference = "not_a_handle"
         ),
         "must be a genotype panel"
     )
@@ -571,19 +571,19 @@ test_that("combineGwasSumStats() unions the per-block LD panels", {
 
     # Keeping only the first block's panel would leave a two-block collection
     # whose LD reference covers one block.
-    expect_equal(nrow(ldSketch(out)), 8L)
+    expect_equal(nrow(ldReference(out)), 8L)
     expect_equal(
-        rownames(ldSketch(out)),
-        c(rownames(ldSketch(a)), rownames(ldSketch(b)))
+        rownames(ldReference(out)),
+        c(rownames(ldReference(a)), rownames(ldReference(b)))
     )
 })
 
 
-test_that("combineGwasSumStats() honours an explicit ldSketch", {
+test_that("combineGwasSumStats() honours an explicit ldReference", {
     a <- makeGwasBlock("chr1_1_1000", 100L)
     b <- makeGwasBlock("chr1_1001_2000", 1100L)
-    out <- combineGwasSumStats(a, b, ldSketch = ldSketch(a))
-    expect_identical(ldSketch(out), ldSketch(a))
+    out <- combineGwasSumStats(a, b, ldReference = ldReference(a))
+    expect_identical(ldReference(out), ldReference(a))
 })
 
 
@@ -613,11 +613,11 @@ test_that("combineGwasSumStats() rejects collection-level disagreement", {
     expect_error(combineGwasSumStats(a, noQc), "carry no QC record")
 
     noLd <- makeGwasBlock("chr1_1001_2000", 1100L)
-    noLd@ldSketch <- NULL
-    expect_error(combineGwasSumStats(a, noLd), "carry no ldSketch")
+    noLd@ldReference <- NULL
+    expect_error(combineGwasSumStats(a, noLd), "carry no ldReference")
 
     other <- makeGwasBlock("chr1_1001_2000", 1100L)
-    other@ldSketch <- pecotmr:::.asLdSketch(
+    other@ldReference <- pecotmr:::.asLdRef(
         .blockGenotypeHandle(
             seq(1100L, by = 100L, length.out = 5L),
             path = "/tmp/other.pgen"

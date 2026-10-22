@@ -8,7 +8,7 @@
 Virtual base class for QTL and GWAS summary statistics
   collections. Concrete subclasses (\code{QtlSumStats}, \code{GwasSumStats})
   inherit from \code{\linkS4class{RangedTupleList}} and share the
-  \code{ldSketch} / \code{qcInfo} slots, and the genome build in
+  \code{ldReference} / \code{qcInfo} slots, and the genome build in
   \code{seqinfo()}.
 
   Each element is the per-variant \code{GRanges} of one tuple, so
@@ -19,10 +19,13 @@ Virtual base class for QTL and GWAS summary statistics
 \section{Slots}{
 
 \describe{
-\item{\code{ldSketch}}{The \code{GenotypeHandle} the QC pipeline harmonized against,
-or \code{NULL}. Optional: LD-free workflows (e.g. mash, which operates
-across conditions per variant) carry \code{NULL}; pipelines that need LD
-validate its presence when they consume the collection.}
+\item{\code{ldReference}}{The LD reference the collection was harmonized against
+and every pipeline reads LD from: a genotype panel (see
+\code{\link{readGenotypes}}), a \code{\link{GenotypeMixture}} or an
+\code{\link{LdMatrix}}, or \code{NULL}. Optional: LD-free workflows
+(e.g. mash, which operates across conditions per variant) carry
+\code{NULL}; pipelines that need LD validate its presence when they
+consume the collection.}
 
 \item{\code{qcInfo}}{A \code{list} recording which QC steps ran. Empty \code{list()}
 on construction; populated by \code{summaryStatsQc()} with a per-step audit

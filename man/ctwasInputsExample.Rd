@@ -7,7 +7,10 @@
 \format{
 A list with the cTWAS input components \code{z_snp}, \code{z_gene},
   \code{weights}, \code{region_info}, \code{snp_map}, \code{LD_map}, and the
-  LD / SNP-info loader closures.
+  LD / SNP-info loader closures. Each \code{weights} entry carries the
+  weights \code{wgt} and their variance \code{wgt_var} (w'Rw), from which
+  the pipeline computes \code{z_gene}, in place of ctwas's per-gene LD
+  matrix \code{R_wgt}.
 }
 \description{
 The assembled cTWAS input list produced by

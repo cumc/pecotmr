@@ -19,13 +19,6 @@ knitr::opts_chunk$set(
     fig.height = 4.5,
     eval = hasCtwas
 )
-# cTWAS narrates each step through the logging package, which writes to
-# stdout rather than as messages, so knitr cannot filter it. Quieten it here
-# to keep the output readable -- in your own session the log is worth
-# watching, since it reports region counts and EM convergence.
-if (hasCtwas) {
-    logging::setLevel("WARN")
-}
 ```
 
 ```{r ctwas-missing, echo=FALSE, eval=!hasCtwas, results="asis"}
@@ -95,7 +88,7 @@ blocks <- GenomicRanges::GRanges(
 gwasSumStats <- loadGwasSumStatsFromManifest(
     manifest = data.frame(study = "gwas1", sumStatsPath = gwasTsv),
     genome = "hg38",
-    ldSketch = ldStem,
+    ldReference = ldStem,
     region = "chr22:10000000-19000000",
     ldBlocks = blocks
 )
@@ -113,7 +106,7 @@ data(ctwasWeightsExample)
 res <- ctwasPipeline(
     gwasSumStats = gwasByRegion,
     twasWeights = list(ctwasWeightsExample),
-    ctwasPriorArgs = CtwasPriorParam(
+    ctwasPriorParam = CtwasPriorParam(
         thin = 1,
         niterPrefit = 3,
         niter = 10,
@@ -180,7 +173,7 @@ ctwasPipeline(
     gwasSumStats = gwasByRegion,
     twasWeights = list(ctwasWeightsExample),
     fineMappingResult = fmr,
-    variantPruningArgs = VariantPruningParam(
+    variantPruningParam = VariantPruningParam(
         weightCutoff = 1e-4,
         maxVariants = 1000,
         csMinCor = 0.8,
@@ -248,7 +241,7 @@ inputs <- assembleCtwasInputs(
 )
 est <- estCtwasGroupPriors(
     inputs,
-    ctwasPriorArgs = CtwasPriorParam(
+    ctwasPriorParam = CtwasPriorParam(
         thin = 1,
         niterPrefit = 3,
         niter = 10,
@@ -309,7 +302,7 @@ merged <- mergeCtwasBoundaryRegions(
 )
 ```
 
-`ctwasPipeline(boundaryMergeArgs = BoundaryMergeParam(enabled = TRUE))` does
+`ctwasPipeline(boundaryMergeParam = BoundaryMergeParam(enabled = TRUE))` does
 the same thing inline, with
 `mergePipThresh` / `mergeFilterCs` / `mergeMaxSNP` forwarding to those
 arguments. It is off by default because it only matters when a
@@ -325,15 +318,15 @@ ctwasPipeline(
     maxNumSingleEffects = 5,
     ncore = 1,
     keepSnps = FALSE,
-    ctwasPriorArgs = CtwasPriorParam(
+    ctwasPriorParam = CtwasPriorParam(
         thin = 0.1,
         niterPrefit = 3,
         niter = 30,
         varStructure = "shared_type",
         fallbackToPrefit = FALSE
     ),
-    variantPruningArgs = VariantPruningParam(),
-    boundaryMergeArgs = BoundaryMergeParam(enabled = FALSE)
+    variantPruningParam = VariantPruningParam(),
+    boundaryMergeParam = BoundaryMergeParam(enabled = FALSE)
 )
 ```
 

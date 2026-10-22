@@ -70,10 +70,6 @@ NULL
     file.path(base, p)
 }
 
-# Rename accepted aliases to the canonical camelCase name and validate that all
-# `required` canonical columns are present. `aliases` is a named list keyed by
-# canonical name; each value is the character vector of accepted source names
-# (including the canonical name itself). The first alias present wins.
 # The QtlDataset pass-through arguments, asserted at the loader so a bad value
 # is reported against the argument the caller passed rather than surfacing from
 # QtlDataset's validity several hundred lines later. Types match
@@ -84,8 +80,7 @@ NULL
     assertLogical(scaleResiduals, len = 1L)
     .assertMethodParam(
         genotypeFilterParam,
-        "GenotypeFilterParam",
-        "genotypeFilter"
+        "GenotypeFilterParam"
     )
     # Only what the caller actually set: an unset field defers to QtlDataset's
     # own default and has nothing to check here.
@@ -138,6 +133,11 @@ NULL
     hit[[1L]]
 }
 
+# Rename accepted aliases to the canonical camelCase name and validate that all
+# `required` canonical columns are present. `aliases` is a named list keyed by
+# canonical name; each value is the character vector of accepted source names
+# (including the canonical name itself). The first alias present wins.
+# @noRd
 .canonManifestCols <- function(df, aliases, required, label) {
     # Each alias resolves against the ORIGINAL names, so renaming one cannot
     # change what another matches.
@@ -204,149 +204,124 @@ NULL
 # Genotype-format detection + LD-sketch resolution
 # =============================================================================
 
-# Build a single-file / prefix GenotypeHandle, detecting the backend from the
-# path. Recognised: .vcf[.gz|.bgz]/.bcf/.gds single files, .bed/.pgen single
-# files, and bare PLINK1/PLINK2 prefixes (probed by sidecar existence).
-.detectGenotypeFormat <- function(path) {
-    lower <- str_to_lower(path)
-    if (
-        str_detect(lower, "\\.vcf(\\.b?gz)?$") ||
-            str_ends(lower, "\\.bcf") ||
-            str_ends(lower, "\\.gds")
-    ) {
-        return(GenotypeHandle(path = path))
-    }
-    if (str_ends(lower, "\\.bed")) {
-        return(GenotypeHandle(
-            plink1Prefix = str_remove(
-                path,
-                regex("\\.bed$", ignore_case = TRUE)
-            )
-        ))
-    }
-    if (str_ends(lower, "\\.pgen")) {
-        return(GenotypeHandle(
-            plink2Prefix = str_remove(
-                path,
-                regex("\\.pgen$", ignore_case = TRUE)
-            )
-        ))
-    }
-    if (file.exists(str_c(path, ".bed"))) {
-        return(GenotypeHandle(plink1Prefix = path))
-    }
-    if (file.exists(str_c(path, ".pgen"))) {
-        return(GenotypeHandle(plink2Prefix = path))
-    }
-    msg <- glue(
-        "Could not determine genotype format for '{path}' ",
-        "(expected .bed/.pgen/.vcf[.gz]/.bcf/.gds or a PLINK prefix)."
+# The genotype panel of a single file or PLINK prefix, its format told as
+# readGenotypes() tells it (.genotypePathFormat()).
+.readGenotypePath <- function(path) {
+    .readGenotypePanel(
+        path,
+        format = .requireGenotypeFormat(path, "manifest")
     )
-    abort(msg)
 }
 
-# Turn an ldSketch specification into a GenotypeHandle. Accepts a prebuilt
-# handle, a named chrom -> path vector (genoMeta), or a single string that is
-# either a genotype file/prefix or a chrom-sharded genoMeta meta file.
-# `chroms` (optional) restricts a chrom-sharded panel to those chromosomes so
-# the other per-chromosome shards are never read; it is ignored for a single
-# genotype file (which has no shards to skip).
-.resolveLdSketch <- function(spec, chroms = NULL) {
+# Turn an ldReference specification into a genotype panel, or pass an LdMatrix
+# or a mixture through. Accepts a panel (or a bare handle), a named chrom ->
+# path vector (genoMeta), or a single string that is either a genotype
+# file/prefix or a chrom-sharded genoMeta meta file. `chroms` (optional)
+# restricts a chrom-sharded panel to those chromosomes so the other
+# per-chromosome shards are never read; it is ignored for a single genotype
+# file (which has no shards to skip).
+.resolveLdRef <- function(spec, chroms = NULL) {
     if (is.null(spec)) {
         return(NULL)
     }
-    open <- .openGenotypeHandle(spec)
+    open <- .openLdRef(spec)
     if (!is.null(open)) {
         return(open)
     }
     if (is.character(spec) && !is.null(names(spec))) {
-        return(GenotypeHandle(genoMeta = spec, chroms = chroms))
+        return(.chromMetaPanel(spec, chroms))
     }
     if (is.character(spec) && length(spec) == 1L) {
-        lower <- str_to_lower(spec)
-        looksLikeGenotype <- str_detect(lower, "\\.vcf(\\.b?gz)?$") ||
-            str_ends(lower, "\\.bcf") ||
-            str_ends(lower, "\\.gds") ||
-            str_ends(lower, "\\.bed") ||
-            str_ends(lower, "\\.pgen") ||
-            file.exists(str_c(spec, ".bed")) ||
-            file.exists(str_c(spec, ".pgen"))
-        if (looksLikeGenotype) {
-            return(.detectGenotypeFormat(spec))
+        if (!is.null(.genotypePathFormat(spec))) {
+            return(.readGenotypePath(spec))
         }
         # Otherwise treat it as a chrom-sharded genoMeta meta file.
-        return(GenotypeHandle(genoMeta = spec, chroms = chroms))
+        return(.chromMetaPanel(spec, chroms))
     }
     msg <- glue(
-        "`ldSketch` must be a genotype panel, a genotype path/prefix, or a ",
-        "genoMeta spec (named chrom->path vector or meta-file path)."
+        "`ldReference` must be a genotype panel, a genotype path/prefix, a ",
+        "genoMeta spec (named chrom->path vector or meta-file path), or an ",
+        "LdMatrix."
     )
     abort(msg)
 }
 
-# Resolve the LD sketch SPEC from the (argument, ldSketchPath column) pair,
-# without reading any genotype metadata yet. Returns the handle behind an
-# already-open panel (when the caller passed one), or the reconciled spec
+# An LD reference that is already open -- a genotype panel or a bare handle,
+# an LdMatrix or a mixture, as it stands -- or NULL for a spec still to be
+# resolved.
+# @noRd
+.openLdRef <- function(x) {
+    if (.ldIsMatrixRef(x) || .ldIsMixtureRef(x)) {
+        return(x)
+    }
+    .openGenotypeSource(x)
+}
+
+# Resolve the LD sketch SPEC from the (argument, ldReferencePath column) pair,
+# without reading any genotype metadata yet. Returns an already-open panel
+# (when the caller passed one) as it is, or the reconciled spec
 # (a path/prefix or a
 # genoMeta path/named-vector) for later materialisation. Deferring the read to
-# `.materializeLdSketch` lets the loader first learn which chromosomes the
+# `.materializeLdRef` lets the loader first learn which chromosomes the
 # summary statistics cover and skip the panel's other per-chromosome shards.
-.resolveLdSketchInput <- function(df, ldSketch, base) {
-    open <- .openGenotypeHandle(ldSketch)
+.resolveLdRefInput <- function(df, ldReference, base) {
+    open <- .openLdRef(ldReference)
     if (!is.null(open)) {
         return(open)
     }
-    # is_in guard, not `!is.null(df$ldSketchPath)`: on a tibble `$` for an
+    # is_in guard, not `!is.null(df$ldReferencePath)`: on a tibble `$` for an
     # absent column NULLs but WARNS ("Unknown or uninitialised column"), where a
-    # data.frame was silent. ldSketchPath is optional (LD may come via
-    # `ldSketch`).
-    colSpec <- if (!is_in("ldSketchPath", names(df))) {
+    # data.frame was silent. ldReferencePath is optional (LD may come via
+    # `ldReference`).
+    colSpec <- if (!is_in("ldReferencePath", names(df))) {
         NULL
     } else {
-        v <- unique(as.character(df$ldSketchPath[
-            !is.na(df$ldSketchPath) &
-                str_length(as.character(df$ldSketchPath)) > 0L
+        v <- unique(as.character(df$ldReferencePath[
+            !is.na(df$ldReferencePath) &
+                str_length(as.character(df$ldReferencePath)) > 0L
         ]))
         if (length(v) > 1L) {
-            abort("`ldSketchPath` column must be constant across the manifest.")
+            abort(
+                "`ldReferencePath` column must be constant across the manifest."
+            )
         }
         if (length(v) == 1L) .resolveRel(v, base) else NULL
     }
-    spec <- ldSketch %||% colSpec
+    spec <- ldReference %||% colSpec
     if (
-        !is.null(ldSketch) &&
+        !is.null(ldReference) &&
             !is.null(colSpec) &&
-            !identical(as.character(ldSketch), as.character(colSpec))
+            !identical(as.character(ldReference), as.character(colSpec))
     ) {
         msg <- glue(
-            "`ldSketch` argument disagrees with the manifest ",
-            "`ldSketchPath` column."
+            "`ldReference` argument disagrees with the manifest ",
+            "`ldReferencePath` column."
         )
         abort(msg)
     }
     if (is.null(spec)) {
         msg <- glue(
-            "`ldSketch` must be provided as an argument or an ",
-            "`ldSketchPath` column."
+            "`ldReference` must be provided as an argument or an ",
+            "`ldReferencePath` column."
         )
         abort(msg)
     }
     spec
 }
 
-# Materialise a resolved ldSketch spec into a GenotypeHandle, reading only the
-# shards for `chroms` when the spec is a chrom-sharded panel. A spec that is
-# already a GenotypeHandle (the caller passed a prebuilt handle) is returned
-# unchanged: its snpInfo is already in memory, so there is no read to restrict.
-.materializeLdSketch <- function(spec, chroms) {
+# Materialise a resolved ldReference spec into a genotype panel, reading only
+# the shards for `chroms` when the spec is a chrom-sharded panel. A spec that is
+# already open (the caller passed a panel) is returned unchanged: its variants
+# are already in memory, so there is no read to restrict.
+.materializeLdRef <- function(spec, chroms) {
     if (is.null(spec)) {
         return(NULL)
     }
-    open <- .openGenotypeHandle(spec)
+    open <- .openLdRef(spec)
     if (!is.null(open)) {
         return(open)
     }
-    .resolveLdSketch(spec, chroms = chroms)
+    .resolveLdRef(spec, chroms = chroms)
 }
 
 # Canonical chromosomes present across a list of sumstats entry GRanges. NULL /
@@ -363,15 +338,15 @@ NULL
 # LD-sketch containment check (validation only; no filtering)
 # =============================================================================
 
-# Canonical chromosomes present in an LD sketch: for a sharded handle these are
-# the chromPaths names; for a single-file handle the unique snpInfo chromosomes.
-.ldSketchChroms <- function(ldSketch) {
-    handle <- .ldSketchHandle(ldSketch)
-    if (length(chromPaths(handle)) > 0L) {
-        canonChrom(names(chromPaths(handle)))
-    } else {
-        unique(.ldSketchChrom(ldSketch))
+# Canonical chromosomes present in an LD reference: for a panel read from a
+# per-chromosome manifest these are the manifest's chromosomes; otherwise the
+# chromosomes of its variants.
+.ldRefChroms <- function(ldReference) {
+    chromPaths <- .ldRefChromPaths(ldReference)
+    if (length(chromPaths) > 0L) {
+        return(canonChrom(names(chromPaths)))
     }
+    unique(.ldRefChrom(ldReference))
 }
 
 # Two-tier containment check for one entry GRanges against the LD sketch:
@@ -379,15 +354,15 @@ NULL
 #   * variant tier: match entry variants against the sketch's variants on the
 #     shared chromosomes. Zero overlap -> error; overlap fraction below
 #     `minLdOverlapWarn` -> warning. Never filters.
-.checkLdContainment <- function(ldSketch, entryGr, minLdOverlapWarn, label) {
+.checkLdContainment <- function(ldReference, entryGr, minLdOverlapWarn, label) {
     if (length(entryGr) == 0L) {
         return(invisible(NULL))
     }
-    reqChrom <- .ldContainmentCheckChroms(entryGr, ldSketch, label)
-    sketchGr <- .ldSketchRanges(ldSketch)
+    reqChrom <- .ldContainmentCheckChroms(entryGr, ldReference, label)
+    sketchGr <- .ldRefRanges(ldReference)
     if (length(sketchGr) == 0L) {
         msg <- glue(
-            "{label}: LD sketch carries no variant metadata; ",
+            "{label}: the LD reference carries no variant metadata; ",
             "skipping the variant-overlap check."
         )
         warn(msg)
@@ -404,16 +379,16 @@ NULL
 
 # The entry's chromosomes must all be present in the LD sketch; returns them.
 # @noRd
-.ldContainmentCheckChroms <- function(entryGr, ldSketch, label) {
+.ldContainmentCheckChroms <- function(entryGr, ldReference, label) {
     reqChrom <- unique(canonChrom(
         as.character(GenomicRanges::seqnames(entryGr))
     ))
-    availChrom <- .ldSketchChroms(ldSketch)
+    availChrom <- .ldRefChroms(ldReference)
     missingChrom <- setdiff(reqChrom, availChrom)
     if (length(missingChrom) > 0L) {
         msg <- glue(
             "{label}: chromosome(s) {str_flatten(missingChrom, ', ')} ",
-            "are absent from the LD sketch ",
+            "are absent from the LD reference ",
             "(available: {str_flatten(availChrom, ', ')})."
         )
         abort(msg)
@@ -434,7 +409,7 @@ NULL
         canonChrom(as.character(GenomicRanges::seqnames(sketchGr))),
         reqChrom
     )
-    # Same matching relation `.ldFromSketch()` will use when the LD is
+    # Same matching relation `.ldFromRef()` will use when the LD is
     # actually loaded, palindromes included -- otherwise this counts an A/T
     # variant as absent, under-reports the overlap and warns about a panel
     # that will in fact match.
@@ -448,7 +423,7 @@ NULL
     if (nOverlap == 0L) {
         msg <- glue(
             "{label}: none of the {length(entryGr)} summary-statistic ",
-            "variants are present in the LD sketch."
+            "variants are present in the LD reference."
         )
         abort(msg)
     }
@@ -457,7 +432,7 @@ NULL
         pct <- sprintf("%.1f", 100 * frac)
         msg <- glue(
             "{label}: only {pct}% of summary-statistic variants ",
-            "({nOverlap}/{length(entryGr)}) are present in the LD sketch."
+            "({nOverlap}/{length(entryGr)}) are present in the LD reference."
         )
         warn(msg)
     }
@@ -806,9 +781,6 @@ NULL
     )
 }
 
-# Assemble the standardized sumstat data.frame (chrom/pos/SNP/A1/A2/Z, optional
-# N / N_CASE / N_CONTROL, and any present BETA/SE/P/MAF/INFO).
-# @noRd
 # The source columns named by explicit mappings, so an auto-detected key never
 # re-reads a column another key already claimed.
 # @noRd
@@ -866,6 +838,9 @@ NULL
     keep(sources, .sumstatSourceFound)
 }
 
+# Assemble the standardized sumstat data.frame (chrom/pos/SNP/A1/A2/Z, optional
+# N / N_CASE / N_CONTROL, and any present BETA/SE/P/MAF/INFO).
+# @noRd
 .buildSumstatOut <- function(df, resolved, z, n, mapping, label) {
     claimed <- .sumstatClaimedCols(mapping)
     present <- .sumstatOptionalSources(df, mapping, label, claimed)
@@ -920,7 +895,8 @@ NULL
         ))
         return(invisible(NULL))
     }
-    if (all(is.na(out$AF))) {
+    # An empty result has no values to be unusable: all() of none is TRUE.
+    if (length(out$AF) > 0L && all(is.na(out$AF))) {
         warn(glue(
             "{label}: effect-allele frequency `af` was declared but its ",
             "values are all missing/unusable; top_loci$af will be NA."
@@ -989,24 +965,25 @@ NULL
 
 # Read column `tag` from the GWAS-VCF geno matrix for one sample as numeric, or
 # NULL when the tag is absent/unmapped.
-# @noRd
+#
 # `tag` may name SEVERAL candidate keys in priority order (the spec's key then
 # the spellings found in the wild), so the first one the file actually carries
-# wins. A single string still works -- it is a length-1 candidate list.
+# wins. A single string still works -- it is a length-1 candidate list. The
+# result is unnamed: geno matrix columns carry variant-id element names that
+# the canonical sumstat tibble must not keep (data.frame stripped them).
 # @noRd
 .vcfGetField <- function(tag, geno, sample) {
     hit <- intersect(as.character(tag %||% character(0)), names(geno))
     if (length(hit) == 0L) {
         return(NULL)
     }
-    # unname: geno matrix columns carry variant-id element names that the
-    # canonical sumstat tibble must not keep (data.frame stripped them).
     unname(as.numeric(geno[[hit[[1L]]]][, sample]))
 }
 
 # Convert a VCF (GWAS-VCF format) into the canonical sumstats data.frame. The
 # effect allele (A1) is ALT; the other allele (A2) is REF. Stats come from the
 # per-study FORMAT fields ES/SE/LP/SS/EAF, with Z = ES / SE.
+# @noRd
 .vcfToSumstatDf <- function(vcf, sampleSelect, formatMapping, label) {
     fmap <- list_modify(
         .gwasVcfFormatDefaults,
@@ -1016,59 +993,66 @@ NULL
     )
     rr <- SummarizedExperiment::rowRanges(vcf)
     altList <- VariantAnnotation::alt(vcf)
-    alt <- unname(map_chr(as.list(altList), .mlFirstAlt))
-    ref <- unname(as.character(VariantAnnotation::ref(vcf)))
-    geno <- VariantAnnotation::geno(vcf)
     sample <- .pickVcfSample(colnames(vcf), sampleSelect, label)
-    es <- .vcfGetField(fmap$BETA, geno, sample)
-    se <- .vcfGetField(fmap$SE, geno, sample)
-    ez <- .vcfGetField(fmap$Z, geno, sample)
-    lp <- .vcfGetField(fmap$P, geno, sample)
-    ss <- .vcfGetField(fmap$N, geno, sample)
-    af <- .vcfGetField(fmap$AF, geno, sample)
-    eaf <- .vcfGetField(fmap$MAF, geno, sample)
-    if ((is.null(es) || is.null(se)) && is.null(ez)) {
+    fld <- map(
+        fmap[c("BETA", "SE", "Z", "P", "N", "AF", "MAF")],
+        .vcfGetField,
+        geno = VariantAnnotation::geno(vcf),
+        sample = sample
+    )
+    .vcfRequireSumstatFields(fld, label)
+    z <- .vcfSumstatZ(fld$BETA, fld$SE, fld$Z, length(rr))
+    out <- tibble(
+        chrom = as.character(GenomicRanges::seqnames(rr)),
+        pos = unname(as.integer(GenomicRanges::start(rr))),
+        SNP = names(rr),
+        A1 = unname(map_chr(as.list(altList), .mlFirstAlt)),
+        A2 = unname(as.character(VariantAnnotation::ref(vcf))),
+        Z = z$z,
+        z_supplied = z$supplied,
+        N = fld$N
+    )
+    mutate(out, !!!.vcfOptionalSumstatCols(fld))
+}
+
+# A GWAS-VCF must yield a z (supplied, or derivable from ES and SE) and a
+# sample size. `fld` is the per-field read of `.vcfToSumstatDf()`.
+# @noRd
+.vcfRequireSumstatFields <- function(fld, label) {
+    if ((is.null(fld$BETA) || is.null(fld$SE)) && is.null(fld$Z)) {
         msg <- glue(
             "{label}: GWAS-VCF must carry either a supplied z (EZ) or ES and ",
             "SE to derive one from (configure via `formatMapping`)."
         )
         abort(msg)
     }
-    if (is.null(ss)) {
+    if (is.null(fld$N)) {
         msg <- glue(
             "{label}: GWAS-VCF must carry a sample-size FORMAT field ",
             "(NS, or SS in older files; configure via `formatMapping`)."
         )
         abort(msg)
     }
-    z <- .vcfSumstatZ(es, se, ez, length(rr))
-    out <- tibble(
-        chrom = as.character(GenomicRanges::seqnames(rr)),
-        pos = unname(as.integer(GenomicRanges::start(rr))),
-        SNP = names(rr),
-        A1 = alt,
-        A2 = ref,
-        Z = z$z,
-        z_supplied = z$supplied,
-        N = ss
-    )
-    mutate(
-        out,
-        !!!compact(list(
-            BETA = es,
-            SE = se,
-            P = if (!is.null(lp)) 10^(-lp),
-            AF = af,
-            # A directionless MAF of its own when the file has one; else
-            # folded from AF, which is QC-usable and keeps `AF` intact
-            # alongside it rather than consuming it.
-            MAF = if (!is.null(eaf)) {
-                pmin(eaf, 1 - eaf)
-            } else if (!is.null(af)) {
-                pmin(af, 1 - af)
-            }
-        ))
-    )
+}
+
+# The optional sumstat columns a GWAS-VCF may carry, NULL ones dropped. MAF is
+# the file's own directionless MAF when it has one; else folded from AF, which
+# is QC-usable and keeps `AF` intact alongside it rather than consuming it.
+# @noRd
+.vcfOptionalSumstatCols <- function(fld) {
+    eaf <- fld$MAF
+    af <- fld$AF
+    compact(list(
+        BETA = fld$BETA,
+        SE = fld$SE,
+        P = if (!is.null(fld$P)) 10^(-fld$P),
+        AF = af,
+        MAF = if (!is.null(eaf)) {
+            pmin(eaf, 1 - eaf)
+        } else if (!is.null(af)) {
+            pmin(af, 1 - af)
+        }
+    ))
 }
 
 # The z and its provenance, per variant. A supplied `EZ` wins where it has a
@@ -1178,11 +1162,14 @@ NULL
     if (is.null(order) || identical(order, "none")) {
         return(df)
     }
-    have <- map_lgl(
+    alleleCols <- map(
         c("A1", "A2"),
-        function(k) !.mlIsNaOrNull(.resolveSumstatKey(k, df, mapping, label))
+        .resolveSumstatKey,
+        df = df,
+        mapping = mapping,
+        label = label
     )
-    if (any(have)) {
+    if (!all(map_lgl(alleleCols, .mlIsNaOrNull))) {
         return(df) # a real allele column always wins
     }
     idCol <- .resolveSumstatKey("variant_id", df, mapping, label)
@@ -1332,13 +1319,15 @@ NULL
 # holds row identifiers; `transpose = TRUE` handles QTLtools-format inputs
 # (covariates as rows, samples as columns).
 .readCovariateMatrix <- function(path, transpose = FALSE) {
-    raw <- as.data.frame(
-        readr::read_tsv(path, show_col_types = FALSE, progress = FALSE),
-        check.names = FALSE
+    raw <- readr::read_tsv(
+        path,
+        show_col_types = FALSE,
+        progress = FALSE,
+        name_repair = "minimal"
     )
     m <- `rownames<-`(
-        `storage.mode<-`(as.matrix(raw[, -1L, drop = FALSE]), "double"),
-        as.character(raw[[1L]])
+        `storage.mode<-`(as.matrix(select(raw, -1L)), "double"),
+        as.character(pull(raw, 1L))
     )
     if (transpose) {
         return(t(m))
@@ -1359,8 +1348,6 @@ NULL
     )
 }
 
-# Read a phenotype BED into an expression matrix (genes x samples) + rowRanges.
-# @noRd
 # Column names (and their case/alias variants) that are metadata, not
 # expression samples, in a phenotype BED.
 # @noRd
@@ -1382,15 +1369,15 @@ NULL
     )
 }
 
+# Read a phenotype BED into an expression matrix (genes x samples) + rowRanges.
+# @noRd
 .readPhenotypeBed <- function(bedPath) {
-    bed <- as.data.frame(
-        readr::read_tsv(
-            bedPath,
-            show_col_types = FALSE,
-            progress = FALSE,
-            comment = ""
-        ),
-        check.names = FALSE
+    bed <- readr::read_tsv(
+        bedPath,
+        show_col_types = FALSE,
+        progress = FALSE,
+        comment = "",
+        name_repair = "minimal"
     )
     chrCol <- intersect(c("#chr", "#chrom", "chrom", "chr"), names(bed))[1L]
     startCol <- intersect(c("start", "Start"), names(bed))[1L]
@@ -1404,12 +1391,12 @@ NULL
         abort(msg)
     }
     meta <- `names<-`(
-        bed[, c(chrCol, startCol, endCol, geneCol)],
+        select(bed, all_of(c(chrCol, startCol, endCol, geneCol))),
         c("chrom", "start", "end", "gene_id")
     )
     sampleCols <- setdiff(names(bed), .bedReservedCols())
     expr <- `rownames<-`(
-        `storage.mode<-`(as.matrix(bed[, sampleCols, drop = FALSE]), "double"),
+        `storage.mode<-`(as.matrix(select(bed, all_of(sampleCols))), "double"),
         meta$gene_id
     )
     rr <- `names<-`(
@@ -1501,7 +1488,7 @@ NULL
         ),
         contexts
     )
-    genoHandle <- .resolveGenoHandle(rows, studyName, base, genotypesOverride)
+    genotypes <- .resolveGenotypes(rows, studyName, base, genotypesOverride)
     genoCov <- .resolveGenoCov(
         rows,
         studyName,
@@ -1512,7 +1499,7 @@ NULL
     qtlArgs <- c(
         list(
             study = studyName,
-            genotypes = genoHandle,
+            genotypes = genotypes,
             phenotypes = phenotypes,
             genotypeCovariates = genoCov
         ),
@@ -1561,11 +1548,12 @@ NULL
     .resolveRel(covs[[1L]], base)
 }
 
-# The genotype handle: an override panel/path, else the study's single
-# genotypePath (auto-detecting the format).
+# The genotype panel: an override panel (or bare handle) as given, an
+# override path, else the study's single genotypePath (auto-detecting the
+# format).
 # @noRd
-.resolveGenoHandle <- function(rows, studyName, base, genotypesOverride) {
-    open <- .openGenotypeHandle(genotypesOverride)
+.resolveGenotypes <- function(rows, studyName, base, genotypesOverride) {
+    open <- .openGenotypeSource(genotypesOverride)
     if (!is.null(open)) {
         return(open)
     }
@@ -1582,7 +1570,7 @@ NULL
         }
         v[[1L]]
     }
-    .detectGenotypeFormat(.resolveRel(spec, base))
+    .readGenotypePath(.resolveRel(spec, base))
 }
 
 # The genotype covariate matrix: an override matrix/path, else the study's
@@ -1715,7 +1703,7 @@ loadQtlDatasetFromManifest <- function(
     nSample = c("nSample", "n_sample"),
     varY = c("varY", "var_y"),
     genome = c("genome"),
-    ldSketchPath = c("ldSketchPath", "ld_sketch_path", "ld_sketch")
+    ldReferencePath = c("ldReferencePath", "ld_reference_path", "ld_reference")
 )
 
 .qtlSumStatsManifestAliases <- list(
@@ -1738,7 +1726,7 @@ loadQtlDatasetFromManifest <- function(
     nSample = c("nSample", "n_sample"),
     varY = c("varY", "var_y"),
     genome = c("genome"),
-    ldSketchPath = c("ldSketchPath", "ld_sketch_path", "ld_sketch")
+    ldReferencePath = c("ldReferencePath", "ld_reference_path", "ld_reference")
 )
 
 # TRUE if study `i` has usable case/control counts OR a total-N scalar, so a
@@ -1758,18 +1746,18 @@ loadQtlDatasetFromManifest <- function(
 # range. The checks sit between the two steps because containment is only
 # answerable once the sketch is read, and trimming would hide a miss.
 # @noRd
-.manifestGwasLdSketch <- function(
-    ldSketchSpec,
+.manifestGwasLdRef <- function(
+    ldReferenceSpec,
     entries,
     df,
     minLdOverlapWarn
 ) {
-    materialized <- .materializeLdSketch(
-        ldSketchSpec,
+    materialized <- .materializeLdRef(
+        ldReferenceSpec,
         .entriesChroms(entries)
     )
     .checkGwasLdContainment(materialized, entries, df, minLdOverlapWarn)
-    .subsetSketchToRange(materialized, entries)
+    .subsetLdRefToRange(materialized, entries)
 }
 
 #' @title Load a GwasSumStats collection from a manifest
@@ -1782,27 +1770,29 @@ loadQtlDatasetFromManifest <- function(
 #'   \code{study} (required, unique), \code{sumStatsPath} (required),
 #'   \code{columnMapping} (optional), \code{nCase} / \code{nControl} (optional),
 #'   \code{nSample} (optional study-level total N), \code{varY} (optional), and
-#'   the single-valued \code{genome} / \code{ldSketchPath}. When a row supplies
-#'   a study-level scalar (\code{nCase} + \code{nControl}, or \code{nSample}),
-#'   its sumstats file need not carry a per-variant \code{N} column;
+#'   the single-valued \code{genome} / \code{ldReferencePath}. When a row
+#'   supplies a study-level scalar (\code{nCase} + \code{nControl}, or
+#'   \code{nSample}), its sumstats file need not carry a per-variant \code{N}
+#'   column;
 #'   \code{\link{summaryStatsQc}} fills \code{N} from the scalar.
 #' @param genome Genome build; reconciled with a \code{genome} column.
-#' @param ldSketch A genotype panel (see \code{\link{readGenotypes}}) or a spec
-#'   (path/prefix/genoMeta); reconciled with an \code{ldSketchPath} column.
+#' @param ldReference A genotype panel (see \code{\link{readGenotypes}}) or a
+#'   spec (path/prefix/genoMeta); reconciled with an \code{ldReferencePath}
+#'   column.
 #' @param region Optional \code{chr:start-end} string, GRanges, or one-row
 #'   data.frame restricting the variants read (honoured only for tabix-indexed
 #'   text and bgzipped+tabixed VCF; ignored with a warning otherwise).
 #' @param minLdOverlapWarn Warn when the fraction of sumstats variants present
-#'   in the LD sketch falls below this (default 0.5).
+#'   in the LD reference falls below this (default 0.5).
 #' @param columnMapping Optional default column mapping (a named list/vector, or
 #'   a path to a YAML file of \code{standardName: sourceName} entries) applied
 #'   when a row has no \code{columnMapping}.
 #' @param sampleSelect Optional GWAS-VCF FORMAT sample (study) column to read.
 #' @param formatMapping Optional GWAS-VCF FORMAT tag mapping (canonical stat ->
 #'   FORMAT field), overriding ES/SE/LP/SS/EAF defaults.
-#' @param ldBlocks Optional LD-block specification (an \code{LdBlocks}, a
-#'   \code{GRanges}, a data.frame with \code{chrom}/\code{start}/\code{end},
-#'   or a path to such a table). Without it a genome-wide file splits into one
+#' @param ldBlocks Optional LD-block specification (a \code{GRanges}, a
+#'   data.frame with \code{chrom}/\code{start}/\code{end}, or a path to such
+#'   a table). Without it a genome-wide file splits into one
 #'   element per chromosome; with it, into one element per LD block, which is
 #'   the granularity \code{\link{assembleCtwasInputs}} needs.
 #' @return A \code{GwasSumStats} object.
@@ -1813,12 +1803,12 @@ loadQtlDatasetFromManifest <- function(
 #'   package = "pecotmr"), "protocol_example.LD.chr22")
 #' manifest <- data.frame(study = "g1", sumStatsPath = gwasTsv)
 #' loadGwasSumStatsFromManifest(manifest = manifest, genome = "hg38",
-#'   ldSketch = ldStem, region = "chr22:10000000-19000000")
+#'   ldReference = ldStem, region = "chr22:10000000-19000000")
 #' @export
 loadGwasSumStatsFromManifest <- function(
     manifest,
     genome = NULL,
-    ldSketch = NULL,
+    ldReference = NULL,
     region = NULL,
     minLdOverlapWarn = 0.5,
     columnMapping = NULL,
@@ -1837,7 +1827,7 @@ loadGwasSumStatsFromManifest <- function(
         abort("GwasSumStats manifest `study` values must be unique.")
     }
     genome <- .reconcileScalar(df[["genome"]], genome, "genome")
-    ldSketchSpec <- .resolveLdSketchInput(df, ldSketch, base)
+    ldReferenceSpec <- .resolveLdRefInput(df, ldReference, base)
     ns <- .gwasStudyScalars(df)
     entries <- map(
         seq_len(nrow(df)),
@@ -1850,8 +1840,8 @@ loadGwasSumStatsFromManifest <- function(
         formatMapping = formatMapping,
         ns = ns
     )
-    ldSketch <- .manifestGwasLdSketch(
-        ldSketchSpec,
+    ldReference <- .manifestGwasLdRef(
+        ldReferenceSpec,
         entries,
         df,
         minLdOverlapWarn
@@ -1860,7 +1850,7 @@ loadGwasSumStatsFromManifest <- function(
     # is too coarse for cTWAS; with one, each study becomes one element per LD
     # block. The constructor does the splitting either way.
     gwasArgs <- list_assign(
-        .gwasSumStatsArgs(df, entries, genome, ldSketch, ns),
+        .gwasSumStatsArgs(df, entries, genome, ldReference, ns),
         ldBlocks = ldBlocks
     )
     exec(GwasSumStats, !!!gwasArgs)
@@ -1926,10 +1916,15 @@ loadGwasSumStatsFromManifest <- function(
 
 # Per-study LD-containment checks (deferred until the sketch is materialised).
 # @noRd
-.checkGwasLdContainment <- function(ldSketch, entries, df, minLdOverlapWarn) {
+.checkGwasLdContainment <- function(
+    ldReference,
+    entries,
+    df,
+    minLdOverlapWarn
+) {
     for (i in seq_len(nrow(df))) {
         .checkLdContainment(
-            ldSketch,
+            ldReference,
             entries[[i]],
             minLdOverlapWarn,
             str_c("GwasSumStats[study=", df$study[[i]], "]")
@@ -1939,13 +1934,13 @@ loadGwasSumStatsFromManifest <- function(
 
 # GwasSumStats() constructor args, including any present study scalars + varY.
 # @noRd
-.gwasSumStatsArgs <- function(df, entries, genome, ldSketch, ns) {
+.gwasSumStatsArgs <- function(df, entries, genome, ldReference, ns) {
     c(
         list(
             study = as.character(df$study),
             entry = entries,
             genome = genome,
-            ldSketch = ldSketch
+            ldReference = ldReference
         ),
         compact(list(
             nCase = ns$nCase,
@@ -1998,14 +1993,14 @@ loadGwasSumStatsFromManifest <- function(
 #'   \code{study}, \code{context}, \code{trait} (required), \code{sumStatsPath}
 #'   (required), \code{columnMapping} (optional), \code{nSample} (optional
 #'   tuple-level total N), \code{varY} (optional), and the single-valued
-#'   \code{genome} / \code{ldSketchPath}. When a row supplies \code{nSample},
+#'   \code{genome} / \code{ldReferencePath}. When a row supplies \code{nSample},
 #'   its sumstats file need not carry a per-variant \code{N} column;
 #'   \code{\link{summaryStatsQc}} fills \code{N} from the scalar. (Unlike the
 #'   GWAS loader, there are no \code{nCase}/\code{nControl} columns: molecular
 #'   QTL traits are quantitative.)
 #' @param genome Genome build; reconciled with a \code{genome} column.
-#' @param ldSketch A genotype panel (see \code{\link{readGenotypes}}) or spec;
-#'   reconciled with an \code{ldSketchPath} column.
+#' @param ldReference A genotype panel (see \code{\link{readGenotypes}}) or
+#'   spec; reconciled with an \code{ldReferencePath} column.
 #' @param region,minLdOverlapWarn,columnMapping,sampleSelect,formatMapping As
 #'   for \code{\link{loadGwasSumStatsFromManifest}}.
 #' @param traitColumn Optional column of the sumstats file naming the trait of
@@ -2033,12 +2028,12 @@ loadGwasSumStatsFromManifest <- function(
 #' manifest <- data.frame(study = "s1", context = "brain",
 #'   trait = "ENSG1", sumStatsPath = tsv)
 #' loadQtlSumStatsFromManifest(manifest = manifest, genome = "hg38",
-#'   ldSketch = ldStem, region = "chr22:10000000-19000000")
+#'   ldReference = ldStem, region = "chr22:10000000-19000000")
 #' @export
 loadQtlSumStatsFromManifest <- function(
     manifest,
     genome = NULL,
-    ldSketch = NULL,
+    ldReference = NULL,
     region = NULL,
     minLdOverlapWarn = 0.5,
     columnMapping = NULL,
@@ -2049,14 +2044,9 @@ loadQtlSumStatsFromManifest <- function(
 ) {
     variantIdAlleles <- arg_match(variantIdAlleles)
     base <- .manifestBase(manifest)
-    df <- .canonManifestCols(
-        .readManifest(manifest),
-        .qtlSumStatsManifestAliases,
-        required = c("study", "context", "trait", "sumStatsPath"),
-        label = "QtlSumStats"
-    )
+    df <- .qtlSumStatsManifest(manifest)
     genome <- .reconcileScalar(df[["genome"]], genome, "genome")
-    ldSketchSpec <- .resolveLdSketchInput(df, ldSketch, base)
+    ldReferenceSpec <- .resolveLdRefInput(df, ldReference, base)
     nSample <- .qtlManifestNSample(df)
     entries <- .loadQtlSumStatsEntries(
         df,
@@ -2069,21 +2059,53 @@ loadQtlSumStatsFromManifest <- function(
         traitColumn = traitColumn,
         variantIdAlleles = variantIdAlleles
     )
+    ldReference <- .manifestQtlLdRef(
+        ldReferenceSpec,
+        entries,
+        df,
+        minLdOverlapWarn
+    )
+    exec(
+        QtlSumStats,
+        !!!.qtlSumStatsArgs(
+            df,
+            entries,
+            genome,
+            ldReference,
+            nSample$nSampleCol
+        )
+    )
+}
 
-    # Materialise the LD sketch reading only the chromosomes the summary stats
-    # cover (skips other shards of a chrom-sharded panel), check containment,
-    # then trim its snpInfo to the summary stats' per-chromosome position span.
-    materialized <- .materializeLdSketch(
-        ldSketchSpec,
+# A QtlSumStats manifest's rows, its columns under their canonical names and
+# the required ones present.
+# @noRd
+.qtlSumStatsManifest <- function(manifest) {
+    .canonManifestCols(
+        .readManifest(manifest),
+        .qtlSumStatsManifestAliases,
+        required = c("study", "context", "trait", "sumStatsPath"),
+        label = "QtlSumStats"
+    )
+}
+
+# Materialise the LD sketch reading only the chromosomes the summary stats
+# cover (skipping the other shards of a chrom-sharded panel), check
+# containment, then trim it to the summary stats' per-chromosome position
+# span, as .manifestGwasLdRef() does for a GwasSumStats manifest.
+# @noRd
+.manifestQtlLdRef <- function(
+    ldReferenceSpec,
+    entries,
+    df,
+    minLdOverlapWarn
+) {
+    materialized <- .materializeLdRef(
+        ldReferenceSpec,
         .entriesChroms(entries)
     )
     .qtlSumStatsCheckContainment(materialized, entries, df, minLdOverlapWarn)
-    ldSketch <- .subsetSketchToRange(materialized, entries)
-
-    exec(
-        QtlSumStats,
-        !!!.qtlSumStatsArgs(df, entries, genome, ldSketch, nSample$nSampleCol)
-    )
+    .subsetLdRefToRange(materialized, entries)
 }
 
 # The tuple-level total-N scalar a manifest may carry, plus the per-row
@@ -2106,17 +2128,17 @@ loadQtlSumStatsFromManifest <- function(
 # Per-row LD-containment check (no-op when the sketch is NULL).
 # @noRd
 .qtlSumStatsCheckContainment <- function(
-    ldSketch,
+    ldReference,
     entries,
     df,
     minLdOverlapWarn
 ) {
-    if (is.null(ldSketch)) {
+    if (is.null(ldReference)) {
         return(invisible(NULL))
     }
     for (i in seq_len(nrow(df))) {
         .checkLdContainment(
-            ldSketch,
+            ldReference,
             entries[[i]],
             minLdOverlapWarn,
             str_c(
@@ -2135,14 +2157,14 @@ loadQtlSumStatsFromManifest <- function(
 
 # Assemble the QtlSumStats() argument list from a canonicalised manifest.
 # @noRd
-.qtlSumStatsArgs <- function(df, entries, genome, ldSketch, nSampleCol) {
+.qtlSumStatsArgs <- function(df, entries, genome, ldReference, nSampleCol) {
     args <- list(
         study = as.character(df$study),
         context = as.character(df$context),
         trait = as.character(df$trait),
         entry = entries,
         genome = genome,
-        ldSketch = ldSketch
+        ldReference = ldReference
     )
     c(
         args,
@@ -2162,7 +2184,7 @@ loadQtlSumStatsFromManifest <- function(
 #'   \code{study}); one \code{QtlDataset} is built per study group.
 #' @param sumStatsManifest Optional QtlSumStats manifest (see
 #'   \code{\link{loadQtlSumStatsFromManifest}}).
-#' @param genome,ldSketch,region,minLdOverlapWarn Passed to the QtlSumStats
+#' @param genome,ldReference,region,minLdOverlapWarn Passed to the QtlSumStats
 #'   loader for \code{sumStatsManifest}.
 #' @param columnMapping,sampleSelect,formatMapping Passed to the QtlSumStats
 #'   loader for \code{sumStatsManifest}.
@@ -2185,7 +2207,7 @@ loadMultiStudyQtlDatasetFromManifest <- function(
     qtlDatasetsManifest,
     sumStatsManifest = NULL,
     genome = NULL,
-    ldSketch = NULL,
+    ldReference = NULL,
     region = NULL,
     minLdOverlapWarn = 0.5,
     columnMapping = NULL,
@@ -2207,7 +2229,7 @@ loadMultiStudyQtlDatasetFromManifest <- function(
     sumStats <- .msqLoadSumStats(
         sumStatsManifest,
         genome,
-        ldSketch,
+        ldReference,
         region,
         minLdOverlapWarn,
         columnMapping,
@@ -2257,7 +2279,7 @@ loadMultiStudyQtlDatasetFromManifest <- function(
 .msqLoadSumStats <- function(
     sumStatsManifest,
     genome,
-    ldSketch,
+    ldReference,
     region,
     minLdOverlapWarn,
     columnMapping,
@@ -2270,7 +2292,7 @@ loadMultiStudyQtlDatasetFromManifest <- function(
     loadQtlSumStatsFromManifest(
         sumStatsManifest,
         genome = genome,
-        ldSketch = ldSketch,
+        ldReference = ldReference,
         region = region,
         minLdOverlapWarn = minLdOverlapWarn,
         columnMapping = columnMapping,

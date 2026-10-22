@@ -2,15 +2,15 @@
 % Please edit documentation in R/fineMappingPipeline.R
 \name{combineFineMappingResults}
 \alias{combineFineMappingResults}
-\title{Combine FineMappingResult collections}
+\title{Combine fine-mapping result collections}
 \usage{
-combineFineMappingResults(..., ldSketch = NULL)
+combineFineMappingResults(..., ldReference = NULL)
 }
 \arguments{
 \item{...}{Two or more \code{FineMappingResultBase} objects, or a single
 \code{list} of them.}
 
-\item{ldSketch}{Optional genotype panel (see
+\item{ldReference}{Optional genotype panel (see
 \code{\link{readGenotypes}}) to attach to the
 combined collection. Default \code{NULL}. Applied when combining two or
 more inputs; a single input is returned unchanged.}

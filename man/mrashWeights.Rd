@@ -7,7 +7,6 @@
 mrashWeights(
   X,
   y,
-  initPriorSd = TRUE,
   fitRetention = c("none", "slim", "full"),
   methodArgs = MrashOptions()
 )
@@ -17,15 +16,11 @@ mrashWeights(
 
 \item{y}{Numeric response (phenotype) vector of length \code{nrow(X)}.}
 
-\item{initPriorSd}{Logical. Initialize the prior standard-deviation grid
-from the data. Default \code{TRUE}.}
-
 \item{fitRetention}{How much of the fit is kept as the \code{"fit"}
-  attribute of the returned weights: \code{"none"} (default) attaches
-  nothing, \code{"slim"} and \code{"full"} attach the fitted model. This
-  engine keeps no trimmable intermediates, so the two retaining levels
-  behave alike here.
-Default \code{FALSE}.}
+attribute of the returned weights: \code{"none"} (default) attaches
+nothing, \code{"slim"} and \code{"full"} attach the fitted model. This
+engine keeps no trimmable intermediates, so the two retaining levels
+behave alike here.}
 
 \item{methodArgs}{Options forwarded to \code{susieR::mr.ash}, built
 with \code{\link{MrashOptions}}. A bare list is refused: it cannot be
@@ -40,9 +35,10 @@ A numeric vector of weights, one per variant (column of \code{X});
 }
 \description{
 This function fits the `mr.ash` model (adaptive shrinkage regression) to
-estimate weights for a given set of predictors and response. It uses optional
-prior standard deviation initialization and can accept custom initial beta
-values.
+estimate weights for a given set of predictors and response. The prior is
+\code{susieR::mr.ash}'s own default mixture grid unless \code{sa2} is
+supplied through \code{methodArgs}, and custom initial beta values are
+accepted.
 }
 \examples{
 set.seed(1)

@@ -12,7 +12,12 @@ correlation adjustment; pecotmr defaults it to \code{"generalized"}),
 \code{m}, \code{size}, \code{threshold}, \code{side}, \code{batchsize}
 and \code{nearpd}. The \pkg{poolr} signatures end in \code{...}, so
 names cannot be checked here and a misspelling is passed through.
-\code{p} and \code{R} are supplied by pecotmr and refused.}
+\code{p} and \code{R} are supplied by pecotmr and refused: \code{R} is
+the caller's correlation among the test statistics, which pecotmr
+converts with \code{poolr::mvnconv()} into the form the adjustment
+reads (the covariances of each test's transformed statistic for
+\code{"generalized"}, the correlations among the p-values for the
+effective-number adjustments, unchanged for \code{"empirical"}).}
 }
 \value{
 A \code{MethodOptions} record for

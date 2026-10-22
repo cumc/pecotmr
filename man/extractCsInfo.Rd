@@ -37,8 +37,8 @@ A data frame with one row per CS, containing the following columns:
     CS (its row of the between-CS matrix, self-correlation on the diagonal),
     computed on demand from \code{ldSource}. Absent when there are fewer than
     two credible sets.}
-  \item{cs_corr_max}{Maximum absolute between-CS correlation (excluding the
-    self == 1); \code{NA} for a single CS.}
+  \item{cs_corr_max}{Maximum absolute correlation with the other credible
+    sets; \code{NA} for a single CS.}
   \item{cs_corr_min}{Minimum absolute between-CS correlation; \code{NA} for a
     single CS.}
 }

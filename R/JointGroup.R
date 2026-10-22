@@ -95,7 +95,11 @@ setClass(
     # any of them is fitted. The sketch is a lazy panel, so the matrix is
     # derived once per group at fit time -- which is what the univariate RSS
     # path in fineMappingPipeline already does.
-    representation(Z = "matrix", ldSketch = "LdSketch_OR_NULL", N = "numeric"),
+    representation(
+        Z = "matrix",
+        ldReference = "LdReference_OR_NULL",
+        N = "numeric"
+    ),
     validity = function(object) {
         errors <- c(
             if (ncol(object@Z) != nrow(object@conditions)) {
@@ -140,8 +144,9 @@ setClass(
 
 # ---- Pipeline markers -------------------------------------------------------
 # Not empty: the `config` list carries the per-pipeline parameter tail
-# (coverage/cvFolds/samplePartition/fitFullData/fitRetention/... for fm;
-# fitRetention/cvFolds/... for twas), and dispatch on the concrete
+# (credibleSetParam/crossValidationParam/fitRetention/... for fm;
+# crossValidationParam/ensembleParam/fitRetention/... for twas), and dispatch on
+# the concrete
 # class selects the result type via `construct()`.
 setClass("JointPipeline", contains = "VIRTUAL", representation(config = "list"))
 
@@ -175,7 +180,7 @@ setClass("TwasJointPipeline", contains = "JointPipeline")
 .jgZ <- function(g) g@Z
 
 # @noRd
-.jgLdSketch <- function(g) g@ldSketch
+.jgLdRef <- function(g) g@ldReference
 
 # The variants a summary-statistics group covers, in Z's row order -- which is
 # the order the derived LD matrix comes back in.
@@ -189,8 +194,8 @@ setClass("TwasJointPipeline", contains = "JointPipeline")
 # would recompute the same matrix for every condition.
 # @noRd
 .jgLdMatrix <- function(g) {
-    .ldFromSketch(
-        .jgLdSketch(g),
+    .ldFromRef(
+        .jgLdRef(g),
         .jgVariantIds(g),
         label = "jointEngine"
     )
@@ -198,6 +203,38 @@ setClass("TwasJointPipeline", contains = "JointPipeline")
 
 # @noRd
 .jgN <- function(g) g@N
+
+# The group restricted to the conditions `keep` marks: each condition's Y / Z
+# column goes with it, as does its trait position or sample size where those
+# are per condition. NULL when none is kept. Rebuilt through initialize(), so
+# the result is validated like any constructed group.
+# @noRd
+.jgKeepConditions <- function(g, keep) {
+    if (all(keep)) {
+        return(g)
+    }
+    if (!any(keep)) {
+        return(NULL)
+    }
+    idx <- which(keep)
+    cond <- slice(g@conditions, idx)
+    if (is(g, "IndividualJointGroup")) {
+        traitPos <- if (length(g@traitPos) > 0L) g@traitPos[idx] else g@traitPos
+        return(methods::initialize(
+            g,
+            conditions = cond,
+            Y = g@Y[, idx, drop = FALSE],
+            traitPos = traitPos
+        ))
+    }
+    N <- if (length(g@N) == length(keep)) g@N[idx] else g@N
+    methods::initialize(
+        g,
+        conditions = cond,
+        Z = g@Z[, idx, drop = FALSE],
+        N = N
+    )
+}
 
 # @noRd
 .jcPattern <- function(cell) cell@pattern
