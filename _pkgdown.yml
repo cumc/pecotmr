@@ -154,11 +154,11 @@ reference:
       - CtwasResult
       - CtwasResultEntry
       - fineMappingRow
+      - GenotypeMixture
       - GwasFineMappingResult
       - GwasSumStats
-      - GenotypeMixture-constructor
       - LdEigen
-      - LdMatrix-constructor
+      - LdMatrix
       - LdScore
       - MashPrior
       - MultiStudyQtlDataset
