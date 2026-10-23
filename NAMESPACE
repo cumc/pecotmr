@@ -582,6 +582,7 @@ exportMethods(traitNames)
 exportMethods(traitPosition)
 exportMethods(twasWeights)
 exportMethods(twasWeightsPipeline)
+exportMethods(updateObject)
 exportMethods(varY)
 exportMethods(variantIds)
 exportMethods(weightStandardized)
@@ -602,6 +603,7 @@ importFrom(BiocGenerics,
   ncol,
   nrow,
   path,
+  updateObject,
   weights,
   width
 )
@@ -748,6 +750,7 @@ importFrom(methods,
 importFrom(purrr,
   compact,
   detect,
+  detect_index,
   discard,
   exec,
   imap,
@@ -769,6 +772,7 @@ importFrom(purrr,
   partial,
   pmap,
   possibly,
+  pwalk,
   reduce,
   set_names,
   walk,
@@ -793,8 +797,10 @@ importFrom(rlang,
   eval_bare,
   fn_env,
   fn_fmls,
+  hash,
   inform,
   is_named,
+  obj_address,
   try_fetch,
   warn
 )

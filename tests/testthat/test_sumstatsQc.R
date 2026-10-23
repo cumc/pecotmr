@@ -2761,7 +2761,7 @@ test_that("a tag-named panel entry survives the end-to-end sketch subset", {
     expect_true("chr1:200:G:A" %in% snp)
     # the retained sketch keeps the panel row the QC'd entry still refers to
     expect_true(
-        "chr1:200:G:A" %in% pecotmr:::.ldRefMatchIds(ldReference(out))
+        "chr1:200:G:A" %in% pecotmr:::.ldRefMatchIds(ldReference(out)[[1L]])
     )
 })
 
@@ -2789,7 +2789,7 @@ test_that("the sketch survives a chr:pos:A1:A2 panel (PLINK .bim order)", {
         signalScreenParam = SignalScreenParam(pip = 0),
         sumstatsFilterParam = SumstatsFilterParam(nCutoff = 0)
     )
-    kept <- pecotmr:::.ldRefMatchIds(ldReference(out))
+    kept <- pecotmr:::.ldRefMatchIds(ldReference(out)[[1L]])
     expect_length(kept, 4L)
     expect_setequal(
         pecotmr:::parseVariantId(kept)$pos,
@@ -6957,7 +6957,7 @@ test_that("summaryStatsQc: mafCutoff drops panel-rare observed variants", {
     expect_equal(length(entry), sum(!is.na(maf) & maf >= cutoff))
     # ... and the panel carried on the result -- the seed handle every LD
     # read keys off, not just the row view -- holds no sub-cutoff variant.
-    seed <- pecotmr:::.ldRefHandle(ldReference(out))
+    seed <- pecotmr:::.ldRefHandle(ldReference(out)[[1L]])
     keptMaf <- maf[match(
         as.character(snpInfo(seed)$SNP),
         as.character(snpInfo(h)$SNP)
@@ -7851,7 +7851,7 @@ test_that(".sumstatsCleaningResolve fills defaults an empty bundle omits", {
 test_that("summaryStatsQc gives one result from an LdMatrix and its panel", {
     data(gwasSumStatsS4Example)
     gss <- gwasSumStatsS4Example
-    panel <- ldReference(gss)
+    panel <- ldReference(gss)[[1L]]
     ld <- LdMatrix(
         unname(computeLd(panel)),
         variants = SummarizedExperiment::rowRanges(panel),
@@ -7875,8 +7875,11 @@ test_that("summaryStatsQc gives one result from an LdMatrix and its panel", {
         as.data.frame(unlist(viaPanel))
     )
     # The reference is trimmed to the surviving variants, still a matrix.
-    expect_s4_class(ldReference(viaMatrix), "LdMatrix")
-    expect_equal(length(ldReference(viaMatrix)), length(unlist(viaMatrix)))
+    expect_s4_class(ldReference(viaMatrix)[[1L]], "LdMatrix")
+    expect_equal(
+        length(ldReference(viaMatrix)[[1L]]),
+        length(unlist(viaMatrix))
+    )
 })
 
 test_that("DENTIST needs an LdMatrix's size; SLALOM does not", {
@@ -7894,7 +7897,7 @@ test_that("DENTIST needs an LdMatrix's size; SLALOM does not", {
 test_that("RAISS imputation in QC runs on an LdMatrix reference", {
     data(gwasSumStatsS4Example)
     gss <- gwasSumStatsS4Example
-    panel <- ldReference(gss)
+    panel <- ldReference(gss)[[1L]]
     ld <- LdMatrix(
         unname(computeLd(panel)),
         variants = SummarizedExperiment::rowRanges(panel),
@@ -7919,4 +7922,26 @@ test_that("RAISS imputation in QC runs on an LdMatrix reference", {
         )),
         "needs allele frequencies"
     )
+})
+
+test_that("summaryStatsQc QCs each row against its own LD reference", {
+    # One row on the panel, another on the same LD as a matrix: each is
+    # harmonized against its own and keeps it, cut to its own variants.
+    data(qtlSumStatsMulticontextExample)
+    mc <- qtlSumStatsMulticontextExample
+    panel <- ldReference(mc)[[1L]]
+    ldm <- LdMatrix(
+        unname(computeLd(panel)),
+        variants = SummarizedExperiment::rowRanges(panel)
+    )
+    refs <- rep(list(panel), nrow(mc))
+    refs[[2L]] <- ldm
+    out <- suppressMessages(summaryStatsQc(pecotmr:::.withRowLdRefs(mc, refs)))
+    expect_length(ldReference(out), 2L)
+    expect_s4_class(
+        pecotmr:::.rowLdRef(out, 1L),
+        "RangedSummarizedExperiment"
+    )
+    expect_s4_class(pecotmr:::.rowLdRef(out, 2L), "LdMatrix")
+    expect_equal(length(pecotmr:::.rowLdRef(out, 2L)), length(out[[2L]]))
 })

@@ -5258,39 +5258,43 @@ effectiveN <- function(nCase, nControl) {
 # options; the per-entry fields are derived here rather than carried over from
 # the previous entry.
 # @noRd
-.ssqcRunEntry <- function(i, sumstats, opts, ldReference, isQtl) {
+.ssqcRunEntry <- function(i, sumstats, opts, refs, keys, isQtl) {
     .runEntrySummaryStatsQc(
         gr = .collectionEntry(sumstats, i),
-        ldReference = ldReference,
+        ldReference = .ldRefForKey(keys[[i]], refs),
         opts = .ssqcEntryOpts(opts, sumstats, i),
         entryLabel = .ssqcEntryLabel(sumstats, i, isQtl)
     )
 }
 
-# Run the per-entry QC pipeline across all entries.
+# Run the per-entry QC pipeline across all entries, each against its own
+# row's LD reference.
 .ssqcRunEntries <- function(sumstats, opts) {
     isQtl <- methods::is(sumstats, "QtlSumStats")
-    # Panel filter, once for the shared LD reference and BEFORE any entry is
+    # Panel filter, once per distinct LD reference and BEFORE any entry is
     # harmonized, so a variant the panel cannot support is gone from the LD
     # and from the summary statistics alike.
-    ldReference <- .ssqcPrunePanel(
+    pruned <- map(
         ldReference(sumstats),
-        .panelCutoffs(opts$panelFilterParam),
-        "summaryStatsQc"
+        .ssqcPrunePanel,
+        cutoffs = .panelCutoffs(opts$panelFilterParam),
+        label = "summaryStatsQc"
     )
-    refGenome <- unique(unname(GenomeInfoDb::genome(sumstats)))
+    keys <- .ldRefKeys(sumstats)
     results <- map(
         seq_len(nrow(sumstats)),
         .ssqcRunEntry,
         sumstats = sumstats,
         opts = opts,
-        ldReference = ldReference,
+        refs = pruned,
+        keys = keys,
         isQtl = isQtl
     )
     list(
         newEntries = map(results, "gr"),
         entryAudits = map(results, "audit"),
-        ldReference = ldReference
+        ldReferences = pruned,
+        keys = keys
     )
 }
 
@@ -5353,7 +5357,8 @@ effectiveN <- function(nCase, nControl) {
     )
 }
 
-# Rebuild the SumStats object with QC'd entries, trimmed sketch, and qcInfo.
+# Rebuild the SumStats object with QC'd entries, trimmed sketches (one per
+# row, as a list running parallel to `newEntries`), and qcInfo.
 .ssqcRebuild <- function(sumstats, newEntries, newLdReference, qcInfo) {
     cols <- .tupleColumnNames(sumstats)
     nSample <- if (is_in("nSample", cols)) {
@@ -5639,10 +5644,23 @@ summaryStatsQc <- function(
         impute = opts$impute,
         sumstatsCleaningParam = opts$sumstatsCleaningParam
     )
-    # From the PRUNED panel, not the input's: narrowing the original again
-    # would hand back a sketch the panel filter never reached.
-    newLdReference <- .subsetLdRefToIds(res$ldReference, res$newEntries)
-    .ssqcRebuild(sumstats, res$newEntries, newLdReference, qcInfo)
+    # From the PRUNED panels, not the input's: narrowing an original again
+    # would hand back a sketch the panel filter never reached. Each is cut to
+    # the variants of the rows that use it.
+    trimmed <- imap(
+        res$ldReferences,
+        .ssqcTrimToRows,
+        entries = res$newEntries,
+        keys = res$keys
+    )
+    perRow <- map(res$keys, .ldRefForKey, refs = trimmed)
+    .ssqcRebuild(sumstats, res$newEntries, perRow, qcInfo)
+}
+
+# One LD reference cut to exactly the variants of the rows keyed to it.
+# @noRd
+.ssqcTrimToRows <- function(ldReference, key, entries, keys) {
+    .subsetLdRefToIds(ldReference, entries[is_in(keys, key)])
 }
 
 # ---- slidingWindowLoop callbacks (distance mode) ------------------------

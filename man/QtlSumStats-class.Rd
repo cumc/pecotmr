@@ -13,9 +13,11 @@ S4 collection of QTL summary statistics keyed by the identity
 \details{
 Required columns: \code{study}, \code{context} and \code{trait};
   the 3-tuple is unique. The class-level slots inherited from
-  \code{\linkS4class{SumStatsBase}} -- \code{ldReference}, \code{genome} and
-  \code{qcInfo} -- apply uniformly to every row, and \code{qcInfo} records
-  which \code{\link{summaryStatsQc}} passes have run.
+  \code{\linkS4class{SumStatsBase}} -- \code{genome} and \code{qcInfo} --
+  apply uniformly to every row, and \code{qcInfo} records which
+  \code{\link{summaryStatsQc}} passes have run; \code{ldReference} holds
+  each distinct LD reference once, and the \code{ldReference} column names
+  the one each row uses.
 }
 \seealso{
 \code{\link{QtlSumStats}} for the constructor and

@@ -196,7 +196,7 @@ It uses `susieR`'s kriging RSS diagnostic:
     the `qcInfo` audit as `krigingOutliersDropped`.
 
 Because it needs a per-region LD matrix and the kriging diagnostic, this is an
-**RSS-only** check: it draws `R` from the collection's `ldReference` and
+**RSS-only** check: it draws `R` from each row's LD reference and
 requires a `susieR` that exports `kriging_rss()` / `estimate_s_rss()`
 (otherwise it errors — which is why it is off by default).
 

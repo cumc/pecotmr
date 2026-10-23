@@ -359,10 +359,10 @@ and GWAS methods, built with \code{\link{PanelFilterParam}}. See
 A \code{QtlFineMappingResult} keyed by \code{(study, context,
   trait, method)} -- for \code{GwasSumStats} input, a
   \code{GwasFineMappingResult} keyed by \code{(study, method)} and range.
-  The \code{ldReference} slot is set automatically: \code{NULL}
-  for individual-level (QtlDataset / all-individual-level
-  MultiStudyQtlDataset) fits, the input's \code{ldReference} for RSS-derived
-  fits.
+  Each row records the LD reference its fit used: none for
+  individual-level (QtlDataset / all-individual-level
+  MultiStudyQtlDataset) fits, the reference of the input row it was fitted
+  from for RSS-derived fits.
 }
 \description{
 S4-dispatched per-region fine-mapping entry point that

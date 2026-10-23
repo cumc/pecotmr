@@ -809,19 +809,26 @@ setGeneric("qcDiagnostics", function(x, entry = 1L, ...) {
 })
 
 #' @title Get LD Reference
-#' @description Return the LD reference of this object: a genotype panel
-#'   (see \code{\link{readGenotypes}}), a \code{\link{GenotypeMixture}} or
-#'   an \code{\link{LdMatrix}}. Defined on classes that embed an
-#'   \code{ldReference} slot: \code{GwasSumStats}, \code{QtlSumStats},
-#'   \code{FineMappingResultBase}, \code{TwasWeights},
-#'   \code{ColocResultBase} and \code{LdStatistic}, whose reference is the
-#'   panel it reads its blocks' LD from. Returns \code{NULL} when the slot is
-#'   unset (e.g. a \code{TwasWeights} fit from individual-level data via
-#'   \code{QtlDataset}, or an \code{LdStatistic} built from \code{LdMatrix}
-#'   blocks).
+#' @description Return the LD references of this object, each a genotype
+#'   panel (see \code{\link{readGenotypes}}), a \code{\link{GenotypeMixture}}
+#'   or an \code{\link{LdMatrix}}.
+#'
+#'   The collections whose rows can sit on different references --
+#'   \code{GwasSumStats}, \code{QtlSumStats}, \code{FineMappingResultBase},
+#'   \code{TwasWeights}, \code{ColocResult} and \code{ColocBoostResult} --
+#'   return a named list holding each distinct reference their rows use, once.
+#'   The \code{ldReference} column of their \code{mcols} (of
+#'   \code{outcomeInfo} for a \code{ColocBoostResult}) names the entry each
+#'   row used, \code{NA} for one fit without LD (e.g. a \code{TwasWeights}
+#'   row learned from individual-level data via \code{QtlDataset}). The list
+#'   is empty when no row has a reference.
+#'
+#'   An \code{LdStatistic} returns the one panel it reads its blocks' LD from,
+#'   or \code{NULL} when it was built from \code{LdMatrix} blocks.
 #' @param x An S4 object that carries an \code{ldReference} slot.
 #' @param ... Unused.
-#' @return A \code{RangedSummarizedExperiment} genotype panel, a
+#' @return A named list of LD references; for an \code{LdStatistic}, a
+#'   \code{RangedSummarizedExperiment} genotype panel, a
 #'   \code{GenotypeMixture}, an \code{LdMatrix}, or \code{NULL}.
 #' @export
 setGeneric("ldReference", function(x, ...) standardGeneric("ldReference"))

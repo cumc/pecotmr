@@ -1501,7 +1501,7 @@ test_that(".enumCrossContextSumstats: groups per (study, trait) with >= 2 contex
         traits = list(S = "t1")
     )
     local_mocked_bindings(
-        ldReference = function(x) NULL,
+        .jointRowsLdRef = function(data, rows, label) NULL,
         .buildJointSumstatZMatrix = .je_mockJointZ,
         .ldFromRef = .je_mockLd,
         .package = "pecotmr"
@@ -1514,7 +1514,7 @@ test_that(".enumCrossContextSumstats: groups per (study, trait) with >= 2 contex
 
 test_that(".enumCrossContextSumstats: < 2 contexts and < 2 tuple rows skip", {
     local_mocked_bindings(
-        ldReference = function(x) NULL,
+        .jointRowsLdRef = function(data, rows, label) NULL,
         .buildJointSumstatZMatrix = .je_mockJointZ,
         .ldFromRef = .je_mockLd,
         .package = "pecotmr"
@@ -1604,7 +1604,7 @@ test_that(".enumCrossTraitSumstats: groups per (study, context) with >= 2 traits
         traits = list(S = c("t1", "t2"))
     )
     local_mocked_bindings(
-        ldReference = function(x) NULL,
+        .jointRowsLdRef = function(data, rows, label) NULL,
         .buildJointSumstatZMatrix = .je_mockJointZ,
         .ldFromRef = .je_mockLd,
         .package = "pecotmr"
@@ -1625,7 +1625,7 @@ test_that(".enumCrossStudySumstats: group per (context, trait) in >= 2 studies",
         traits = list(S1 = "t1", S2 = "t1")
     )
     local_mocked_bindings(
-        ldReference = function(x) NULL,
+        .jointRowsLdRef = function(data, rows, label) NULL,
         .buildJointSumstatZMatrix = .je_mockJointZ,
         .ldFromRef = .je_mockLd,
         .package = "pecotmr"
@@ -1817,7 +1817,7 @@ test_that(".enumComposedSumstats: one group per fixed-axis row block", {
         traits = list(S = "t1")
     )
     local_mocked_bindings(
-        ldReference = function(x) NULL,
+        .jointRowsLdRef = function(data, rows, label) NULL,
         .enumerateComposedSumstatGroups = function(spec, data, scope) {
             list(
                 groups = list(c(1L, 2L)),
@@ -1841,7 +1841,7 @@ test_that(".enumComposedSumstats: one group per fixed-axis row block", {
 
 test_that(".enumComposedSumstats: NULL group index and singleton blocks skip", {
     local_mocked_bindings(
-        ldReference = function(x) NULL,
+        .jointRowsLdRef = function(data, rows, label) NULL,
         .enumerateComposedSumstatGroups = function(spec, data, scope) NULL,
         .package = "pecotmr"
     )
@@ -1853,7 +1853,7 @@ test_that(".enumComposedSumstats: NULL group index and singleton blocks skip", {
         0L
     ) # gi NULL (646)
     local_mocked_bindings(
-        ldReference = function(x) NULL,
+        .jointRowsLdRef = function(data, rows, label) NULL,
         .enumerateComposedSumstatGroups = function(spec, data, scope) {
             list(
                 groups = list(1L),
@@ -3362,4 +3362,74 @@ test_that(".jointGroupSelect drops pairs a per-context traitId leaves out", {
         g,
         list(A = list(brain = "g2", liver = "g2"))
     ))
+})
+
+# ===========================================================================
+# A summary-statistics joint group reads one LD matrix
+# ===========================================================================
+
+# Two QtlSumStats rows (contexts c1, c2 of one study and trait) over the same
+# five variants, each on the LD reference given for it.
+.je_twoRowSs <- function(refs) {
+    gr <- GenomicRanges::GRanges(
+        "chr1",
+        IRanges::IRanges(100L * (1:5), width = 1L)
+    )
+    S4Vectors::mcols(gr) <- S4Vectors::DataFrame(
+        SNP = sprintf("chr1:%d:A:G", 100L * (1:5)),
+        A1 = "A",
+        A2 = "G",
+        Z = seq_len(5) / 10,
+        N = 100L
+    )
+    QtlSumStats(
+        studyName = c("S", "S"),
+        context = c("c1", "c2"),
+        trait = c("t1", "t1"),
+        entry = list(gr, gr),
+        genome = "hg19",
+        ldReference = refs,
+        qcInfo = list(step1 = "ok")
+    )
+}
+
+# An LdMatrix over those five variants.
+.je_ldm <- function(rho) {
+    ids <- sprintf("chr1:%d:A:G", 100L * (1:5))
+    LdMatrix(`dimnames<-`(rho^abs(outer(1:5, 1:5, "-")), list(ids, ids)))
+}
+
+test_that(".jointRowsLdRef returns the reference a group's rows share", {
+    ldm <- .je_ldm(0.2)
+    expect_identical(
+        pecotmr:::.jointRowsLdRef(.je_twoRowSs(ldm), 1:2, "probe"),
+        ldm
+    )
+})
+
+test_that(".jointRowsLdRef refuses rows on different references", {
+    # A joint fit reads one LD matrix for every condition, so fitting these
+    # together would put one row against LD it was never harmonized to.
+    ss <- .je_twoRowSs(list(.je_ldm(0.2), .je_ldm(0.6)))
+    expect_error(
+        pecotmr:::.jointRowsLdRef(ss, 1:2, "probe"),
+        "probe: a joint fit uses one LD matrix"
+    )
+    expect_error(
+        pecotmr:::.jointRowsLdRef(ss, 1:2, "probe"),
+        "S:c1:t1 -> ld1; S:c2:t1 -> ld2"
+    )
+})
+
+test_that("a cross-context sumstats group refuses rows on two references", {
+    ss <- .je_twoRowSs(list(.je_ldm(0.2), .je_ldm(0.6)))
+    scope <- list(
+        studies = "S",
+        contexts = list(S = c("c1", "c2")),
+        traits = list(S = "t1")
+    )
+    expect_error(
+        pecotmr:::.enumCrossContextSumstats(ss, scope),
+        "jointCrossContext \\(QtlSumStats\\): a joint fit uses one LD"
+    )
 })

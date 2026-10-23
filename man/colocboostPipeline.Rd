@@ -66,7 +66,12 @@ colocboostPipeline(qtlData, gwasSumStats = NULL, ...)
 \code{MultiStudyQtlDataset}.}
 
 \item{gwasSumStats}{Optional \code{GwasSumStats} with the GWAS studies to
-colocalize against. \code{NULL} to skip GWAS colocalization.}
+colocalize against. \code{NULL} to skip GWAS colocalization. Its
+\code{ldReference} need not be the QTL side's: every row's summary
+statistics are matched against that row's own reference. When some rows'
+references are genotype panels and others' are \code{LdMatrix} objects,
+the runs that combine them pass colocboost the panels' LD as matrices,
+since colocboost takes LD matrices or reference genotypes but not both.}
 
 \item{...}{Required by the generic; the methods take no further arguments.}
 
@@ -168,7 +173,10 @@ A \code{\linkS4class{ColocBoostResult}}: one element per
   \code{as.data.frame}), \code{\link{colocVariants}} or
   \code{\link{colocBoostOutcomes}}; timings are on
   \code{\link{computingTime}} and the region-wide marginal
-  probabilities on \code{\link{regionVcp}}.
+  probabilities on \code{\link{regionVcp}}. \code{\link{ldReference}}
+  returns the LD references the summary statistics were matched against,
+  each stored once, and the \code{ldReference} column of
+  \code{colocBoostOutcomes()} names the one each outcome used.
 }
 \description{
 Protocol-level multi-trait colocalization analysis using
@@ -178,8 +186,8 @@ Protocol-level multi-trait colocalization analysis using
           multi-context data. Per-context residualized X / Y are
           extracted from the dataset (filtering knobs on the
           constructor apply lazily inside the accessors).
-    \item \code{QtlSumStats} -- summary-statistic-only QTL data with a
-          shared LD reference (\code{ldReference}). Must already have
+    \item \code{QtlSumStats} -- summary-statistic-only QTL data with an
+          LD reference per row (\code{ldReference}). Must already have
           been passed through \code{\link{summaryStatsQc}} (the
           pipeline rejects inputs whose \code{qcInfo()} is empty).
           Every analysis variant is available on this input, including

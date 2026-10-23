@@ -21,8 +21,10 @@ loadQtlSumStatsFromManifest(
 \item{manifest}{A data.frame or path. Columns (snake_case aliases accepted):
 \code{study}, \code{context}, \code{trait} (required), \code{sumStatsPath}
 (required), \code{columnMapping} (optional), \code{nSample} (optional
-tuple-level total N), \code{varY} (optional), and the single-valued
-\code{genome} / \code{ldReferencePath}. When a row supplies \code{nSample},
+tuple-level total N), \code{varY} (optional), the single-valued
+\code{genome}, and \code{ldReferencePath}, which may differ between rows
+(each distinct reference is read once, for the chromosomes its rows
+cover, and stored once). When a row supplies \code{nSample},
 its sumstats file need not carry a per-variant \code{N} column;
 \code{\link{summaryStatsQc}} fills \code{N} from the scalar. (Unlike the
 GWAS loader, there are no \code{nCase}/\code{nControl} columns: molecular
@@ -31,7 +33,9 @@ QTL traits are quantitative.)}
 \item{genome}{Genome build; reconciled with a \code{genome} column.}
 
 \item{ldReference}{A genotype panel (see \code{\link{readGenotypes}}) or
-spec; reconciled with an \code{ldReferencePath} column.}
+spec, used for every row; where a row also names an
+\code{ldReferencePath} the two must agree. Omit it to give each row the
+reference its \code{ldReferencePath} names.}
 
 \item{region, minLdOverlapWarn, columnMapping, sampleSelect, formatMapping}{As
 for \code{\link{loadGwasSumStatsFromManifest}}.}

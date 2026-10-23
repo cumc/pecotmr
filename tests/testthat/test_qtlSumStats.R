@@ -430,12 +430,14 @@ test_that("subsetChr drops the element when no variants on that chromosome", {
     empty <- subsetChr(obj, "22")
     expect_equal(nrow(empty), 0L)
     expect_equal(length(empty), 0L)
-    # The collection-level state survives even when nothing is left.
+    # The collection-level state survives even when nothing is left; no row
+    # is left to use the reference, so none is reported.
     expect_equal(
         unname(GenomeInfoDb::genome(empty)),
         unname(GenomeInfoDb::genome(obj))
     )
-    expect_identical(ldReference(empty), ldReference(obj))
+    expect_identical(empty@ldReference, obj@ldReference)
+    expect_identical(ldReference(empty), list())
 })
 
 test_that("subsetChr keeps class-level slots (genome, ldReference, qcInfo)", {
@@ -484,7 +486,8 @@ test_that("QtlSumStats: ldReference is optional (NULL for LD-free workflows)", {
         entry = list(.qtlMakeEntryGr(1)),
         genome = "hg19"
     ) # ldReference omitted
-    expect_null(ldReference(obj))
+    expect_identical(ldReference(obj), list())
+    expect_true(is.na(obj$ldReference))
     expect_output(show(obj), "none \\(LD-free\\)")
 })
 
@@ -593,7 +596,7 @@ test_that("no traitPos -> no distance columns; existing distance is preserved", 
 
 # === combineQtlSumStats() ===
 
-test_that("combineQtlSumStats() row-binds collections and keeps NULL sketches", {
+test_that("combineQtlSumStats() row-binds collections and LD-free rows", {
     data(qtlSumStatsExample)
     a <- qtlSumStatsExample
     b <- a
@@ -608,11 +611,23 @@ test_that("combineQtlSumStats() row-binds collections and keeps NULL sketches", 
         unname(GenomeInfoDb::genome(a))
     )
 
-    a2 <- a
-    a2@ldReference <- NULL
-    b2 <- b
-    b2@ldReference <- NULL
-    expect_null(ldReference(combineQtlSumStats(a2, b2)))
+    # Both parts read the one panel, so it is stored once for every row.
+    expect_identical(ldReference(out), ldReference(a))
+    expect_equal(unique(out$ldReference), names(ldReference(out)))
+
+    ldFree <- function(x) {
+        QtlSumStats(
+            studyName = x$study,
+            context = x$context,
+            trait = x$trait,
+            entry = as.list(x),
+            genome = unname(GenomeInfoDb::genome(x))[[1L]]
+        )
+    }
+    expect_identical(
+        ldReference(combineQtlSumStats(ldFree(a), ldFree(b))),
+        list()
+    )
 })
 
 

@@ -3,10 +3,11 @@
 # -----------------------------------------------------------------------------
 # DFrame-subclass collection keyed by the identity tuple (study, context,
 # trait). Each row holds a per-tuple GRanges of summary statistics
-# (variant_id + per-variant Z/N/MAF mcols). Class-level slots ldReference
-# (a GenotypeHandle for the LD reference) + genome (the genome build)
-# apply uniformly across rows. Built-in qcInfo slot tracks which
-# summaryStatsQc() passes have been run.
+# (variant_id + per-variant Z/N/MAF mcols). The genome build applies
+# uniformly across rows; the ldReference slot holds each distinct LD
+# reference once and the ldReference mcols column names the one every row
+# uses. Built-in qcInfo slot tracks which summaryStatsQc() passes have been
+# run.
 # =============================================================================
 
 #' @include AllClasses.R tupleSelectors.R
@@ -19,9 +20,11 @@ NULL
 #'   Z / N / MAF mcols.
 #' @details Required columns: \code{study}, \code{context} and \code{trait};
 #'   the 3-tuple is unique. The class-level slots inherited from
-#'   \code{\linkS4class{SumStatsBase}} -- \code{ldReference}, \code{genome} and
-#'   \code{qcInfo} -- apply uniformly to every row, and \code{qcInfo} records
-#'   which \code{\link{summaryStatsQc}} passes have run.
+#'   \code{\linkS4class{SumStatsBase}} -- \code{genome} and \code{qcInfo} --
+#'   apply uniformly to every row, and \code{qcInfo} records which
+#'   \code{\link{summaryStatsQc}} passes have run; \code{ldReference} holds
+#'   each distinct LD reference once, and the \code{ldReference} column names
+#'   the one each row uses.
 #' @seealso \code{\link{QtlSumStats}} for the constructor and
 #'   \code{\linkS4class{GwasSumStats}} for the GWAS counterpart.
 #' @export
@@ -97,8 +100,9 @@ NULL
 #' @title Create a QtlSumStats Collection Object
 #' @description Construct a \code{QtlSumStats} S4 DFrame-subclass collection
 #'   from per-tuple vectors and a list of \code{GRanges} entries (one per
-#'   tuple), plus a single LD reference and a single genome build that apply
-#'   to the whole collection. Each \code{GRanges} entry must carry per-variant
+#'   tuple), plus the LD reference(s) the rows were harmonized against and a
+#'   single genome build that applies to the whole collection. Each
+#'   \code{GRanges} entry must carry per-variant
 #'   statistics in its mcols (\code{SNP}, \code{A1}, \code{A2}, \code{Z},
 #'   \code{N}; plus optional \code{MAF}, \code{INFO}, \code{BETA}, \code{SE},
 #'   \code{P}).
@@ -108,11 +112,12 @@ NULL
 #' @param entry A list / \code{SimpleList} of \code{GRanges}, one per tuple.
 #'   Same length as \code{study}, \code{context}, and \code{trait}.
 #' @param genome Single character string giving the genome build (e.g.,
-#'   \code{"hg19"}, \code{"hg38"}). Uniform across the collection because all
-#'   entries share the same LD reference.
+#'   \code{"hg19"}, \code{"hg38"}). One build per collection.
 #' @param ldReference The LD reference: a genotype panel (see
 #'   \code{\link{readGenotypes}}), a \code{\link{GenotypeMixture}} or an
-#'   \code{\link{LdMatrix}}.
+#'   \code{\link{LdMatrix}}, used for every tuple, or a list with one per
+#'   tuple when they sit on different references. Each distinct reference is
+#'   stored once, and the \code{ldReference} column names each row's.
 #' @param varY Optional numeric vector of per-tuple phenotype variances
 #'   (\code{NA_real_} entries allowed).
 #' @param nSample Optional per-tuple total sample size (numeric; default
@@ -177,7 +182,8 @@ QtlSumStats <- function(
         .qssAppendNSample(nSample, n) |>
         .appendTraitPosCol(traitPos, n) |>
         .qssAppendExtras(extraCols)
-    dfArgs <- c(cols, list(check.names = FALSE))
+    dict <- .ldRefDict(.ldRefPerTuple(ldReference, n))
+    dfArgs <- c(cols, list(ldReference = dict$keys, check.names = FALSE))
     # The per-tuple GRanges become the collection's ELEMENTS; the tuple keys
     # and per-tuple scalars go in mcols. There is no `entry` column.
     # mcols are attached to the GRangesList BEFORE new(), because new()
@@ -191,7 +197,7 @@ QtlSumStats <- function(
         GenomicRanges::GRangesList(split$entry),
         value = md[split$fromIdx, , drop = FALSE]
     )
-    .sumStatsNewValidated("QtlSumStats", grl, ldReference, genome, qcInfo)
+    .sumStatsNewValidated("QtlSumStats", grl, dict$refs, genome, qcInfo)
 }
 
 # Validate genome / entry / length consistency and recycle varY. Returns the
@@ -201,7 +207,7 @@ QtlSumStats <- function(
     if (length(genome) != 1L) {
         msg <- glue(
             "`genome` must be a single character string (one build per ",
-            "collection, because all entries share the LD reference)."
+            "collection)."
         )
         abort(msg)
     }
@@ -524,12 +530,7 @@ setMethod("show", "QtlSumStats", function(object) {
             .trim = FALSE
         ))
     }
-    ld <- ldReference(object)
-    ldSrc <- if (is.null(ld)) {
-        "none (LD-free)"
-    } else {
-        .ldRefLabel(ld)
-    }
+    ldSrc <- .ldRefsLabel(ldReference(object), "none (LD-free)")
     cat(glue("  LD reference: {ldSrc}\n", .trim = FALSE))
 })
 
@@ -580,15 +581,15 @@ setMethod("show", "QtlSumStats", function(object) {
 #' The three collection-level slots are merged rather than taken from the first
 #' input, on the same rules as \code{\link{combineGwasSumStats}}: \code{genome}
 #' and the \code{\link{summaryStatsQc}} options must agree, the per-element
-#' \code{qcInfo$entryAudit} concatenates in element order, and the LD
-#' references combine the same way (all-\code{NULL} stays \code{NULL}, which
-#' is the usual case for individual-level QTL data).
+#' \code{qcInfo$entryAudit} concatenates in element order, and the rows keep
+#' their own LD references, stored the same way.
 #'
 #' @param ... Two or more \code{QtlSumStats} objects, or a single \code{list}
 #'   of them.
-#' @param ldReference Optional genotype panel (see \code{\link{readGenotypes}})
-#'   to attach to the combined collection, overriding the unioned one. Default
-#'   \code{NULL}.
+#' @param ldReference Optional LD reference -- a genotype panel (see
+#'   \code{\link{readGenotypes}}), a \code{GenotypeMixture} or an
+#'   \code{LdMatrix} -- that every row of the combined collection uses
+#'   instead of its own. Default \code{NULL}.
 #' @return A single combined \code{QtlSumStats}.
 #' @seealso \code{\link{combineGwasSumStats}},
 #'   \code{\link{combineFineMappingResults}}, \code{\link{combineTwasWeights}}

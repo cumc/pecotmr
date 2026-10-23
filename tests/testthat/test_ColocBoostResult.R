@@ -443,6 +443,87 @@ test_that("validity names the outcomeInfo columns that are missing", {
     )
 })
 
+# A small LdMatrix to stand in for one side's reference.
+.cbr_ldm <- function(ids = c("chr1:100:C:T", "chr1:200:A:G")) {
+    LdMatrix(matrix(c(1, 0.2, 0.2, 1), 2, 2, dimnames = list(ids, ids)))
+}
+
+test_that("ColocBoostResult keeps a named LD reference per side", {
+    refs <- list(
+        qtl = .cbr_ldm(),
+        gwas = .cbr_ldm(c("chr1:300:G:A", "chr1:400:T:C"))
+    )
+    info <- mutate(
+        .cbr_info(),
+        dataForm = "sumstats",
+        ldReference = c("qtl", "gwas")
+    )
+    x <- ColocBoostResult(
+        list(.cbr_fake()),
+        "joint_gwas",
+        outcomeInfo = info,
+        ldReference = refs
+    )
+    expect_identical(ldReference(x), refs)
+    out <- colocBoostOutcomes(x)
+    expect_equal(
+        out$ldReference[match(c("t1", "t2"), out$outcome)],
+        c("qtl", "gwas")
+    )
+})
+
+test_that("ColocBoostResult with no LD reference holds an empty list", {
+    # An outcomeInfo without the column gets it, NA throughout.
+    x <- ColocBoostResult(
+        list(.cbr_fake()),
+        "xqtl_coloc",
+        outcomeInfo = .cbr_info()
+    )
+    expect_identical(ldReference(x), list())
+    expect_true(all(is.na(colocBoostOutcomes(x)$ldReference)))
+})
+
+test_that("ColocBoostResult refuses a lone LD reference", {
+    # Its name is what outcomeInfo keys on, so it is not made up.
+    expect_error(
+        ColocBoostResult(
+            list(.cbr_fake()),
+            "xqtl_coloc",
+            outcomeInfo = .cbr_info(),
+            ldReference = .cbr_ldm()
+        ),
+        "named list of LD references"
+    )
+})
+
+test_that("ColocBoostResult refuses an outcome keyed to a missing reference", {
+    info <- mutate(.cbr_info(), ldReference = c("qtl", "gwas"))
+    expect_error(
+        ColocBoostResult(
+            list(.cbr_fake()),
+            "joint_gwas",
+            outcomeInfo = info,
+            ldReference = list(qtl = .cbr_ldm())
+        ),
+        "not in ldReference: gwas"
+    )
+})
+
+test_that("validity wants uniquely named LD references", {
+    # The shared check every class with per-row references validates with.
+    problems <- function(refs) .ldRefDictProblems(refs, character(0))
+    expect_match(problems(list(.cbr_ldm())), "unique, non-empty names")
+    expect_match(
+        problems(list(a = .cbr_ldm(), a = .cbr_ldm())),
+        "unique, non-empty names"
+    )
+    expect_match(
+        problems(list(a = .cbr_ldm(), b = "panel")),
+        "not LD references: b"
+    )
+    expect_null(problems(list(a = .cbr_ldm())))
+})
+
 test_that("the region vcp skips runs that cannot supply one", {
     # Two ways a run is unusable: no vcp at all, and a vcp whose names are
     # missing so the variants cannot be placed.
@@ -456,4 +537,23 @@ test_that("the region vcp skips runs that cannot supply one", {
     ))
     expect_s4_class(gr, "GRanges")
     expect_equal(length(gr), 1L)
+})
+
+test_that("updateObject keys an old result's sumstat outcomes to its ref", {
+    ref <- .cbr_ldm()
+    info <- mutate(.cbr_info(), dataForm = c("sumstats", "individual"))
+    x <- ColocBoostResult(list(.cbr_fake()), "joint_gwas", outcomeInfo = info)
+    # As an earlier version saved it: one reference, no outcome keys.
+    old <- `slot<-`(x, "ldReference", check = FALSE, value = ref)
+    old <- `slot<-`(
+        old,
+        "outcomeInfo",
+        value = select(info, -any_of("ldReference"))
+    )
+    new <- updateObject(old)
+    expect_true(methods::validObject(new))
+    expect_identical(ldReference(new), list(ld1 = ref))
+    expect_identical(new@outcomeInfo$ldReference, c("ld1", NA))
+    # A current result is left as it is.
+    expect_identical(updateObject(x), x)
 })

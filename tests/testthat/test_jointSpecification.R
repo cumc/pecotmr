@@ -2371,7 +2371,7 @@ test_that(".mergeEntryForKey gives NULL for a region lacking the tuple", {
         seq_len(nrow(ss)),
         as.character(ss$context),
         "probe",
-        ldReference = ldReference(ss),
+        ldReference = ldReference(ss)[[1L]],
         cutoffs = .panelCutoffs(PanelFilterParam(...))
     ))
 }
@@ -2401,7 +2401,7 @@ test_that(".buildJointSumstatZMatrix agrees with .panelVariantFilter", {
         expect_equal(
             length(.bjz_build(ss, mafCutoff = cut)$variantIds),
             length(.panelVariantFilter(
-                ldReference(ss),
+                ldReference(ss)[[1L]],
                 ids,
                 PanelFilterParam(mafCutoff = cut)
             )),

@@ -399,6 +399,51 @@ setMethod("endoapply", "RangedTupleList", function(X, FUN, ...) {
 }
 
 # -----------------------------------------------------------------------------
+# updateObject
+# -----------------------------------------------------------------------------
+
+#' @title Update an Object Saved by an Earlier pecotmr
+#' @description Bring a collection saved by an earlier version of pecotmr up
+#'   to date. Collections now keep their LD references per row: each distinct
+#'   reference once in the \code{ldReference} slot, and an \code{ldReference}
+#'   column naming the one every row uses (in \code{outcomeInfo} for a
+#'   \code{ColocBoostResult}). An object saved when it held a single reference
+#'   for all its rows is converted by keying every row to that reference (for
+#'   a \code{ColocBoostResult}, every summary-statistic outcome), and one that
+#'   held none by marking every row LD-free. An up-to-date object is returned
+#'   unchanged.
+#' @param object A collection: summary statistics, fine-mapping results, TWAS
+#'   weights, or a colocalization result.
+#' @param ... Passed on to the inherited method.
+#' @param verbose Report the update.
+#' @return \code{object} in the current representation.
+#' @examples
+#' data(qtlSumStatsExample)
+#' # An object built by this version needs nothing.
+#' identical(updateObject(qtlSumStatsExample), qtlSumStatsExample)
+#' @name updateObject-methods
+#' @rdname updateObject-methods
+NULL
+
+#' @rdname updateObject-methods
+#' @importFrom BiocGenerics updateObject
+#' @export
+setMethod(
+    "updateObject",
+    "RangedTupleList",
+    function(object, ..., verbose = FALSE) {
+        if (isTRUE(verbose)) {
+            message("updateObject(object = '", class(object)[[1L]], "')")
+        }
+        methods::callNextMethod(
+            .updateRowLdRefs(object),
+            ...,
+            verbose = verbose
+        )
+    }
+)
+
+# -----------------------------------------------------------------------------
 # subsetRegion
 # -----------------------------------------------------------------------------
 
@@ -433,13 +478,16 @@ setMethod("subsetRegion", "RangedTupleList", function(x, region) {
 
 # Build and validate a RangedTupleList subclass from its payloads and metadata
 # columns -- the shared tail of the TwasWeights and QtlFineMappingResult
-# constructors.
+# constructors. `ldReference` is one reference for every payload or a list
+# with one per payload; each distinct one is stored once, and every row names
+# its own in the `ldReference` column.
 # @noRd
 .rtlNewValidated <- function(Class, payloads, cols, ldReference) {
+    dict <- .ldRefDict(.ldRefPerTuple(ldReference, length(payloads)))
     obj <- new(
         Class,
-        .rtlGrlWithMetadata(payloads, cols),
-        ldReference = .asLdRef(ldReference)
+        .rtlGrlWithMetadata(payloads, c(cols, list(ldReference = dict$keys))),
+        ldReference = dict$refs
     )
     validObject(obj)
     obj

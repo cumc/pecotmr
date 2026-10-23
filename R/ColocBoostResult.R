@@ -21,10 +21,12 @@
 #     ("given these two colocalize, this is the shared causal variant"); vcp is
 #     a marginal per-variant colocalization probability over the region.
 #
-# What the two DO share is the LD panel they were computed against and the
-# projection surface, so both extend ColocResultBase -- which carries the
-# ldReference slot and its accessor -- and both answer colocPairs() and
-# colocVariants().
+# What the two DO share is the projection surface, so both extend
+# ColocResultBase and both answer colocPairs() and colocVariants(). Each keeps
+# its own LD references. A colocboost run matches every summary-statistic
+# outcome against its own row's reference, so this class keeps a named list of
+# them -- each reference once -- and outcomeInfo records the one every outcome
+# used.
 #
 #   element      the member variants of one CoS
 #   inner mcols  per-variant: vcp
@@ -32,7 +34,8 @@
 #                CharacterList -- native variable arity), purity, cosNpc,
 #                minNpcOutcome, topVariable, topVariableVcp, focalOutcome,
 #                isColocalized
-#   slots        ldReference, outcomeInfo, regionVcp, computingTime
+#   slots        ldReference (a named list), outcomeInfo, regionVcp,
+#                computingTime
 #
 # Uncolocalized (outcome-specific) sets are elements too, flagged
 # isColocalized = FALSE, rather than living in a second container: they have
@@ -46,11 +49,19 @@ NULL
 #' @description A collection of ColocBoost results, one element per confidence
 #'   set (CoS). Project it with \code{\link{colocPairs}},
 #'   \code{\link{colocVariants}} or \code{\link{colocBoostOutcomes}}.
+#' @slot ldReference A named list of the LD references the summary statistics
+#'   were matched against, each a genotype panel, a \code{GenotypeMixture} or
+#'   an \code{LdMatrix}, and each stored once however many outcomes used it.
+#'   Empty when no summary statistics were analysed.
 #' @slot outcomeInfo A data frame mapping each outcome \code{name} to its
-#'   \code{study}, \code{context}, \code{trait} and \code{dataForm}. ColocBoost
-#'   is given outcome names as bare labels, and those labels are lossy -- a
-#'   trait is context-qualified only when ambiguous -- so the mapping is
-#'   recorded when the names are minted rather than parsed back out later.
+#'   \code{study}, \code{context}, \code{trait}, \code{dataForm} and
+#'   \code{ldReference}, the name of the \code{ldReference} entry its
+#'   summary statistics were matched against (\code{NA} for an
+#'   individual-level outcome, whose LD comes from its own genotypes).
+#'   ColocBoost is given outcome names as bare labels, and those labels are
+#'   lossy -- a trait is context-qualified only when ambiguous -- so the
+#'   mapping is recorded when the names are minted rather than parsed back
+#'   out later.
 #' @slot regionVcp A \code{GRanges} of every variant in the analysed region
 #'   carrying the marginal \code{vcp}. Collection-level: it spans the region,
 #'   not the elements, so it cannot live in \code{mcols}.
@@ -62,11 +73,13 @@ setClass(
     "ColocBoostResult",
     contains = "ColocResultBase",
     representation(
+        ldReference = "list",
         outcomeInfo = "data.frame",
         regionVcp = "ANY",
         computingTime = "list"
     ),
     prototype(
+        ldReference = list(),
         regionVcp = NULL,
         computingTime = list()
     )
@@ -108,6 +121,12 @@ methods::setValidity("ColocBoostResult", function(object) {
     }
     coll$push(.cbrCheckVcpColumn(object))
     coll$push(.cbrCheckOutcomeInfo(object))
+    # The outcomes, not the sets, are what match against a reference, so
+    # their keys live in outcomeInfo rather than in mcols.
+    coll$push(.ldRefDictProblems(
+        object@ldReference,
+        object@outcomeInfo$ldReference
+    ))
     coll$getMessages()
 }
 
@@ -188,6 +207,44 @@ setMethod("show", "ColocBoostResult", function(object) {
     invisible(NULL)
 })
 
+#' @rdname ldReference
+#' @export
+setMethod("ldReference", "ColocBoostResult", function(x) x@ldReference)
+
+# A ColocBoostResult keys its outcomes, not its sets, to its references, so
+# its update is its own: the one reference an earlier version recorded was
+# the one every summary-statistic outcome was matched against.
+#' @rdname updateObject-methods
+#' @export
+setMethod(
+    "updateObject",
+    "ColocBoostResult",
+    function(object, ..., verbose = FALSE) {
+        methods::callNextMethod(
+            .cbrUpdateLdRefs(object),
+            ...,
+            verbose = verbose
+        )
+    }
+)
+
+# @noRd
+.cbrUpdateLdRefs <- function(object) {
+    old <- methods::slot(object, "ldReference")
+    info <- .cbrWithLdKeys(object@outcomeInfo)
+    if (is.list(old) && !is.object(old)) {
+        return(`slot<-`(object, "outcomeInfo", value = info))
+    }
+    dict <- .ldRefDict(list(.asLdRef(old)))
+    key <- if (length(dict$refs) == 0L) NA_character_ else dict$keys[[1L]]
+    info <- mutate(
+        info,
+        ldReference = if_else(.data$dataForm == "sumstats", key, NA_character_)
+    )
+    updated <- `slot<-`(object, "ldReference", check = FALSE, value = dict$refs)
+    `slot<-`(updated, "outcomeInfo", value = info)
+}
+
 # ---- construction -----------------------------------------------------------
 
 #' @title Build a ColocBoostResult
@@ -203,9 +260,14 @@ setMethod("show", "ColocBoostResult", function(object) {
 #' @param gwasStudy Optional character vector, parallel to \code{results},
 #'   naming the GWAS study for the per-study \code{separate_gwas} runs.
 #' @param outcomeInfo Data frame mapping outcome \code{name} to \code{study},
-#'   \code{context}, \code{trait} and \code{dataForm}.
-#' @param ldReference Optional genotype panel (see
-#'   \code{\link{readGenotypes}}).
+#'   \code{context}, \code{trait} and \code{dataForm}, and optionally to
+#'   \code{ldReference}, the name of the \code{ldReference} entry the
+#'   outcome's summary statistics were matched against. Without that column
+#'   every outcome gets \code{NA}.
+#' @param ldReference Optional named list of the LD references the summary
+#'   statistics were matched against: genotype panels (see
+#'   \code{\link{readGenotypes}}), \code{GenotypeMixture} or \code{LdMatrix}
+#'   objects.
 #' @param computingTime Optional list of per-analysis timings.
 #' @param includeUncolocalized Keep the outcome-specific (uncolocalized) sets
 #'   as elements flagged \code{isColocalized = FALSE}. Default \code{TRUE}:
@@ -255,11 +317,39 @@ ColocBoostResult <- function(
         unname()
     .cbrAssemble(
         rows,
-        outcomeInfo = as.data.frame(outcomeInfo),
+        outcomeInfo = .cbrWithLdKeys(as.data.frame(outcomeInfo)),
         regionVcp = .cbrRegionVcp(results),
-        ldReference = .asLdRef(ldReference),
+        ldReference = .cbrAsLdRefList(ldReference),
         computingTime = computingTime
     )
+}
+
+# The `ldReference` argument as the slot holds it: an empty list for NULL, or
+# the named list with each entry normalised like any LD-reference input (a
+# bare GenotypeHandle becomes a panel). A lone reference is refused rather
+# than given a made-up name, since the name is what outcomeInfo keys on.
+# @noRd
+.cbrAsLdRefList <- function(ldReference) {
+    if (is.null(ldReference)) {
+        return(list())
+    }
+    if (!is.list(ldReference) || is.object(ldReference)) {
+        abort(str_c(
+            "`ldReference` must be NULL or a named list of LD references, ",
+            "e.g. list(qtl = panel)."
+        ))
+    }
+    map(ldReference, .asLdRef)
+}
+
+# outcomeInfo with its `ldReference` column, NA throughout when the caller's
+# frame has none: no recorded reference is not the same as a shared one.
+# @noRd
+.cbrWithLdKeys <- function(info) {
+    if (is_in("ldReference", colnames(info))) {
+        return(info)
+    }
+    mutate(info, ldReference = NA_character_)
 }
 
 # Every set (colocalized, then uncolocalized) of one colocboost object, as a
@@ -480,7 +570,7 @@ ColocBoostResult <- function(
     obj <- new(
         "ColocBoostResult",
         grl,
-        ldReference = .asLdRef(ldReference),
+        ldReference = ldReference,
         outcomeInfo = outcomeInfo,
         regionVcp = regionVcp,
         computingTime = computingTime
@@ -621,7 +711,9 @@ setMethod(
 #' @param ... Ignored.
 #' @return A tibble with one row per (set, outcome) and the set-level columns
 #'   repeated, plus \code{outcome}, \code{study}, \code{context},
-#'   \code{trait} and \code{dataForm}.
+#'   \code{trait}, \code{dataForm} and \code{ldReference} (the name of the
+#'   \code{\link{ldReference}} entry the outcome's summary statistics were
+#'   matched against).
 #' @examples
 #' # See colocboostPipeline(); a ColocBoostResult carries the mapping it needs.
 #' methods::existsMethod("colocBoostOutcomes", "ColocBoostResult")

@@ -65,12 +65,14 @@ setClassUnion(
 #'   \code{x[[i]]} is that tuple's summary statistics and the identity columns
 #'   live in \code{mcols(x)}. There is no \code{entry} column: what used to be
 #'   \code{x$entry[[i]]} is now simply \code{x[[i]]}.
-#' @slot ldReference The LD reference the collection was harmonized against
-#'   and every pipeline reads LD from: a genotype panel (see
-#'   \code{\link{readGenotypes}}), a \code{\link{GenotypeMixture}} or an
-#'   \code{\link{LdMatrix}}, or \code{NULL}. Optional: LD-free workflows
-#'   (e.g. mash, which operates across conditions per variant) carry
-#'   \code{NULL}; pipelines that need LD validate its presence when they
+#' @slot ldReference A named list of the LD references the rows were
+#'   harmonized against and every pipeline reads LD from, each a genotype
+#'   panel (see \code{\link{readGenotypes}}), a \code{\link{GenotypeMixture}}
+#'   or an \code{\link{LdMatrix}}. Each distinct reference is stored once, and
+#'   the \code{ldReference} column of \code{mcols} names the entry each row
+#'   uses, so rows can sit on different references. Optional: an LD-free row
+#'   (e.g. for mash, which operates across conditions per variant) has
+#'   \code{NA} there; pipelines that need LD validate its presence when they
 #'   consume the collection.
 #' @slot qcInfo A \code{list} recording which QC steps ran. Empty \code{list()}
 #'   on construction; populated by \code{summaryStatsQc()} with a per-step audit
@@ -83,10 +85,15 @@ setClass(
     "SumStatsBase",
     contains = c("VIRTUAL", "RangedTupleList"),
     representation(
-        ldReference = "LdReference_OR_NULL",
+        ldReference = "list",
         qcInfo = "list"
-    )
+    ),
+    prototype(ldReference = list())
 )
+
+methods::setValidity("SumStatsBase", function(object) {
+    .ldRefDictProblems(object@ldReference, .ldRefKeys(object)) %||% TRUE
+})
 
 # TRUE when two elements share both their identity tuple AND their span.
 # Splitting a multi-chromosome study makes the tuple alone non-unique, so the
@@ -223,9 +230,13 @@ setMethod("qcDiagnostics", "SumStatsBase", function(x, entry = 1L) {
 #' @rdname ldReference
 #' @examples
 #' data(qtlSumStatsExample)
+#' # One entry per distinct reference; each row names its own.
 #' ldReference(qtlSumStatsExample)
+#' qtlSumStatsExample$ldReference
 #' @export
-setMethod("ldReference", "SumStatsBase", function(x) x@ldReference)
+setMethod("ldReference", "SumStatsBase", function(x) {
+    .ldRefsInUse(x)
+})
 
 #' @rdname studyName
 #' @examples
@@ -712,21 +723,28 @@ setMethod(
 #' @title Fine-Mapping Result Base Class
 #' @description Virtual base class for fine-mapping result collections. Concrete
 #'   subclasses (\code{QtlFineMappingResult}, \code{GwasFineMappingResult})
-#'   carry a \code{DFrame} of per-fit rows and a shared \code{ldReference} slot.
+#'   carry a \code{DFrame} of per-fit rows and an \code{ldReference} slot
+#'   listing the LD references those fits used.
 #'   Downstream pipelines should dispatch on \code{FineMappingResultBase} for
 #'   behaviors that apply to either flavour, and on the concrete subclass when
 #'   the tuple shape matters.
-#' @slot ldReference The LD reference the fits were computed against (a
-#'   genotype panel, a \code{GenotypeMixture} or an \code{LdMatrix}), or
-#'   \code{NULL} when the fits were derived from individual-level data. Used
-#'   downstream to check that pipelines combining results share one LD
-#'   reference.
+#' @slot ldReference A named list of the LD references the fits were
+#'   computed against, each a genotype panel, a \code{GenotypeMixture} or an
+#'   \code{LdMatrix}, stored once apiece; the \code{ldReference} column of
+#'   \code{mcols} names the entry each row used (\code{NA} for a fit derived
+#'   from individual-level data). Used downstream to check that the rows a
+#'   pipeline combines share an LD reference.
 #' @export
 setClass(
     "FineMappingResultBase",
     contains = c("VIRTUAL", "RangedTupleList"),
-    representation(ldReference = "LdReference_OR_NULL")
+    representation(ldReference = "list"),
+    prototype(ldReference = list())
 )
+
+methods::setValidity("FineMappingResultBase", function(object) {
+    .ldRefDictProblems(object@ldReference, .ldRefKeys(object)) %||% TRUE
+})
 
 #' @rdname studyName
 #' @export
@@ -736,7 +754,9 @@ setMethod("studyName", "FineMappingResultBase", function(x) {
 
 #' @rdname ldReference
 #' @export
-setMethod("ldReference", "FineMappingResultBase", function(x) x@ldReference)
+setMethod("ldReference", "FineMappingResultBase", function(x) {
+    .ldRefsInUse(x)
+})
 
 #' @rdname methodNames
 #' @examples
@@ -821,7 +841,8 @@ setMethod(
         GenomicRanges::GRangesList(map(entries, variants)),
         value = .withEntryPayload(mcols(x, use.names = FALSE), entries)
     )
-    new(class(x), grl, ldReference = .asLdRef(ldReference(x)))
+    # The rows keep their keys in mcols, so the references go across as is.
+    new(class(x), grl, ldReference = x@ldReference)
 }
 
 # TRUE when an entry shares at least one variant with `keepVariants`, matched

@@ -174,8 +174,8 @@ twSs <- twasWeightsPipeline(qtlSumStatsExample, methods = "lasso")
 twSs
 ```
 
-The RSS path uses the `ldReference` genotype panel inside the
-`QtlSumStats` collection to compute LD as needed. The same rule holds for
+The RSS path computes LD as needed from each row's LD reference in the
+`QtlSumStats` collection. The same rule holds for
 fine-mapping methods here: they are not re-fit, so run
 `fineMappingPipeline()` on the `QtlSumStats` first and pass its result as
 `fineMappingResult`.
@@ -196,7 +196,9 @@ twasWeightsPipeline(
 To choose the axes yourself, pass a `jointSpecification`: a character
 vector of axes, or `list(axes = , scope = )` to limit the fit to listed
 studies, contexts or traits. The `jointSpecification` argument in
-`?twasWeightsPipeline` gives the full grammar.
+`?twasWeightsPipeline` gives the full grammar. On a `QtlSumStats` the
+contexts are fitted against one LD matrix, so their rows must share an LD
+reference.
 
 ```{r joint, eval=FALSE}
 # `qd`: a QtlDataset whose traits are measured in brain, liver and more.

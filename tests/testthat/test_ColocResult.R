@@ -59,6 +59,17 @@ test_that("ColocResult: stores one element per pair with its variants", {
     expect_equal(x$PP.H4.abf, 0.6)
 })
 
+test_that("ColocResult: keeps each pair's LD reference", {
+    ids <- c("chr1:100:C:T", "chr1:200:A:G")
+    ldm <- LdMatrix(matrix(c(1, 0.2, 0.2, 1), 2, dimnames = list(ids, ids)))
+    x <- ColocResult(.cr_pairs(), .cr_variants(), ldReference = ldm)
+    expect_identical(ldReference(x), list(ld1 = ldm))
+    expect_equal(x$ldReference, "ld1")
+    none <- ColocResult(.cr_pairs(), .cr_variants())
+    expect_identical(ldReference(none), list())
+    expect_true(is.na(none$ldReference))
+})
+
 test_that("ColocResult: rejects an element with no per-variant layer", {
     # The whole point of the class is that SNP.PP.H4 survives; an element
     # without it must not construct.
@@ -298,14 +309,19 @@ test_that("show on an empty ColocResult stops after the header", {
     )[seq_len(n)]
 }
 
+# The panel as a pair's LD reference, keyed the way a ColocResult keys it.
+.cr_refs <- function() {
+    list(ld1 = .cr_panel())
+}
+
 test_that("a singleton credible set is pure by definition", {
     # No pair to correlate; susie treats it as pure rather than unmeasurable.
-    expect_equal(.crPurityOne(.cr_panelIds(1L), .cr_panel()), 1)
+    expect_equal(.crPurityOne(.cr_panelIds(1L), "ld1", .cr_refs()), 1)
 })
 
 test_that("purity is the minimum absolute correlation among members", {
     ids <- .cr_panelIds(3L)
-    pur <- .crPurityOne(ids, .cr_panel())
+    pur <- .crPurityOne(ids, "ld1", .cr_refs())
     R <- computeLd(.cr_panel(), snpIdx = 1:3)
     expect_equal(pur, min(abs(R[upper.tri(R)])), tolerance = 1e-8)
 })
@@ -314,29 +330,35 @@ test_that("purity is NA when the panel cannot supply the members", {
     # Reported honestly rather than defaulted to a passing value: an
     # unmeasurable purity must not look like a pure set.
     expect_true(is.na(
-        .crPurityOne(c("chr9:1:A:G", "chr9:2:C:T"), .cr_panel())
+        .crPurityOne(c("chr9:1:A:G", "chr9:2:C:T"), "ld1", .cr_refs())
     ))
 })
 
-test_that("purity is NA for every set when there is no LD reference", {
-    out <- tibble(csVariants = list(c("a", "b"), c("c", "d")))
-    expect_equal(.crPuritiesFor(out, NULL), c(NA_real_, NA_real_))
+test_that("purity is NA for every set whose pair has no LD reference", {
+    out <- tibble(
+        csVariants = list(c("a", "b"), "c"),
+        ldReference = NA_character_
+    )
+    expect_equal(.crPuritiesFor(out, list()), c(NA_real_, NA_real_))
 })
 
-test_that("purity is computed per set when an LD reference is supplied", {
-    # The counterpart of the NULL case above: with a panel in hand each set
-    # is mapped through .crPurityOne rather than short-circuiting to NA.
+test_that("purity is computed per set against its own pair's reference", {
+    # The counterpart of the no-reference case above: each set is mapped
+    # through .crPurityOne with the reference its pair names.
     ids <- .cr_panelIds(3L)
-    out <- tibble(csVariants = list(ids, ids[[1L]]))
-    pur <- .crPuritiesFor(out, .cr_panel())
-    expect_length(pur, 2L)
-    expect_false(anyNA(pur))
+    out <- tibble(
+        csVariants = list(ids, ids[[1L]], ids),
+        ldReference = c("ld1", "ld1", NA_character_)
+    )
+    pur <- .crPuritiesFor(out, .cr_refs())
+    expect_length(pur, 3L)
     expect_equal(pur[[2L]], 1) # singleton is pure by definition
     expect_equal(
         pur[[1L]],
-        .crPurityOne(ids, .cr_panel()),
+        .crPurityOne(ids, "ld1", .cr_refs()),
         tolerance = 1e-8
     )
+    expect_true(is.na(pur[[3L]]))
 })
 
 # ===========================================================================

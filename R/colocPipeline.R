@@ -282,9 +282,11 @@ GwasFineMappingParam <- function(
 #'           inline fine-mapping.
 #'   }
 #'
-#' @section LD reference compatibility check: If
-#'   \code{ldReference(qtlFineMappingResult)} is non-\code{NULL}, it must be
-#'   the same LD reference as the one on \code{gwasInput}.
+#' @section LD reference compatibility check: Rows can sit on different LD
+#'   references, so the check is per pair of rows coloc scores against each
+#'   other -- a QTL row and a GWAS row whose regions overlap. Where the QTL
+#'   row carries a reference, it must be the same LD reference as the GWAS
+#'   row's; rows that are never paired may differ.
 #'   The two must be the same kind of reference. Two genotype panels must
 #'   share their samples and allele orientation; two \code{LdMatrix} objects
 #'   must agree on the LD they share; two \code{GenotypeMixture} objects must
@@ -293,9 +295,9 @@ GwasFineMappingParam <- function(
 #'   two sides separately normally leaves each reference trimmed to its own
 #'   surviving variants, and LD is looked up per variant, so a partial overlap
 #'   only warns (once per session). No shared variant at all, or a mismatch of
-#'   any of those, is a hard error. When the first side's \code{ldReference} is
-#'   \code{NULL} (individual-level fit), the validation is skipped on that side
-#'   and the second side's panel is what the result carries forward.
+#'   any of those, is a hard error. When a first-side row has no reference
+#'   (individual-level fit), the validation is skipped for it and the second
+#'   side's panel is what the result carries forward for its pairs.
 #'
 #' @param qtlFineMappingResult The first side: a
 #'   \code{\link{QtlFineMappingResult}} or a
@@ -503,10 +505,7 @@ colocPipeline <- function(
         useEnrichment = useEnrichment
     )
     rawGwasFmr <- .colocResolveGwasFmr(gwasInput, gwasFineMappingParam)
-    .colocRequireMatchingLdRefs(
-        ldReference(qtlFineMappingResult),
-        ldReference(rawGwasFmr)
-    )
+    .colocRequireMatchingLdRefs(qtlFineMappingResult, rawGwasFmr)
     adjusted <- .colocMaybeAdjustPips(
         adjustPips = adjustPips,
         qtlFineMappingResult = qtlFineMappingResult,
@@ -693,17 +692,6 @@ colocPipeline <- function(
     list(qtlFineMappingResult = both$x, gwasFmr = both$y)
 }
 
-# The LD reference the result carries forward, so colocCredibleSets() can
-# recompute purity (section 3.7) without being handed a sketch separately. The
-# two sides' sketches are already required to match by
-# .colocRequireMatchingLdRefs, so either one identifies the panel -- but a
-# first side fit on individual-level data carries none, and then the second
-# side's panel is the only one there is.
-# @noRd
-.colocLdRef <- function(qtlFineMappingResult, gwasFmr) {
-    ldReference(qtlFineMappingResult) %||% ldReference(gwasFmr)
-}
-
 # Empty-result early return (attaching the GWAS fine-mapping when requested).
 # @noRd
 .colocEarlyReturn <- function(
@@ -713,10 +701,7 @@ colocPipeline <- function(
     gwasInput,
     returnGwasFineMapping
 ) {
-    out <- .colocEmptyResult(
-        enriched = useEnrichment,
-        ldReference = .colocLdRef(qtlFineMappingResult, gwasFmr)
-    )
+    out <- .colocEmptyResult(enriched = useEnrichment)
     .colocAttachGwasFm(out, returnGwasFineMapping, gwasInput, gwasFmr)
 }
 
@@ -769,7 +754,8 @@ colocPipeline <- function(
         ident,
         list(
             parts = .fmrRowParts(fmr, qi),
-            label = .fmrTupleLabel(.fmrSideName(fmr), ident)
+            label = .fmrTupleLabel(.fmrSideName(fmr), ident),
+            ldReference = .rowLdRef(fmr, qi)
         )
     )
 }
@@ -853,9 +839,16 @@ colocPipeline <- function(
     # $results is the per-variant layer that process_coloc_results() used to
     # consume and that this pipeline silently dropped. It is pivoted here, the
     # only place that knows which results column belongs to which summary row.
+    # The pair's LD reference rides along for colocCredibleSets()' purity:
+    # the two sides' are required to match, but a QTL side fit on
+    # individual-level data has none, and then the GWAS side's is the one.
     list(
         rows = rows,
-        variants = .crPivotColocResults(pairRes$results, nrow(rows))
+        variants = .crPivotColocResults(pairRes$results, nrow(rows)),
+        ldReference = rep(
+            list(q$ldReference %||% gInfo$ldReference),
+            nrow(rows)
+        )
     )
 }
 
@@ -1048,11 +1041,7 @@ colocPipeline <- function(
     gwasInput,
     returnGwasFineMapping
 ) {
-    out <- .colocAssemble(
-        results,
-        useEnrichment,
-        .colocLdRef(qtlFineMappingResult, gwasFmr)
-    )
+    out <- .colocAssemble(results, useEnrichment)
     .colocAttachGwasFm(out, returnGwasFineMapping, gwasInput, gwasFmr)
 }
 
@@ -1066,18 +1055,20 @@ colocPipeline <- function(
     `attr<-`(out, "gwasFineMapping", gwasFmr)
 }
 
-# Row-bind + column-order the per-pair summary rows (empty result when none).
+# Row-bind + column-order the per-pair summary rows (empty result when none),
+# each pair on the LD reference it was scored against.
 # @noRd
-.colocAssemble <- function(results, useEnrichment, ldReference = NULL) {
+.colocAssemble <- function(results, useEnrichment) {
     if (length(results) == 0L) {
-        return(.colocEmptyResult(
-            enriched = useEnrichment,
-            ldReference = ldReference
-        ))
+        return(.colocEmptyResult(enriched = useEnrichment))
     }
     rows <- bind_rows(map(map(results, "rows"), .colocStandardiseRow))
     variants <- list_c(map(results, "variants"))
-    ColocResult(.colocOrderColumns(rows, useEnrichment), variants, ldReference)
+    ColocResult(
+        .colocOrderColumns(rows, useEnrichment),
+        variants,
+        ldReference = list_flatten(map(results, "ldReference"))
+    )
 }
 
 # Identity columns first, then everything coloc produced.
@@ -1104,12 +1095,19 @@ colocPipeline <- function(
 # Internal helpers
 # =============================================================================
 
-# LD-sketch compatibility check. Thin wrapper over the shared
-# `.requireMatchingLdRefs` helper (R/ld.R). Shared with
-# qtlEnrichmentPipeline.
+# LD-sketch compatibility check over the QTL / GWAS row pairs coloc scores
+# against each other -- those whose regions overlap -- each of which must
+# share an LD reference; rows that are never paired may sit on different
+# ones. Thin wrapper over the shared `.requireOverlapLdRefs` helper
+# (R/ld.R).
 # @noRd
-.colocRequireMatchingLdRefs <- function(qtlLd, gwasLd) {
-    .requireMatchingLdRefs(qtlLd, gwasLd, pipelineName = "colocPipeline")
+.colocRequireMatchingLdRefs <- function(qtlFineMappingResult, gwasFmr) {
+    .requireOverlapLdRefs(
+        qtlFineMappingResult,
+        gwasFmr,
+        pipelineName = "colocPipeline",
+        label = "qtlFineMappingResult"
+    )
 }
 
 # SuSiE credible-set concentration filter. Given a trimmed SuSiE fit
@@ -1349,7 +1347,8 @@ colocPipeline <- function(
             retainedMass = info$retainedMass,
             effect = info$effect,
             blockId = blockId,
-            label = label
+            label = label,
+            ldReference = .rowLdRef(gwasFmr, ri)
         )
     )
 }
@@ -1395,7 +1394,7 @@ colocPipeline <- function(
 # do not have to special-case a NULL return. When `enriched = TRUE` the
 # enrichment + p12Used columns are appended (the enloc-mode schema).
 # @noRd
-.colocEmptyResult <- function(enriched = FALSE, ldReference = NULL) {
+.colocEmptyResult <- function(enriched = FALSE) {
     base <- tibble(
         study = character(0),
         context = character(0),
@@ -1419,11 +1418,7 @@ colocPipeline <- function(
         qtlRetainedMass = numeric(0),
         gwasRetainedMass = numeric(0)
     )
-    ColocResult(
-        mutate(base, !!!.colocEnrichmentCols(enriched, NULL)),
-        list(),
-        ldReference = ldReference
-    )
+    ColocResult(mutate(base, !!!.colocEnrichmentCols(enriched, NULL)), list())
 }
 
 # Look up this pair's enrichment factor in the user-supplied enrichment table.

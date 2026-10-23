@@ -29,7 +29,7 @@ layered on top. It accepts inputs from the QTL input classes:
 | QTL input | What it is |
 |---|---|
 | `QtlDataset` | Single-study, individual-level: per-context residualized X/Y are extracted from the dataset |
-| `QtlSumStats` | QTL summary statistics with a shared LD reference (must be QC'd) |
+| `QtlSumStats` | QTL summary statistics, LD reference per row (must be QC'd) |
 | `MultiStudyQtlDataset` | One or more individual-level studies + optional embedded `QtlSumStats` |
 
 GWAS input (optional) is always a `GwasSumStats`, passed as the
@@ -121,6 +121,15 @@ resSs <- colocboostPipeline(
     xqtlColoc = FALSE,
     jointGwas = TRUE
 )
+```
+
+Each row is matched against its own `ldReference`, so the GWAS need not use
+the QTL side's reference. `ldReference()` on the result lists the references
+used, each once, and the `ldReference` column of `colocBoostOutcomes()` names
+the one behind each outcome.
+
+```{r sumstats-ld}
+names(ldReference(resSs))
 ```
 
 ## Multi-study individual-level

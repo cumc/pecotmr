@@ -4,8 +4,9 @@
 # DFrame-subclass collection keyed by the identity tuple (study, context,
 # trait, method). Each row holds a FineMappingRow payload. Class-level
 # slots:
-#   * ldReference   GenotypeHandle (NULL for individual-level fits, the
-#                LD-sketch handle for RSS-derived fits).
+#   * ldReference   the LD references RSS-derived fits used, each stored
+#                once; the ldReference mcols column names each row's (NA
+#                for an individual-level fit).
 # Optional columns jointStudies / jointContexts / jointTraits carry
 # semicolon-joined member identities for cross-axis joint fits emitted by
 # the joint dispatchers.
@@ -39,8 +40,8 @@ setClass(
 # ---- QtlFineMappingResult validity helpers ---------------------------------
 
 # Collect all contract violations (empty vector = valid). The per-entry checks
-# run only once the required columns are present; the ldReference check always
-# runs.
+# run only once the required columns are present; FineMappingResultBase's own
+# validity checks the LD references.
 # @noRd
 #' @importFrom checkmate makeAssertCollection assertNames checkNames
 .validateQtlFineMappingResult <- function(object) {
@@ -134,8 +135,6 @@ setClass(
     .tupleColumn(object, cn)
 }
 
-# ldReference must be a GenotypeHandle or NULL.
-
 # The identity-tuple vectors and the payload list are parallel: one entry per
 # (study, context, trait, method). A length mismatch would otherwise surface as
 # a recycling artefact deep inside the DataFrame assembly.
@@ -159,9 +158,9 @@ setClass(
 #' @title Create a QtlFineMappingResult Collection
 #' @description Construct a \code{QtlFineMappingResult} DFrame-subclass
 #'   collection from per-tuple vectors and a list of \code{FineMappingRow}
-#'   payloads (one per tuple). The optional \code{ldReference} slot records the
-#'   LD reference used for RSS-derived fits; pass \code{NULL} (the default) for
-#'   individual-level fits.
+#'   payloads (one per tuple). The optional \code{ldReference} records the LD
+#'   reference each RSS-derived fit used; leave it \code{NULL} (the default)
+#'   for individual-level fits.
 #' @param studyName Character vector of study identifiers (per tuple). Use the
 #'   sentinel \code{"joint"} for rows produced by a cross-study joint fit.
 #' @param context Character vector of context labels (per tuple). Use
@@ -182,9 +181,9 @@ setClass(
 #'   "methylation"), recorded as a per-row provenance column. Length 1 or
 #'   one per row; \code{NULL} (default) omits the column.
 #' @param dataSource Optional per-row label for the kind of input the fit saw,
-#'   \code{"individual"} or \code{"sumstat"}. Recorded rather than derived: a
-#'   combined collection can hold rows of both kinds, and its single
-#'   \code{ldReference} cannot say which row came from which.
+#'   \code{"individual"} or \code{"sumstat"}. Where it is absent, the result
+#'   writers read a row's kind from its LD reference: a row with none saw
+#'   individual-level data.
 #' @param weightStandardized Optional per-row flag: whether the posterior
 #'   effect is on the STANDARDIZED genotype scale. The posterior effect IS the
 #'   prediction weight, so it carries the same scale question as a TWAS
@@ -192,9 +191,11 @@ setClass(
 #'   it standardizes genotypes before fitting, and the posterior mean is
 #'   reported on the scale of the \code{X} the fit was given. The argument
 #'   exists for a collection assembled by hand, where only the caller knows.
-#' @param ldReference An optional genotype panel (see
-#'   \code{\link{readGenotypes}}) (the LD reference for RSS-derived fits), or
-#'   \code{NULL} for individual-level fits.
+#' @param ldReference The LD reference RSS-derived fits were computed
+#'   against -- a genotype panel (see \code{\link{readGenotypes}}), a
+#'   \code{GenotypeMixture} or an \code{LdMatrix} -- used for every row, or
+#'   a list with one per row; \code{NULL} for individual-level fits. Each
+#'   distinct reference is stored once.
 #' @param traitPos Optional per-row trait genomic anchor (a \code{GRanges} or
 #'   \code{NULL}), carried forward as provenance; not part of the identity key.
 #'   \code{NULL} (default) omits the column.
@@ -499,10 +500,9 @@ setMethod("show", "QtlFineMappingResult", function(object) {
             .trim = FALSE
         ))
     }
-    ldSrc <- if (is.null(object@ldReference)) {
+    ldSrc <- .ldRefsLabel(
+        ldReference(object),
         "NULL (individual-level fit)"
-    } else {
-        .ldRefLabel(object@ldReference)
-    }
+    )
     cat(glue("  LD reference: {ldSrc}\n", .trim = FALSE))
 })

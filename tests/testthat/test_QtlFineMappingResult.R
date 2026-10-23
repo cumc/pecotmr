@@ -14,7 +14,7 @@ test_that("QtlFineMappingResult: builds a collection keyed by 4-tuple", {
     )
     expect_s4_class(res, "QtlFineMappingResult")
     expect_equal(nrow(res), 2L)
-    expect_null(ldReference(res))
+    expect_identical(ldReference(res), list())
 })
 
 
@@ -57,9 +57,11 @@ test_that("QtlFineMappingResult: stores an LD sketch when supplied", {
         entry = list(e),
         ldReference = gh
     )
-    # The slot holds the panel; the handle it reads through is its seed.
-    expect_s4_class(ldReference(res), "RangedSummarizedExperiment")
-    expect_identical(pecotmr:::.ldRefHandle(ldReference(res)), gh)
+    # The reference is a panel; the handle it reads through is its seed.
+    refs <- ldReference(res)
+    expect_named(refs, res$ldReference)
+    expect_s4_class(refs[[1L]], "RangedSummarizedExperiment")
+    expect_identical(pecotmr:::.ldRefHandle(refs[[1L]]), gh)
 })
 
 

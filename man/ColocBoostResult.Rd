@@ -27,10 +27,15 @@ analysis each element came from.}
 naming the GWAS study for the per-study \code{separate_gwas} runs.}
 
 \item{outcomeInfo}{Data frame mapping outcome \code{name} to \code{study},
-\code{context}, \code{trait} and \code{dataForm}.}
+\code{context}, \code{trait} and \code{dataForm}, and optionally to
+\code{ldReference}, the name of the \code{ldReference} entry the
+outcome's summary statistics were matched against. Without that column
+every outcome gets \code{NA}.}
 
-\item{ldReference}{Optional genotype panel (see
-\code{\link{readGenotypes}}).}
+\item{ldReference}{Optional named list of the LD references the summary
+statistics were matched against: genotype panels (see
+\code{\link{readGenotypes}}), \code{GenotypeMixture} or \code{LdMatrix}
+objects.}
 
 \item{computingTime}{Optional list of per-analysis timings.}
 

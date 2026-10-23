@@ -305,7 +305,7 @@ test_that("qtlEnrichmentPipeline: NULL ldReference on the GWAS side errors", {
             gwasFineMappingResult = gfmr,
             qtlFineMappingResult = qfmr
         ),
-        "must have a non-NULL ldReference"
+        "row must have an ldReference"
     )
 })
 
@@ -1157,5 +1157,18 @@ test_that("qtlEnrichmentPipeline refuses a bare list for qtlEnrichmentParam", {
             qtlEnrichmentParam = list(impN = 5)
         ),
         "must be built with QtlEnrichmentParam"
+    )
+})
+
+test_that("qtlEnrichmentPipeline refuses overlapping rows on two references", {
+    ids <- sprintf("chr1:%d:A:G", 100L * (1:9))
+    ldm <- function(rho) {
+        LdMatrix(`dimnames<-`(rho^abs(outer(1:9, 1:9, "-")), list(ids, ids)))
+    }
+    gfmr <- pecotmr:::.withRowLdRefs(.qep_makeGwasFmr(), ldm(0.2))
+    qfmr <- pecotmr:::.withRowLdRefs(.qep_makeQtlFmr(), ldm(0.8))
+    expect_error(
+        pecotmr:::.enrValidateInputs(gfmr, qfmr),
+        "disagree on the LD"
     )
 })

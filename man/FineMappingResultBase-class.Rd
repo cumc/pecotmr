@@ -7,7 +7,8 @@
 \description{
 Virtual base class for fine-mapping result collections. Concrete
   subclasses (\code{QtlFineMappingResult}, \code{GwasFineMappingResult})
-  carry a \code{DFrame} of per-fit rows and a shared \code{ldReference} slot.
+  carry a \code{DFrame} of per-fit rows and an \code{ldReference} slot
+  listing the LD references those fits used.
   Downstream pipelines should dispatch on \code{FineMappingResultBase} for
   behaviors that apply to either flavour, and on the concrete subclass when
   the tuple shape matters.
@@ -15,10 +16,11 @@ Virtual base class for fine-mapping result collections. Concrete
 \section{Slots}{
 
 \describe{
-\item{\code{ldReference}}{The LD reference the fits were computed against (a
-genotype panel, a \code{GenotypeMixture} or an \code{LdMatrix}), or
-\code{NULL} when the fits were derived from individual-level data. Used
-downstream to check that pipelines combining results share one LD
-reference.}
+\item{\code{ldReference}}{A named list of the LD references the fits were
+computed against, each a genotype panel, a \code{GenotypeMixture} or an
+\code{LdMatrix}, stored once apiece; the \code{ldReference} column of
+\code{mcols} names the entry each row used (\code{NA} for a fit derived
+from individual-level data). Used downstream to check that the rows a
+pipeline combines share an LD reference.}
 }}
 

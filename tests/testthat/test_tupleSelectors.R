@@ -579,15 +579,19 @@ test_that("chromosome paths union when they agree and abort when they clash", {
 test_that("panels read through no handle union their rows", {
     # A PLINK1, VCF or GDS panel has no handle whose snpInfo could be
     # widened, so the parts' assays are bound: each variant once, in genomic
-    # order. A panel from another file is refused, not bound.
+    # order. A panel from another file is another source, and kept apart.
     skip_if_not_installed("PlinkMatrix")
     skip_if_not_installed("pgenlibr")
     stem <- test_path("test_data", "test_variants")
     panel <- readGenotypes(plink1Prefix = stem)
     a <- pecotmr:::.panelSubsetRows(panel, 4:8)
     b <- pecotmr:::.panelSubsetRows(panel, 1:5)
-    pecotmr:::.ssCheckSameSource(list(a, b), "combineX")
-    out <- pecotmr:::.ssUnionPanels(list(a, b), character(0))
+    merged <- pecotmr:::.ldRefMergeViews(
+        pecotmr:::.ldRefDict(list(a, b)),
+        "combineX"
+    )
+    expect_identical(merged$keys, c("ld1", "ld1"))
+    out <- merged$refs$ld1
     expect_identical(rownames(out), rownames(panel)[1:8])
     expect_equal(
         as.matrix(SummarizedExperiment::assay(out, "dosage")),
@@ -599,13 +603,11 @@ test_that("panels read through no handle union their rows", {
     )
     # The same panel twice is that panel.
     expect_identical(pecotmr:::.ssUnionPanels(list(a, a), character(0)), a)
-    expect_error(
-        pecotmr:::.ssCheckSameSource(
-            list(a, readGenotypes(plink2Prefix = stem)),
-            "combineX"
-        ),
-        "reference different genotype panels"
+    apart <- pecotmr:::.ldRefMergeViews(
+        pecotmr:::.ldRefDict(list(a, readGenotypes(plink2Prefix = stem))),
+        "combineX"
     )
+    expect_length(apart$refs, 2L)
 })
 
 
@@ -785,7 +787,7 @@ test_that(".asAnalysisWindow normalizes strings, GRanges and multi-range input",
 })
 
 
-test_that("collections sharing one LdMatrix combine; differing ones need it", {
+test_that("LdMatrix views are stored as the one covering them, in any order", {
     ids <- c("chr22:100:A:G", "chr22:200:C:T", "chr22:300:G:A")
     vars <- data.frame(
         chrom = "chr22",
@@ -796,14 +798,75 @@ test_that("collections sharing one LdMatrix combine; differing ones need it", {
     )
     R <- matrix(c(1, 0.5, 0.2, 0.5, 1, 0.3, 0.2, 0.3, 1), 3L, 3L)
     ld <- LdMatrix(R, variants = vars, nSamples = 100)
-    # The widest reference covering the others is the combined one.
-    expect_identical(
-        pecotmr:::.combineLdMatrixRefs(list(ld, ld[1:2]), "combine"),
-        ld
+    # Two views neither of which covers the other are both kept: the LD
+    # between their variants is held by neither.
+    apart <- pecotmr:::.ldRefMergeViews(
+        pecotmr:::.ldRefDict(list(ld[1:2], ld[2:3])),
+        "combine"
     )
-    # Two subsets neither of which covers the other cannot be unioned.
-    expect_error(
-        pecotmr:::.combineLdMatrixRefs(list(ld[1:2], ld[2:3]), "combine"),
-        "cover different variants"
+    expect_length(apart$refs, 2L)
+    # With the matrix covering both among them, both are stored as it,
+    # wherever it comes.
+    orders <- list(
+        list(ld[1:2], ld, ld[2:3]),
+        list(ld[1:2], ld[2:3], ld),
+        list(ld, ld[1:2], ld[2:3])
     )
+    for (parts in orders) {
+        merged <- pecotmr:::.ldRefMergeViews(
+            pecotmr:::.ldRefDict(parts),
+            "combine"
+        )
+        expect_identical(merged$refs, list(ld1 = ld))
+        expect_identical(merged$keys, rep("ld1", 3L))
+    }
+})
+
+test_that("binding stores an LdMatrix another part's covers as that one", {
+    ids <- sprintf("chr1:%d:A:G", 100L * (1:6))
+    r <- 0.3^abs(outer(1:6, 1:6, "-"))
+    wide <- LdMatrix(`dimnames<-`(r, list(ids, ids)))
+    narrow <- LdMatrix(`dimnames<-`(r[4:6, 4:6], list(ids[4:6], ids[4:6])))
+    merged <- pecotmr:::.ldRefMergeViews(
+        pecotmr:::.ldRefDict(list(wide, narrow, wide)),
+        "probe"
+    )
+    expect_identical(merged$refs, list(ld1 = wide))
+    expect_identical(merged$keys, c("ld1", "ld1", "ld1"))
+    # Matrices that do not nest are different references, and stay apart.
+    other <- LdMatrix(
+        `dimnames<-`(0.9^abs(outer(1:6, 1:6, "-")), list(ids, ids))
+    )
+    apart <- pecotmr:::.ldRefMergeViews(
+        pecotmr:::.ldRefDict(list(wide, other)),
+        "probe"
+    )
+    expect_length(apart$refs, 2L)
+    # A panel and a matrix are never views of one source.
+    panel <- readGenotypes(test_path("test_data", "test_variants.bed"))
+    kinds <- pecotmr:::.ldRefMergeViews(
+        pecotmr:::.ldRefDict(list(wide, panel)),
+        "probe"
+    )
+    expect_length(kinds$refs, 2L)
+})
+
+test_that("binding stores a mixture another part's covers as that one", {
+    panel <- readGenotypes(test_path("test_data", "test_variants.bed"))
+    halves <- list(a = panel[, 1:40], b = panel[, 41:100])
+    mix <- GenotypeMixture(halves, mixtureWeights = c(0.5, 0.5))
+    # Two views that overlap only in part are both held by the whole mixture.
+    merged <- pecotmr:::.ldRefMergeViews(
+        pecotmr:::.ldRefDict(list(mix[1:200], mix, mix[100:349])),
+        "probe"
+    )
+    expect_identical(merged$refs, list(ld1 = mix))
+    expect_identical(merged$keys, c("ld1", "ld1", "ld1"))
+    # The same panels weighted differently are another mixture.
+    reweighted <- GenotypeMixture(halves, mixtureWeights = c(0.4, 0.6))
+    apart <- pecotmr:::.ldRefMergeViews(
+        pecotmr:::.ldRefDict(list(mix, reweighted[1:200])),
+        "probe"
+    )
+    expect_length(apart$refs, 2L)
 })

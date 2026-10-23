@@ -263,11 +263,16 @@ test_that(".colocRequireMatchingLdRefs: sample set mismatch errors", {
 test_that(".colocRequireMatchingLdRefs: differently trimmed panels pass", {
     # The two sides QC'd separately keep different subsets of one LD
     # reference; the panels overlap, so the check warns rather than aborting.
+    qfmr <- pecotmr:::.withRowLdRefs(
+        .cp_makeQtlFmr(),
+        .cp_makeHandle(snp_n = 6L)
+    )
+    gfmr <- pecotmr:::.withRowLdRefs(
+        .cp_makeGwasFmr(),
+        .cp_makeHandle(snp_n = 7L)
+    )
     expect_warning(
-        expect_null(pecotmr:::.colocRequireMatchingLdRefs(
-            .cp_makeHandle(snp_n = 6L),
-            .cp_makeHandle(snp_n = 7L)
-        )),
+        expect_null(pecotmr:::.colocRequireMatchingLdRefs(qfmr, gfmr)),
         "share 6 variant"
     )
 })
@@ -502,7 +507,8 @@ test_that("colocPipeline: empty result has the documented schema", {
             "PP.H3.abf",
             "PP.H4.abf",
             "qtlRetainedMass",
-            "gwasRetainedMass"
+            "gwasRetainedMass",
+            "ldReference"
         )
     )
 })
@@ -1628,4 +1634,35 @@ test_that("GwasFineMappingParam accessors read and replace every field", {
     expect_s4_class(panelFilterParam(edited), "PanelFilterParam")
     expect_equal(fineMappingMethods(p), "susie")
     expect_true(initializeWithSusieInf(p))
+})
+
+# ===========================================================================
+# Per-pair LD references
+# ===========================================================================
+
+# An LdMatrix over five variants at 100 bp spacing on `chrom`.
+.cp_ldm <- function(rho, chrom = "chr1") {
+    ids <- sprintf("%s:%d:A:G", chrom, 100L * (1:5))
+    LdMatrix(`dimnames<-`(rho^abs(outer(1:5, 1:5, "-")), list(ids, ids)))
+}
+
+test_that("coloc refuses an overlapping pair on two different references", {
+    qfmr <- pecotmr:::.withRowLdRefs(.cp_makeQtlFmr(), .cp_ldm(0.2))
+    gfmr <- pecotmr:::.withRowLdRefs(.cp_makeGwasFmr(), .cp_ldm(0.8))
+    expect_error(
+        pecotmr:::.colocRequireMatchingLdRefs(qfmr, gfmr),
+        "disagree on the LD"
+    )
+})
+
+test_that("coloc lets rows that never pair sit on different references", {
+    # The QTL row is on chr1 and the GWAS row on chr2, so coloc never scores
+    # them against each other and their references need not match.
+    qfmr <- pecotmr:::.withRowLdRefs(.cp_makeQtlFmr(), .cp_ldm(0.2))
+    chr2 <- .cp_makeFmEntry(variant_ids = paste0("chr2:", 100 * (1:5), ":A:G"))
+    gfmr <- pecotmr:::.withRowLdRefs(
+        .cp_makeGwasFmr(entries = list(chr2)),
+        .cp_ldm(0.8, chrom = "chr2")
+    )
+    expect_null(pecotmr:::.colocRequireMatchingLdRefs(qfmr, gfmr))
 })

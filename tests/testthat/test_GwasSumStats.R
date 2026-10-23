@@ -327,8 +327,9 @@ test_that("GwasSumStats: ldReference is optional (NULL when LD-free)", {
         studyName = "g1",
         entry = list(.sh_makeQtlSumstatsGr()),
         genome = "hg19"
-    ) # ldReference omitted -> NULL
-    expect_null(ldReference(ss))
+    ) # ldReference omitted -> LD-free
+    expect_identical(ldReference(ss), list())
+    expect_true(is.na(ss$ldReference))
     expect_output(show(ss), "none \\(LD-free\\)")
 })
 
@@ -569,13 +570,16 @@ test_that("combineGwasSumStats() unions the per-block LD panels", {
     b <- makeGwasBlock("chr1_1001_2000", 1100L, n = 3L)
     out <- combineGwasSumStats(a, b)
 
-    # Keeping only the first block's panel would leave a two-block collection
-    # whose LD reference covers one block.
-    expect_equal(nrow(ldReference(out)), 8L)
+    # Each block's panel was narrowed to its own variants, but one panel's
+    # files back both, so the bound collection holds them once, unioned.
+    refs <- ldReference(out)
+    expect_length(refs, 1L)
+    expect_equal(nrow(refs[[1L]]), 8L)
     expect_equal(
-        rownames(ldReference(out)),
-        c(rownames(ldReference(a)), rownames(ldReference(b)))
+        rownames(refs[[1L]]),
+        c(rownames(ldReference(a)[[1L]]), rownames(ldReference(b)[[1L]]))
     )
+    expect_equal(unique(out$ldReference), names(refs))
 })
 
 
@@ -611,22 +615,31 @@ test_that("combineGwasSumStats() rejects collection-level disagreement", {
     noQc <- makeGwasBlock("chr1_1001_2000", 1100L)
     noQc@qcInfo <- list()
     expect_error(combineGwasSumStats(a, noQc), "carry no QC record")
+})
 
-    noLd <- makeGwasBlock("chr1_1001_2000", 1100L)
-    noLd@ldReference <- NULL
-    expect_error(combineGwasSumStats(a, noLd), "carry no ldReference")
 
-    other <- makeGwasBlock("chr1_1001_2000", 1100L)
-    other@ldReference <- pecotmr:::.asLdRef(
-        .blockGenotypeHandle(
+test_that("combineGwasSumStats() keeps each row on its own LD reference", {
+    a <- makeGwasBlock("chr1_1_1000", 100L)
+    other <- makeGwasBlock(
+        "chr1_1001_2000",
+        1100L,
+        ldReference = .blockGenotypeHandle(
             seq(1100L, by = 100L, length.out = 5L),
             path = "/tmp/other.pgen"
         )
     )
-    expect_error(
-        combineGwasSumStats(a, other),
-        "different genotype panels"
+    out <- combineGwasSumStats(a, other)
+    # Panels read from different files cannot be unioned, so both are kept.
+    expect_length(ldReference(out), 2L)
+    expect_identical(
+        pecotmr:::.rowLdRefs(out),
+        list(ldReference(a)[[1L]], ldReference(other)[[1L]])
     )
+    # An LD-free part's rows stay LD-free beside them.
+    noLd <- makeGwasBlock("chr1_2001_3000", 2100L, ldReference = NULL)
+    mixed <- combineGwasSumStats(a, noLd)
+    expect_equal(is.na(mixed$ldReference), c(FALSE, TRUE))
+    expect_length(ldReference(mixed), 1L)
 })
 
 

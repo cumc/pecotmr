@@ -898,3 +898,50 @@ test_that("blockId reads the recorded value, not the variants' span", {
     )
     expect_equal(blockId(res), "chr1_1_1000000")
 })
+
+# ===========================================================================
+# updateObject(): collections saved before references became per-row
+# ===========================================================================
+
+# A collection as an earlier version saved it: one reference (or NULL) in the
+# slot and no row key.
+.rtl_asSaved <- function(x, ref) {
+    old <- `slot<-`(x, "ldReference", check = FALSE, value = ref)
+    md <- attr(old, "elementMetadata")
+    md[["ldReference"]] <- NULL
+    attr(old, "elementMetadata") <- md
+    old
+}
+
+test_that("updateObject keys every row of an old collection to its reference", {
+    data(qtlSumStatsMulticontextExample)
+    mc <- qtlSumStatsMulticontextExample
+    panel <- ldReference(mc)[[1L]]
+    old <- .rtl_asSaved(mc, panel)
+    # Read as it was saved, the old object is refused, not taken as LD-free.
+    expect_error(ldReference(old), "updateObject")
+    new <- updateObject(old)
+    expect_true(methods::validObject(new))
+    expect_identical(ldReference(new), list(ld1 = panel))
+    expect_identical(new$ldReference, rep("ld1", nrow(mc)))
+})
+
+test_that("updateObject marks every row of an old LD-free collection LD-free", {
+    data(qtlFineMappingExample)
+    old <- .rtl_asSaved(qtlFineMappingExample, NULL)
+    # Read as it was saved, it already reads LD-free: a NULL slot meant no
+    # reference then too, so there is nothing to refuse.
+    expect_identical(ldReference(old), list())
+    new <- updateObject(old)
+    expect_identical(ldReference(new), list())
+    expect_true(all(is.na(new$ldReference)))
+})
+
+test_that("updateObject leaves a current collection as it is", {
+    data(qtlSumStatsExample)
+    expect_identical(updateObject(qtlSumStatsExample), qtlSumStatsExample)
+    expect_message(
+        updateObject(qtlSumStatsExample, verbose = TRUE),
+        "updateObject\\(object = 'QtlSumStats'\\)"
+    )
+})

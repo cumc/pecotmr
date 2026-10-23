@@ -3994,7 +3994,7 @@ test_that("twasWeightsPipeline RSS cutoffs match .panelVariantFilter", {
         expect_equal(
             .twrssf_n(ss, mafCutoff = cut),
             length(.panelVariantFilter(
-                ldReference(ss),
+                ldReference(ss)[[1L]],
                 ids,
                 PanelFilterParam(mafCutoff = cut)
             )),
@@ -4005,7 +4005,7 @@ test_that("twasWeightsPipeline RSS cutoffs match .panelVariantFilter", {
 
 test_that("twasWeightsPipeline RSS treats MAC as a MAF equivalent", {
     ss <- .twrssf_qcd()
-    nSamp <- ncol(ldReference(ss))
+    nSamp <- ncol(ldReference(ss)[[1L]])
     expect_equal(
         .twrssf_n(ss, macCutoff = 0.1 * 2 * nSamp),
         .twrssf_n(ss, mafCutoff = 0.1)
@@ -4020,7 +4020,7 @@ test_that("twasWeightsPipeline RSS honours a missingness cutoff", {
 
 test_that(".twasQssUnivariateFitCtx keeps z, ids and LD reference aligned", {
     ss <- .twrssf_qcd()
-    sketch <- ldReference(ss)
+    sketch <- ldReference(ss)[[1L]]
     args <- list(ss, ss$study[[1L]], ss$context[[1L]], ss$trait[[1L]], sketch)
     plain <- exec(pecotmr:::.twasQssUnivariateFitCtx, !!!args)
     cut <- suppressMessages(exec(
@@ -4222,7 +4222,7 @@ test_that(".twasQssMultivariateFitOne promotes vector weights to a matrix", {
 test_that(".twasQssAssemble passes the joint result through alone", {
     jr <- "SENTINEL_JOINT"
     expect_identical(
-        pecotmr:::.twasQssAssemble(list(), jr, ldReference = NULL),
+        pecotmr:::.twasQssAssemble(list(), jr),
         jr
     )
 })
@@ -4956,4 +4956,41 @@ test_that("refuses full-data weights from a CV-only fineMappingResult", {
         cvFolds = 3,
         fitFullData = FALSE
     ))
+})
+
+# ===========================================================================
+# Per-row LD references
+# ===========================================================================
+
+test_that("a multivariate TWAS group refuses contexts on two LD references", {
+    # mr.mash fits a (study, trait)'s contexts together against one LD
+    # matrix, so rows on different references cannot share the fit.
+    gr <- GenomicRanges::GRanges(
+        "chr1",
+        IRanges::IRanges(100L * (1:5), width = 1L)
+    )
+    S4Vectors::mcols(gr) <- S4Vectors::DataFrame(
+        SNP = sprintf("chr1:%d:A:G", 100L * (1:5)),
+        A1 = "A",
+        A2 = "G",
+        Z = c(6, 5.5, 1, 0.5, 0.2),
+        N = 1000L
+    )
+    ids <- sprintf("chr1:%d:A:G", 100L * (1:5))
+    ldm <- function(rho) {
+        LdMatrix(`dimnames<-`(rho^abs(outer(1:5, 1:5, "-")), list(ids, ids)))
+    }
+    ss <- QtlSumStats(
+        studyName = c("S", "S"),
+        context = c("c1", "c2"),
+        trait = c("t1", "t1"),
+        entry = list(gr, gr),
+        genome = "hg19",
+        ldReference = list(ldm(0.1), ldm(0.95)),
+        qcInfo = list(step1 = "ok")
+    )
+    expect_error(
+        suppressMessages(twasWeightsPipeline(ss, methods = "mrmash")),
+        "a joint fit uses one LD matrix"
+    )
 })

@@ -95,14 +95,14 @@ data(ctwasWeightsExample)
 # portable "pecotmr://extdata/<stem>" form afterwards -- the same two-step
 # every other bundled example uses. .resolveGenotypeResourcePath() turns it
 # back into a real path at read time, on whatever machine has the package.
-ctwasWeightsExample <- methods::initialize(
+ctwasWeightsExample <- pecotmr:::.withRowLdRefs(
     ctwasWeightsExample,
-    ldReference = pecotmr:::.asLdRef(.portableHandle(ldStem))
+    .portableHandle(ldStem)
 )
 
 stopifnot(
     path(pecotmr:::.ldRefHandle(
-        ldReference(ctwasWeightsExample)
+        ldReference(ctwasWeightsExample)[[1L]]
     )) ==
         asBundledResource(ldStem)
 )

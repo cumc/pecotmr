@@ -61,9 +61,9 @@ derives the window from the span of the variants present.}
 one per row; \code{NULL} (default) omits the column.}
 
 \item{dataSource}{Optional per-row label for the kind of input the fit saw,
-\code{"individual"} or \code{"sumstat"}. Recorded rather than derived: a
-combined collection can hold rows of both kinds, and its single
-\code{ldReference} cannot say which row came from which.}
+\code{"individual"} or \code{"sumstat"}. Where it is absent, the result
+writers read a row's kind from its LD reference: a row with none saw
+individual-level data.}
 
 \item{weightStandardized}{Optional per-row flag: whether the posterior
 effect is on the STANDARDIZED genotype scale. The posterior effect IS the
@@ -73,9 +73,11 @@ it standardizes genotypes before fitting, and the posterior mean is
 reported on the scale of the \code{X} the fit was given. The argument
 exists for a collection assembled by hand, where only the caller knows.}
 
-\item{ldReference}{An optional genotype panel (see
-\code{\link{readGenotypes}}) (the LD reference for RSS-derived fits), or
-\code{NULL} for individual-level fits.}
+\item{ldReference}{The LD reference RSS-derived fits were computed
+against -- a genotype panel (see \code{\link{readGenotypes}}), a
+\code{GenotypeMixture} or an \code{LdMatrix} -- used for every row, or
+a list with one per row; \code{NULL} for individual-level fits. Each
+distinct reference is stored once.}
 }
 \value{
 A \code{QtlFineMappingResult} object.
@@ -83,9 +85,9 @@ A \code{QtlFineMappingResult} object.
 \description{
 Construct a \code{QtlFineMappingResult} DFrame-subclass
   collection from per-tuple vectors and a list of \code{FineMappingRow}
-  payloads (one per tuple). The optional \code{ldReference} slot records the
-  LD reference used for RSS-derived fits; pass \code{NULL} (the default) for
-  individual-level fits.
+  payloads (one per tuple). The optional \code{ldReference} records the LD
+  reference each RSS-derived fit used; leave it \code{NULL} (the default)
+  for individual-level fits.
 }
 \examples{
 tl <- data.frame(variant_id = paste0("chr1:", 100 * 1:3, ":A:G"),

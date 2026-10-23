@@ -49,9 +49,11 @@
 #'
 #' @param ... Two or more \code{TwasWeights} objects, or a single \code{list} of
 #'   them.
-#' @param ldReference Optional genotype panel (see \code{\link{readGenotypes}})
-#'   to attach to the
-#'   combined collection. Default \code{NULL}. Applied when combining two or
+#' @param ldReference Optional LD reference -- a genotype panel (see
+#'   \code{\link{readGenotypes}}), a \code{GenotypeMixture} or an
+#'   \code{LdMatrix} -- that every row of the combined collection uses instead
+#'   of its own. Default \code{NULL}: each row keeps the reference it had,
+#'   and views of one source are stored once. Applied when combining two or
 #'   more inputs; a single input is returned unchanged.
 #' @return A single combined \code{TwasWeights}.
 #' @seealso \code{\link{combineFineMappingResults}}
@@ -1093,9 +1095,9 @@ combineTwasWeights <- function(..., ldReference = NULL) {
 #' \code{\link{summaryStatsQc}} first; otherwise an error is raised pointing
 #' at that function.
 #'
-#' The returned \code{\link{TwasWeights}} collection's \code{ldReference} slot
-#' is set automatically: \code{NULL} for individual-level fits, the input's
-#' \code{ldReference} for RSS-derived fits.
+#' Each row of the returned \code{\link{TwasWeights}} collection records the
+#' LD reference its weights were learned against: none for individual-level
+#' fits, the reference of the input row(s) for RSS-derived fits.
 #'
 #' Optionally a \code{QtlFineMappingResult} may be supplied as a source of
 #' pre-fit SuSiE / SuSiE-inf / SuSiE-ash objects; their stored fits are passed
@@ -1308,9 +1310,8 @@ combineTwasWeights <- function(..., ldReference = NULL) {
 #' @param ... Reserved for method-specific arguments.
 #'
 #' @return A \code{\link{TwasWeights}} collection keyed by \code{(study,
-#'   context, trait, method)}. The \code{ldReference} slot is \code{NULL} for
-#'   individual-level fits and equals the input's \code{ldReference} for
-#'   RSS-derived fits.
+#'   context, trait, method)}. Each row's LD reference is none for
+#'   individual-level fits and that of the input row(s) for RSS-derived fits.
 #' @examples
 #' data(qtlDatasetExample)
 #' twasWeightsPipeline(qtlDatasetExample, methods = "lasso", cisWindow = 1e6)
@@ -2105,7 +2106,6 @@ setMethod(
         studyCol = part$studyCol,
         contextCol = part$contextCol,
         traitCol = part$traitCol,
-        ldReference = part$ldReference,
         methodArgs = methodArgs
     )
     c(
@@ -2220,7 +2220,7 @@ setMethod(
             panelFilterParam = panelFilterParam
         )
     )
-    .twasQssAssemble(rows, joint$result, part$ldReference)
+    .twasQssAssemble(rows, joint$result)
 }
 
 # Normalize the methods argument into (tokens, methodArgs). The default set
@@ -2341,8 +2341,7 @@ setMethod(
         traitCol = traitCol,
         selRows = selRows,
         multivariateTokens = multivariateTokens,
-        univariateTokens = univariateTokens,
-        ldReference = ldReference(data)
+        univariateTokens = univariateTokens
     )
 }
 
@@ -2404,9 +2403,10 @@ setMethod(
     )
 }
 
-# Assemble a TwasWeights collection from a flat list of row records.
+# Assemble a TwasWeights collection from a flat list of row records, each row
+# on the LD reference its record carries (none for an individual-level fit).
 # @noRd
-.twasRowsToWeights <- function(rows, ldReference) {
+.twasRowsToWeights <- function(rows) {
     if (length(rows) == 0L) {
         return(NULL)
     }
@@ -2416,7 +2416,7 @@ setMethod(
         trait = map_chr(rows, "trait"),
         method = map_chr(rows, "method"),
         entry = map(rows, "entry"),
-        ldReference = ldReference
+        ldReference = map(rows, "ldReference")
     )
 }
 
@@ -2498,7 +2498,6 @@ setMethod(
     contextCol,
     traitCol,
     data,
-    ldReference,
     twasWeights,
     weightsDataType,
     fitRetention,
@@ -2517,7 +2516,6 @@ setMethod(
         contextCol = contextCol,
         traitCol = traitCol,
         data = data,
-        ldReference = ldReference,
         twasWeights = twasWeights,
         weightsDataType = weightsDataType,
         fitRetention = fitRetention,
@@ -2560,7 +2558,6 @@ setMethod(
     contextCol,
     traitCol,
     data,
-    ldReference,
     twasWeights,
     weightsDataType,
     fitRetention,
@@ -2572,10 +2569,11 @@ setMethod(
     ctx <- contextCol[i]
     tr <- traitCol[i]
     cached <- .twasQssCacheSplit(twasWeights, st, ctx, tr, univariateTokens)
-    cachedRows <- cached$rows
+    ldReference <- .rowLdRef(data, i)
+    cachedRows <- .recordsWithLdRef(unname(cached$rows), ldReference)
     toFit <- cached$toFit
     if (length(toFit) == 0L) {
-        return(unname(cachedRows))
+        return(cachedRows)
     }
     fitCtx <- .twasQssUnivariateFitCtx(
         data,
@@ -2597,7 +2595,7 @@ setMethod(
         fineMappingResult = fineMappingResult,
         weightsDataType = weightsDataType
     ))
-    c(unname(cachedRows), fitted)
+    c(cachedRows, .recordsWithLdRef(fitted, ldReference))
 }
 
 # Cache hits for ONE multivariate group: a named list of the group's rows,
@@ -2833,7 +2831,6 @@ setMethod(
     contextCol,
     traitCol,
     data,
-    ldReference,
     methodArgs,
     fitRetention,
     fineMappingResult,
@@ -2859,7 +2856,6 @@ setMethod(
         contextCol = contextCol,
         traitCol = traitCol,
         data = data,
-        ldReference = ldReference,
         methodArgs = methodArgs,
         fitRetention = fitRetention,
         fineMappingResult = fineMappingResult,
@@ -2877,7 +2873,6 @@ setMethod(
     contextCol,
     traitCol,
     data,
-    ldReference,
     methodArgs,
     fitRetention,
     fineMappingResult,
@@ -2888,37 +2883,70 @@ setMethod(
     if (length(gIdx) < 2L) {
         return(list())
     }
-    st <- studyCol[gIdx[[1L]]]
-    tr <- traitCol[gIdx[[1L]]]
-    ctxNames <- contextCol[gIdx]
-    mvStat <- .twasQssMultivariateStat(
+    grp <- .twasQssMultivariateGroup(
+        gIdx,
         data,
-        st,
-        tr,
-        ctxNames,
-        ldReference = ldReference,
-        cutoffs = .panelCutoffs(panelFilterParam)
+        studyCol,
+        contextCol,
+        traitCol,
+        panelFilterParam
     )
-    # The group's block of the reference, read once and shared by every method.
-    blockReference <- .ldRefInMemory(
-        ldReference,
-        mvStat$variantIds,
-        label = "twasWeightsPipeline"
-    )
-    list_flatten(map(
+    rows <- list_flatten(map(
         multivariateTokens,
         .twasQssMultivariateFitOne,
         twasWeights = twasWeights,
-        st = st,
-        tr = tr,
-        ctxNames = ctxNames,
-        mvStat = mvStat,
-        blockReference = blockReference,
+        st = grp$st,
+        tr = grp$tr,
+        ctxNames = grp$ctxNames,
+        mvStat = grp$mvStat,
+        blockReference = grp$blockReference,
         methodArgs = methodArgs,
         fitRetention = fitRetention,
         fineMappingResult = fineMappingResult,
         weightsDataType = weightsDataType
     ))
+    .recordsWithLdRef(rows, grp$ldReference)
+}
+
+# What every method fitted to one (study, trait) group shares: the study,
+# trait and contexts, their LD reference, the stacked statistics, and the
+# group's block of the reference, read once. The contexts are fitted together
+# against one LD matrix, so they must share an LD reference.
+# @noRd
+.twasQssMultivariateGroup <- function(
+    gIdx,
+    data,
+    studyCol,
+    contextCol,
+    traitCol,
+    panelFilterParam
+) {
+    ldReference <- .jointRowsLdRef(
+        data,
+        gIdx,
+        "twasWeightsPipeline (QtlSumStats, multivariate)"
+    )
+    ctxNames <- contextCol[gIdx]
+    mvStat <- .twasQssMultivariateStat(
+        data,
+        studyCol[gIdx[[1L]]],
+        traitCol[gIdx[[1L]]],
+        ctxNames,
+        ldReference = ldReference,
+        cutoffs = .panelCutoffs(panelFilterParam)
+    )
+    list(
+        st = studyCol[gIdx[[1L]]],
+        tr = traitCol[gIdx[[1L]]],
+        ctxNames = ctxNames,
+        ldReference = ldReference,
+        mvStat = mvStat,
+        blockReference = .ldRefInMemory(
+            ldReference,
+            mvStat$variantIds,
+            label = "twasWeightsPipeline"
+        )
+    )
 }
 
 # Build the (variants x contexts) Z matrix + per-context N for a group. All
@@ -3218,12 +3246,8 @@ setMethod(
 
 # Combine the per-tuple result with any joint result (error if both empty).
 # @noRd
-.twasQssAssemble <- function(
-    rows,
-    jointResult,
-    ldReference
-) {
-    perTupleResult <- .twasRowsToWeights(rows, ldReference)
+.twasQssAssemble <- function(rows, jointResult) {
+    perTupleResult <- .twasRowsToWeights(rows)
     if (is.null(jointResult)) {
         if (is.null(perTupleResult)) {
             msg <- glue(
@@ -3237,7 +3261,7 @@ setMethod(
     if (is.null(perTupleResult)) {
         return(jointResult)
     }
-    .rbindTwasWeights(perTupleResult, jointResult, ldReference = ldReference)
+    .rbindTwasWeights(perTupleResult, jointResult)
 }
 
 # =============================================================================

@@ -33,15 +33,18 @@ per-variant statistics — annotated by an identity tuple:
 
 Every `entry` GRanges must carry these `mcols`: `SNP`, `A1` (effect /
 dosage-counted allele), `A2` (other allele), `Z`, `N`; optionally `MAF`,
-`INFO`, `BETA`, `SE`, `P`. Two settings apply to the whole collection and are
-stored in slots, not columns:
+`INFO`, `BETA`, `SE`, `P`. Two further settings are not variant columns:
 
-* `genome` — the build label (e.g. `"GRCh38"`).
+* `genome` — the build label (e.g. `"GRCh38"`), one for the whole
+    collection.
 *  `ldReference` — the LD reference used for QC and downstream analyses: a
     genotype panel (a `RangedSummarizedExperiment`, as returned by
     `readGenotypes()`), a `GenotypeMixture`, or an `LdMatrix` holding a
     correlation matrix you built (see the
-    [LD reference vignette](ld-infrastructure.html)).
+    [LD reference vignette](ld-infrastructure.html)). One reference serves
+    every row; pass a list with one per row (one per study for
+    `GwasSumStats`) when they sit on different references. Each distinct
+    reference is stored once, and `ldReference()` lists them.
 
 Optional per-row columns: `varY` (phenotype variance) and, for case/control
 GWAS, `nCase` / `nControl`.
@@ -104,9 +107,10 @@ readr::write_tsv(sumstatsDf, gwasTsv)
 
 ## GwasSumStats from a manifest
 
-The GWAS manifest has **one row per study**. `genome` and `ldReference` are
-collection-level, so they are supplied as arguments (or as constant
-`genome` / `ldReferencePath` columns).
+The GWAS manifest has **one row per study**. `genome` is collection-level, so
+it is supplied as an argument (or as a constant `genome` column). The LD
+reference is per study: pass one `ldReference` argument for every study, or
+give each row its own `ldReferencePath`.
 
 | Column | Required | Meaning |
 |---|---|---|
@@ -115,7 +119,8 @@ collection-level, so they are supplied as arguments (or as constant
 | `columnMapping` (alias `column_mapping`) | no | YAML column map (see below) |
 | `nCase` / `nControl` | no | case / control counts |
 | `varY` | no | phenotype variance |
-| `genome`, `ldReferencePath` | single-valued | may instead be arguments |
+| `genome` | single-valued | may instead be an argument |
+| `ldReferencePath` | no | this study's LD reference (or the argument) |
 
 ```{r gwas-from-manifest}
 gwasManifest <- data.frame(
@@ -180,7 +185,8 @@ points at a sumstats file for that trait.
 | `trait` (alias `gene_id`) | yes | molecular trait id |
 | `sumStatsPath` (alias `path`) | yes | sumstats file for this trait |
 | `columnMapping`, `varY` | no | as for GWAS |
-| `genome`, `ldReferencePath` | single-valued | may instead be arguments |
+| `genome` | single-valued | may instead be an argument |
+| `ldReferencePath` | no | this row's LD reference (or the argument) |
 
 ```{r qtl-from-manifest}
 qtlManifest <- data.frame(

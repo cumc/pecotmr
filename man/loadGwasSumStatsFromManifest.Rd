@@ -20,8 +20,10 @@ loadGwasSumStatsFromManifest(
 \item{manifest}{A data.frame or path. Columns (snake_case aliases accepted):
 \code{study} (required, unique), \code{sumStatsPath} (required),
 \code{columnMapping} (optional), \code{nCase} / \code{nControl} (optional),
-\code{nSample} (optional study-level total N), \code{varY} (optional), and
-the single-valued \code{genome} / \code{ldReferencePath}. When a row
+\code{nSample} (optional study-level total N), \code{varY} (optional), the
+single-valued \code{genome}, and \code{ldReferencePath}, which may differ
+between studies (each distinct reference is read once, for the
+chromosomes its studies cover, and stored once). When a row
 supplies a study-level scalar (\code{nCase} + \code{nControl}, or
 \code{nSample}), its sumstats file need not carry a per-variant \code{N}
 column;
@@ -30,8 +32,9 @@ column;
 \item{genome}{Genome build; reconciled with a \code{genome} column.}
 
 \item{ldReference}{A genotype panel (see \code{\link{readGenotypes}}) or a
-spec (path/prefix/genoMeta); reconciled with an \code{ldReferencePath}
-column.}
+spec (path/prefix/genoMeta), used for every study; where a row also names
+an \code{ldReferencePath} the two must agree. Omit it to give each study
+the reference its \code{ldReferencePath} names.}
 
 \item{region}{Optional \code{chr:start-end} string, GRanges, or one-row
 data.frame restricting the variants read (honoured only for tabix-indexed

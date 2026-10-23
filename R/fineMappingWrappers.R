@@ -1119,13 +1119,7 @@ setMethod(
         if (.csCountBelowTwo(fit)) {
             return(NULL)
         }
-        ldReference <- ldReference(ldSource)
-        if (is.null(ldReference)) {
-            abort(glue(
-                "computeCsCorrelation(): the summary-statistics ldSource ",
-                "carries no LD reference to derive the correlation from."
-            ))
-        }
+        ldReference <- .csSumstatsLdRef(ldSource)
         # onMissing = "error": every fit variant must be in the panel, else the
         # 1..p sets$cs indices would misalign with a shrunken LD matrix.
         ids <- .fmrPartsVariantIds(parts)
@@ -1143,6 +1137,31 @@ setMethod(
         factor <- .ldFactorFromRef(ldReference, ids, label, onMissing = "error")
         get_cs_correlation(csFit, X = factor)
     }
+}
+
+# The one LD reference a summary-statistics ldSource offers. Its rows can sit
+# on different references, and nothing in the fit says which of them it was
+# computed against, so a collection with several is refused rather than read
+# from whichever comes first.
+# @noRd
+.csSumstatsLdRef <- function(ldSource) {
+    refs <- ldReference(ldSource)
+    if (length(refs) == 0L) {
+        abort(glue(
+            "computeCsCorrelation(): the summary-statistics ldSource ",
+            "carries no LD reference to derive the correlation from."
+        ))
+    }
+    if (length(refs) > 1L) {
+        abort(c(
+            glue(
+                "computeCsCorrelation(): the summary-statistics ldSource's ",
+                "rows use {length(refs)} different LD references."
+            ),
+            i = "Pass the row the fit came from, e.g. `ldSource[i]`."
+        ))
+    }
+    refs[[1L]]
 }
 
 # Individual-level LD source: genotypes -> aligned X. susie fits derive the LD

@@ -52,16 +52,18 @@ NULL
 #' column lists the semicolon-joined members of the joined axis. For non-joint
 #' rows the joint columns are \code{NA_character_}. Tuple uniqueness is enforced
 #' jointly across the identity-tuple columns and any present joint columns.
-#' @slot ldReference The LD reference the weights were derived against (a
-#'   genotype panel, a \code{GenotypeMixture} or an \code{LdMatrix}), or
-#'   \code{NULL} when the weights were learned from individual-level data.
-#'   Used downstream to check that pipelines combining results share one LD
-#'   reference.
+#' @slot ldReference A named list of the LD references the weights were
+#'   derived against, each a genotype panel, a \code{GenotypeMixture} or an
+#'   \code{LdMatrix}, stored once apiece; the \code{ldReference} column of
+#'   \code{mcols} names the entry each row used (\code{NA} for weights
+#'   learned from individual-level data). Used downstream to check that the
+#'   rows a pipeline combines share an LD reference.
 #' @export
 setClass(
     "TwasWeights",
     contains = "RangedTupleList",
-    representation(ldReference = "LdReference_OR_NULL"),
+    representation(ldReference = "list"),
+    prototype(ldReference = list()),
     validity = function(object) .validateTwasWeights(object)
 )
 
@@ -100,7 +102,8 @@ setClass(
         .validateTraitPosColumn(object),
         .validateRegionColumn(object),
         .twasValidateJointCols(object, jointCols),
-        .twasValidateKeyUniqueness(object, jointCols)
+        .twasValidateKeyUniqueness(object, jointCols),
+        .ldRefDictProblems(object@ldReference, .ldRefKeys(object))
     )
 }
 
@@ -171,8 +174,11 @@ setClass(
 #'   shape as \code{jointStudies}.
 #' @param jointTraits Optional character vector for cross-trait joints. Same
 #'   shape as \code{jointStudies}.
-#' @param ldReference An optional genotype panel (see
-#'   \code{\link{readGenotypes}}), or \code{NULL} for individual-level fits.
+#' @param ldReference The LD reference the weights were derived against --
+#'   a genotype panel (see \code{\link{readGenotypes}}), a
+#'   \code{GenotypeMixture} or an \code{LdMatrix} -- used for every row, or
+#'   a list with one per row; \code{NULL} for individual-level fits. Each
+#'   distinct reference is stored once.
 #' @param traitPos Optional per-row trait genomic anchor (a \code{GRanges} or
 #'   \code{NULL}), carried forward as provenance; not part of the identity key.
 #'   \code{NULL} (default) omits the column.
@@ -584,7 +590,9 @@ setMethod("studyName", "TwasWeights", function(x) unique(as.character(x$study)))
 
 #' @rdname ldReference
 #' @export
-setMethod("ldReference", "TwasWeights", function(x) x@ldReference)
+setMethod("ldReference", "TwasWeights", function(x) {
+    .ldRefsInUse(x)
+})
 
 #' @rdname contexts
 #' @export
@@ -618,11 +626,10 @@ setMethod("show", "TwasWeights", function(object) {
             .trim = FALSE
         ))
     }
-    ldSrc <- if (is.null(object@ldReference)) {
+    ldSrc <- .ldRefsLabel(
+        ldReference(object),
         "NULL (individual-level fit)"
-    } else {
-        .ldRefLabel(object@ldReference)
-    }
+    )
     cat(glue("  LD reference: {ldSrc}\n", .trim = FALSE))
 })
 

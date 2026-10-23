@@ -265,9 +265,8 @@ above.}
 }
 \value{
 A \code{\link{TwasWeights}} collection keyed by \code{(study,
-  context, trait, method)}. The \code{ldReference} slot is \code{NULL} for
-  individual-level fits and equals the input's \code{ldReference} for
-  RSS-derived fits.
+  context, trait, method)}. Each row's LD reference is none for
+  individual-level fits and that of the input row(s) for RSS-derived fits.
 }
 \description{
 S4-dispatched per-region pipeline for learning TWAS prediction weights.
@@ -299,9 +298,9 @@ A \code{QtlSumStats} input must have been QC'd via
 \code{\link{summaryStatsQc}} first; otherwise an error is raised pointing
 at that function.
 
-The returned \code{\link{TwasWeights}} collection's \code{ldReference} slot
-is set automatically: \code{NULL} for individual-level fits, the input's
-\code{ldReference} for RSS-derived fits.
+Each row of the returned \code{\link{TwasWeights}} collection records the
+LD reference its weights were learned against: none for individual-level
+fits, the reference of the input row(s) for RSS-derived fits.
 
 Optionally a \code{QtlFineMappingResult} may be supplied as a source of
 pre-fit SuSiE / SuSiE-inf / SuSiE-ash objects; their stored fits are passed

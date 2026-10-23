@@ -201,9 +201,10 @@ BoundaryMergeParam <- function(
 #'   log, give a step a log file through its options, e.g.
 #'   \code{CtwasEstParamOptions(logfile = "est_param.log")}.
 #'
-#' @section LD reference compatibility check: Per block:
-#'   \code{ldReference(twasWeights)} (when non-NULL) must be the same LD
-#'   reference as \code{ldReference(gwasSumStats)}.
+#' @section LD reference compatibility check: Per block: the block's GWAS
+#'   rows must share one LD reference (a block's LD is one matrix), and every
+#'   weight row placed in the block that carries a reference must be the same
+#'   LD reference as theirs. Blocks may sit on different references.
 #'   The two must be the same kind of reference. Two genotype panels must
 #'   share their samples and allele orientation; two \code{LdMatrix} objects
 #'   must agree on the LD they share; two \code{GenotypeMixture} objects must
@@ -628,8 +629,8 @@ assembleCtwasInputs <- function(
 }
 
 # One single-element GwasSumStats per LD block, keyed by blockId -- the shape
-# the two-pass assembly consumes. The collection's own ldReference rides along
-# on each subset, so per-region LD lookups are unchanged.
+# the two-pass assembly consumes. Each block keeps its own row's LD reference,
+# so per-region LD lookups read the panel that block was harmonized against.
 # @noRd
 .ctwasGwasByBlock <- function(gwasSumStats) {
     set_names(
@@ -638,23 +639,20 @@ assembleCtwasInputs <- function(
     )
 }
 
-# One block's slice of the collection. `[` carries the collection-level
-# ldReference through verbatim, and combineGwasSumStats() deliberately UNIONS
-# the per-piece panels, so without narrowing here every block references the
-# whole chromosome and its LD panel would cover all of it (a
-# chr19-wide panel runs to ~155 GB). Narrowed to the block's own variants
-# the same way summaryStatsQc narrows the sketch it retains.
+# One block's slice of the collection. A row's LD reference can cover far more
+# than its block -- combineGwasSumStats() unions the per-piece panels of one
+# source -- so without narrowing here a block would reference the whole
+# chromosome and its LD panel would cover all of it (a chr19-wide panel runs
+# to ~155 GB). Narrowed to the block's own variants the same way
+# summaryStatsQc narrows the sketch it retains.
 # @noRd
 .ctwasPickBlock <- function(i, x) {
     block <- x[i]
-    sketch <- ldReference(block)
-    if (is.null(sketch)) {
+    refs <- ldReference(block)
+    if (length(refs) == 0L) {
         return(block)
     }
-    methods::initialize(
-        block,
-        ldReference = .subsetLdRefToIds(sketch, as.list(block))
-    )
+    .withRowLdRefs(block, .subsetLdRefToIds(refs[[1L]], as.list(block)))
 }
 
 # Resolve a flat weight source into per-region buckets (cTWAS's p0 start-of-
@@ -739,32 +737,45 @@ assembleCtwasInputs <- function(
 # measured against this table rather than against any one block's panel.
 #
 # NULL when the collection carries no sketch -- .ctwasRegionGwasLd() reports
-# that case with its own message, so this must not pre-empt it.
+# that case with its own message, so this must not pre-empt it. Rows on
+# different references contribute each panel's variants, each once.
 # @noRd
 .ctwasGlobalPanelInfo <- function(gwasSumStats) {
-    sketch <- ldReference(gwasSumStats)
-    if (is.null(sketch)) {
+    refs <- ldReference(gwasSumStats)
+    if (length(refs) == 0L) {
         return(NULL)
     }
-    .ctwasSnpInfoForBlock(sketch)
+    info <- list_rbind(map(unname(refs), .ctwasSnpInfoForBlock))
+    filter(info, !duplicated(.data$id))
 }
 
-# One region's GWAS LD sketch, checked against the region's weights.
+# One region's GWAS LD sketch, checked against the region's weights. A
+# region's LD is one matrix, so its GWAS rows must share one reference, and
+# every weight row in the region is combined with them.
 # @noRd
 .ctwasRegionGwasLd <- function(rid, gwasSumStats, twasWeights) {
-    gwasLd <- ldReference(gwasSumStats[[rid]])
-    if (is.null(gwasLd)) {
+    gwas <- gwasSumStats[[rid]]
+    refs <- ldReference(gwas)
+    if (length(refs) == 0L) {
         msg <- glue(
             "ctwasPipeline: GwasSumStats for region '{rid}' carries no ",
             "ldReference (ldReference = NULL); cTWAS requires an LD reference."
         )
         abort(msg)
     }
+    if (length(refs) > 1L) {
+        msg <- glue(
+            "ctwasPipeline: GwasSumStats for region '{rid}' has rows on ",
+            "{length(refs)} different LD references; a region's LD is one ",
+            "matrix."
+        )
+        abort(msg)
+    }
     tw <- twasWeights[[rid]]
     if (!is.null(tw)) {
-        .ctwasRequireMatchingLdRefs(ldReference(tw), gwasLd)
+        .ctwasRequireMatchingLdRefs(tw, gwas)
     }
-    gwasLd
+    refs[[1L]]
 }
 
 # @noRd
@@ -1427,10 +1438,20 @@ mergeCtwasBoundaryRegions <- function(
 # Internal helpers
 # =============================================================================
 
-# LD-sketch compatibility check. Thin wrapper over the shared
-# `.requireMatchingLdRefs` helper (R/ld.R).
-.ctwasRequireMatchingLdRefs <- function(twLd, gwasLd) {
-    .requireMatchingLdRefs(twLd, gwasLd, pipelineName = "ctwasPipeline")
+# LD-sketch compatibility check for one region: every weight row in it is
+# combined with every one of its GWAS rows. Thin wrapper over the shared
+# `.requireMatchingRowLdRefs` helper (R/ld.R).
+.ctwasRequireMatchingLdRefs <- function(tw, gwas) {
+    nTw <- length(tw)
+    nGwas <- length(gwas)
+    .requireMatchingRowLdRefs(
+        tw,
+        gwas,
+        qtlRows = rep(seq_len(nTw), each = nGwas),
+        gwasRows = rep(seq_len(nGwas), times = nTw),
+        pipelineName = "ctwasPipeline",
+        label = "twasWeights"
+    )
 }
 
 # Resolve which TWAS method's weights to feed into ctwas given a
@@ -1667,22 +1688,15 @@ mergeCtwasBoundaryRegions <- function(
     length(g) == 0L
 }
 
-# The genes homed into region `rid`, carrying that region's LD sketch, or
-# NULL when nothing landed there. `slot<-` applied as a function returns a
-# copy rather than writing into the subset in place.
-# @noRd
-#' @importFrom methods slot<-
+# The genes homed into region `rid`, every row on that region's LD sketch, or
+# NULL when nothing landed there.
 # @noRd
 .ctwasBucketForRegion <- function(rid, combined, home, gwasSumStats) {
     idx <- which(home == rid)
     if (length(idx) == 0L) {
         return(NULL)
     }
-    `slot<-`(
-        combined[idx, ],
-        "ldReference",
-        value = ldReference(gwasSumStats[[rid]])
-    )
+    .withRowLdRefs(combined[idx, ], ldReference(gwasSumStats[[rid]]))
 }
 
 # Bucket a flat weight source into a per-region named list keyed to the block

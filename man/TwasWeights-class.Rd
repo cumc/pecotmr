@@ -25,10 +25,11 @@ jointly across the identity-tuple columns and any present joint columns.
 \section{Slots}{
 
 \describe{
-\item{\code{ldReference}}{The LD reference the weights were derived against (a
-genotype panel, a \code{GenotypeMixture} or an \code{LdMatrix}), or
-\code{NULL} when the weights were learned from individual-level data.
-Used downstream to check that pipelines combining results share one LD
-reference.}
+\item{\code{ldReference}}{A named list of the LD references the weights were
+derived against, each a genotype panel, a \code{GenotypeMixture} or an
+\code{LdMatrix}, stored once apiece; the \code{ldReference} column of
+\code{mcols} names the entry each row used (\code{NA} for weights
+learned from individual-level data). Used downstream to check that the
+rows a pipeline combines share an LD reference.}
 }}
 

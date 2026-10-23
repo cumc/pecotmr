@@ -257,56 +257,119 @@ NULL
     .openGenotypeSource(x)
 }
 
-# Resolve the LD sketch SPEC from the (argument, ldReferencePath column) pair,
-# without reading any genotype metadata yet. Returns an already-open panel
-# (when the caller passed one) as it is, or the reconciled spec
-# (a path/prefix or a
-# genoMeta path/named-vector) for later materialisation. Deferring the read to
-# `.materializeLdRef` lets the loader first learn which chromosomes the
-# summary statistics cover and skip the panel's other per-chromosome shards.
-.resolveLdRefInput <- function(df, ldReference, base) {
+# The LD sketch SPEC of every manifest row, without reading any genotype
+# metadata yet: the `ldReference` argument for all of them, or each row's own
+# `ldReferencePath` (resolved against the manifest's directory). Rows may name
+# different references; where a row's path and the argument are both given
+# they must agree. An already-open panel passed as the argument is returned as
+# it is, for every row. Deferring the reads to .manifestRowLdRefs() lets the
+# loader first learn which chromosomes each reference's rows cover and skip
+# the panel's other per-chromosome shards.
+# @noRd
+.resolveLdRefSpecs <- function(df, ldReference, base) {
+    n <- nrow(df)
     open <- .openLdRef(ldReference)
     if (!is.null(open)) {
-        return(open)
+        return(rep(list(open), n))
     }
-    # is_in guard, not `!is.null(df$ldReferencePath)`: on a tibble `$` for an
-    # absent column NULLs but WARNS ("Unknown or uninitialised column"), where a
-    # data.frame was silent. ldReferencePath is optional (LD may come via
-    # `ldReference`).
-    colSpec <- if (!is_in("ldReferencePath", names(df))) {
-        NULL
-    } else {
-        v <- unique(as.character(df$ldReferencePath[
-            !is.na(df$ldReferencePath) &
-                str_length(as.character(df$ldReferencePath)) > 0L
-        ]))
-        if (length(v) > 1L) {
-            abort(
-                "`ldReferencePath` column must be constant across the manifest."
+    paths <- .manifestLdRefPaths(df, base)
+    given <- !is.na(paths)
+    if (!is.null(ldReference)) {
+        agrees <- map_lgl(paths, identical, as.character(ldReference))
+        if (any(given & !agrees)) {
+            msg <- glue(
+                "`ldReference` argument disagrees with the manifest ",
+                "`ldReferencePath` column."
             )
+            abort(msg)
         }
-        if (length(v) == 1L) .resolveRel(v, base) else NULL
+        return(rep(list(ldReference), n))
     }
-    spec <- ldReference %||% colSpec
-    if (
-        !is.null(ldReference) &&
-            !is.null(colSpec) &&
-            !identical(as.character(ldReference), as.character(colSpec))
-    ) {
-        msg <- glue(
-            "`ldReference` argument disagrees with the manifest ",
-            "`ldReferencePath` column."
-        )
-        abort(msg)
-    }
-    if (is.null(spec)) {
+    if (!any(given)) {
         msg <- glue(
             "`ldReference` must be provided as an argument or an ",
             "`ldReferencePath` column."
         )
         abort(msg)
     }
-    spec
+    if (!all(given)) {
+        abort(glue(
+            "every manifest row needs an LD reference: row(s) ",
+            "{str_flatten(which(!given), ', ')} have no `ldReferencePath`, ",
+            "and no `ldReference` argument was given."
+        ))
+    }
+    as.list(paths)
+}
+
+# Each manifest row's own `ldReferencePath`, resolved against the manifest's
+# directory; NA where the column is absent or the cell blank. is_in guard,
+# not `!is.null(df$ldReferencePath)`: on a tibble `$` for an absent column
+# NULLs but WARNS ("Unknown or uninitialised column").
+# @noRd
+.manifestLdRefPaths <- function(df, base) {
+    if (!is_in("ldReferencePath", names(df))) {
+        return(rep(NA_character_, nrow(df)))
+    }
+    raw <- as.character(df$ldReferencePath)
+    keep <- which(!is.na(raw) & str_length(raw) > 0L)
+    replace(
+        rep(NA_character_, length(raw)),
+        keep,
+        map_chr(raw[keep], .resolveRel, base = base)
+    )
+}
+
+# The LD reference of every manifest row. Each distinct spec is read once,
+# only for the chromosomes its rows cover, checked for containment against
+# its rows with `check` (.checkGwasLdContainment() or
+# .qtlSumStatsCheckContainment()), and trimmed to their span; rows on one
+# spec share that one reference, so the collection stores it once.
+# @noRd
+.manifestRowLdRefs <- function(specs, entries, df, minLdOverlapWarn, check) {
+    keys <- map_chr(specs, .ldSpecKey)
+    groups <- split(seq_along(specs), factor(keys, levels = unique(keys)))
+    refs <- map(
+        groups,
+        .manifestGroupLdRef,
+        specs = specs,
+        entries = entries,
+        df = df,
+        minLdOverlapWarn = minLdOverlapWarn,
+        check = check
+    )
+    unname(refs[match(keys, names(groups))])
+}
+
+# One spec's reference for the manifest rows naming it. The containment
+# checks sit between the read and the trim because containment is only
+# answerable once the sketch is read, and trimming would hide a miss.
+# @noRd
+.manifestGroupLdRef <- function(
+    rows,
+    specs,
+    entries,
+    df,
+    minLdOverlapWarn,
+    check
+) {
+    rowEntries <- entries[rows]
+    materialized <- .materializeLdRef(
+        specs[[rows[[1L]]]],
+        .entriesChroms(rowEntries)
+    )
+    check(materialized, rowEntries, slice(df, rows), minLdOverlapWarn)
+    .subsetLdRefToRange(materialized, rowEntries)
+}
+
+# A key telling LD reference specs apart: a path, or per-chromosome paths, by
+# its text; an already-open reference by the object itself.
+# @noRd
+.ldSpecKey <- function(spec) {
+    if (!is.character(spec)) {
+        return(obj_address(spec))
+    }
+    str_flatten(str_c(names(spec) %||% "", "=", spec), "|")
 }
 
 # Materialise a resolved ldReference spec into a genotype panel, reading only
@@ -1741,25 +1804,6 @@ loadQtlDatasetFromManifest <- function(
     isTRUE(ccOk) || isTRUE(nOk)
 }
 
-# Materialise the LD sketch reading only the chromosomes the sumstats
-# cover, then run the deferred per-study containment checks and trim to
-# range. The checks sit between the two steps because containment is only
-# answerable once the sketch is read, and trimming would hide a miss.
-# @noRd
-.manifestGwasLdRef <- function(
-    ldReferenceSpec,
-    entries,
-    df,
-    minLdOverlapWarn
-) {
-    materialized <- .materializeLdRef(
-        ldReferenceSpec,
-        .entriesChroms(entries)
-    )
-    .checkGwasLdContainment(materialized, entries, df, minLdOverlapWarn)
-    .subsetLdRefToRange(materialized, entries)
-}
-
 #' @title Load a GwasSumStats collection from a manifest
 #' @description Build a \code{\link{GwasSumStats}} from a manifest with one row
 #'   per study. No QC is run (the result carries \code{qcInfo = list()}). Each
@@ -1769,16 +1813,19 @@ loadQtlDatasetFromManifest <- function(
 #' @param manifest A data.frame or path. Columns (snake_case aliases accepted):
 #'   \code{study} (required, unique), \code{sumStatsPath} (required),
 #'   \code{columnMapping} (optional), \code{nCase} / \code{nControl} (optional),
-#'   \code{nSample} (optional study-level total N), \code{varY} (optional), and
-#'   the single-valued \code{genome} / \code{ldReferencePath}. When a row
+#'   \code{nSample} (optional study-level total N), \code{varY} (optional), the
+#'   single-valued \code{genome}, and \code{ldReferencePath}, which may differ
+#'   between studies (each distinct reference is read once, for the
+#'   chromosomes its studies cover, and stored once). When a row
 #'   supplies a study-level scalar (\code{nCase} + \code{nControl}, or
 #'   \code{nSample}), its sumstats file need not carry a per-variant \code{N}
 #'   column;
 #'   \code{\link{summaryStatsQc}} fills \code{N} from the scalar.
 #' @param genome Genome build; reconciled with a \code{genome} column.
 #' @param ldReference A genotype panel (see \code{\link{readGenotypes}}) or a
-#'   spec (path/prefix/genoMeta); reconciled with an \code{ldReferencePath}
-#'   column.
+#'   spec (path/prefix/genoMeta), used for every study; where a row also names
+#'   an \code{ldReferencePath} the two must agree. Omit it to give each study
+#'   the reference its \code{ldReferencePath} names.
 #' @param region Optional \code{chr:start-end} string, GRanges, or one-row
 #'   data.frame restricting the variants read (honoured only for tabix-indexed
 #'   text and bgzipped+tabixed VCF; ignored with a warning otherwise).
@@ -1817,17 +1864,9 @@ loadGwasSumStatsFromManifest <- function(
     ldBlocks = NULL
 ) {
     base <- .manifestBase(manifest)
-    df <- .canonManifestCols(
-        .readManifest(manifest),
-        .gwasSumStatsManifestAliases,
-        required = c("study", "sumStatsPath"),
-        label = "GwasSumStats"
-    )
-    if (anyDuplicated(as.character(df$study))) {
-        abort("GwasSumStats manifest `study` values must be unique.")
-    }
+    df <- .gwasSumStatsManifest(manifest)
     genome <- .reconcileScalar(df[["genome"]], genome, "genome")
-    ldReferenceSpec <- .resolveLdRefInput(df, ldReference, base)
+    ldReferenceSpecs <- .resolveLdRefSpecs(df, ldReference, base)
     ns <- .gwasStudyScalars(df)
     entries <- map(
         seq_len(nrow(df)),
@@ -1840,11 +1879,12 @@ loadGwasSumStatsFromManifest <- function(
         formatMapping = formatMapping,
         ns = ns
     )
-    ldReference <- .manifestGwasLdRef(
-        ldReferenceSpec,
+    ldReference <- .manifestRowLdRefs(
+        ldReferenceSpecs,
         entries,
         df,
-        minLdOverlapWarn
+        minLdOverlapWarn,
+        check = .checkGwasLdContainment
     )
     # Without a block manifest a genome-wide file splits by chromosome, which
     # is too coarse for cTWAS; with one, each study becomes one element per LD
@@ -1854,6 +1894,22 @@ loadGwasSumStatsFromManifest <- function(
         ldBlocks = ldBlocks
     )
     exec(GwasSumStats, !!!gwasArgs)
+}
+
+# A GwasSumStats manifest's rows, its columns under their canonical names, the
+# required ones present and one row per study.
+# @noRd
+.gwasSumStatsManifest <- function(manifest) {
+    df <- .canonManifestCols(
+        .readManifest(manifest),
+        .gwasSumStatsManifestAliases,
+        required = c("study", "sumStatsPath"),
+        label = "GwasSumStats"
+    )
+    if (anyDuplicated(as.character(df$study))) {
+        abort("GwasSumStats manifest `study` values must be unique.")
+    }
+    df
 }
 
 # Study-level sample-size scalars from the manifest (n_case + n_control, or
@@ -1992,15 +2048,19 @@ loadGwasSumStatsFromManifest <- function(
 #' @param manifest A data.frame or path. Columns (snake_case aliases accepted):
 #'   \code{study}, \code{context}, \code{trait} (required), \code{sumStatsPath}
 #'   (required), \code{columnMapping} (optional), \code{nSample} (optional
-#'   tuple-level total N), \code{varY} (optional), and the single-valued
-#'   \code{genome} / \code{ldReferencePath}. When a row supplies \code{nSample},
+#'   tuple-level total N), \code{varY} (optional), the single-valued
+#'   \code{genome}, and \code{ldReferencePath}, which may differ between rows
+#'   (each distinct reference is read once, for the chromosomes its rows
+#'   cover, and stored once). When a row supplies \code{nSample},
 #'   its sumstats file need not carry a per-variant \code{N} column;
 #'   \code{\link{summaryStatsQc}} fills \code{N} from the scalar. (Unlike the
 #'   GWAS loader, there are no \code{nCase}/\code{nControl} columns: molecular
 #'   QTL traits are quantitative.)
 #' @param genome Genome build; reconciled with a \code{genome} column.
 #' @param ldReference A genotype panel (see \code{\link{readGenotypes}}) or
-#'   spec; reconciled with an \code{ldReferencePath} column.
+#'   spec, used for every row; where a row also names an
+#'   \code{ldReferencePath} the two must agree. Omit it to give each row the
+#'   reference its \code{ldReferencePath} names.
 #' @param region,minLdOverlapWarn,columnMapping,sampleSelect,formatMapping As
 #'   for \code{\link{loadGwasSumStatsFromManifest}}.
 #' @param traitColumn Optional column of the sumstats file naming the trait of
@@ -2046,7 +2106,7 @@ loadQtlSumStatsFromManifest <- function(
     base <- .manifestBase(manifest)
     df <- .qtlSumStatsManifest(manifest)
     genome <- .reconcileScalar(df[["genome"]], genome, "genome")
-    ldReferenceSpec <- .resolveLdRefInput(df, ldReference, base)
+    ldReferenceSpecs <- .resolveLdRefSpecs(df, ldReference, base)
     nSample <- .qtlManifestNSample(df)
     entries <- .loadQtlSumStatsEntries(
         df,
@@ -2059,11 +2119,12 @@ loadQtlSumStatsFromManifest <- function(
         traitColumn = traitColumn,
         variantIdAlleles = variantIdAlleles
     )
-    ldReference <- .manifestQtlLdRef(
-        ldReferenceSpec,
+    ldReference <- .manifestRowLdRefs(
+        ldReferenceSpecs,
         entries,
         df,
-        minLdOverlapWarn
+        minLdOverlapWarn,
+        check = .qtlSumStatsCheckContainment
     )
     exec(
         QtlSumStats,
@@ -2087,25 +2148,6 @@ loadQtlSumStatsFromManifest <- function(
         required = c("study", "context", "trait", "sumStatsPath"),
         label = "QtlSumStats"
     )
-}
-
-# Materialise the LD sketch reading only the chromosomes the summary stats
-# cover (skipping the other shards of a chrom-sharded panel), check
-# containment, then trim it to the summary stats' per-chromosome position
-# span, as .manifestGwasLdRef() does for a GwasSumStats manifest.
-# @noRd
-.manifestQtlLdRef <- function(
-    ldReferenceSpec,
-    entries,
-    df,
-    minLdOverlapWarn
-) {
-    materialized <- .materializeLdRef(
-        ldReferenceSpec,
-        .entriesChroms(entries)
-    )
-    .qtlSumStatsCheckContainment(materialized, entries, df, minLdOverlapWarn)
-    .subsetLdRefToRange(materialized, entries)
 }
 
 # The tuple-level total-N scalar a manifest may carry, plus the per-row

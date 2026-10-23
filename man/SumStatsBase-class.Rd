@@ -19,12 +19,14 @@ Virtual base class for QTL and GWAS summary statistics
 \section{Slots}{
 
 \describe{
-\item{\code{ldReference}}{The LD reference the collection was harmonized against
-and every pipeline reads LD from: a genotype panel (see
-\code{\link{readGenotypes}}), a \code{\link{GenotypeMixture}} or an
-\code{\link{LdMatrix}}, or \code{NULL}. Optional: LD-free workflows
-(e.g. mash, which operates across conditions per variant) carry
-\code{NULL}; pipelines that need LD validate its presence when they
+\item{\code{ldReference}}{A named list of the LD references the rows were
+harmonized against and every pipeline reads LD from, each a genotype
+panel (see \code{\link{readGenotypes}}), a \code{\link{GenotypeMixture}}
+or an \code{\link{LdMatrix}}. Each distinct reference is stored once, and
+the \code{ldReference} column of \code{mcols} names the entry each row
+uses, so rows can sit on different references. Optional: an LD-free row
+(e.g. for mash, which operates across conditions per variant) has
+\code{NA} there; pipelines that need LD validate its presence when they
 consume the collection.}
 
 \item{\code{qcInfo}}{A \code{list} recording which QC steps ran. Empty \code{list()}

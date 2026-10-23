@@ -444,10 +444,25 @@ test_that(".ctwasRequireMatchingLdRefs: NULL twas-side handle is allowed", {
         ldReference = NULL
     )
     expect_silent(pecotmr:::.ctwasRequireMatchingLdRefs(
-        twLd = NULL,
-        gwasLd = .ctp_makeHandle()
+        twNoLd,
+        .ctp_makeGwasSumstats()
     ))
 })
+
+# One weight row on `handle`, for the region-level match checks.
+.ctp_weightsOn <- function(handle) {
+    TwasWeights(
+        studyName = "Q1",
+        context = "c1",
+        trait = "t1",
+        method = "susie",
+        entry = list(twasWeightsRow(
+            variantIds = sprintf("chr1:%d:A:G", 100L * (1:3)),
+            weights = rep(0.1, 3)
+        )),
+        ldReference = handle
+    )
+}
 
 test_that(".ctwasRequireMatchingLdRefs: differently trimmed panels ok", {
     # One LD reference QC'd separately on the two sides leaves each sketch
@@ -459,22 +474,27 @@ test_that(".ctwasRequireMatchingLdRefs: differently trimmed panels ok", {
     # its own variants while the weights carry the whole one), so clear that
     # budget here rather than depending on which files ran before this.
     rlang::reset_warning_verbosity("pecotmrLdReferenceOverlap-ctwasPipeline")
-    twLd <- .ctp_makeHandle(snp_n = 5L)
-    gwasLd <- .ctp_makeHandle(snp_n = 6L)
+    tw <- .ctp_weightsOn(.ctp_makeHandle(snp_n = 5L))
+    gwas <- pecotmr:::.withRowLdRefs(
+        .ctp_makeGwasSumstats(),
+        .ctp_makeHandle(snp_n = 6L)
+    )
     expect_warning(
-        expect_null(pecotmr:::.ctwasRequireMatchingLdRefs(twLd, gwasLd)),
+        expect_null(pecotmr:::.ctwasRequireMatchingLdRefs(tw, gwas)),
         "share 5 variant"
     )
 })
 
 test_that(".ctwasRequireMatchingLdRefs: disjoint panels error", {
-    twLd <- .ctp_makeHandle(snp_n = 3L)
     gwasLd <- .ctp_makeHandle(snp_n = 3L)
     si <- snpInfo(gwasLd)
     si$BP <- si$BP + 1e6L
     gwasLd@snpInfo <- si
     expect_error(
-        pecotmr:::.ctwasRequireMatchingLdRefs(twLd, gwasLd),
+        pecotmr:::.ctwasRequireMatchingLdRefs(
+            .ctp_weightsOn(.ctp_makeHandle(snp_n = 3L)),
+            pecotmr:::.withRowLdRefs(.ctp_makeGwasSumstats(), gwasLd)
+        ),
         "share no variant"
     )
 })
@@ -758,15 +778,15 @@ test_that(".ctwasPickBlock: narrows the collection sketch to the block", {
     ss <- .ctp_makeGwasSumstats()
     # The collection's sketch spans both blocks, as combineGwasSumStats
     # leaves it.
-    expect_equal(length(pecotmr:::.ldRefRanges(ldReference(ss))), 12L)
+    expect_equal(length(pecotmr:::.ldRefRanges(ldReference(ss)[[1L]])), 12L)
     byBlock <- pecotmr:::.ctwasGwasByBlock(ss)
     sizes <- map_int(byBlock, function(b) {
-        length(pecotmr:::.ldRefRanges(ldReference(b)))
+        length(pecotmr:::.ldRefRanges(ldReference(b)[[1L]]))
     })
     expect_equal(unname(sizes), c(6L, 6L))
     # Narrowed to DIFFERENT variants: block 1 holds 1..6, block 2 holds 7..12.
     pos <- map(byBlock, function(b) {
-        GenomicRanges::start(pecotmr:::.ldRefRanges(ldReference(b)))
+        GenomicRanges::start(pecotmr:::.ldRefRanges(ldReference(b)[[1L]]))
     })
     expect_equal(pos[[1L]], 100L * (1:6))
     expect_equal(pos[[2L]], 100L * (7:12))
@@ -775,7 +795,7 @@ test_that(".ctwasPickBlock: narrows the collection sketch to the block", {
 test_that(".ctwasRegionLdTokens: one distinct, existing token per region", {
     ss <- .ctp_makeGwasSumstats()
     byBlock <- pecotmr:::.ctwasGwasByBlock(ss)
-    sketches <- map(byBlock, ldReference)
+    sketches <- map(byBlock, function(b) ldReference(b)[[1L]])
     tokens <- pecotmr:::.ctwasRegionLdTokens(names(byBlock), sketches)
     expect_length(unique(unname(tokens)), 2L)
     expect_true(all(file.exists(tokens)))
@@ -1093,7 +1113,7 @@ test_that(".ctwasBucketWeights: places a flat 2-gene source into its home blocks
     expect_named(bucketed, c("block1", "block2"), ignore.order = TRUE)
     expect_equal(as.character(bucketed[["block1"]]$trait), "gA")
     expect_equal(as.character(bucketed[["block2"]]$trait), "gB")
-    expect_false(is.null(ldReference(bucketed[["block1"]])))
+    expect_length(ldReference(bucketed[["block1"]]), 1L)
 })
 
 test_that(".ctwasBucketWeights: errors when source lacks traitPos", {
@@ -1773,7 +1793,7 @@ test_that(".ctwasGlobalPanelInfo: NULL when the collection has no sketch", {
         blockId = "block1",
         qcInfo = list(step1 = "ok")
     )
-    expect_null(ldReference(gs))
+    expect_identical(ldReference(gs), list())
     # .ctwasRegionGwasLd reports the missing-sketch case with its own
     # message, so this helper must stay quiet and hand back NULL.
     expect_null(pecotmr:::.ctwasGlobalPanelInfo(gs))
@@ -4076,7 +4096,7 @@ test_that(".ctwasBuildSingleRegionInfo reports an empty block accurately", {
 
 test_that(".ctwasFirstPass requires an LD reference on every region", {
     byBlock <- pecotmr:::.ctwasGwasByBlock(.ctp_noLdGwas())
-    expect_null(ldReference(byBlock[[1L]]))
+    expect_identical(ldReference(byBlock[[1L]]), list())
     expect_error(
         pecotmr:::.ctwasFirstPass("b1", byBlock, list(b1 = NULL)),
         "region 'b1' carries no ldReference"
@@ -4239,4 +4259,17 @@ test_that("ctwas reads variance and LD from an LdMatrix block", {
     )
     # An LdMatrix has no file payload to check.
     expect_null(.ctwasLdPanelKey(bare))
+})
+
+test_that(".ctwasRegionGwasLd refuses a region whose rows use two references", {
+    # A region's LD is one matrix, so its GWAS rows must share a reference.
+    gwas <- .ctp_makeGwasSumstats(blockIds = c("blockA", "blockA"))
+    gwas <- pecotmr:::.withRowLdRefs(
+        gwas,
+        list(.ctp_makeHandle(snp_n = 12L), .ctp_makeHandle(snp_n = 6L))
+    )
+    expect_error(
+        pecotmr:::.ctwasRegionGwasLd(1L, list(gwas), list()),
+        "2 different LD references; a region's LD is one matrix"
+    )
 })
