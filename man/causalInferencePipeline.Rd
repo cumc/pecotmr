@@ -16,7 +16,9 @@ causalInferencePipeline(
 }
 \arguments{
 \item{gwasSumStats}{A \code{\link{GwasSumStats}} object. Must be QC'd
-(\code{length(qcInfo(x)) > 0L}).}
+(\code{length(qcInfo(x)) > 0L}). A study may span many rows (one per
+chromosome or LD block); each QTL tuple is scored once per study, over the
+statistics of the rows its window overlaps.}
 
 \item{twasWeights}{Optional \code{\link{TwasWeights}} carrying per-(study,
 context, trait, method) weights. When supplied, drives the TWAS-Z
@@ -78,10 +80,13 @@ Per-region pipeline that pairs QTL-derived weight vectors
   }
 }
 \section{LD reference compatibility check}{
- If a QTL input
-  (TwasWeights or QtlFineMappingResult) carries a non-\code{NULL}
-  \code{ldReference}, it must be the same LD reference as the
-  \code{ldReference} on \code{gwasSumStats}.
+ Per pair of rows scored
+  together: a QTL input row (TwasWeights or QtlFineMappingResult) that
+  carries an \code{ldReference} must be the same LD reference as the
+  \code{gwasSumStats} rows its region overlaps, and the rows of one GWAS
+  study that a QTL tuple overlaps must share one reference, since its TWAS
+  z reads one LD matrix. Rows that are never scored together may sit on
+  different references.
   The two must be the same kind of reference. Two genotype panels must
   share their samples and allele orientation; two \code{LdMatrix} objects
   must agree on the LD they share; two \code{GenotypeMixture} objects must
@@ -89,8 +94,8 @@ Per-region pipeline that pairs QTL-derived weight vectors
   the same variants: QC-ing the two sides separately trims each reference
   to its own surviving variants, and a partial overlap only warns. A
   mismatch of any of those, or no shared variant at all, is a hard error. A
-  QTL input with \code{ldReference = NULL} (the fit was learned from
-  individual-level data) skips the validation for that input.
+  QTL input row with no reference (the fit was learned from
+  individual-level data) skips the validation.
 }
 
 \section{Output shape}{

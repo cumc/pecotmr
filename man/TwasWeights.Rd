@@ -53,8 +53,11 @@ forward as provenance; not part of the identity key. \code{NULL}
 (default) omits the column, and \code{\link{genomicRegion}} then
 derives the window from the span of the variants present.}
 
-\item{ldReference}{An optional genotype panel (see
-\code{\link{readGenotypes}}), or \code{NULL} for individual-level fits.}
+\item{ldReference}{The LD reference the weights were derived against --
+a genotype panel (see \code{\link{readGenotypes}}), a
+\code{GenotypeMixture} or an \code{LdMatrix} -- used for every row, or
+a list with one per row; \code{NULL} for individual-level fits. Each
+distinct reference is stored once.}
 }
 \value{
 A \code{TwasWeights} object.

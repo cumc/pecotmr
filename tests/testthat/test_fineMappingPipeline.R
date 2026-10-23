@@ -2060,7 +2060,7 @@ test_that("fineMappingPipeline(MultiStudyQtlDataset): aggregates results across 
     expect_equal(nrow(res), 2L)
     expect_setequal(studyName(res), c("s1", "s2"))
     # Pure individual-level -> ldReference should be NULL.
-    expect_null(ldReference(res))
+    expect_identical(ldReference(res), list())
 })
 
 # A study measured in brain and liver, on the synthetic genotypes.
@@ -2311,7 +2311,7 @@ test_that("fineMappingPipeline(MSQD): embedded sumstats record ldReference", {
     expect_s4_class(res, "QtlFineMappingResult")
     expect_true(nrow(res) >= 2L)
     # Embedded sumstats has an LD sketch -> the merged result carries it.
-    expect_s4_class(ldReference(res), "RangedSummarizedExperiment")
+    expect_s4_class(ldReference(res)[[1L]], "RangedSummarizedExperiment")
 })
 
 # ===========================================================================
@@ -5001,7 +5001,7 @@ test_that("fineMappingPipeline RSS cutoffs agree with .panelVariantFilter", {
     ids <- variantIds(ss)
     for (cut in c(0.05, 0.2)) {
         expected <- length(.panelVariantFilter(
-            ldReference(ss),
+            ldReference(ss)[[1L]],
             ids,
             PanelFilterParam(mafCutoff = cut)
         ))
@@ -5015,7 +5015,7 @@ test_that("fineMappingPipeline RSS cutoffs agree with .panelVariantFilter", {
 
 test_that("fineMappingPipeline RSS treats MAC as a MAF equivalent", {
     ss <- .rssf_qcd()
-    nSamp <- ncol(ldReference(ss))
+    nSamp <- ncol(ldReference(ss)[[1L]])
     expect_equal(
         .rssf_n(ss, macCutoff = 0.1 * 2 * nSamp),
         .rssf_n(ss, mafCutoff = 0.1)
@@ -5032,7 +5032,7 @@ test_that("fineMappingPipeline RSS honours a missingness cutoff", {
 test_that(".fmExtractZn keeps z, ids and n aligned after filtering", {
     ss <- .rssf_qcd()
     entry <- pecotmr:::.collectionEntry(ss, 1L)
-    sketch <- ldReference(ss)
+    sketch <- ldReference(ss)[[1L]]
     unfiltered <- pecotmr:::.fmExtractZn(entry, "t")
     filtered <- suppressMessages(pecotmr:::.fmExtractZn(
         entry,
@@ -6091,8 +6091,8 @@ test_that("MultiStudyQtlDataset: cross-study joint fits get their settings", {
 
 # The bundled GWAS collection, with its panel's LD copied into an LdMatrix
 # and used as the reference instead.
-.fmp_withLdMatrix <- function(gss, nSamples = ncol(ldReference(gss))) {
-    panel <- ldReference(gss)
+.fmp_withLdMatrix <- function(gss, nSamples = ncol(ldReference(gss)[[1L]])) {
+    panel <- ldReference(gss)[[1L]]
     ld <- LdMatrix(
         unname(computeLd(panel)),
         variants = SummarizedExperiment::rowRanges(panel),
@@ -6127,13 +6127,13 @@ test_that("fine-mapping with an LdMatrix reference matches its panel", {
     viaPanel <- .fmp_fitSusie(gss)
     expect_equal(pip(viaMatrix), pip(viaPanel))
     expect_equal(credibleSets(viaMatrix), credibleSets(viaPanel))
-    expect_s4_class(ldReference(viaMatrix), "LdMatrix")
+    expect_s4_class(ldReference(viaMatrix)[[1L]], "LdMatrix")
 })
 
 test_that("an RSS block reads a genotype reference's factor, not its LD", {
     data(gwasSumStatsS4Example)
     gss <- gwasSumStatsS4Example
-    panel <- ldReference(gss)
+    panel <- ldReference(gss)[[1L]]
     ids <- names(SummarizedExperiment::rowRanges(panel))[1:25]
     plain <- .fmRssLd(panel, ids, "susie", FALSE)
     expect_null(plain$R)
@@ -6147,7 +6147,12 @@ test_that("an RSS block reads a genotype reference's factor, not its LD", {
         expect_equal(both$R, .ldFromRef(panel, ids, label = "t"))
         expect_identical(both$X, plain$X)
     }
-    ldOnly <- .fmRssLd(ldReference(.fmp_withLdMatrix(gss)), ids, "susie", FALSE)
+    ldOnly <- .fmRssLd(
+        ldReference(.fmp_withLdMatrix(gss))[[1L]],
+        ids,
+        "susie",
+        FALSE
+    )
     expect_null(ldOnly$X)
     expect_equal(ldOnly$R, .ldFromRef(panel, ids, label = "t"))
 })
@@ -6155,7 +6160,7 @@ test_that("an RSS block reads a genotype reference's factor, not its LD", {
 test_that("fine-mapping runs on a GenotypeMixture reference", {
     data(gwasSumStatsS4Example)
     gss <- gwasSumStatsS4Example
-    panel <- ldReference(gss)
+    panel <- ldReference(gss)[[1L]]
     mix <- GenotypeMixture(
         list(a = panel[, 1:80], b = panel[, 81:165]),
         mixtureWeights = c(0.5, 0.5)
@@ -6168,7 +6173,7 @@ test_that("fine-mapping runs on a GenotypeMixture reference", {
         qcInfo = qcInfo(gss)
     )
     res <- .fmp_fitSusie(withMix)
-    expect_s4_class(ldReference(res), "GenotypeMixture")
+    expect_s4_class(ldReference(res)[[1L]], "GenotypeMixture")
     expect_true(all(is.finite(unlist(pip(res)))))
 })
 
@@ -6190,4 +6195,72 @@ test_that("the rFinite default needs the reference's size", {
     # An explicit rFinite, or no mismatch mode, never asks.
     expect_identical(.fmResolveRFinite(50, TRUE, "none", unknown), 50)
     expect_null(.fmResolveRFinite(NULL, FALSE, "none", unknown))
+})
+
+# ===========================================================================
+# Per-row LD references
+# ===========================================================================
+
+# Two QtlSumStats rows (contexts c1, c2) carrying the same z over five
+# variants, each on the LD reference given for it.
+.fmp_twoRefSs <- function(refs) {
+    gr <- GenomicRanges::GRanges(
+        "chr1",
+        IRanges::IRanges(100L * (1:5), width = 1L)
+    )
+    S4Vectors::mcols(gr) <- S4Vectors::DataFrame(
+        SNP = sprintf("chr1:%d:A:G", 100L * (1:5)),
+        A1 = "A",
+        A2 = "G",
+        Z = c(6, 5.5, 1, 0.5, 0.2),
+        N = 1000L
+    )
+    QtlSumStats(
+        studyName = c("S", "S"),
+        context = c("c1", "c2"),
+        trait = c("t1", "t1"),
+        entry = list(gr, gr),
+        genome = "hg19",
+        ldReference = refs,
+        qcInfo = list(step1 = "ok")
+    )
+}
+
+# An LdMatrix over those five variants, with nSamples recorded.
+.fmp_ldm <- function(rho) {
+    ids <- sprintf("chr1:%d:A:G", 100L * (1:5))
+    LdMatrix(
+        `dimnames<-`(rho^abs(outer(1:5, 1:5, "-")), list(ids, ids)),
+        nSamples = 1000L
+    )
+}
+
+test_that("each QtlSumStats row is fine-mapped against its own LD reference", {
+    weak <- .fmp_ldm(0.1)
+    strong <- .fmp_ldm(0.95)
+    res <- suppressMessages(suppressWarnings(
+        fineMappingPipeline(
+            .fmp_twoRefSs(list(weak, strong)),
+            methods = "susie"
+        )
+    ))
+    c1 <- which(res$context == "c1")
+    c2 <- which(res$context == "c2")
+    # The result keeps each row on the reference its fit read.
+    expect_identical(pecotmr:::.rowLdRef(res, c1), weak)
+    expect_identical(pecotmr:::.rowLdRef(res, c2), strong)
+    # Identical z under different LD gives different fits: each row was fit
+    # against its own reference, not the first one's.
+    pip <- function(i) {
+        pecotmr:::.fmrPartsSusieFit(pecotmr:::.fmrRowParts(res, i))$pip
+    }
+    expect_false(isTRUE(all.equal(pip(c1), pip(c2))))
+})
+
+test_that("mvsusie on QtlSumStats refuses contexts on two LD references", {
+    ss <- .fmp_twoRefSs(list(.fmp_ldm(0.1), .fmp_ldm(0.95)))
+    expect_error(
+        suppressMessages(fineMappingPipeline(ss, methods = "mvsusie")),
+        "a joint fit uses one LD matrix"
+    )
 })

@@ -2282,13 +2282,19 @@ setMethod(
     )
 }
 
-# The collection-level fallback for `data_source`: an ldReference is the LD
-# reference a fit was run against, so its absence means individual-level data.
-# Only a fallback -- a row that recorded its own wins, because a combined
-# collection can hold rows of both kinds and has only one ldReference.
+# The fallback for `data_source`: a row's LD reference is the one its fit ran
+# against, so a row with none is individual-level data. Only a fallback -- a
+# row that recorded its own wins. Per row in .pubDataSourceOf(); for the
+# collection as a whole it is NA when its rows are of both kinds.
 # @noRd
 .pubDataSource <- function(x) {
-    if (is.null(ldReference(x))) "individual" else "sumstat"
+    kinds <- unique(.pubDataSourceOf(x))
+    if (length(kinds) == 1L) kinds else NA_character_
+}
+
+# @noRd
+.pubDataSourceOf <- function(x) {
+    if_else(is.na(.ldRefKeys(x)), "individual", "sumstat")
 }
 
 # `EZ` only when the SOURCE supplied z. The spec defines the field as the z
@@ -2441,7 +2447,7 @@ setMethod(
         method = .pubTupleColumn("method", x),
         standardized = .twbColumnOr(x, "standardized", as.logical, NA),
         dataType = .twbListColumn(x, "dataType"),
-        dataSource = .pubDataSource(x),
+        dataSource = .pubDataSourceOf(x),
         jointStudies = .twbColumnOr(
             x,
             "jointStudies",
@@ -2614,21 +2620,20 @@ setMethod(
             start = start(regions)[[i]] - 1L,
             end = end(regions)[[i]]
         ),
-        af = .twbVariantAf(x, gr),
+        af = .twbVariantAf(.rowLdRef(x, i), gr),
         schema = schema,
         added = added
     ))
 }
 
-# Per-variant allele frequency, from the collection's LD reference when it
-# records one (an LdMatrix with an AF column, or a stochastic sketch, whose
-# real frequencies are recorded from its sidecar). A TwasWeights element
-# records only alleles and a weight, so otherwise there is no frequency to
-# publish -- and `AF` is what the standardized-to-raw weight conversion needs,
-# so its absence is worth seeing rather than faking.
+# Per-variant allele frequency, from the row's LD reference when it records
+# one (an LdMatrix with an AF column, or a stochastic sketch, whose real
+# frequencies are recorded from its sidecar). A TwasWeights element records
+# only alleles and a weight, so otherwise there is no frequency to publish --
+# and `AF` is what the standardized-to-raw weight conversion needs, so its
+# absence is worth seeing rather than faking.
 # @noRd
-.twbVariantAf <- function(x, gr) {
-    ref <- ldReference(x)
+.twbVariantAf <- function(ref, gr) {
     af <- if (is.null(ref)) NULL else .ldRefAf(ref)
     if (is.null(af)) {
         return(NA_real_)

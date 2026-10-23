@@ -12,9 +12,10 @@ S4 collection of GWAS summary statistics keyed by the identity
 }
 \details{
 Required column: \code{study}, unique across rows. The class-level
-  slots inherited from \code{\linkS4class{SumStatsBase}} --
-  \code{ldReference}, \code{genome} and \code{qcInfo} -- apply uniformly to
-  every row.
+  slots inherited from \code{\linkS4class{SumStatsBase}} -- \code{genome}
+  and \code{qcInfo} -- apply uniformly to every row; \code{ldReference}
+  holds each distinct LD reference once, and the \code{ldReference} column
+  names the one each row uses.
 }
 \seealso{
 \code{\link{GwasSumStats}} for the constructor and

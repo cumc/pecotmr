@@ -4,8 +4,9 @@
 # DFrame-subclass collection keyed by the identity tuple (study). Each
 # row holds a per-study GRanges of GWAS summary statistics covering a
 # single LD block; build a separate collection per block when sweeping
-# the genome. Class-level slots ldReference + genome + qcInfo apply
-# uniformly across rows.
+# the genome. Class-level slots genome + qcInfo apply uniformly across
+# rows; ldReference holds each distinct LD reference once, and the
+# ldReference mcols column names the one every row uses.
 # =============================================================================
 
 #' @include AllClasses.R tupleSelectors.R
@@ -17,9 +18,10 @@ NULL
 #'   \code{GRanges} covering a single LD block, so build one collection per
 #'   block when sweeping the genome.
 #' @details Required column: \code{study}, unique across rows. The class-level
-#'   slots inherited from \code{\linkS4class{SumStatsBase}} --
-#'   \code{ldReference}, \code{genome} and \code{qcInfo} -- apply uniformly to
-#'   every row.
+#'   slots inherited from \code{\linkS4class{SumStatsBase}} -- \code{genome}
+#'   and \code{qcInfo} -- apply uniformly to every row; \code{ldReference}
+#'   holds each distinct LD reference once, and the \code{ldReference} column
+#'   names the one each row uses.
 #' @seealso \code{\link{GwasSumStats}} for the constructor and
 #'   \code{\linkS4class{QtlSumStats}} for the QTL counterpart.
 #' @importFrom checkmate makeAssertCollection assertNames assertList
@@ -65,12 +67,7 @@ setMethod("show", "GwasSumStats", function(object) {
         "genome build {GenomeInfoDb::genome(object)}\n",
         .trim = FALSE
     ))
-    ld <- object@ldReference
-    ldSrc <- if (is.null(ld)) {
-        "none (LD-free)"
-    } else {
-        .ldRefLabel(ld)
-    }
+    ldSrc <- .ldRefsLabel(ldReference(object), "none (LD-free)")
     cat(glue("  LD reference: {ldSrc}\n", .trim = FALSE))
 })
 
@@ -107,8 +104,8 @@ NULL
 #' @title Create a GwasSumStats Collection Object
 #' @description Construct a \code{GwasSumStats} S4 DFrame-subclass collection
 #'   from per-study tuple vectors and a list of \code{GRanges} entries (one per
-#'   study), plus a single LD reference and a single genome build that apply
-#'   to the whole collection.
+#'   study), plus the LD reference(s) the rows were harmonized against and a
+#'   single genome build that applies to the whole collection.
 #'
 #' Each \code{GRanges} entry must carry per-variant statistics in its mcols (at
 #' minimum \code{SNP}, \code{A1}, \code{A2}, \code{Z}, \code{N}; optionally
@@ -117,11 +114,12 @@ NULL
 #' @param entry A \code{SimpleList} or \code{list} of \code{GRanges}, one per
 #'   study.
 #' @param genome Single character string giving the genome build (e.g.,
-#'   \code{"hg19"}, \code{"hg38"}). Uniform across the collection because all
-#'   entries share the same LD reference.
+#'   \code{"hg19"}, \code{"hg38"}). One build per collection.
 #' @param ldReference The LD reference: a genotype panel (see
 #'   \code{\link{readGenotypes}}), a \code{\link{GenotypeMixture}} or an
-#'   \code{\link{LdMatrix}}.
+#'   \code{\link{LdMatrix}}, used for every study, or a list with one per
+#'   study when they sit on different references. Each distinct reference is
+#'   stored once, and the \code{ldReference} column names each row's.
 #' @param varY Optional numeric vector of per-study phenotype variances
 #'   (\code{NA_real_} entries allowed). Used by the sufficient-statistic
 #'   interface; z-score RSS analyses should leave entries as NA.
@@ -196,7 +194,8 @@ GwasSumStats <- function(
     ) |>
         .gwasAppendOptional(nCase, nControl, nSample, studyName) |>
         .gwasAppendExtras(extraCols)
-    dfArgs <- c(cols, list(check.names = FALSE))
+    dict <- .ldRefDict(.ldRefPerTuple(ldReference, length(entry)))
+    dfArgs <- c(cols, list(ldReference = dict$keys, check.names = FALSE))
     # The per-study GRanges become the collection's ELEMENTS; everything else
     # is per-study metadata and goes in mcols. There is no `entry` column.
     # mcols are attached to the GRangesList BEFORE new(), because new()
@@ -217,13 +216,14 @@ GwasSumStats <- function(
         GenomicRanges::GRangesList(split$entry),
         value = md
     )
-    .sumStatsNewValidated("GwasSumStats", grl, ldReference, genome, qcInfo)
+    .sumStatsNewValidated("GwasSumStats", grl, dict$refs, genome, qcInfo)
 }
 
 # Build and validate a SumStatsBase subclass from its GRangesList plus the
 # three collection-level slots GwasSumStats and QtlSumStats share. Shared
 # rather than duplicated so the two constructors cannot drift in how they
-# coerce those slots. Used by qtlSumStats.R too.
+# coerce those slots. Used by qtlSumStats.R too. `ldReference` is the named
+# list of distinct references (.ldRefDict()), already keyed from the rows.
 # @noRd
 .sumStatsNewValidated <- function(Class, grl, ldReference, genome, qcInfo) {
     # The build goes into seqinfo, which is where a GRangesList keeps it and
@@ -233,7 +233,7 @@ GwasSumStats <- function(
     obj <- methods::new(
         Class,
         built,
-        ldReference = .asLdRef(ldReference),
+        ldReference = ldReference,
         qcInfo = as.list(qcInfo)
     )
     methods::validObject(obj)
@@ -302,7 +302,7 @@ GwasSumStats <- function(
     if (length(genome) != 1L) {
         msg <- glue(
             "`genome` must be a single character string (one build per ",
-            "collection, because all entries share the LD reference)."
+            "collection)."
         )
         abort(msg)
     }
@@ -524,20 +524,21 @@ setMethod("varY", "GwasSumStats", function(x, studyName = NULL) {
 #' input: \code{genome} and the \code{\link{summaryStatsQc}} options must agree
 #' across the inputs (a mismatch is an error, not a silent first-wins), the
 #' per-element \code{qcInfo$entryAudit} concatenates in element order so
-#' \code{\link{qcDiagnostics}} keeps addressing the right element, and the
-#' LD references combine: genotype panels union into one panel over the shared
-#' genotype handle. That last one matters: block-parallel pipelines narrow each
-#' piece's panel to its own block, so keeping only the first would leave a
-#' multi-block collection whose LD reference covers one block. An
-#' \code{LdMatrix} or a \code{GenotypeMixture} cannot be unioned that way;
-#' one of the inputs' references must already cover the others, or the
-#' combined one is passed as \code{ldReference}.
+#' \code{\link{qcDiagnostics}} keeps addressing the right element, and every
+#' row keeps its own LD reference. References that are views of one source
+#' are stored once: genotype panels read from the same files union into one
+#' panel over the shared genotype handle (block-parallel pipelines narrow each
+#' piece's panel to its own block, so a multi-block collection would otherwise
+#' hold one panel per block), and an \code{LdMatrix} or
+#' \code{GenotypeMixture} that another input's reference covers gives way to
+#' that one. Inputs on unrelated references keep both.
 #'
 #' @param ... Two or more \code{GwasSumStats} objects, or a single \code{list}
 #'   of them.
-#' @param ldReference Optional genotype panel (see \code{\link{readGenotypes}})
-#'   to attach to the combined collection, overriding the unioned one. Default
-#'   \code{NULL}.
+#' @param ldReference Optional LD reference -- a genotype panel (see
+#'   \code{\link{readGenotypes}}), a \code{GenotypeMixture} or an
+#'   \code{LdMatrix} -- that every row of the combined collection uses
+#'   instead of its own. Default \code{NULL}.
 #' @return A single combined \code{GwasSumStats}.
 #' @seealso \code{\link{combineQtlSumStats}},
 #'   \code{\link{combineFineMappingResults}}, \code{\link{combineTwasWeights}}

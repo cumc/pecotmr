@@ -1418,7 +1418,9 @@ parseTraitIds <- function(traitId, data) {
             entry = mergedEntries
         ),
         .jointCols(base),
-        list(ldReference = NULL)
+        # Merged entries sit on the rows they were keyed to, references and
+        # all.
+        list(ldReference = .rowLdRefs(base))
     )
     exec(QtlFineMappingResult, !!!qfmrArgs)
 }
@@ -1473,7 +1475,8 @@ parseTraitIds <- function(traitId, data) {
     reduce(kept, .msRbindNoLd, rbindFn = rbindFn)
 }
 
-# Accumulate per-study + sumstats results (tracking the embedded LD sketch).
+# Accumulate per-study + sumstats results; every row keeps its own LD
+# reference (none for an individual-level study's rows).
 # @noRd
 .msDriverAccumulate <- function(
     qtlDatasets,
@@ -1489,21 +1492,17 @@ parseTraitIds <- function(traitId, data) {
     )
     ssRes <- if (is.null(sumStats)) NULL else sumStatsFn(sumStats, cfg)
     if (is.null(ssRes)) {
-        return(list(out = fromStudies, embeddedLd = NULL))
+        return(fromStudies)
     }
-    embeddedLd <- ldReference(ssRes)
-    out <- if (is.null(fromStudies)) {
-        ssRes
-    } else {
-        rbindFn(fromStudies, ssRes, ldReference = embeddedLd)
+    if (is.null(fromStudies)) {
+        return(ssRes)
     }
-    list(out = out, embeddedLd = embeddedLd)
+    rbindFn(fromStudies, ssRes)
 }
 
-# Reconstruct the per-tuple result object from the accumulated rows.
-.msDriverPerTuple <- function(out, resultCtor, embeddedLd) {
-    # ldReference: NULL if all studies were individual-level; the embedded
-    # sumStats's ldReference otherwise.
+# Reconstruct the per-tuple result object from the accumulated rows, each on
+# the LD reference it had.
+.msDriverPerTuple <- function(out, resultCtor) {
     ctorArgs <- c(
         list(
             study = as.character(out$study),
@@ -1513,7 +1512,7 @@ parseTraitIds <- function(traitId, data) {
             entry = .collectionEntries(out)
         ),
         .jointCols(out),
-        list(ldReference = embeddedLd)
+        list(ldReference = .rowLdRefs(out))
     )
     exec(resultCtor, !!!ctorArgs)
 }
@@ -1538,7 +1537,7 @@ parseTraitIds <- function(traitId, data) {
     pipelineName,
     noun = "a result"
 ) {
-    acc <- .msDriverAccumulate(
+    out <- .msDriverAccumulate(
         qtlDatasets(data),
         sumStats(data),
         perStudyFn,
@@ -1546,10 +1545,8 @@ parseTraitIds <- function(traitId, data) {
         cfg,
         rbindFn
     )
-    out <- acc$out
-    embeddedLd <- acc$embeddedLd
     perTupleResult <- if (!is.null(out)) {
-        .msDriverPerTuple(out, resultCtor, embeddedLd)
+        .msDriverPerTuple(out, resultCtor)
     } else {
         NULL
     }
@@ -1566,7 +1563,7 @@ parseTraitIds <- function(traitId, data) {
     if (is.null(perTupleResult)) {
         return(jointResult)
     }
-    rbindFn(perTupleResult, jointResult, ldReference = embeddedLd)
+    rbindFn(perTupleResult, jointResult)
 }
 
 # Synthesize a jointSpecification for the AUTO-DETECTION path (no explicit
@@ -1635,7 +1632,7 @@ parseTraitIds <- function(traitId, data) {
         parsedJointSpec,
         cfg$data,
         dataForm = "individual",
-        pipeline = .fmJointPipeline(cfg, cfg$crossValidationParam, NULL),
+        pipeline = .fmJointPipeline(cfg, cfg$crossValidationParam),
         jointMethods = intersect(tokens, c("mvsusie", "fsusie")),
         contexts = cfg$contexts,
         traitIds = cfg$traitId,
@@ -1645,10 +1642,11 @@ parseTraitIds <- function(traitId, data) {
 
 # The FmJointPipeline a joint run fits under: the settings the fitters read
 # off the pipeline. Summary statistics pass the no-CV record (there are no
-# samples to hold out) and the collection's LD sketch; individual-level data
-# pass the caller's resolved CV record and no sketch.
+# samples to hold out); individual-level data pass the caller's resolved CV
+# record. The LD a group is fitted against is the group's own
+# (.jointRowsLdRef()), not a setting of the run.
 # @noRd
-.fmJointPipeline <- function(cfg, crossValidationParam, ldReference) {
+.fmJointPipeline <- function(cfg, crossValidationParam) {
     new(
         "FmJointPipeline",
         config = list(
@@ -1657,8 +1655,7 @@ parseTraitIds <- function(traitId, data) {
             crossValidationParam = crossValidationParam,
             verbose = cfg$verbose,
             fitRetention = cfg$fitRetention,
-            seed = cfg$seed,
-            ldReference = ldReference
+            seed = cfg$seed
         )
     )
 }
@@ -1695,11 +1692,7 @@ parseTraitIds <- function(traitId, data) {
         parsedJointSpec,
         cfg$data,
         dataForm = "sumstats",
-        pipeline = .fmJointPipeline(
-            cfg,
-            .cvResolve(CrossValidationParam()),
-            ldReference(cfg$data)
-        ),
+        pipeline = .fmJointPipeline(cfg, .cvResolve(CrossValidationParam())),
         jointMethods = intersect(tokens, c("mvsusie", "fsusie")),
         contexts = cfg$contexts,
         traitIds = cfg$traitId,
@@ -1803,7 +1796,7 @@ parseTraitIds <- function(traitId, data) {
     if (is.null(out)) {
         return(ssRes)
     }
-    .rbindFineMappingResult(out, ssRes, ldReference = ldReference(ssRes))
+    .rbindFineMappingResult(out, ssRes)
 }
 
 
@@ -1937,8 +1930,7 @@ parseTraitIds <- function(traitId, data) {
             fitRetention = cfg$fitRetention,
             standardized = TRUE,
             verbose = cfg$verbose,
-            seed = cfg$seed,
-            ldReference = ldReference(cfg$data)
+            seed = cfg$seed
         )
     )
     .runJointSpecs(
@@ -2052,7 +2044,7 @@ parseTraitIds <- function(traitId, data) {
     if (is.null(out)) {
         return(ssRes)
     }
-    .rbindTwasWeights(out, ssRes, ldReference = ldReference(ssRes))
+    .rbindTwasWeights(out, ssRes)
 }
 
 

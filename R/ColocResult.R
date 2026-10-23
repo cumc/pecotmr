@@ -46,33 +46,37 @@ NULL
 #'   projection surface: both answer \code{\link{colocPairs}} and
 #'   \code{\link{colocVariants}}, so code that only needs "which variants
 #'   colocalized, and how strongly" works against either.
-#' @slot ldReference The LD reference the underlying fits were computed
-#'   against (a genotype panel, a \code{GenotypeMixture} or an
-#'   \code{LdMatrix}), or \code{NULL}. Shared by both subclasses: coloc and
-#'   ColocBoost report different statistics, but both are computed against a
-#'   reference and both are asked for it the same way.
+#'
+#'   Each subclass carries its own LD reference, and both answer
+#'   \code{\link{ldReference}}: a \code{ColocResult} holds the one reference
+#'   its pairs were computed against, a \code{ColocBoostResult} one per
+#'   reference its summary statistics were matched against.
 #' @export
-setClass(
-    "ColocResultBase",
-    contains = c("VIRTUAL", "RangedTupleList"),
-    representation(ldReference = "LdReference_OR_NULL"),
-    prototype(ldReference = NULL)
-)
-
-#' @rdname ldReference
-#' @export
-setMethod("ldReference", "ColocResultBase", function(x) x@ldReference)
+setClass("ColocResultBase", contains = c("VIRTUAL", "RangedTupleList"))
 
 #' @title Colocalization Result
 #' @description A collection of colocalization results, one element per tested
 #'   (QTL credible set, GWAS credible set, block) pair. Build the four views
 #'   with \code{\link{colocPairs}}, \code{\link{colocVariants}},
 #'   \code{\link{colocCredibleSets}} and \code{\link{colocGenes}}.
-#' @details The inherited \code{ldReference} is what
-#'   \code{colocCredibleSets()} uses to compute credible-set purity.
+#' @details The \code{ldReference} is what \code{colocCredibleSets()} uses to
+#'   compute credible-set purity, each pair's from its own reference.
+#' @slot ldReference A named list of the LD references the pairs were computed
+#'   against, each a genotype panel, a \code{GenotypeMixture} or an
+#'   \code{LdMatrix}, stored once apiece; the \code{ldReference} column of
+#'   \code{mcols} names the entry each pair used (\code{NA} for none).
 #' @seealso \code{\link{colocPipeline}}
 #' @export
-setClass("ColocResult", contains = "ColocResultBase")
+setClass(
+    "ColocResult",
+    contains = "ColocResultBase",
+    representation(ldReference = "list"),
+    prototype(ldReference = list())
+)
+
+#' @rdname ldReference
+#' @export
+setMethod("ldReference", "ColocResult", function(x) .ldRefsInUse(x))
 
 methods::setValidity("ColocResult", function(object) {
     .validateColocResult(object)
@@ -94,6 +98,7 @@ methods::setValidity("ColocResult", function(object) {
     if (!coll$isEmpty()) {
         return(coll$getMessages())
     }
+    coll$push(.ldRefDictProblems(object@ldReference, .ldRefKeys(object)))
     coll$push(.crCheckPpColumns(object))
     coll$push(.crCheckVariantColumn(object))
     coll$getMessages()
@@ -198,9 +203,11 @@ setMethod("show", "ColocResult", function(object) {
 #'   columns are \code{NA} for it.
 #' @param variants A list, parallel to \code{pairs}' rows, of per-pair data
 #'   frames with a \code{variant_id} column and a \code{SNP.PP.H4} column.
-#' @param ldReference Optional genotype panel (see \code{\link{readGenotypes}})
-#'   for the LD reference, used by \code{\link{colocCredibleSets}} to
-#'   compute purity.
+#' @param ldReference Optional LD reference -- a genotype panel (see
+#'   \code{\link{readGenotypes}}), a \code{GenotypeMixture} or an
+#'   \code{LdMatrix} -- for every pair, or a list with one per pair; used by
+#'   \code{\link{colocCredibleSets}} to compute purity. Each distinct
+#'   reference is stored once.
 #' @return A \code{ColocResult}.
 #' @examples
 #' pairs <- data.frame(
@@ -228,17 +235,19 @@ ColocResult <- function(pairs, variants, ldReference = NULL) {
         abort(msg)
     }
     elements <- map(variants, .crVariantsToGRanges)
+    dict <- .ldRefDict(.ldRefPerTuple(ldReference, nrow(pairs)))
     # Set unconditionally, including at zero rows: an empty result still has to
     # carry the column schema, or it fails validity and a caller reading
     # `result$PP.H4.abf` gets NULL exactly when there is nothing to report.
+    cols <- list_assign(as.list(pairs), ldReference = dict$keys)
     grl <- S4Vectors::`mcols<-`(
         GenomicRanges::GRangesList(elements),
         value = exec(
             S4Vectors::DataFrame,
-            !!!c(as.list(pairs), list(check.names = FALSE))
+            !!!c(cols, list(check.names = FALSE))
         )
     )
-    obj <- new("ColocResult", grl, ldReference = .asLdRef(ldReference))
+    obj <- new("ColocResult", grl, ldReference = dict$refs)
     validObject(obj)
     obj
 }
@@ -533,19 +542,21 @@ setMethod(
 }
 
 # Purity per credible set: the minimum absolute correlation among its members,
-# one LD extraction per set (section 3.7). NA when there is no LD reference to
-# extract from -- reported honestly rather than defaulted to a passing value.
+# one LD extraction per set (section 3.7), each against its own pair's
+# reference. NA when the pair has no LD reference to extract from -- reported
+# honestly rather than defaulted to a passing value.
 # @noRd
-.crPuritiesFor <- function(out, ldReference) {
-    if (is.null(ldReference)) {
-        return(rep(NA_real_, nrow(out)))
-    }
-    map_dbl(out$csVariants, .crPurityOne, ldReference = ldReference)
+.crPuritiesFor <- function(out, refs) {
+    map2_dbl(out$csVariants, out$ldReference, .crPurityOne, refs = refs)
 }
 
 # @noRd
 #' @importFrom rlang try_fetch
-.crPurityOne <- function(ids, ldReference) {
+.crPurityOne <- function(ids, key, refs) {
+    ldReference <- .ldRefForKey(key, refs)
+    if (is.null(ldReference)) {
+        return(NA_real_)
+    }
     # A singleton set has no pair to correlate, and susie treats it as pure.
     if (length(ids) < 2L) {
         return(1)

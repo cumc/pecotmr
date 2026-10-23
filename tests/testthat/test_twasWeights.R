@@ -1375,7 +1375,8 @@ test_that("TwasWeights: per-tuple weights/cvResult/methodFits/ldReference", {
         )$tag,
         "fitA"
     )
-    expect_s4_class(ldReference(tw), "RangedSummarizedExperiment")
+    expect_length(ldReference(tw), 1L)
+    expect_s4_class(ldReference(tw)[[1L]], "RangedSummarizedExperiment")
 })
 
 # ===========================================================================

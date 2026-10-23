@@ -141,8 +141,9 @@ fmrSs <- fineMappingPipeline(qtlSumStatsExample, methods = "susie")
 fmrSs
 ```
 
-The `QtlSumStats` collection carries an `ldReference` genotype panel; the
-pipeline pulls the per-region LD from there automatically.
+Each row of the `QtlSumStats` collection names its LD reference (here a
+genotype panel); the pipeline pulls each region's LD from its row's reference
+automatically.
 
 ## GWAS summary-statistics fine-mapping
 
@@ -210,7 +211,9 @@ fineMappingPipeline(
 ```
 
 The `jointSpecification` argument in `?fineMappingPipeline` gives the full
-grammar, including the `study` axis for summary statistics.
+grammar, including the `study` axis for summary statistics. On summary
+statistics a joint fit uses one LD matrix, so the rows it combines must share
+an LD reference; a group whose rows do not is an error.
 
 ## Reading the result
 

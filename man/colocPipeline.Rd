@@ -179,9 +179,11 @@ This pipeline preserves all three.
 }
 
 \section{LD reference compatibility check}{
- If
-  \code{ldReference(qtlFineMappingResult)} is non-\code{NULL}, it must be
-  the same LD reference as the one on \code{gwasInput}.
+ Rows can sit on different LD
+  references, so the check is per pair of rows coloc scores against each
+  other -- a QTL row and a GWAS row whose regions overlap. Where the QTL
+  row carries a reference, it must be the same LD reference as the GWAS
+  row's; rows that are never paired may differ.
   The two must be the same kind of reference. Two genotype panels must
   share their samples and allele orientation; two \code{LdMatrix} objects
   must agree on the LD they share; two \code{GenotypeMixture} objects must
@@ -190,9 +192,9 @@ This pipeline preserves all three.
   two sides separately normally leaves each reference trimmed to its own
   surviving variants, and LD is looked up per variant, so a partial overlap
   only warns (once per session). No shared variant at all, or a mismatch of
-  any of those, is a hard error. When the first side's \code{ldReference} is
-  \code{NULL} (individual-level fit), the validation is skipped on that side
-  and the second side's panel is what the result carries forward.
+  any of those, is a hard error. When a first-side row has no reference
+  (individual-level fit), the validation is skipped for it and the second
+  side's panel is what the result carries forward for its pairs.
 }
 
 \examples{

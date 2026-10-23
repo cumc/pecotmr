@@ -1834,7 +1834,7 @@ test_that("a weights export takes AF from the collection's LD panel", {
     # standardized-to-raw conversion would need, so its absence is worth
     # seeing rather than faking.
     data(twasWeightsExample, envir = environment())
-    expect_null(ldReference(twasWeightsExample))
+    expect_identical(ldReference(twasWeightsExample), list())
     out <- withr::local_tempfile(fileext = ".bed")
     suppressMessages(exportToBed(twasWeightsExample, out))
     expect_false(is_in("AF", names(read.delim(out, check.names = FALSE))))
@@ -1930,7 +1930,7 @@ test_that("a weights export reads AF off the collection's LD panel", {
     # is published; a panel recording none leaves the column absent rather
     # than faked.
     data(ctwasWeightsExample, twasWeightsExample, envir = environment())
-    panel <- ldReference(ctwasWeightsExample)
+    panel <- ldReference(ctwasWeightsExample)[[1L]]
     expect_false(is.null(panel))
     lasso <- twasWeightsExample[
         as.character(twasWeightsExample$method) == "lasso"
@@ -2000,7 +2000,7 @@ test_that("a sumstats collection with no Z publishes no EZ", {
 # @noRd
 .pbw_jointWeights <- function(nVariant = 6L) {
     data(ctwasWeightsExample, envir = environment())
-    panel <- ldReference(ctwasWeightsExample)
+    panel <- ldReference(ctwasWeightsExample)[[1L]]
     vids <- .grVariantIds(SummarizedExperiment::rowRanges(panel))
     SummarizedExperiment::rowRanges(panel)$AF <- seq(
         0.05,
@@ -2042,7 +2042,7 @@ test_that("AF is published from the LD panel when it records one", {
     out <- withr::local_tempfile(fileext = ".bed")
     exportToBed(tw, out)
     bed <- read.delim(out, check.names = FALSE)
-    panel <- ldReference(tw)
+    panel <- ldReference(tw)[[1L]]
     rr <- SummarizedExperiment::rowRanges(panel)
     expected <- mcols(rr)$AF[match(bed$ID, .grVariantIds(rr))]
     expect_equal(bed$AF, expected)
@@ -2291,4 +2291,29 @@ test_that("THETA is omitted for collections that never recorded one", {
     bed <- withr::local_tempfile(fileext = ".bed")
     exportToBed(old[1], bed)
     expect_false(is_in("THETA", strsplit(readLines(bed, n = 1), "\t")[[1]]))
+})
+
+test_that("data_source falls back per row, and to NA for a mixed collection", {
+    rows <- map(1:2, function(i) {
+        twasWeightsRow(
+            variantIds = sprintf("chr1:%d:A:G", 100L * (1:3) + i),
+            weights = c(0.1, 0.2, 0.3)
+        )
+    })
+    ids <- sprintf("chr1:%d:A:G", 100L * (1:3) + 1L)
+    ldm <- LdMatrix(`dimnames<-`(diag(3), list(ids, ids)))
+    tw <- TwasWeights(
+        studyName = c("s1", "s1"),
+        context = c("c1", "c2"),
+        trait = c("t1", "t1"),
+        method = c("lasso", "lasso"),
+        entry = rows,
+        ldReference = list(ldm, NULL)
+    )
+    expect_identical(
+        pecotmr:::.pubDataSourceOf(tw),
+        c("sumstat", "individual")
+    )
+    expect_identical(pecotmr:::.pubDataSource(tw), NA_character_)
+    expect_identical(pecotmr:::.pubDataSource(tw[1L]), "sumstat")
 })

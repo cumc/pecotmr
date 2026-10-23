@@ -378,10 +378,10 @@
 #' @return A \code{QtlFineMappingResult} keyed by \code{(study, context,
 #'   trait, method)} -- for \code{GwasSumStats} input, a
 #'   \code{GwasFineMappingResult} keyed by \code{(study, method)} and range.
-#'   The \code{ldReference} slot is set automatically: \code{NULL}
-#'   for individual-level (QtlDataset / all-individual-level
-#'   MultiStudyQtlDataset) fits, the input's \code{ldReference} for RSS-derived
-#'   fits.
+#'   Each row records the LD reference its fit used: none for
+#'   individual-level (QtlDataset / all-individual-level
+#'   MultiStudyQtlDataset) fits, the reference of the input row it was fitted
+#'   from for RSS-derived fits.
 #' @examples
 #' data(qtlDatasetExample)
 #' fineMappingPipeline(qtlDatasetExample, methods = "susie", cisWindow = 1e6)
@@ -1210,6 +1210,7 @@ setGeneric("fineMappingPipeline", function(data, ...) {
         }
         return(list(rows = list(), skipped = TRUE))
     }
+    cfg <- .fmRssRowCfg(cfg, i)
     zn <- .fmExtractZn(
         gr,
         glue("fineMappingPipeline(GwasSumStats): study='{st}'"),
@@ -1235,12 +1236,27 @@ setGeneric("fineMappingPipeline", function(data, ...) {
         blockId = blockId
     )
     toRun <- map_chr(keep(lookups, .fmNotCached), "tk")
-    if (length(toRun) == 0L) {
-        return(list(rows = cachedRows, skipped = FALSE))
+    computed <- if (length(toRun) > 0L) {
+        .fmGwasFitRows(gr, zn, st, blockId, toRun, cfg)
     }
-    computed <- .fmGwasFitRows(gr, zn, st, blockId, toRun, cfg)
-    list(rows = c(cachedRows, computed), skipped = FALSE)
+    list(
+        rows = .recordsWithLdRef(c(cachedRows, computed), cfg$ldReference),
+        skipped = FALSE
+    )
 }
+
+# `cfg` for row `i`: its own LD reference, with the RSS settings resolved
+# against that reference (the finite-reference size defaults to its panel's).
+# @noRd
+.fmRssRowCfg <- function(cfg, i) {
+    ldReference <- .rowLdRef(cfg$data, i)
+    list_assign(
+        cfg,
+        ldReference = ldReference,
+        susieRssParam = .fmRssArgsResolved(cfg$susieRssParam, ldReference)
+    )
+}
+
 
 # The fine-mapping settings shared by every summary-statistics path: the
 # QtlSumStats joint phase and the RSS / GWAS row builders all act on these.
@@ -1269,14 +1285,14 @@ setGeneric("fineMappingPipeline", function(data, ...) {
 }
 
 # The per-run settings the RSS / GWAS row builders all need: the common
-# summary-statistics record plus the LD and RSS-control fields only the row
-# builders use. The chain threads one record instead of twenty arguments, and
-# every field is named deliberately -- this is not a capture of the calling
-# frame.
+# summary-statistics record plus the RSS-control fields only the row builders
+# use. Each row adds its own LD reference, and resolves `susieRssParam`
+# against it, as it is fitted (.fmRssRowCfg()). The chain threads one record
+# instead of twenty arguments, and every field is named deliberately -- this
+# is not a capture of the calling frame.
 # @noRd
 .fmRssRunCfg <- function(
     common,
-    ldReference,
     initializeWithSusieInf,
     methodArgs,
     susieRssParam
@@ -1284,7 +1300,6 @@ setGeneric("fineMappingPipeline", function(data, ...) {
     c(
         common,
         list(
-            ldReference = ldReference,
             initializeWithSusieInf = initializeWithSusieInf,
             methodArgs = methodArgs,
             susieRssParam = susieRssParam
@@ -1394,6 +1409,7 @@ setGeneric("fineMappingPipeline", function(data, ...) {
         tr = tr
     )
     toRun <- map_chr(keep(lookups, .fmNotCached), "tk")
+    cachedRows <- .recordsWithLdRef(cachedRows, .rowLdRef(cfg$data, i))
     if (length(toRun) == 0L) {
         return(list(rows = cachedRows, skipped = FALSE))
     }
@@ -1409,8 +1425,12 @@ setGeneric("fineMappingPipeline", function(data, ...) {
         }
         return(list(rows = cachedRows, skipped = TRUE))
     }
+    cfg <- .fmRssRowCfg(cfg, i)
     computed <- .fmRssFitRows(i, st, ctx, tr, toRun, cfg)
-    list(rows = c(cachedRows, computed), skipped = FALSE)
+    list(
+        rows = c(cachedRows, .recordsWithLdRef(computed, cfg$ldReference)),
+        skipped = FALSE
+    )
 }
 
 # Concatenate two same-class fine-mapping result collections row-wise,
@@ -1436,9 +1456,11 @@ setGeneric("fineMappingPipeline", function(data, ...) {
 #'
 #' @param ... Two or more \code{FineMappingResultBase} objects, or a single
 #'   \code{list} of them.
-#' @param ldReference Optional genotype panel (see
-#'   \code{\link{readGenotypes}}) to attach to the
-#'   combined collection. Default \code{NULL}. Applied when combining two or
+#' @param ldReference Optional LD reference -- a genotype panel (see
+#'   \code{\link{readGenotypes}}), a \code{GenotypeMixture} or an
+#'   \code{LdMatrix} -- that every row of the combined collection uses instead
+#'   of its own. Default \code{NULL}: each row keeps the reference it had,
+#'   and views of one source are stored once. Applied when combining two or
 #'   more inputs; a single input is returned unchanged.
 #' @return A single combined fine-mapping result of the shared concrete class.
 #' @seealso \code{\link{combineTwasWeights}}
@@ -4067,17 +4089,17 @@ NULL
 
 # Assemble the QtlSumStats result: build the per-tuple QtlFineMappingResult
 # from the collected row-records (region = entry variant span, no cis-window)
-# and combine with the joint result. An all-screened collection yields a valid
-# empty result rather than an error.
+# and combine with the joint result, every row keeping its own LD reference.
+# An all-screened collection yields a valid empty result rather than an
+# error.
 # @noRd
 .fmQssAssemble <- function(
     data,
-    ldReference,
     rows,
     nSkipped,
     jointResult
 ) {
-    perTupleResult <- .fmQssPerTupleResult(data, rows, ldReference)
+    perTupleResult <- .fmQssPerTupleResult(data, rows)
     if (is.null(jointResult)) {
         if (!is.null(perTupleResult)) {
             return(perTupleResult)
@@ -4089,7 +4111,6 @@ NULL
                 character(0),
                 character(0),
                 list(),
-                ldReference = ldReference,
                 allowEmpty = TRUE
             ))
         }
@@ -4100,18 +4121,14 @@ NULL
     if (is.null(perTupleResult)) {
         return(jointResult)
     }
-    .rbindFineMappingResult(
-        perTupleResult,
-        jointResult,
-        ldReference = ldReference
-    )
+    .rbindFineMappingResult(perTupleResult, jointResult)
 }
 
 # The per-tuple QtlFineMappingResult from the collected row-records, or NULL
 # when there are none. Each row's region is its entry's variant span (no
-# cis-window).
+# cis-window), and its LD reference the one its entry was fitted against.
 # @noRd
-.fmQssPerTupleResult <- function(data, rows, ldReference) {
+.fmQssPerTupleResult <- function(data, rows) {
     if (length(rows) == 0L) {
         return(NULL)
     }
@@ -4135,7 +4152,7 @@ NULL
             NULL,
             length(rows)
         ),
-        ldReference = ldReference
+        ldReference = map(rows, "ldReference")
     )
 }
 
@@ -4249,13 +4266,11 @@ NULL
         return(rt$result)
     }
     sel <- .fmQssSelectRows(data = data, contexts = contexts, traitId = traitId)
-    ldReference <- ldReference(data)
     cfg <- .fmRssRunCfg(
         cfgs$common,
-        ldReference = ldReference,
         initializeWithSusieInf = initializeWithSusieInf,
         methodArgs = rt$methodArgs,
-        susieRssParam = .fmRssArgsResolved(susieRssParam, ldReference)
+        susieRssParam = susieRssParam
     )
     .fmQssRunRows(
         data,
@@ -4263,7 +4278,6 @@ NULL
         split = .fmQssSplitTokens(rt$tokens, sel),
         cfg = cfg,
         jointCfg = cfgs$joint,
-        ldReference = ldReference,
         methodArgs = rt$methodArgs,
         jointResult = rt$result
     )
@@ -4280,7 +4294,6 @@ NULL
     split,
     cfg,
     jointCfg,
-    ldReference,
     methodArgs,
     jointResult
 ) {
@@ -4299,7 +4312,6 @@ NULL
     }
     .fmQssAssemble(
         data = data,
-        ldReference = ldReference,
         rows = list_flatten(map(univOut, "rows")),
         nSkipped = sum(map_lgl(univOut, "skipped")),
         jointResult = .fmQssAutoJoint(
@@ -4435,11 +4447,9 @@ setMethod(
     )
     .fmCheckMethodCapabilities(norm$tokens, "GwasSumStats")
     .fmCheckMethodArgsForInput(norm$methodArgs, "GwasSumStats")
-    ldReference <- ldReference(data)
     # Derived values are ordinary locals now, not fields grafted onto a bundle.
     tokens <- norm$tokens
     methodArgs <- norm$methodArgs
-    susieRssParam <- .fmRssArgsResolved(susieRssParam, ldReference)
     studyCol <- as.character(data$study)
     commonCfg <- .fmSsCommonCfg(
         data = data,
@@ -4454,7 +4464,6 @@ setMethod(
         studyCol = studyCol,
         tokens = tokens,
         commonCfg = commonCfg,
-        ldReference = ldReference,
         initializeWithSusieInf = initializeWithSusieInf,
         methodArgs = methodArgs,
         susieRssParam = susieRssParam
@@ -4469,7 +4478,6 @@ setMethod(
     studyCol,
     tokens,
     commonCfg,
-    ldReference,
     initializeWithSusieInf,
     methodArgs,
     susieRssParam
@@ -4481,7 +4489,6 @@ setMethod(
         tokens = tokens,
         cfg = .fmRssRunCfg(
             commonCfg,
-            ldReference = ldReference,
             initializeWithSusieInf = initializeWithSusieInf,
             methodArgs = methodArgs,
             susieRssParam = susieRssParam
@@ -4500,7 +4507,7 @@ setMethod(
         # the same window .fmRssFitWindow() gives the per-row grange columns,
         # so the two cannot disagree.
         region = .fmGwasRowWindows(rows),
-        ldReference = ldReference,
+        ldReference = map(rows, "ldReference"),
         allowEmpty = (nSkipped > 0L || nrow(data) == 0L)
     )
 }

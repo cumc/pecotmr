@@ -85,8 +85,8 @@ context("colocboostPipeline (S4 dispatch)")
 # ----------------------------------------------------------------------------
 # colocboost::colocboost is the heavy compute; we mock it to return a stub
 # result so the pipeline orchestration runs end-to-end. The helpers
-# (.cbBuildLdArgs, .cbMergeSumstatBundles,
-# .cbRequireMatchingLdRefs, .cbEmptyResult) are exercised directly.
+# (.cbBuildLdArgs, .cbMergeSumstatBundles, .cbResultLdRefs, .cbEmptyResult)
+# are exercised directly.
 # ===========================================================================
 
 .cbp_makeHandle <- function(snp_n = 6L, n_samples = 30L, sample_prefix = "s") {
@@ -216,7 +216,7 @@ context("colocboostPipeline (S4 dispatch)")
     )
 }
 
-.cbp_makeGwasSumStats <- function(qc = TRUE) {
+.cbp_makeGwasSumStats <- function(qc = TRUE, ldReference = .cbp_makeHandle()) {
     gr <- GenomicRanges::GRanges(
         seqnames = "chr1",
         ranges = IRanges::IRanges(
@@ -235,9 +235,17 @@ context("colocboostPipeline (S4 dispatch)")
         studyName = "G1",
         entry = list(gr),
         genome = "hg19",
-        ldReference = .cbp_makeHandle(),
+        ldReference = ldReference,
         qcInfo = if (qc) list(step1 = "ok") else list()
     )
+}
+
+# An LdMatrix over the fixtures' five variants, so a side can be put on a
+# reference other than the shared genotype panel.
+.cbp_makeLdMatrix <- function(rho = 0.2) {
+    ids <- sprintf("chr1:%d:A:G", 100L * (1:5))
+    r <- rho^abs(outer(1:5, 1:5, "-"))
+    LdMatrix(`dimnames<-`(r, list(ids, ids)))
 }
 
 # ===========================================================================
@@ -323,39 +331,6 @@ test_that(".cbRequireSumStatsQc: QCd input passes", {
 })
 
 
-test_that(".cbRequireMatchingLdRefs: NULL sides are allowed", {
-    expect_silent(pecotmr:::.cbRequireMatchingLdRefs(
-        NULL,
-        .cbp_makeHandle()
-    ))
-    expect_silent(pecotmr:::.cbRequireMatchingLdRefs(
-        .cbp_makeHandle(),
-        NULL
-    ))
-})
-
-test_that(".cbRequireMatchingLdRefs: accepts differently trimmed panels", {
-    # Separate QC of the two sides trims one shared LD reference to two
-    # overlapping-but-unequal variant sets; the check reports, not refuses.
-    expect_warning(
-        expect_null(pecotmr:::.cbRequireMatchingLdRefs(
-            .cbp_makeHandle(snp_n = 4L),
-            .cbp_makeHandle(snp_n = 5L)
-        )),
-        "share 4 variant"
-    )
-})
-
-test_that(".cbRequireMatchingLdRefs: sample-set mismatch errors", {
-    expect_error(
-        pecotmr:::.cbRequireMatchingLdRefs(
-            .cbp_makeHandle(sample_prefix = "a"),
-            .cbp_makeHandle(sample_prefix = "b")
-        ),
-        "different sample sets"
-    )
-})
-
 test_that(".cbMergeSumstatBundles: empty input gives empty dict", {
     res <- pecotmr:::.cbMergeSumstatBundles(list())
     expect_equal(length(res$sumstat), 0L)
@@ -375,8 +350,9 @@ test_that(".cbMergeSumstatBundles: identical LD matrices are deduplicated", {
     expect_identical(res$ldArg, "LD")
 })
 
-test_that(".cbMergeSumstatBundles records factors and refuses a mix", {
-    f <- matrix(c(1, -1, 0.5, -0.5), 2)
+test_that(".cbMergeSumstatBundles records factors and turns a mix into LD", {
+    ids <- c("v1", "v2")
+    f <- matrix(c(1, -1, 0.5, -0.5), 2, dimnames = list(NULL, ids))
     factors <- list(
         a = list(sumstat = data.frame(z = 1:2), LD = f, isFactor = TRUE),
         b = list(sumstat = data.frame(z = 3:4), LD = f, isFactor = TRUE)
@@ -384,11 +360,18 @@ test_that(".cbMergeSumstatBundles records factors and refuses a mix", {
     res <- pecotmr:::.cbMergeSumstatBundles(factors)
     expect_identical(res$ldArg, "X_ref")
     expect_equal(length(res$LD), 1L)
-    mixed <- list_assign(factors, b = list_assign(factors$b, isFactor = FALSE))
-    expect_error(
-        pecotmr:::.cbMergeSumstatBundles(mixed),
-        "mix LD matrices and genotype factors"
+    # colocboost takes LD or X_ref, never both, so a run whose two sides use
+    # different kinds of reference gets the factor as its LD matrix.
+    ld <- matrix(c(1, 0.3, 0.3, 1), 2, dimnames = list(ids, ids))
+    mixed <- list_assign(
+        factors,
+        b = list(sumstat = data.frame(z = 3:4), LD = ld, isFactor = FALSE)
     )
+    res <- pecotmr:::.cbMergeSumstatBundles(mixed)
+    expect_identical(res$ldArg, "LD")
+    expect_equal(res$LD[[1L]], crossprod(f) / (nrow(f) - 1L))
+    expect_identical(res$LD[[2L]], ld)
+    expect_equal(unname(res$dict_sumstatLD[, "LD"]), 1:2)
 })
 
 test_that(".cbEmptyResult: is the internal per-analysis accumulator", {
@@ -610,49 +593,111 @@ test_that("colocboostPipeline: no analysis flag set is an error", {
     }
 })
 
-test_that("colocboostPipeline: GWAS ldReference mismatch errors in driver", {
+test_that("a GWAS on a different LD reference runs, and both are recorded", {
+    # The two sides need not share a reference: a GWAS panel with another
+    # sample set is matched against on its own rather than refused.
     ss <- .cbp_makeQtlSumStats()
-    # Build a GwasSumStats whose ldReference has a different sample set.
-    gh_diff <- .cbp_makeHandle(sample_prefix = "z")
-    gr <- GenomicRanges::GRanges(
-        seqnames = "chr1",
-        ranges = IRanges::IRanges(
-            start = seq(100L, by = 100L, length.out = 5L),
-            width = 1L
-        )
+    gs <- .cbp_makeGwasSumStats(
+        ldReference = .cbp_makeHandle(sample_prefix = "z")
     )
-    S4Vectors::mcols(gr) <- S4Vectors::DataFrame(
-        SNP = sprintf("chr1:%d:A:G", 100L * (1:5)),
-        A1 = rep("A", 5),
-        A2 = rep("G", 5),
-        Z = rnorm(5),
-        N = rep(1000L, 5)
-    )
-    gs <- GwasSumStats(
-        studyName = "G1",
-        entry = list(gr),
-        genome = "hg19",
-        ldReference = gh_diff,
-        qcInfo = list(step1 = "ok")
-    )
-    # .cbQtlSumStatsBundle reads the qtl sketch via extractBlockGenotypes
-    # before the LD-sketch mismatch check fires further down the driver, so
-    # mock the extractor here too.
+    seen <- list()
     local_mocked_bindings(
         extractBlockGenotypes = .cbp_mockExtractor(),
         .package = "pecotmr"
     )
-    expect_error(
-        suppressMessages(
-            colocboostPipeline(
-                ss,
-                gwasSumStats = gs,
-                xqtlColoc = FALSE,
-                jointGwas = TRUE
-            )
-        ),
-        "different sample sets"
+    local_mocked_bindings(
+        colocboost = function(...) {
+            seen[[length(seen) + 1L]] <<- list(...)
+            list(jointly_run = TRUE)
+        },
+        .package = "colocboost"
     )
+    out <- suppressMessages(
+        colocboostPipeline(
+            ss,
+            gwasSumStats = gs,
+            xqtlColoc = FALSE,
+            jointGwas = TRUE
+        )
+    )
+    expect_equal(length(seen), 1L)
+    expect_equal(nrow(seen[[1L]]$dict_sumstatLD), 2L)
+    # Each outcome keys to the reference it was matched against.
+    refs <- ldReference(out)
+    expect_length(refs, 2L)
+    info <- out@outcomeInfo
+    keys <- info$ldReference[match(c("Q1:c1:t1", "G1"), info$name)]
+    expect_identical(refs[[keys[[1L]]]], ldReference(ss)[[1L]])
+    expect_identical(refs[[keys[[2L]]]], ldReference(gs)[[1L]])
+})
+
+test_that("a panel and an LdMatrix on opposite sides reach colocboost as LD", {
+    ss <- .cbp_makeQtlSumStats()
+    ldm <- .cbp_makeLdMatrix()
+    gs <- .cbp_makeGwasSumStats(ldReference = ldm)
+    seen <- list()
+    local_mocked_bindings(
+        extractBlockGenotypes = .cbp_mockExtractor(),
+        .package = "pecotmr"
+    )
+    local_mocked_bindings(
+        colocboost = function(...) {
+            seen[[length(seen) + 1L]] <<- list(...)
+            list(jointly_run = TRUE)
+        },
+        .package = "colocboost"
+    )
+    out <- suppressMessages(
+        colocboostPipeline(
+            ss,
+            gwasSumStats = gs,
+            xqtlColoc = TRUE,
+            jointGwas = TRUE
+        )
+    )
+    nSumstats <- map_int(seen, function(call) length(call$sumstat))
+    xqtl <- seen[[which(nSumstats == 1L)]]
+    joint <- seen[[which(nSumstats == 2L)]]
+    # The QTL-only run has one kind of reference and keeps the panel's factor.
+    expect_null(xqtl$LD)
+    factor <- xqtl$X_ref[[1L]]
+    # colocboost takes LD or X_ref but not both, so the joint run gets the
+    # panel's factor as its LD matrix alongside the LdMatrix's own.
+    expect_null(joint$X_ref)
+    dict <- joint$dict_sumstatLD
+    expect_equal(
+        joint$LD[[dict[1L, "LD"]]],
+        crossprod(factor) / (nrow(factor) - 1L)
+    )
+    expect_equal(
+        unname(joint$LD[[dict[2L, "LD"]]]),
+        0.2^abs(outer(1:5, 1:5, "-"))
+    )
+    expect_identical(
+        unname(ldReference(out)),
+        list(ldReference(ss)[[1L]], ldm)
+    )
+})
+
+test_that(".cbResultLdRefs keys each outcome to its pair's reference", {
+    panel <- ldReference(.cbp_makeQtlSumStats())[[1L]]
+    ldm <- .cbp_makeLdMatrix()
+    pairs <- list(
+        `Q1:c1:t1` = list(ldReference = panel),
+        `Q1:c2:t1` = list(ldReference = panel),
+        G1 = list(ldReference = ldm)
+    )
+    out <- pecotmr:::.cbResultLdRefs(pairs)
+    # Each distinct reference once, however many outcomes used it.
+    expect_identical(out$refs, list(ld1 = panel, ld2 = ldm))
+    expect_equal(
+        out$keys,
+        c(`Q1:c1:t1` = "ld1", `Q1:c2:t1` = "ld1", G1 = "ld2")
+    )
+    # No pairs, no references.
+    none <- pecotmr:::.cbResultLdRefs(list())
+    expect_identical(none$refs, list())
+    expect_length(none$keys, 0L)
 })
 
 # ===========================================================================
@@ -1097,7 +1142,7 @@ test_that("colocboost RSS cutoffs match .panelVariantFilter", {
         expect_equal(
             .cbf_n(ss, mafCutoff = cut),
             length(.panelVariantFilter(
-                ldReference(ss),
+                ldReference(ss)[[1L]],
                 ids,
                 PanelFilterParam(mafCutoff = cut)
             )),
@@ -1108,7 +1153,7 @@ test_that("colocboost RSS cutoffs match .panelVariantFilter", {
 
 test_that("colocboost RSS treats MAC as a MAF equivalent", {
     ss <- .cbf_qcd()
-    nSamp <- ncol(ldReference(ss))
+    nSamp <- ncol(ldReference(ss)[[1L]])
     expect_equal(
         .cbf_n(ss, macCutoff = 0.1 * 2 * nSamp),
         .cbf_n(ss, mafCutoff = 0.1)
@@ -1133,7 +1178,7 @@ test_that(".cbSumstatPair keeps sumstat rows aligned to the LD matrix", {
         trait = ss$trait[[1L]],
         require = "Z"
     )
-    sketch <- ldReference(ss)
+    sketch <- ldReference(ss)[[1L]]
     pair <- suppressMessages(.cbSumstatPair(
         df = df,
         ldReference = sketch,
@@ -1157,7 +1202,7 @@ test_that("colocboost reads a panel's factor and its LdMatrix alike", {
     skip_if_not_installed("colocboost")
     data(qtlSumStatsMulticontextExample)
     ss <- suppressMessages(summaryStatsQc(qtlSumStatsMulticontextExample))
-    panel <- ldReference(ss)
+    panel <- ldReference(ss)[[1L]]
     withLd <- QtlSumStats(
         studyName = ss$study,
         context = ss$context,
@@ -1189,7 +1234,7 @@ test_that(".cbSumstatPair returns NULL when a cutoff removes everything", {
     )
     expect_null(suppressMessages(.cbSumstatPair(
         df = df,
-        ldReference = ldReference(ss),
+        ldReference = ldReference(ss)[[1L]],
         cutoffs = list(mafCutoff = 0.99, macCutoff = 0, imissCutoff = 1)
     )))
 })
@@ -1570,8 +1615,7 @@ test_that(".cbAppendGwasPairs disambiguates a colliding study key", {
     )
     out <- pecotmr:::.cbAppendGwasPairs(
         list(dup = "QTL", other = "X"),
-        "notNull",
-        qtlLdReference = NULL
+        "notNull"
     )
     # The QTL pair keeps its key; the GWAS pair is suffixed rather than
     # overwriting it.

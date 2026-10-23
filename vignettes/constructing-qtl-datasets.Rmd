@@ -276,8 +276,8 @@ names(qtlDatasets(msdManual))
 ```
 
 To attach a summary-only study, pass a `QtlSumStats` object to the `sumStats`
-argument. For the manifest form, supply `sumStatsManifest`, `genome`, and
-`ldReference`.
+argument. For the manifest form, supply `sumStatsManifest` and `genome`, plus
+`ldReference` unless the manifest gives each row an `ldReferencePath`.
 
 ## Excluding related samples
 

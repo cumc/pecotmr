@@ -7,8 +7,8 @@
 #'           multi-context data. Per-context residualized X / Y are
 #'           extracted from the dataset (filtering knobs on the
 #'           constructor apply lazily inside the accessors).
-#'     \item \code{QtlSumStats} -- summary-statistic-only QTL data with a
-#'           shared LD reference (\code{ldReference}). Must already have
+#'     \item \code{QtlSumStats} -- summary-statistic-only QTL data with an
+#'           LD reference per row (\code{ldReference}). Must already have
 #'           been passed through \code{\link{summaryStatsQc}} (the
 #'           pipeline rejects inputs whose \code{qcInfo()} is empty).
 #'           Every analysis variant is available on this input, including
@@ -69,7 +69,12 @@
 #' @param qtlData One of \code{QtlDataset}, \code{QtlSumStats}, or
 #'   \code{MultiStudyQtlDataset}.
 #' @param gwasSumStats Optional \code{GwasSumStats} with the GWAS studies to
-#'   colocalize against. \code{NULL} to skip GWAS colocalization.
+#'   colocalize against. \code{NULL} to skip GWAS colocalization. Its
+#'   \code{ldReference} need not be the QTL side's: every row's summary
+#'   statistics are matched against that row's own reference. When some rows'
+#'   references are genotype panels and others' are \code{LdMatrix} objects,
+#'   the runs that combine them pass colocboost the panels' LD as matrices,
+#'   since colocboost takes LD matrices or reference genotypes but not both.
 #' @param contexts Optional character vector of context names to restrict the
 #'   individual-level / QtlSumStats QTL analysis to. When \code{NULL} (default),
 #'   every context present is used.
@@ -156,7 +161,10 @@
 #'   \code{as.data.frame}), \code{\link{colocVariants}} or
 #'   \code{\link{colocBoostOutcomes}}; timings are on
 #'   \code{\link{computingTime}} and the region-wide marginal
-#'   probabilities on \code{\link{regionVcp}}.
+#'   probabilities on \code{\link{regionVcp}}. \code{\link{ldReference}}
+#'   returns the LD references the summary statistics were matched against,
+#'   each stored once, and the \code{ldReference} column of
+#'   \code{colocBoostOutcomes()} names the one each outcome used.
 #' @name colocboostPipeline
 #' @importFrom methods is setGeneric setMethod
 #' @importFrom S4Vectors mcols
@@ -328,10 +336,13 @@ setGeneric("colocboostPipeline", function(qtlData, gwasSumStats = NULL, ...) {
     YperCtx <- set_names(map(built, "Y"), map_chr(built, "ctx"))
     dedup <- .cbDedupX(XperCtx)
     split <- .cbSplitY(YperCtx, dedup$xMatch)
+    # An individual-level outcome's LD comes from its own genotypes, so it has
+    # no LD-reference entry to name.
     outcomeInfo <- mutate(
         split$outcomeInfo,
         study = studyName(qd),
-        dataForm = "individual"
+        dataForm = "individual",
+        ldReference = NA_character_
     )
     list(
         X = dedup$uniqueX,
@@ -658,11 +669,14 @@ setGeneric("colocboostPipeline", function(qtlData, gwasSumStats = NULL, ...) {
     keptIds <- attr(ld, "keptVariantIds")
     kept <- filter(df, is_in(variantIds, keptIds))
     ss <- .cbSumstatFrame(kept, keptIds, nCase, nControl, varY)
+    # The reference rides with the pair, so the result can record the one
+    # each outcome was matched against.
     list(
         sumstat = ss,
         LD = `attr<-`(ld, "keptVariantIds", NULL),
         variantIds = keptIds,
-        isFactor = .ldIsGenotypeRef(ldReference)
+        isFactor = .ldIsGenotypeRef(ldReference),
+        ldReference = ldReference
     )
 }
 
@@ -741,7 +755,6 @@ setGeneric("colocboostPipeline", function(qtlData, gwasSumStats = NULL, ...) {
     if (is.null(ss) || nrow(ss) == 0L) {
         return(list())
     }
-    ldReference <- ldReference(ss)
     byContext <- if (!is.null(contexts) && length(contexts) > 0L) {
         is_in(as.character(ss$context), contexts)
     } else {
@@ -759,13 +772,7 @@ setGeneric("colocboostPipeline", function(qtlData, gwasSumStats = NULL, ...) {
     rows <- which(keepRow)
 
     compact(set_names(
-        map(
-            rows,
-            .cbQtlEntryPair,
-            ss = ss,
-            ldReference = ldReference,
-            cutoffs = cutoffs
-        ),
+        map(rows, .cbQtlEntryPair, ss = ss, cutoffs = cutoffs),
         map_chr(rows, .cbQtlEntryLabel, ss = ss)
     ))
 }
@@ -780,9 +787,10 @@ setGeneric("colocboostPipeline", function(qtlData, gwasSumStats = NULL, ...) {
     )
 }
 
-# One QTL entry's (sumstat, LD) pair, or NULL when it has no panel overlap.
+# One QTL entry's (sumstat, LD) pair, against the entry's own LD reference,
+# or NULL when it has no panel overlap.
 # @noRd
-.cbQtlEntryPair <- function(i, ss, ldReference, cutoffs) {
+.cbQtlEntryPair <- function(i, ss, cutoffs) {
     .cbSumstatPair(
         df = as.data.frame(
             ss,
@@ -791,7 +799,7 @@ setGeneric("colocboostPipeline", function(qtlData, gwasSumStats = NULL, ...) {
             trait = as.character(ss$trait)[[i]],
             require = "Z"
         ),
-        ldReference = ldReference,
+        ldReference = .rowLdRef(ss, i),
         varY = .cbTupleValue(ss, "varY", i),
         cutoffs = cutoffs
     )
@@ -814,29 +822,23 @@ setGeneric("colocboostPipeline", function(qtlData, gwasSumStats = NULL, ...) {
     if (is.null(gws) || nrow(gws) == 0L) {
         return(list())
     }
-    ldReference <- ldReference(gws)
     compact(set_names(
-        map(
-            seq_len(nrow(gws)),
-            .cbGwasEntryPair,
-            gws = gws,
-            ldReference = ldReference,
-            cutoffs = cutoffs
-        ),
+        map(seq_len(nrow(gws)), .cbGwasEntryPair, gws = gws, cutoffs = cutoffs),
         as.character(gws$study)
     ))
 }
 
-# One GWAS entry's (sumstat, LD) pair, or NULL when it has no panel overlap.
+# One GWAS entry's (sumstat, LD) pair, against the entry's own LD reference,
+# or NULL when it has no panel overlap.
 # @noRd
-.cbGwasEntryPair <- function(i, gws, ldReference, cutoffs) {
+.cbGwasEntryPair <- function(i, gws, cutoffs) {
     .cbSumstatPair(
         df = as.data.frame(
             gws,
             studyName = as.character(gws$study)[[i]],
             require = "Z"
         ),
-        ldReference = ldReference,
+        ldReference = .rowLdRef(gws, i),
         varY = .cbTupleValue(gws, "varY", i),
         nCase = .cbTupleValue(gws, "nCase", i),
         nControl = .cbTupleValue(gws, "nControl", i),
@@ -844,26 +846,16 @@ setGeneric("colocboostPipeline", function(qtlData, gwasSumStats = NULL, ...) {
     )
 }
 
-# Check two LD sketches for the reference-panel compatibility contract. Thin
-# wrapper over the shared `.requireMatchingLdRefs` helper (R/ld.R)
-# using the "lenient" null policy: a NULL on either side skips the check
-# (only colocboostPipeline allows that, since some bundles only have a
-# QTL side or only a GWAS side).
-.cbRequireMatchingLdRefs <- function(qtlLd, gwasLd) {
-    .requireMatchingLdRefs(
-        qtlLd,
-        gwasLd,
-        pipelineName = "colocboostPipeline",
-        nullPolicy = "lenient"
-    )
-}
-
 # Combine sumstat bundles into the (sumstat-list, LD-list, dict) shape
 # colocboost expects. Deduplicates identical LD matrices so dict_sumstatLD
 # can point multiple sumstats at one LD, and records in `ldArg` whether the
-# list holds LD matrices ("LD") or factors of them ("X_ref"). Every side of
-# a run reads one LD reference (.cbRequireMatchingLdRefs()), so the bundles
-# never mix the two.
+# list holds LD matrices ("LD") or factors of them ("X_ref").
+#
+# The QTL and GWAS sides each read their own LD reference, so a run can mix a
+# genotype panel's factors with an LdMatrix's matrices. colocboost takes LD or
+# X_ref but not both, so such a run gets every factor as its LD matrix -- the
+# matrix colocboost would compute from it anyway once a panel has at least as
+# many samples as variants.
 .cbMergeSumstatBundles <- function(bundles) {
     if (length(bundles) == 0L) {
         return(list(
@@ -873,12 +865,9 @@ setGeneric("colocboostPipeline", function(qtlData, gwasSumStats = NULL, ...) {
             ldArg = "LD"
         ))
     }
-    kinds <- unique(map_lgl(bundles, .cbPairIsFactor))
-    if (length(kinds) > 1L) {
-        abort(
-            "colocboost inputs mix LD matrices and genotype factors.",
-            .internal = TRUE
-        )
+    isFactor <- map_lgl(bundles, .cbPairIsFactor)
+    if (any(isFactor) && !all(isFactor)) {
+        bundles <- map(bundles, .cbPairAsLdMatrix)
     }
     # Same shape as .cbDedupX: every bundle resolves to the first bundle
     # carrying an identical LD matrix, so the unique set and the back-mapping
@@ -893,7 +882,22 @@ setGeneric("colocboostPipeline", function(qtlData, gwasSumStats = NULL, ...) {
             sumstat = seq_along(bundles),
             LD = match(firstIdx, keepIdx)
         ),
-        ldArg = if (kinds) "X_ref" else "LD"
+        ldArg = if (all(map_lgl(bundles, .cbPairIsFactor))) "X_ref" else "LD"
+    )
+}
+
+# A (sumstat, LD) pair with its LD held as the matrix. A factor F of a
+# genotype reference gives crossprod(F) / (nrow(F) - 1), which is that
+# reference's LD over the same variants (see .ldFactorFromRef()).
+# @noRd
+.cbPairAsLdMatrix <- function(p) {
+    if (!.cbPairIsFactor(p)) {
+        return(p)
+    }
+    list_assign(
+        p,
+        LD = crossprod(p$LD) / (nrow(p$LD) - 1L),
+        isFactor = FALSE
     )
 }
 
@@ -1090,7 +1094,7 @@ setGeneric("colocboostPipeline", function(qtlData, gwasSumStats = NULL, ...) {
     separateGwas,
     focalTrait,
     methodArgs,
-    qtlLdReference = NULL,
+    ldRefs = list(refs = list(), keys = character(0)),
     qtlSumstatBundle = NULL,
     gwasRunBundles = list()
 ) {
@@ -1127,8 +1131,8 @@ setGeneric("colocboostPipeline", function(qtlData, gwasSumStats = NULL, ...) {
     results <- .cbMergeRuns(.cbEmptyResult(), runs)
     .cbToResultObject(
         results,
-        .cbOutcomeInfo(individualBundle, sumstatBundle, hasInd),
-        qtlLdReference
+        .cbOutcomeInfo(individualBundle, sumstatBundle, hasInd, ldRefs$keys),
+        ldRefs$refs
     )
 }
 
@@ -1178,7 +1182,7 @@ setGeneric("colocboostPipeline", function(qtlData, gwasSumStats = NULL, ...) {
 # key: without it the separate-GWAS sets would be indistinguishable from each
 # other once flattened.
 # @noRd
-.cbToResultObject <- function(results, outcomeInfo, ldReference = NULL) {
+.cbToResultObject <- function(results, outcomeInfo, ldReference = list()) {
     sep <- results$separate_gwas
     sepRuns <- if (is.null(sep) || length(sep) == 0L) {
         list()
@@ -1290,9 +1294,15 @@ setGeneric("colocboostPipeline", function(qtlData, gwasSumStats = NULL, ...) {
 # ColocBoostResult answer "which contexts colocalized" instead of handing the
 # caller a string to parse. Sumstat outcomes are keyed by study name and carry
 # no context or trait of their own, which is recorded as NA rather than
-# invented.
+# invented. `ldKeys` names, per sumstat outcome, the result's LD-reference
+# entry it was matched against (.cbResultLdRefs()).
 # @noRd
-.cbOutcomeInfo <- function(individualBundle, sumstatBundle, hasInd) {
+.cbOutcomeInfo <- function(
+    individualBundle,
+    sumstatBundle,
+    hasInd,
+    ldKeys = character(0)
+) {
     ssNames <- names(sumstatBundle$sumstat)
     parts <- compact(list(
         if (isTRUE(hasInd)) individualBundle$outcomeInfo,
@@ -1302,7 +1312,8 @@ setGeneric("colocboostPipeline", function(qtlData, gwasSumStats = NULL, ...) {
                 context = NA_character_,
                 trait = NA_character_,
                 study = ssNames,
-                dataForm = "sumstats"
+                dataForm = "sumstats",
+                ldReference = unname(ldKeys[ssNames])
             )
         }
     ))
@@ -1319,7 +1330,8 @@ setGeneric("colocboostPipeline", function(qtlData, gwasSumStats = NULL, ...) {
         context = character(0),
         trait = character(0),
         study = character(0),
-        dataForm = character(0)
+        dataForm = character(0),
+        ldReference = character(0)
     )
 }
 
@@ -1517,7 +1529,8 @@ setGeneric("colocboostPipeline", function(qtlData, gwasSumStats = NULL, ...) {
         sumstat = ss,
         LD = ld,
         variantIds = canonical[ib],
-        isFactor = isFactor
+        isFactor = isFactor,
+        ldReference = p$ldReference
     )
 }
 
@@ -1603,7 +1616,6 @@ setGeneric("colocboostPipeline", function(qtlData, gwasSumStats = NULL, ...) {
     separateGwas,
     focalTrait,
     methodArgs,
-    qtlLdReference = NULL,
     alleleFlip = TRUE,
     cutoffs = NULL
 ) {
@@ -1614,7 +1626,6 @@ setGeneric("colocboostPipeline", function(qtlData, gwasSumStats = NULL, ...) {
     combinedPairs <- .cbAppendGwasPairs(
         qtlPairs,
         gwasSumStats,
-        qtlLdReference,
         cutoffs = cutoffs
     )
     harmonized <- .cbMaybeHarmonize(
@@ -1634,10 +1645,19 @@ setGeneric("colocboostPipeline", function(qtlData, gwasSumStats = NULL, ...) {
         separateGwas,
         focalTrait,
         methodArgs,
-        qtlLdReference = qtlLdReference,
+        ldRefs = .cbResultLdRefs(harmonized$pairs),
         qtlSumstatBundle = qtlSumstatBundle,
         gwasRunBundles = gwasRunBundles
     )
+}
+
+# The LD references a result records -- each distinct one the summary
+# statistics were matched against, once -- and each summary-statistic
+# outcome's key into them, read off the pairs that carry them.
+# @noRd
+.cbResultLdRefs <- function(pairs) {
+    dict <- .ldRefDict(map(unname(pairs), "ldReference"))
+    list(refs = dict$refs, keys = set_names(dict$keys, names(pairs)))
 }
 
 # The separate-GWAS run bundles, keyed by GWAS label. The runs are FOCAL: each
@@ -1658,21 +1678,14 @@ setGeneric("colocboostPipeline", function(qtlData, gwasSumStats = NULL, ...) {
 
 # Append the GWAS sumstat pairs to the QTL pairs, QC-gating gwasSumStats and
 # make.unique-ing colliding labels. (Sequential key resolution -- kept as a
-# loop.)
+# loop.) The GWAS side's LD comes from its own reference, which need not be
+# the QTL side's: each pair carries the LD it was matched against.
 # @noRd
-.cbAppendGwasPairs <- function(
-    qtlPairs,
-    gwasSumStats,
-    qtlLdReference,
-    cutoffs = NULL
-) {
+.cbAppendGwasPairs <- function(qtlPairs, gwasSumStats, cutoffs = NULL) {
     if (is.null(gwasSumStats)) {
         return(qtlPairs)
     }
     .cbRequireSumStatsQc(gwasSumStats, "gwasSumStats")
-    if (!is.null(qtlLdReference)) {
-        .cbRequireMatchingLdRefs(qtlLdReference, ldReference(gwasSumStats))
-    }
     gwasPairs <- .cbGwasSumStatsBundle(gwasSumStats, cutoffs = cutoffs)
     if (length(gwasPairs) == 0L) {
         return(qtlPairs)
@@ -1829,7 +1842,6 @@ setMethod(
             separateGwas = separateGwas,
             focalTrait = focalTrait,
             methodArgs = methodArgs,
-            qtlLdReference = ldReference(qtlData),
             alleleFlip = alleleFlip,
             cutoffs = cutoffs
         )
@@ -1934,7 +1946,6 @@ setMethod(
         separateGwas,
         focalTrait,
         methodArgs,
-        qtlLdReference = ss$qtlLdReference,
         alleleFlip = alleleFlip,
         cutoffs = cutoffs
     )
@@ -2075,7 +2086,7 @@ setMethod(
 }
 
 # Sumstat side of a MultiStudyQtlDataset: bundle any embedded QtlSumStats.
-# Returns list(qtlPairs, qtlLdReference).
+# Returns list(qtlPairs); each pair carries its own row's LD reference.
 # @noRd
 .cbMultiStudySumstats <- function(
     qtlData,
@@ -2085,7 +2096,7 @@ setMethod(
 ) {
     embeddedSs <- sumStats(qtlData)
     if (is.null(embeddedSs)) {
-        return(list(qtlPairs = list(), qtlLdReference = NULL))
+        return(list(qtlPairs = list()))
     }
     .cbRequireSumStatsQc(embeddedSs, "MultiStudyQtlDataset@sumStats")
     list(
@@ -2094,8 +2105,7 @@ setMethod(
             contexts = contexts,
             traitId = traitId,
             cutoffs = cutoffs
-        ),
-        qtlLdReference = ldReference(embeddedSs)
+        )
     )
 }
 

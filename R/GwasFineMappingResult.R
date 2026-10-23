@@ -8,7 +8,8 @@
 # range -- the genome-wide-across-blocks shape that
 # qtlEnrichmentPipeline / colocPipeline expect when sweeping a study
 # across LD blocks. Class-level slots:
-#   * ldReference   GenotypeHandle for the LD reference; required for the
+#   * ldReference   the LD references the fits used, each stored once; the
+#                ldReference mcols column names each row's. Required for the
 #                LD-block-indexed susieRSS workflow.
 # Methods that take per-row selectors accept (study, method) and ignore
 # context/trait (GWAS has no per-tuple context or trait axis).
@@ -131,9 +132,9 @@ setClass(
 #'   "methylation"), recorded as a per-row provenance column. Length 1 or
 #'   one per row; \code{NULL} (default) omits the column.
 #' @param dataSource Optional per-row label for the kind of input the fit saw,
-#'   \code{"individual"} or \code{"sumstat"}. Recorded rather than derived: a
-#'   combined collection can hold rows of both kinds, and its single
-#'   \code{ldReference} cannot say which row came from which.
+#'   \code{"individual"} or \code{"sumstat"}. Where it is absent, the result
+#'   writers read a row's kind from its LD reference: a row with none saw
+#'   individual-level data.
 #' @param weightStandardized Optional per-row flag: whether the posterior
 #'   effect is on the STANDARDIZED genotype scale. The posterior effect IS the
 #'   prediction weight, so it carries the same scale question as a TWAS
@@ -141,8 +142,11 @@ setClass(
 #'   it standardizes genotypes before fitting, and the posterior mean is
 #'   reported on the scale of the \code{X} the fit was given. The argument
 #'   exists for a collection assembled by hand, where only the caller knows.
-#' @param ldReference An optional genotype panel (see
-#'   \code{\link{readGenotypes}}).
+#' @param ldReference The LD reference the fits were computed against -- a
+#'   genotype panel (see \code{\link{readGenotypes}}), a
+#'   \code{GenotypeMixture} or an \code{LdMatrix} -- used for every row, or
+#'   a list with one per row; \code{NULL} for none. Each distinct reference is
+#'   stored once.
 #' @param traitPos Optional per-row trait genomic anchor (a \code{GRanges} or
 #'   \code{NULL}), carried forward as provenance; not part of the identity key.
 #'   \code{NULL} (default) omits the column.
@@ -187,7 +191,8 @@ GwasFineMappingResult <- function(
         .appendTraitPosCol(traitPos, n) |>
         .appendRegionCol(region, n) |>
         .appendFmProvenanceCols(dataType, dataSource, weightStandardized, n)
-    dfArgs <- c(cols, list(check.names = FALSE))
+    dict <- .ldRefDict(.ldRefPerTuple(ldReference, n))
+    dfArgs <- c(cols, list(ldReference = dict$keys, check.names = FALSE))
     # Each entry's variants become one ELEMENT, its topLoci that element's
     # inner mcols, and its fit/cv payload outer mcols. A multi-seqname entry
     # splits by chromosome with its metadata row replicated.
@@ -197,11 +202,7 @@ GwasFineMappingResult <- function(
         GenomicRanges::GRangesList(split$entry),
         value = md[split$fromIdx, , drop = FALSE]
     )
-    obj <- new(
-        "GwasFineMappingResult",
-        grl,
-        ldReference = .asLdRef(ldReference)
-    )
+    obj <- new("GwasFineMappingResult", grl, ldReference = dict$refs)
     validObject(obj)
     obj
 }
@@ -334,10 +335,6 @@ setMethod("show", "GwasFineMappingResult", function(object) {
             .trim = FALSE
         ))
     }
-    ldSrc <- if (is.null(object@ldReference)) {
-        "NULL"
-    } else {
-        .ldRefLabel(object@ldReference)
-    }
+    ldSrc <- .ldRefsLabel(ldReference(object), "NULL")
     cat(glue("  LD reference: {ldSrc}\n", .trim = FALSE))
 })

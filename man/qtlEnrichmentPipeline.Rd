@@ -93,16 +93,18 @@ genome of outcome PIPs and the full collection of annotation fits at once.
 }
 
 \section{LD reference compatibility check}{
- A GWAS outcome collection
-  must have a non-NULL \code{ldReference} (it should be RSS-derived). Where
-  both sides carry one, the two must be the same LD reference.
+ Every row of a GWAS outcome
+  collection must have an \code{ldReference} (it should be RSS-derived).
+  For each QTL row and GWAS row whose regions overlap, where both carry
+  one, the two must be the same LD reference; rows that never overlap may
+  sit on different references.
   The two must be the same kind of reference. Two genotype panels must
   share their samples and allele orientation; two \code{LdMatrix} objects
   must agree on the LD they share; two \code{GenotypeMixture} objects must
   average the same panels with the same weights. They need NOT carry the
   same variants: QC-ing the two sides separately trims each reference to
-  its own surviving variants, and a partial overlap only warns. A
-  \code{NULL} on either side (an individual-level fit) skips the check.
+  its own surviving variants, and a partial overlap only warns. A row with
+  no reference on either side (an individual-level fit) skips the check.
 }
 
 \examples{

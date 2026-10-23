@@ -3555,3 +3555,148 @@ test_that("a panel held in memory serves as an LD reference", {
     expect_equal(dim(pecotmr:::.ldRefSubset(mem, 3:7)), c(5L, ncol(mem)))
     expect_equal(dim(pecotmr:::.emptyLdRef(mem)), c(0L, 0L))
 })
+
+# ===========================================================================
+# Per-row LD references
+# ===========================================================================
+
+# An LdMatrix over five chr1 variants at 100 bp spacing.
+.ldr_ldm <- function(rho = 0.2, chrom = "chr1") {
+    ids <- sprintf("%s:%d:A:G", chrom, 100L * (1:5))
+    r <- rho^abs(outer(1:5, 1:5, "-"))
+    LdMatrix(`dimnames<-`(r, list(ids, ids)))
+}
+
+# A QtlSumStats of one tuple per reference in `refs`, every tuple over the same
+# five variants on `chrom`.
+.ldr_qss <- function(refs, chrom = "chr1") {
+    n <- length(refs)
+    gr <- GenomicRanges::GRanges(
+        chrom,
+        IRanges::IRanges(100L * (1:5), width = 1L)
+    )
+    S4Vectors::mcols(gr) <- S4Vectors::DataFrame(
+        SNP = sprintf("%s:%d:A:G", chrom, 100L * (1:5)),
+        A1 = "A",
+        A2 = "G",
+        Z = seq_len(5) / 10,
+        N = 100L
+    )
+    QtlSumStats(
+        studyName = rep("s1", n),
+        context = str_c("c", seq_len(n)),
+        trait = rep("t1", n),
+        entry = rep(list(gr), n),
+        genome = "hg19",
+        ldReference = refs
+    )
+}
+
+test_that(".ldRefPerTuple reads one reference or one per tuple", {
+    a <- .ldr_ldm()
+    b <- .ldr_ldm(rho = 0.5)
+    expect_identical(pecotmr:::.ldRefPerTuple(a, 3L), list(a, a, a))
+    # What ldReference() returns reads the same way: a one-entry list is that
+    # reference for every tuple, an empty one is LD-free.
+    expect_identical(pecotmr:::.ldRefPerTuple(list(ld1 = a), 2L), list(a, a))
+    expect_identical(pecotmr:::.ldRefPerTuple(list(), 2L), list(NULL, NULL))
+    expect_identical(pecotmr:::.ldRefPerTuple(NULL, 2L), list(NULL, NULL))
+    expect_identical(pecotmr:::.ldRefPerTuple(list(a, b), 2L), list(a, b))
+    expect_error(pecotmr:::.ldRefPerTuple(list(a, b), 3L), "one per tuple")
+})
+
+test_that(".ldRefDict stores each distinct reference once and keys every row", {
+    a <- .ldr_ldm()
+    b <- .ldr_ldm(rho = 0.5)
+    # An equal copy built separately is the same reference, not a second one.
+    dict <- pecotmr:::.ldRefDict(list(a, NULL, b, a, .ldr_ldm()))
+    expect_identical(dict$refs, list(ld1 = a, ld2 = b))
+    expect_identical(dict$keys, c("ld1", NA, "ld2", "ld1", "ld1"))
+    expect_identical(pecotmr:::.ldRefDict(list(NULL))$refs, list())
+})
+
+test_that("a collection keeps each row on its own reference, stored once", {
+    a <- .ldr_ldm()
+    b <- .ldr_ldm(rho = 0.5)
+    qss <- .ldr_qss(list(a, b, a))
+    expect_identical(ldReference(qss), list(ld1 = a, ld2 = b))
+    expect_identical(qss$ldReference, c("ld1", "ld2", "ld1"))
+    expect_identical(pecotmr:::.rowLdRefs(qss), list(a, b, a))
+    # A subset reports only the references its rows still use.
+    expect_identical(ldReference(qss[c(1L, 3L)]), list(ld1 = a))
+    expect_output(show(qss), "2 references")
+})
+
+test_that("validity refuses a row keyed to a reference the slot lacks", {
+    qss <- .ldr_qss(list(.ldr_ldm()))
+    expect_error(
+        {
+            qss$ldReference <- "ld9"
+            methods::validObject(qss)
+        },
+        "not in ldReference: ld9"
+    )
+})
+
+test_that("an object saved before per-row references is refused", {
+    # Read as a list, its single reference would pass for LD-free.
+    old <- .ldr_qss(list(.ldr_ldm()))
+    attr(old, "ldReference") <- .ldr_ldm()
+    md <- attr(old, "elementMetadata")
+    md[["ldReference"]] <- NULL
+    attr(old, "elementMetadata") <- md
+    expect_error(ldReference(old), "saved before LD references became")
+})
+
+test_that(".withRowLdRefs puts every row on one reference", {
+    a <- .ldr_ldm()
+    b <- .ldr_ldm(rho = 0.5)
+    moved <- pecotmr:::.withRowLdRefs(.ldr_qss(list(a, b)), b)
+    expect_identical(ldReference(moved), list(ld1 = b))
+    expect_identical(moved$ldReference, c("ld1", "ld1"))
+    expect_true(methods::validObject(moved))
+})
+
+test_that(".requireMatchingRowLdRefs checks only the pairs it is given", {
+    a <- .ldr_ldm()
+    qtl <- .ldr_qss(list(a, .ldr_ldm(rho = 0.5)))
+    gwas <- .ldr_qss(list(a))
+    # QTL row 1 shares the GWAS row's reference; row 2 does not, but is only
+    # refused when it is paired with it.
+    expect_null(pecotmr:::.requireMatchingRowLdRefs(qtl, gwas, 1L, 1L, "p"))
+    expect_error(
+        pecotmr:::.requireMatchingRowLdRefs(qtl, gwas, 2L, 1L, "p"),
+        "disagree on the LD"
+    )
+})
+
+test_that(".overlappingRowPairs pairs rows whose regions overlap", {
+    a <- .ldr_ldm()
+    qtl <- combineQtlSumStats(
+        .ldr_qss(list(a)),
+        .ldr_qss(list(.ldr_ldm(chrom = "chr2")), chrom = "chr2")
+    )
+    pairs <- pecotmr:::.overlappingRowPairs(qtl, .ldr_qss(list(a)))
+    expect_identical(pairs, list(qtlRows = 1L, gwasRows = 1L))
+    # Collections on no common chromosome have no pairs, and say nothing.
+    expect_silent(
+        none <- pecotmr:::.overlappingRowPairs(
+            qtl,
+            .ldr_qss(list(.ldr_ldm(chrom = "chr3")), chrom = "chr3")
+        )
+    )
+    expect_identical(none, list(qtlRows = integer(0), gwasRows = integer(0)))
+})
+
+test_that(".overlapsOnShared compares ranges on the chromosomes both have", {
+    q <- GenomicRanges::GRanges(
+        c("chr1", "chr2"),
+        IRanges::IRanges(c(100L, 100L), width = 10L)
+    )
+    s <- GenomicRanges::GRanges("chr2", IRanges::IRanges(105L, width = 1L))
+    expect_identical(pecotmr:::.overlapsOnShared(q, s), c(FALSE, TRUE))
+    # With no chromosome in common nothing overlaps, and nothing is said.
+    far <- GenomicRanges::GRanges("chr3", IRanges::IRanges(100L, width = 1L))
+    expect_silent(none <- pecotmr:::.overlapsOnShared(q, far))
+    expect_identical(none, c(FALSE, FALSE))
+})

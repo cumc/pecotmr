@@ -141,9 +141,10 @@ Pipeline that hands a per-block set of
 }
 
 \section{LD reference compatibility check}{
- Per block:
-  \code{ldReference(twasWeights)} (when non-NULL) must be the same LD
-  reference as \code{ldReference(gwasSumStats)}.
+ Per block: the block's GWAS
+  rows must share one LD reference (a block's LD is one matrix), and every
+  weight row placed in the block that carries a reference must be the same
+  LD reference as theirs. Blocks may sit on different references.
   The two must be the same kind of reference. Two genotype panels must
   share their samples and allele orientation; two \code{LdMatrix} objects
   must agree on the LD they share; two \code{GenotypeMixture} objects must

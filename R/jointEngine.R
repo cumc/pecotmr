@@ -1257,24 +1257,20 @@ setMethod(
 # padded, only when some row is joint). Every other field --
 # study/context/trait/method, region, and any future column -- flows through
 # untouched.
-.buildJointResult <- function(constructor, records, ldReference = NULL) {
+.buildJointResult <- function(constructor, records) {
     if (length(records) == 0L) {
         return(NULL)
     }
     parts <- map(records, .jointBuildRecordPart, constructor = constructor)
-    .rbindCollections(parts, ldReference = ldReference)
+    .rbindCollections(parts)
 }
 
 setMethod("construct", "FmJointPipeline", function(pipeline, records) {
-    .buildJointResult(
-        QtlFineMappingResult,
-        records,
-        .jpConfig(pipeline)$ldReference
-    )
+    .buildJointResult(QtlFineMappingResult, records)
 })
 
 setMethod("construct", "TwasJointPipeline", function(pipeline, records) {
-    .buildJointResult(TwasWeights, records, .jpConfig(pipeline)$ldReference)
+    .buildJointResult(TwasWeights, records)
 })
 
 # ---- enumerators (pattern x dataForm -> list<JointGroup>) --------------------
@@ -1340,7 +1336,6 @@ setMethod("construct", "TwasJointPipeline", function(pipeline, records) {
 
 # cross-context / sumstats.
 .enumCrossContextSumstats <- function(data, scope, args = list()) {
-    ldReference <- ldReference(data)
     studyCol <- as.character(data$study)
     contextCol <- as.character(data$context)
     traitCol <- as.character(data$trait)
@@ -1350,7 +1345,6 @@ setMethod("construct", "TwasJointPipeline", function(pipeline, records) {
         data = data,
         scope = scope,
         args = args,
-        ldReference = ldReference,
         studyCol = studyCol,
         contextCol = contextCol,
         traitCol = traitCol
@@ -1366,6 +1360,35 @@ setMethod("construct", "TwasJointPipeline", function(pipeline, records) {
     list_c(pieces)
 }
 
+# The one LD reference a summary-statistics joint group's rows share. A joint
+# fit reads a single LD matrix for all its conditions, so rows on different
+# references cannot be fit together; that is refused, naming them, rather
+# than fitting some rows against LD they were never harmonized to.
+# @noRd
+.jointRowsLdRef <- function(data, rows, label) {
+    keys <- .ldRefKeys(data)[rows]
+    if (n_distinct(keys) > 1L) {
+        tuples <- str_c(
+            data$study[rows],
+            data$context[rows],
+            data$trait[rows],
+            sep = ":"
+        )
+        abort(c(
+            glue(
+                "{label}: a joint fit uses one LD matrix, but its rows use ",
+                "different LD references."
+            ),
+            i = str_c(
+                "Rows and their references: ",
+                str_flatten(str_c(tuples, " -> ", keys), "; ")
+            ),
+            i = "Fit them separately, or give them one LD reference."
+        ))
+    }
+    .rowLdRef(data, rows[[1L]])
+}
+
 # One study's cross-context groups (none when it has fewer than two contexts).
 # @noRd
 .enumCrossContextSumstatsForStudy <- function(
@@ -1373,7 +1396,6 @@ setMethod("construct", "TwasJointPipeline", function(pipeline, records) {
     data,
     scope,
     args,
-    ldReference,
     studyCol,
     contextCol,
     traitCol
@@ -1389,7 +1411,6 @@ setMethod("construct", "TwasJointPipeline", function(pipeline, records) {
         s = s,
         scopedContexts = scopedContexts,
         args = args,
-        ldReference = ldReference,
         studyCol = studyCol,
         contextCol = contextCol,
         traitCol = traitCol
@@ -1405,7 +1426,6 @@ setMethod("construct", "TwasJointPipeline", function(pipeline, records) {
     s,
     scopedContexts,
     args,
-    ldReference,
     studyCol,
     contextCol,
     traitCol
@@ -1416,12 +1436,14 @@ setMethod("construct", "TwasJointPipeline", function(pipeline, records) {
     if (length(tupleRows) < 2L) {
         return(NULL)
     }
+    label <- "jointCrossContext (QtlSumStats)"
+    ldReference <- .jointRowsLdRef(data, tupleRows, label)
     ctxNames <- contextCol[tupleRows]
     jz <- .buildJointSumstatZMatrix(
         data,
         tupleRows,
         ctxNames,
-        errorLabel = "jointCrossContext (QtlSumStats)",
+        errorLabel = label,
         ldReference = ldReference,
         cutoffs = args$cutoffs
     )
@@ -1501,7 +1523,6 @@ setMethod("construct", "TwasJointPipeline", function(pipeline, records) {
 
 # cross-trait / sumstats.
 .enumCrossTraitSumstats <- function(data, scope, args = list()) {
-    ldReference <- ldReference(data)
     studyCol <- as.character(data$study)
     contextCol <- as.character(data$context)
     traitCol <- as.character(data$trait)
@@ -1511,7 +1532,6 @@ setMethod("construct", "TwasJointPipeline", function(pipeline, records) {
         data = data,
         scope = scope,
         args = args,
-        ldReference = ldReference,
         studyCol = studyCol,
         contextCol = contextCol,
         traitCol = traitCol
@@ -1524,7 +1544,6 @@ setMethod("construct", "TwasJointPipeline", function(pipeline, records) {
     data,
     scope,
     args,
-    ldReference,
     studyCol,
     contextCol,
     traitCol
@@ -1536,7 +1555,6 @@ setMethod("construct", "TwasJointPipeline", function(pipeline, records) {
         s = s,
         scopedTraits = scope$traits[[s]],
         args = args,
-        ldReference = ldReference,
         studyCol = studyCol,
         contextCol = contextCol,
         traitCol = traitCol
@@ -1552,7 +1570,6 @@ setMethod("construct", "TwasJointPipeline", function(pipeline, records) {
     s,
     scopedTraits,
     args,
-    ldReference,
     studyCol,
     contextCol,
     traitCol
@@ -1563,12 +1580,14 @@ setMethod("construct", "TwasJointPipeline", function(pipeline, records) {
     if (length(tupleRows) < 2L) {
         return(NULL)
     }
+    label <- "jointCrossTrait (QtlSumStats)"
+    ldReference <- .jointRowsLdRef(data, tupleRows, label)
     trNames <- traitCol[tupleRows]
     jz <- .buildJointSumstatZMatrix(
         data,
         tupleRows,
         trNames,
-        errorLabel = "jointCrossTrait (QtlSumStats)",
+        errorLabel = label,
         ldReference = ldReference,
         cutoffs = args$cutoffs
     )
@@ -1585,7 +1604,6 @@ setMethod("construct", "TwasJointPipeline", function(pipeline, records) {
 # disjoint samples). One group per (context, trait) present in >= 2 scoped
 # studies; the study axis varies -> "joint" + jointStudies.
 .enumCrossStudySumstats <- function(data, scope, args = list()) {
-    ldReference <- ldReference(data)
     cols <- list(
         study = as.character(data$study),
         context = as.character(data$context),
@@ -1600,8 +1618,7 @@ setMethod("construct", "TwasJointPipeline", function(pipeline, records) {
         scope = scope,
         args = args,
         cols = cols,
-        allTrs = allTrs,
-        ldReference = ldReference
+        allTrs = allTrs
     ))
 }
 
@@ -1613,8 +1630,7 @@ setMethod("construct", "TwasJointPipeline", function(pipeline, records) {
     scope,
     args,
     cols,
-    allTrs,
-    ldReference
+    allTrs
 ) {
     compact(map(
         allTrs,
@@ -1623,38 +1639,21 @@ setMethod("construct", "TwasJointPipeline", function(pipeline, records) {
         scope = scope,
         args = args,
         cols = cols,
-        cx = cx,
-        ldReference = ldReference
+        cx = cx
     ))
 }
 
 # `map()` hands the trait first; .enumCrossStudyGroup takes it sixth.
 # @noRd
-.enumCrossStudyGroupFor <- function(
-    tid,
-    data,
-    scope,
-    args,
-    cols,
-    cx,
-    ldReference
-) {
-    .enumCrossStudyGroup(data, scope, args, cols, cx, tid, ldReference)
+.enumCrossStudyGroupFor <- function(tid, data, scope, args, cols, cx) {
+    .enumCrossStudyGroup(data, scope, args, cols, cx, tid)
 }
 
 # One cross-study joint group for a (context, trait) cell, or NULL when fewer
 # than two studies survive the scope filter -- a "joint" fit over one study is
 # just that study, so the cell contributes nothing.
 # @noRd
-.enumCrossStudyGroup <- function(
-    data,
-    scope,
-    args,
-    cols,
-    cx,
-    tid,
-    ldReference
-) {
+.enumCrossStudyGroup <- function(data, scope, args, cols, cx, tid) {
     candidates <- which(
         cols$context == cx &
             cols$trait == tid &
@@ -1672,6 +1671,7 @@ setMethod("construct", "TwasJointPipeline", function(pipeline, records) {
     if (length(tupleRows) < 2L) {
         return(NULL)
     }
+    ldReference <- .jointRowsLdRef(data, tupleRows, "jointCrossStudy")
     stNames <- cols$study[tupleRows]
     jz <- .buildJointSumstatZMatrix(
         data,
@@ -1823,7 +1823,6 @@ setMethod("construct", "TwasJointPipeline", function(pipeline, records) {
 # (fixed) axes form one group each. Reuses .enumerateComposedSumstatGroups.
 .enumComposedSumstats <- function(data, scope, args = list()) {
     axes <- args$axes %||% c("context", "trait")
-    ldReference <- ldReference(data)
     gi <- .enumerateComposedSumstatGroups(list(axes = axes), data, scope)
     if (is.null(gi)) {
         return(list())
@@ -1836,23 +1835,24 @@ setMethod("construct", "TwasJointPipeline", function(pipeline, records) {
         .enumComposedGroupFor,
         data = data,
         gi = gi,
-        args = args,
-        ldReference = ldReference
+        args = args
     )))
 }
 
 # One composed cell's group, or NULL when it spans fewer than two tuples --
 # a "joint" fit over one tuple is just that tuple.
 # @noRd
-.enumComposedGroupFor <- function(gIdx, data, gi, args, ldReference) {
+.enumComposedGroupFor <- function(gIdx, data, gi, args) {
     if (length(gIdx) < 2L) {
         return(NULL)
     }
+    label <- "composed (QtlSumStats)"
+    ldReference <- .jointRowsLdRef(data, gIdx, label)
     jz <- .buildJointSumstatZMatrix(
         data,
         gIdx,
         map_chr(gIdx, .jointGroupColLabel, gi = gi),
-        errorLabel = "composed (QtlSumStats)",
+        errorLabel = label,
         ldReference = ldReference,
         cutoffs = args$cutoffs
     )
@@ -2093,7 +2093,8 @@ setMethod("construct", "TwasJointPipeline", function(pipeline, records) {
         js = .jointAxisMembers(cond, "study"),
         jc = .jointAxisMembers(cond, "context"),
         jt = .jointAxisMembers(cond, "trait"),
-        region = .jointGroupWindow(data, cond, args)
+        region = .jointGroupWindow(data, cond, args),
+        ldReference = .jgLdRefOf(g)
     )
     fitArgs <- .twasGroupArgs(g, pipeline, args)
     fitArgs$af <- .jointAfForGroup(data, g)
@@ -2535,7 +2536,6 @@ setMethod("construct", "TwasJointPipeline", function(pipeline, records) {
     if (length(jointMethods) == 0L || length(parsedJointSpec) == 0L) {
         return(NULL)
     }
-    ldReference <- .jpConfig(pipeline)$ldReference
     isFm <- is(pipeline, "FmJointPipeline")
     results <- compact(map(
         parsedJointSpec,
@@ -2551,13 +2551,8 @@ setMethod("construct", "TwasJointPipeline", function(pipeline, records) {
     if (length(results) == 0L) {
         return(NULL)
     }
-    rbindFn <- if (isFm) .rbindFineMappingResult else .rbindTwasWeights
-    reduce(
-        results,
-        .jointRbindWithLdRef,
-        rbindFn = rbindFn,
-        ldReference = ldReference
-    )
+    # Every row keeps the LD reference its group was fitted against.
+    reduce(results, if (isFm) .rbindFineMappingResult else .rbindTwasWeights)
 }
 
 # `map()` hands the spec first, which is also where .runOneJointSpec wants it.
@@ -2582,11 +2577,6 @@ setMethod("construct", "TwasJointPipeline", function(pipeline, records) {
         traitIds,
         args
     )
-}
-
-# @noRd
-.jointRbindWithLdRef <- function(acc, res, rbindFn, ldReference) {
-    rbindFn(acc, res, ldReference = ldReference)
 }
 
 # Run all joint methods for ONE spec: resolve its scope (optionally
@@ -2765,7 +2755,10 @@ setMethod("construct", "TwasJointPipeline", function(pipeline, records) {
         jointContexts = grp$jc,
         jointTraits = grp$jt,
         traitPos = tpos,
-        region = grp$region
+        region = grp$region,
+        # The reference the group was fitted against, so each result row
+        # keeps it; NULL for an individual-level group.
+        ldReference = grp$ldReference
     )
 }
 

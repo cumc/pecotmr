@@ -26,12 +26,13 @@ GwasSumStats(
 study.}
 
 \item{genome}{Single character string giving the genome build (e.g.,
-\code{"hg19"}, \code{"hg38"}). Uniform across the collection because all
-entries share the same LD reference.}
+\code{"hg19"}, \code{"hg38"}). One build per collection.}
 
 \item{ldReference}{The LD reference: a genotype panel (see
 \code{\link{readGenotypes}}), a \code{\link{GenotypeMixture}} or an
-\code{\link{LdMatrix}}.}
+\code{\link{LdMatrix}}, used for every study, or a list with one per
+study when they sit on different references. Each distinct reference is
+stored once, and the \code{ldReference} column names each row's.}
 
 \item{varY}{Optional numeric vector of per-study phenotype variances
 (\code{NA_real_} entries allowed). Used by the sufficient-statistic
@@ -86,8 +87,8 @@ A \code{GwasSumStats} object.
 \description{
 Construct a \code{GwasSumStats} S4 DFrame-subclass collection
   from per-study tuple vectors and a list of \code{GRanges} entries (one per
-  study), plus a single LD reference and a single genome build that apply
-  to the whole collection.
+  study), plus the LD reference(s) the rows were harmonized against and a
+  single genome build that applies to the whole collection.
 
 Each \code{GRanges} entry must carry per-variant statistics in its mcols (at
 minimum \code{SNP}, \code{A1}, \code{A2}, \code{Z}, \code{N}; optionally

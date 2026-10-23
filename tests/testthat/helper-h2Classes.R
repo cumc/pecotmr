@@ -148,7 +148,8 @@ makeGwasBlock <- function(
     start,
     n = 5L,
     genome = "hg19",
-    qcOptions = list(mafCutoff = 0.01)
+    qcOptions = list(mafCutoff = 0.01),
+    ldReference = .blockGenotypeHandle(bp)
 ) {
     bp <- seq(start, by = 100L, length.out = n)
     df <- data.frame(
@@ -165,7 +166,7 @@ makeGwasBlock <- function(
         studyName = "trait1",
         entry = list(.dfToSumstatsGr(df)),
         genome = genome,
-        ldReference = .blockGenotypeHandle(bp),
+        ldReference = ldReference,
         blockId = blockId,
         qcInfo = list(
             timestamp = NA_character_,

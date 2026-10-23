@@ -1502,19 +1502,61 @@ test_that(".resolveLdRef passes through NULL and a handle", {
     expect_identical(pecotmr:::.resolveLdRef(h), h)
 })
 
-test_that("non-constant ldReferencePath column errors", {
+# The toy panel's 200-variant copy keyed by canonical ids: the same samples
+# and the toy GWAS variants, read from different files.
+.toyCanonicalPrefix <- function() {
+    sub(
+        "\\.bed$",
+        "",
+        system.file("extdata", "toy_canonical.bed", package = "pecotmr")
+    )
+}
+
+test_that("each study's ldReferencePath gives it its own LD reference", {
+    skip_if_not_installed("PlinkMatrix")
+    tmp <- withr::local_tempdir()
+    ss1 <- .writeSumstatsTsv(.toyGwasDf(3), file.path(tmp, "a.tsv"))
+    ss2 <- .writeSumstatsTsv(.toyGwasDf(3), file.path(tmp, "b.tsv"))
+    ss3 <- .writeSumstatsTsv(.toyGwasDf(3), file.path(tmp, "c.tsv"))
+    manifest <- data.frame(
+        study = c("a", "b", "c"),
+        sumStatsPath = c(ss1, ss2, ss3),
+        ldReferencePath = c(
+            .toyRefPrefix(),
+            .toyCanonicalPrefix(),
+            .toyRefPrefix()
+        ),
+        stringsAsFactors = FALSE
+    )
+    obj <- suppressWarnings(
+        loadGwasSumStatsFromManifest(manifest, genome = "hg38")
+    )
+    # Two distinct panels, each read once and stored once; studies a and c
+    # share the first.
+    refs <- ldReference(obj)
+    expect_length(refs, 2L)
+    keys <- obj$ldReference[match(c("a", "b", "c"), obj$study)]
+    expect_identical(keys[[1L]], keys[[3L]])
+    expect_false(identical(keys[[1L]], keys[[2L]]))
+    expect_match(
+        pecotmr:::.ldRefSource(refs[[keys[[2L]]]])$path,
+        "toy_canonical"
+    )
+})
+
+test_that("a manifest row with no LD reference errors", {
     tmp <- withr::local_tempdir()
     ss1 <- .writeSumstatsTsv(.toyGwasDf(3), file.path(tmp, "a.tsv"))
     ss2 <- .writeSumstatsTsv(.toyGwasDf(3), file.path(tmp, "b.tsv"))
     manifest <- data.frame(
         study = c("a", "b"),
         sumStatsPath = c(ss1, ss2),
-        ldReferencePath = c(.toyRefPrefix(), "other"),
+        ldReferencePath = c(.toyRefPrefix(), ""),
         stringsAsFactors = FALSE
     )
     expect_error(
         loadGwasSumStatsFromManifest(manifest, genome = "hg38"),
-        "must be constant"
+        "row\\(s\\) 2 have no `ldReferencePath`"
     )
 })
 

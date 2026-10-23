@@ -397,9 +397,6 @@
     rep(gr, n)
 }
 
-# Internal: append a validated `region` GRanges to a constructor's column list
-# (no-op when NULL). Shared by the TwasWeights / FineMappingResultBase
-# constructors so the provenance column is added identically everywhere.
 # Internal: an optional per-row provenance column. One helper for all three
 # (`dataType`, `dataSource`, `standardized`) since they differ only in name and
 # coercion.
@@ -439,6 +436,10 @@
     .appendProvenanceCol(cols, standardized, "standardized", n, as.logical)
 }
 
+# Internal: append a validated `region` GRanges to a constructor's column list
+# (no-op when NULL). Shared by the TwasWeights / FineMappingResultBase
+# constructors so the provenance column is added identically everywhere.
+# @noRd
 .appendRegionCol <- function(cols, region, n) {
     if (is.null(region)) {
         return(cols)
@@ -553,10 +554,11 @@
 # unioned, and a collection lacking an optional column (e.g. jointContexts or
 # region) is padded with `.naLikeColumn` -- so adding a column to a class flows
 # through combines automatically rather than being hand-listed at each site.
-# Preserves the concrete class and sets the `ldReference` slot explicitly (rbind
-# does not reliably carry it). Returns NULL when given no inputs. Every
-# collection is a RangedTupleList now, so this only drops the NULL parts and
-# hands off; the old DFrame path went with the rebase onto GRangesList.
+# Preserves the concrete class and rebuilds the LD references: every row keeps
+# its own (.ldRefCombine()), unless `ldReference` names one for all of them.
+# Returns NULL when given no inputs. Every collection is a RangedTupleList now,
+# so this only drops the NULL parts and hands off; the old DFrame path went
+# with the rebase onto GRangesList.
 #
 # `slots` carries the collection-level state a concrete subclass adds beyond
 # `ldReference` (SumStatsBase's `genome` / `qcInfo`). It is passed in rather
@@ -567,13 +569,15 @@
     parts,
     ldReference = NULL,
     slots = list(),
-    genome = NULL
+    genome = NULL,
+    fn = ".rbindCollections"
 ) {
     parts <- compact(parts)
     if (length(parts) == 0L) {
         return(NULL)
     }
-    .rbindRangedCollections(parts, ldReference, slots, genome)
+    dict <- .ldRefCombine(parts, ldReference, fn)
+    .rbindRangedCollections(parts, dict, slots, genome)
 }
 
 # Internal: aggregate a per-entry accessor across every row of a
@@ -742,13 +746,18 @@
 # @noRd
 .rbindRangedCollections <- function(
     parts,
-    ldReference,
+    dict,
     slots = list(),
     genome = NULL
 ) {
     cls <- class(parts[[1L]])[[1L]]
     allCols <- reduce(map(parts, .tupleColumnNames), union)
-    combined <- set_names(map(allCols, .rbindColumn, parts = parts), allCols)
+    # Each part keyed its rows into its own references, so the bound rows take
+    # the keys the combined references were built with.
+    combined <- list_assign(
+        set_names(map(allCols, .rbindColumn, parts = parts), allCols),
+        ldReference = dict$keys
+    )
     md <- exec(
         S4Vectors::DataFrame,
         !!!c(combined, list(check.names = FALSE))
@@ -768,7 +777,7 @@
         methods::new,
         cls,
         grl,
-        !!!c(list(ldReference = ldReference), slots)
+        !!!c(list(ldReference = dict$refs), slots)
     )
     validObject(out)
     out
@@ -1185,9 +1194,13 @@
 # @noRd
 .rtlExtraSlots <- function(parts, fn) {
     own <- setdiff(.rtlOwnSlots(parts[[1L]]), "ldReference")
-    out <- compact(list(
-        qcInfo = if (is_in("qcInfo", own)) .ssCombineQcInfo(parts, fn)
-    ))
+    # discard(is.null), not compact(): parts no QC has run on merge to an
+    # empty qcInfo, which is a merged value -- compact() would drop it and
+    # report the slot as having no merge rule.
+    out <- discard(
+        list(qcInfo = if (is_in("qcInfo", own)) .ssCombineQcInfo(parts, fn)),
+        is.null
+    )
     unknown <- setdiff(own, names(out))
     if (length(unknown) > 0L) {
         cls <- class(parts[[1L]])[[1L]]
@@ -1202,7 +1215,8 @@
 
 # Merge `parts` into one collection, reconciling every collection-level slot.
 # The single path behind `c()` / `append()` and the four combine*() wrappers.
-# A non-NULL `ldReference` overrides the unioned panel.
+# Every row keeps its own LD reference; a non-NULL `ldReference` is every
+# row's instead.
 # @noRd
 .combineTupleCollections <- function(parts, ldReference, fn) {
     .rtlRequireSameClass(parts, fn)
@@ -1212,9 +1226,10 @@
     genome <- .rtlCombineGenome(parts, fn)
     .rbindCollections(
         parts,
-        ldReference = ldReference %||% .combineLdRef(parts, fn),
+        ldReference = ldReference,
         slots = .rtlExtraSlots(parts, fn),
-        genome = genome
+        genome = genome,
+        fn = fn
     )
 }
 
@@ -1321,35 +1336,118 @@
     identical(qcInfo(x)$options, first)
 }
 
-# The union of the parts' LD panels. All-NULL stays NULL (an individual-level
-# collection has no panel); a mix is an error, because silently keeping the
-# panels that exist would leave elements harmonized against nothing.
+# The LD references of `parts`, row-bound: each row keeps the reference it
+# had, and a reference that is a view of another is stored as that one
+# (.ldRefMergeViews()). `override`, when given, is every row's reference
+# instead.
 # @noRd
-.combineLdRef <- function(parts, fn) {
-    sketches <- map(parts, ldReference)
-    present <- !map_lgl(sketches, is.null)
-    if (!any(present)) {
-        return(NULL)
+.ldRefCombine <- function(parts, override, fn) {
+    if (!is.null(override)) {
+        n <- sum(map_int(parts, length))
+        return(.ldRefDict(.ldRefPerTuple(override, n)))
     }
-    if (!all(present)) {
-        msg <- glue(
-            "{fn}: {sum(!present)} of {length(parts)} inputs carry no ",
-            "ldReference. Combine collections that all have an LD reference, ",
-            "or all have none."
-        )
-        abort(msg)
+    perRow <- list_flatten(map(parts, .rowLdRefs))
+    .ldRefMergeViews(.ldRefDict(perRow), fn)
+}
+
+# `dict` with every entry that is a view of another stored as that one, and
+# the rows re-keyed to it. Block-parallel pipelines narrow each piece's panel
+# to its own block, so binding the pieces back together would otherwise hold
+# one panel per block where there is one panel.
+#
+# Entries are taken widest first, and each joins the first group whose head
+# (its widest entry) it is a view of, or heads a new one. An entry so meets
+# the widest reference holding it before any narrower one, whatever order the
+# rows came in. Groups are numbered by their first row, so `ld1` stays the
+# first row's reference.
+# @noRd
+.ldRefMergeViews <- function(dict, fn) {
+    refs <- dict$refs
+    if (length(refs) <= 1L) {
+        return(dict)
     }
-    if (any(map_lgl(sketches, .ldIsMatrixRef))) {
-        return(.combineLdMatrixRefs(sketches, fn))
+    grouped <- reduce(
+        order(map_int(refs, .ldRefNVariants), decreasing = TRUE),
+        .ldRefAssignGroup,
+        refs = refs,
+        .init = list(heads = integer(0), group = integer(length(refs)))
+    )
+    seen <- unique(grouped$group)
+    group <- match(grouped$group, seen)
+    merged <- map(
+        seq_along(seen),
+        .ldRefGroupRef,
+        group = group,
+        heads = grouped$heads[seen],
+        refs = refs,
+        fn = fn
+    )
+    keys <- str_c("ld", seq_along(merged))
+    list(
+        refs = set_names(merged, keys),
+        keys = keys[group[match(dict$keys, names(refs))]]
+    )
+}
+
+# `grouped` extended by entry `i`: it joins the first group whose head it is
+# a view of, or heads a new group.
+# @noRd
+#' @importFrom purrr detect_index
+.ldRefAssignGroup <- function(grouped, i, refs) {
+    hit <- detect_index(grouped$heads, .ldRefHeadHolds, i = i, refs = refs)
+    if (hit == 0L) {
+        grouped$heads <- c(grouped$heads, i)
+        hit <- length(grouped$heads)
     }
-    if (any(map_lgl(sketches, .ldIsMixtureRef))) {
-        return(.combineMixtureRefs(sketches, fn))
+    grouped$group[[i]] <- hit
+    grouped
+}
+
+# @noRd
+.ldRefHeadHolds <- function(h, i, refs) {
+    .ldRefIsViewOf(refs[[i]], refs[[h]])
+}
+
+# TRUE when reference `x` can be stored as `of`: panels reading the same files
+# over the same samples, or an LdMatrix or mixture all of whose variants `of`
+# holds, with the same LD.
+# @noRd
+.ldRefIsViewOf <- function(x, of) {
+    if (.ldIsPanel(x) && .ldIsPanel(of)) {
+        return(.ssSameGenotypeSource(x, of))
     }
-    .ssCheckSameSource(sketches, fn)
-    chromPaths <- .ssUnionChromPaths(sketches, fn)
-    handles <- map(sketches, .ldRefHandle)
+    if (.ldIsMatrixRef(x) && .ldIsMatrixRef(of)) {
+        return(.ldmCoveredBy(x, of))
+    }
+    if (.ldIsMixtureRef(x) && .ldIsMixtureRef(of)) {
+        return(.ldRefVariantsCoveredBy(x, of) && .gmSameMixture(x, of))
+    }
+    FALSE
+}
+
+# The one reference group `g` is stored as. Panels from one source union. An
+# LdMatrix or mixture cannot be widened -- the LD between variants that
+# different members hold is in none of them -- so the group's head, which
+# holds every other member, stands for it.
+# @noRd
+.ldRefGroupRef <- function(g, group, heads, refs, fn) {
+    members <- unname(refs[group == g])
+    if (length(members) == 1L || !.ldIsPanel(members[[1L]])) {
+        return(refs[[heads[[g]]]])
+    }
+    .unionPanelRefs(members, fn)
+}
+
+# One panel standing for `panels`, which read the same files over the same
+# samples: a handle union keeps the first handle and widens its snpInfo, each
+# row's `fileIdx` addressing a position in THAT file, and a panel union binds
+# the parts over the first one's samples.
+# @noRd
+.unionPanelRefs <- function(panels, fn) {
+    chromPaths <- .ssUnionChromPaths(panels, fn)
+    handles <- map(panels, .ldRefHandle)
     if (any(map_lgl(handles, is.null))) {
-        return(.ssUnionPanels(sketches, chromPaths))
+        return(.ssUnionPanels(panels, chromPaths))
     }
     handle <- methods::initialize(
         handles[[1L]],
@@ -1393,60 +1491,6 @@
         md$genotypeSource$chromPaths <- chromPaths
     }
     S4Vectors::`metadata<-`(stacked[ord, ], value = md)
-}
-
-# LdMatrix references, unlike panels, cannot be unioned: the LD between
-# variants held by different parts is recorded in neither. They combine only
-# when one of them already holds every other's variants with the same LD --
-# the same matrix, or one part that kept all of the others' variants.
-# Otherwise the caller passes the matrix covering them all as `ldReference`.
-# @noRd
-.combineLdMatrixRefs <- function(refs, fn) {
-    if (!all(map_lgl(refs, .ldIsMatrixRef))) {
-        msg <- glue(
-            "{fn}: inputs mix genotype-panel and LdMatrix references; ",
-            "combine collections that share one LD reference."
-        )
-        abort(msg)
-    }
-    widest <- refs[[which.max(map_int(refs, length))]]
-    if (all(map_lgl(refs, .ldmCoveredBy, by = widest))) {
-        return(widest)
-    }
-    abort(c(
-        glue(
-            "{fn}: the inputs' LdMatrix references cover different variants, ",
-            "and the LD between them is held by none."
-        ),
-        i = "Pass an LdMatrix covering all of their variants as `ldReference`."
-    ))
-}
-
-# Mixture references combine like LdMatrix ones: when one of them already
-# holds every other's variants and they average the same panels with the
-# same weights. Their panels stay lazy, so the widest mixture loses nothing.
-# @noRd
-.combineMixtureRefs <- function(refs, fn) {
-    if (!all(map_lgl(refs, .ldIsMixtureRef))) {
-        msg <- glue(
-            "{fn}: inputs mix GenotypeMixture references with other kinds; ",
-            "combine collections that share one LD reference."
-        )
-        abort(msg)
-    }
-    widest <- refs[[which.max(map_int(refs, .ldRefNVariants))]]
-    sameMix <- map_lgl(refs, .gmSameMixture, y = widest)
-    covered <- map_lgl(refs, .ldRefVariantsCoveredBy, by = widest)
-    if (all(sameMix & covered)) {
-        return(widest)
-    }
-    abort(c(
-        glue(
-            "{fn}: the inputs' GenotypeMixture references differ or cover ",
-            "different variants."
-        ),
-        i = "Pass the mixture covering all of their variants as `ldReference`."
-    ))
 }
 
 # TRUE when every variant of `x` is in `by`, coded the same way.
@@ -1508,24 +1552,6 @@
         "{fn}: chromosome '{ch}' maps to two different genotype ",
         "files across the inputs, so their LD references cannot ",
         "be unioned."
-    )
-    abort(msg)
-}
-
-# Every panel must read from the same file(s) and samples: a handle union
-# keeps the first handle and widens its snpInfo, each row's `fileIdx`
-# addressing a position in THAT file, and a panel union binds the parts over
-# the first one's samples.
-# @noRd
-.ssCheckSameSource <- function(sketches, fn) {
-    same <- map_lgl(sketches, .ssSameGenotypeSource, first = sketches[[1L]])
-    if (all(same)) {
-        return(invisible(NULL))
-    }
-    msg <- glue(
-        "{fn}: inputs reference different genotype panels (input ",
-        "{which(!same)[[1L]]} differs from the first). Their LD references ",
-        "cannot be unioned."
     )
     abort(msg)
 }

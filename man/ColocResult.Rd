@@ -18,9 +18,11 @@ columns are \code{NA} for it.}
 \item{variants}{A list, parallel to \code{pairs}' rows, of per-pair data
 frames with a \code{variant_id} column and a \code{SNP.PP.H4} column.}
 
-\item{ldReference}{Optional genotype panel (see \code{\link{readGenotypes}})
-for the LD reference, used by \code{\link{colocCredibleSets}} to
-compute purity.}
+\item{ldReference}{Optional LD reference -- a genotype panel (see
+\code{\link{readGenotypes}}), a \code{GenotypeMixture} or an
+\code{LdMatrix} -- for every pair, or a list with one per pair; used by
+\code{\link{colocCredibleSets}} to compute purity. Each distinct
+reference is stored once.}
 }
 \value{
 A \code{ColocResult}.

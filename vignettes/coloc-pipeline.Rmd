@@ -87,9 +87,10 @@ res2 <- colocPipeline(
 attr(res2, "gwasFineMapping")
 ```
 
-If the `QtlFineMappingResult` has an LD reference because it was run on
-summary statistics, it must be the same LD reference as the `GwasSumStats`
-carries.
+If the `QtlFineMappingResult` has LD references because it was run on
+summary statistics, each of its rows must use the same LD reference as the
+GWAS rows it overlaps. A QTL row with no LD reference, such as a fit to
+individual-level data, is not checked.
 
 ## QTL FMR + pre-computed GWAS FMR
 

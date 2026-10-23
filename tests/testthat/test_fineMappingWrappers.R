@@ -3182,13 +3182,17 @@ test_that("mergeSusieCs: input that is not a fine-mapping result errors", {
 test_that("computeCsCorrelation (SumStats) matches get_cs_correlation", {
     data(qtlSumStatsExample)
     ss <- qtlSumStatsExample
-    vids <- rownames(ldReference(ss))
+    vids <- rownames(ldReference(ss)[[1L]])
     set.seed(1)
     fe <- .ccMakeEntry(vids, list(L1 = c(1L, 2L, 3L), L2 = c(90L, 91L)))
     cc <- computeCsCorrelation(fe, ss)
     # Reference: the same LD (from the sketch, aligned to the fit variables)
     # fed to the same fit. Equality proves the on-demand path + alignment.
-    xcorr <- pecotmr:::.ldFromRef(ldReference(ss), vids, onMissing = "error")
+    xcorr <- pecotmr:::.ldFromRef(
+        ldReference(ss)[[1L]],
+        vids,
+        onMissing = "error"
+    )
     ref <- susieR::get_cs_correlation(
         list(sets = susieFit(fe)$sets, pip = susieFit(fe)$pip),
         Xcorr = xcorr
@@ -3202,7 +3206,7 @@ test_that("computeCsCorrelation reads a panel's factor or an LdMatrix alike", {
     # same LD gives the same between-CS correlation.
     data(gwasSumStatsS4Example)
     gss <- gwasSumStatsS4Example
-    panel <- ldReference(gss)
+    panel <- ldReference(gss)[[1L]]
     withLd <- GwasSumStats(
         studyName = studyName(gss),
         entry = list(pecotmr:::.collectionEntry(gss, 1L)),
@@ -3255,11 +3259,11 @@ test_that("computeCsCorrelation reads an fSuSiE fit's sets, from LD", {
     # latter made every fSuSiE fit look set-less, so this came back NULL.
     data(qtlSumStatsExample)
     ss <- qtlSumStatsExample
-    vids <- rownames(ldReference(ss))
+    vids <- rownames(ldReference(ss)[[1L]])
     cs <- list(c(1L, 2L, 3L), c(90L, 91L))
     set.seed(1)
     cc <- computeCsCorrelation(.ccMakeFsusieEntry(vids, cs), ss)
-    R <- pecotmr:::.ldFromRef(ldReference(ss), vids, onMissing = "error")
+    R <- pecotmr:::.ldFromRef(ldReference(ss)[[1L]], vids, onMissing = "error")
     expect_equal(cc, .ccMaxCorrelation(R, cs))
     expect_equal(diag(cc), c(1, 1))
 })
@@ -3280,7 +3284,7 @@ test_that("computeCsCorrelation reads an fSuSiE fit's sets, from genotypes", {
 test_that("computeCsCorrelation is NULL for fewer than two credible sets", {
     data(qtlSumStatsExample)
     ss <- qtlSumStatsExample
-    vids <- rownames(ldReference(ss))
+    vids <- rownames(ldReference(ss)[[1L]])
     set.seed(1)
     expect_null(computeCsCorrelation(.ccMakeEntry(vids, list()), ss))
     expect_null(
@@ -3290,7 +3294,7 @@ test_that("computeCsCorrelation is NULL for fewer than two credible sets", {
 
 test_that("computeCsCorrelation requires a QtlDataset / SumStats ldSource", {
     data(qtlSumStatsExample)
-    vids <- rownames(ldReference(qtlSumStatsExample))
+    vids <- rownames(ldReference(qtlSumStatsExample)[[1L]])
     set.seed(1)
     fe <- .ccMakeEntry(vids, list(L1 = c(1L, 2L, 3L), L2 = c(90L, 91L)))
     expect_error(computeCsCorrelation(fe, 42), "requires a QtlDataset")
@@ -3303,7 +3307,7 @@ test_that("computeCsCorrelation requires a QtlDataset / SumStats ldSource", {
 test_that("computeCsCorrelation errors when a fit variant is off-panel", {
     data(qtlSumStatsExample)
     ss <- qtlSumStatsExample
-    vids <- rownames(ldReference(ss))
+    vids <- rownames(ldReference(ss)[[1L]])
     vids[1] <- "chr22:99999999:A:G"
     set.seed(1)
     fe <- .ccMakeEntry(vids, list(L1 = c(1L, 2L, 3L), L2 = c(90L, 91L)))
@@ -3534,7 +3538,7 @@ test_that("extractCsInfo extracts single CS correctly", {
 test_that("extractCsInfo builds correlation columns from the ldSource", {
     data(qtlSumStatsExample)
     ss <- qtlSumStatsExample
-    vids <- rownames(ldReference(ss))
+    vids <- rownames(ldReference(ss)[[1L]])
     set.seed(1)
     fit <- list(
         sets = list(cs = list(L_1 = c(1L, 2L, 3L), L_2 = c(90L, 91L))),
@@ -5632,4 +5636,33 @@ test_that("a screen whose marginal z cannot be computed falls back", {
     expect_true(.fmSerScreen(X, y, scr, fallback = TRUE))
     # colocboost passes FALSE: it drops an outcome it cannot screen.
     expect_false(.fmSerScreen(X, y, scr, fallback = FALSE))
+})
+
+test_that("computeCsCorrelation refuses an ldSource on several references", {
+    # Nothing in the fit says which of the rows' references it was computed
+    # against, so a source with several is refused rather than guessed at.
+    data(qtlSumStatsMulticontextExample)
+    mc <- qtlSumStatsMulticontextExample
+    panel <- ldReference(mc)[[1L]]
+    ids <- c("chr1:100:A:G", "chr1:200:C:T")
+    refs <- rep(list(panel), nrow(mc))
+    refs[[2L]] <- LdMatrix(`dimnames<-`(diag(2), list(ids, ids)))
+    two <- pecotmr:::.withRowLdRefs(mc, refs)
+    vids <- rownames(panel)
+    fe <- .ccMakeEntry(vids, list(L1 = c(1L, 2L, 3L), L2 = c(4L, 5L)))
+    expect_error(
+        computeCsCorrelation(fe, two),
+        "rows use 2 different LD references"
+    )
+})
+
+test_that("computeCsCorrelation refuses an LD-free summary-statistics source", {
+    data(qtlSumStatsMulticontextExample)
+    mc <- qtlSumStatsMulticontextExample
+    vids <- rownames(ldReference(mc)[[1L]])
+    fe <- .ccMakeEntry(vids, list(L1 = c(1L, 2L, 3L), L2 = c(4L, 5L)))
+    expect_error(
+        computeCsCorrelation(fe, pecotmr:::.withRowLdRefs(mc, NULL)),
+        "carries no LD reference"
+    )
 })

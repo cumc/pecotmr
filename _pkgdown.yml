@@ -293,6 +293,7 @@ reference:
       - nestTupleRanges
       - RangedTupleList-methods
       - subsetRegion
+      - updateObject-methods
 
   - subtitle: "FineMappingResultBase"
     contents:

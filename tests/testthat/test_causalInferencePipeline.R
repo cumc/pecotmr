@@ -250,14 +250,42 @@ test_that(".cipRequireMatchingLdRefs: differently trimmed panels pass", {
     # Independent QC of the QTL and GWAS sides leaves one LD reference as two
     # overlapping-but-unequal panels, which the check reports rather than
     # refuses.
+    tw <- .cip_makeTwasWeights()
+    tw <- pecotmr:::.withRowLdRefs(tw, .cip_makeHandle(snp_n = 6L))
+    gwas <- pecotmr:::.withRowLdRefs(
+        .cip_makeGwasSumstats(),
+        .cip_makeHandle(snp_n = 7L)
+    )
     expect_warning(
         expect_null(pecotmr:::.cipRequireMatchingLdRefs(
-            .cip_makeHandle(snp_n = 6L),
-            .cip_makeHandle(snp_n = 7L),
+            tw,
+            gwas,
             label = "twasWeights"
         )),
         "share 6 variant"
     )
+})
+
+test_that(".cipRequireMatchingLdRefs: rows that never meet may differ", {
+    # The check is per pair of rows scored together -- those whose regions
+    # overlap -- so a weight row elsewhere on the genome is not held to the
+    # GWAS rows' panel.
+    elsewhere <- TwasWeights(
+        studyName = "Q1",
+        context = "c1",
+        trait = "t1",
+        method = "lasso",
+        entry = list(twasWeightsRow(
+            variantIds = sprintf("chr2:%d:A:G", 100L * (1:5)),
+            weights = rep(0.1, 5)
+        )),
+        ldReference = .cip_makeHandle(sample_prefix = "other")
+    )
+    expect_null(pecotmr:::.cipRequireMatchingLdRefs(
+        elsewhere,
+        .cip_makeGwasSumstats(),
+        label = "twasWeights"
+    ))
 })
 
 # ===========================================================================
@@ -1398,7 +1426,7 @@ test_that(".cipComputeMrCsAware matches across a chr-prefix difference", {
 
 test_that(".cipComputeTwasZ gives a Z from a panel's factor or an LdMatrix", {
     data(gwasSumStatsS4Example)
-    panel <- ldReference(gwasSumStatsS4Example)
+    panel <- ldReference(gwasSumStatsS4Example)[[1L]]
     ids <- names(SummarizedExperiment::rowRanges(panel))[c(3, 8, 15, 21, 30)]
     ld <- LdMatrix(
         unname(computeLd(panel)),
@@ -2017,7 +2045,9 @@ test_that(".cipScoreQtlTuple skips a tuple with no weights", {
 
 test_that(".cipScoreGwasPair skips a pair with no TWAS z", {
     local_mocked_bindings(
-        as.data.frame = function(...) data.frame(SNP = "v1", Z = 1),
+        .cipRowsLdRef = function(...) NULL,
+        .ssStitchElements = function(...) GenomicRanges::GRanges(),
+        .entryToSumstatDf = function(...) data.frame(SNP = "v1", Z = 1),
         .cipComputeTwasZ = function(...) NULL,
         .cipPairLabel = function(...) "lab",
         .package = "pecotmr"
@@ -2025,11 +2055,12 @@ test_that(".cipScoreGwasPair skips a pair with no TWAS z", {
     expect_null(
         pecotmr:::.cipScoreGwasPair(
             1L,
+            "G1",
             NULL,
             list(),
             NULL,
-            gwasSumStats = list(study = "G1"),
-            gwasLd = NULL,
+            gwasSumStats = NULL,
+            window = NULL,
             alleleFlip = FALSE,
             mrParam = MrParam(
                 method = "csAware",
@@ -2125,4 +2156,98 @@ test_that("WeightSelectionParam and MrParam do not overlap", {
     )
     expect_equal(WeightSelectionParam()$cutoff, 0)
     expect_equal(MrParam()$method, "ivwPerVariant")
+})
+
+test_that(".cipRowsLdRef refuses overlapped rows on two references", {
+    # The rows a tuple overlaps are scored together against one LD matrix.
+    block <- function(start) {
+        gr <- GenomicRanges::GRanges(
+            "chr1",
+            IRanges::IRanges(seq(start, by = 100L, length.out = 3L), width = 1L)
+        )
+        S4Vectors::mcols(gr) <- S4Vectors::DataFrame(
+            SNP = sprintf(
+                "chr1:%d:A:G",
+                seq(start, by = 100L, length.out = 3L)
+            ),
+            A1 = "A",
+            A2 = "G",
+            Z = c(1, 2, 3),
+            N = 1000L
+        )
+        gr
+    }
+    two <- GwasSumStats(
+        studyName = c("G1", "G1"),
+        entry = list(block(100L), block(5000L)),
+        genome = "hg19",
+        ldReference = list(
+            .cip_makeHandle(),
+            .cip_makeHandle(sample_prefix = "z")
+        ),
+        blockId = c("b1", "b2"),
+        qcInfo = list(step1 = "ok")
+    )
+    expect_error(
+        pecotmr:::.cipRowsLdRef(two, 1:2, "G1"),
+        "GWAS study 'G1' a QTL tuple overlaps use 2 different LD"
+    )
+    # A tuple overlapping one of them reads that row's reference alone.
+    expect_identical(
+        pecotmr:::.cipRowsLdRef(two, 2L, "G1"),
+        ldReference(two)[[2L]]
+    )
+})
+
+test_that("a gene is scored once per GWAS study, over the rows it overlaps", {
+    # One study split into two LD blocks on chr1 plus a chr2 row on another
+    # panel: the chr1 gene overlaps only block A, so it is scored once,
+    # and the chr2 row's reference never enters into it.
+    idsA <- sprintf("chr1:%d:A:G", 100L * (1:5))
+    idsB <- sprintf("chr1:%d:A:G", 100L * (6:10))
+    ids2 <- sprintf("chr2:%d:A:G", 100L * (1:5))
+    ldm <- function(ids) {
+        n <- length(ids)
+        LdMatrix(`dimnames<-`(diag(n) * 0.5 + 0.5, list(ids, ids)))
+    }
+    entry <- function(ids, chrom, pos) {
+        gr <- GenomicRanges::GRanges(chrom, IRanges::IRanges(pos, width = 1L))
+        S4Vectors::mcols(gr) <- S4Vectors::DataFrame(
+            SNP = ids,
+            A1 = "A",
+            A2 = "G",
+            Z = seq(4, 0.5, length.out = length(ids)),
+            N = 1000L
+        )
+        gr
+    }
+    chr1 <- ldm(c(idsA, idsB))
+    gws <- GwasSumStats(
+        studyName = c("G1", "G1", "G1"),
+        entry = list(
+            entry(idsA, "chr1", 100L * (1:5)),
+            entry(idsB, "chr1", 100L * (6:10)),
+            entry(ids2, "chr2", 100L * (1:5))
+        ),
+        genome = "hg19",
+        ldReference = list(chr1, chr1, ldm(ids2)),
+        blockId = c("blockA", "blockB", "chr2"),
+        qcInfo = list(step1 = "ok")
+    )
+    tw <- TwasWeights(
+        studyName = "Q1",
+        context = "c1",
+        trait = "gene1",
+        method = "lasso",
+        entry = list(twasWeightsRow(
+            variantIds = idsA,
+            weights = c(0.3, 0.2, 0.1, 0.05, 0)
+        )),
+        ldReference = chr1
+    )
+    out <- suppressMessages(suppressWarnings(
+        causalInferencePipeline(gwasSumStats = gws, twasWeights = tw)
+    ))
+    expect_equal(length(out), 1L)
+    expect_equal(as.character(S4Vectors::mcols(out)$gwasStudy), "G1")
 })
